@@ -127,7 +127,7 @@ impl<T: Clone> DataPerImage<T> {
             data: self
                 .as_slice()
                 .iter()
-                .zip(other.as_slice().iter())
+                .zip(other.as_slice())
                 .map(func)
                 .try_collect()?,
         })

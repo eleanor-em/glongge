@@ -158,8 +158,7 @@ impl TestRenderHandler {
         let vertex1 = Vec2 { x: -0.5, y: -0.5 };
         let vertex2 = Vec2 { x: 0.0, y: 0.5 };
         let vertex3 = Vec2 { x: 0.5, y: -0.25 };
-        let vertices = vec![vertex1, vertex2, vertex3];
-        let vertices = vertices
+        let vertices = vec![vertex1, vertex2, vertex3]
             .into_iter()
             .map(|v| TestVertex { position: v.into() });
         let vertex_buffer = Buffer::from_iter(
