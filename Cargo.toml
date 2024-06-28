@@ -15,7 +15,7 @@ tracing-subscriber = "0.3.18"
 vulkano = "0.34.1"
 vulkano-shaders = "0.34.0"
 # windowing
-winit = "0.28.0"
+winit = "0.28.7"
 
 [profile.dev]
 #opt-level = 1
