@@ -2,7 +2,7 @@ use num_traits::float::Float;
 use num_traits::{One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -25,7 +25,7 @@ impl Vec2 {
     pub fn mag(&self) -> f64 {
         f64::sqrt(self.x * self.x + self.y * self.y)
     }
-    pub fn norm(&self) -> Vec2 {
+    pub fn normed(&self) -> Vec2 {
         let mag = self.mag();
         Vec2 {
             x: self.x / mag,
@@ -230,7 +230,7 @@ impl Mat3x3 {
             + self.xy * (self.yx * self.ww - self.yw * self.wx)
             + self.xw * (self.yx * self.wy - self.yy * self.wx)
     }
-    pub fn transpose(&self) -> Mat3x3 {
+    pub fn transposed(&self) -> Mat3x3 {
         Mat3x3 {
             xx: self.xx,
             xy: self.yx,
@@ -410,10 +410,10 @@ impl Mul<Mat3x3> for Mat3x3 {
 impl From<Mat3x3> for [[f32; 4]; 4] {
     fn from(value: Mat3x3) -> Self {
         [
-            [value.xx as f32, value.xy as f32, value.xw as f32, 0.0],
-            [value.yx as f32, value.yy as f32, value.yw as f32, 0.0],
-            [value.wx as f32, value.wy as f32, value.ww as f32, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [value.xx as f32, value.xy as f32, 0.0, value.xw as f32],
+            [value.yx as f32, value.yy as f32, 0.0, value.yw as f32],
+            [0.0, 0.0, 1.0, value.ww as f32],
+            [value.wx as f32, value.wy as f32, 0.0, 1.0],
         ]
     }
 }

@@ -1,7 +1,6 @@
 #![feature(iterator_try_collect)]
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -75,7 +74,27 @@ mod main_test_vertex_shader {
             };
 
             void main() {
-                gl_Position = transform * vec4(position, 0.0, 1.0);
+                // Transforms (width=2, height=2) -> (width=1, height=1)
+                mat4 window_absolute_scale = mat4(
+                    vec4(2, 0, 0, 0),
+                    vec4(0, 2, 0, 0),
+                    vec4(0, 0, 1, 0),
+                    vec4(0, 0, 0, 1));
+                // Transforms (width=1, height=1) -> (width=1024, height=768)
+                mat4 window_pixel_scale = mat4(
+                    vec4(1/1024.0, 0, 0, 0),
+                    vec4(0, 1/768.0, 0, 0),
+                    vec4(0, 0, 1, 0),
+                    vec4(0, 0, 0, 1));
+                // Transforms (-1024/2, -768/2) top-left -> (0, 0) top-left
+                mat4 window_translation = mat4(
+                    vec4(1, 0, 0, 0),
+                    vec4(0, 1, 0, 0),
+                    vec4(0, 0, 1, 0),
+                    vec4(-1, -1, 0, 1));
+                mat4 window_scale = window_pixel_scale * window_absolute_scale;
+                vec4 world_position = vec4(transform * vec4(position, 0.0, 1.0));
+                gl_Position = vec4(window_translation * window_scale * world_position);
             }
         ",
     }
@@ -95,22 +114,24 @@ mod main_test_fragment_shader {
     }
 }
 fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -> Result<()> {
-    let handler = TestRenderHandler::new(&window_ctx, &ctx)?;
+    run_test_cases();
 
-    // TODO: proper test cases...
-    let a = Vec2 { x: 1.0, y: 1.0 };
-    crate::check!((a * 2.0).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
-    crate::check!((2.0 * a).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
-    crate::check_lt!(f64::abs((a * 2.0 - a).x - 1.0), f64::epsilon());
-    crate::check_lt!(f64::abs((a * 2.0 - a).y - 1.0), f64::epsilon());
-    crate::check!(
-        (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
-            .almost_eq(Mat3x3::one())
-    );
+    let handler = TestRenderHandler::new(&window_ctx, &ctx)?;
+    handler.start_update_thread();
 
     let (event_loop, window) = window_ctx.consume();
     vk_core::WindowEventHandler::new(window, ctx, handler).run(event_loop);
     Ok(())
+}
+
+struct RenderData {
+    transform: Mat3x3,
+}
+
+impl RenderData {
+    fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self { transform: Mat3x3::one() }))
+    }
 }
 
 struct TestRenderHandler {
@@ -120,7 +141,8 @@ struct TestRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    t: Arc<AtomicU64>,
+    render_data: Arc<Mutex<RenderData>>,
+    pos: Vec2,
 }
 
 impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler {
@@ -140,28 +162,102 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
         _ctx: &vk_core::VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        let t_secs = self.t.load(Ordering::Acquire) as f64 / 1_000_000.0;
-        let radians = 2.0 * f64::PI() * t_secs;
-        let transform = Mat3x3::rotation(radians);
-        *self.uniform_buffers.current_value(per_image_ctx).write()? = transform.into();
+        let transform = self.render_data.lock().unwrap().transform;
+        *self.uniform_buffers.current_value(per_image_ctx).write()? = transform.transposed().into();
         Ok(self.command_buffers.clone().unwrap())
     }
 }
 
 impl TestRenderHandler {
+    fn create_vertices() -> (Vec2, Vec<Vec2>) {
+        let tri_width = 100.0;
+        let tri_height = tri_width * 3.0.sqrt();
+        let centre_correction = -tri_height / 6.0;
+        let vertex1 = Vec2 {
+            x: -tri_width,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex2 = Vec2 {
+            x: tri_width,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex3 = Vec2 {
+            x: 0.0,
+            y: tri_height / 2.0 - centre_correction,
+        };
+        let pos = Vec2 {
+            x: (vertex1.x + vertex2.x + vertex3.x) / 3.0,
+            y: (vertex1.y + vertex2.y + vertex3.y) / 3.0,
+        };
+        (pos, vec![vertex1, vertex2, vertex3])
+    }
+
+    fn start_update_thread(&self) {
+        let render_data = self.render_data.clone();
+        let mut pos = self.pos;
+
+        std::thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+            let mut t = 0.0;
+            let world_pos_offset = Vec2 { x: 512.0, y: 384.0 };
+            let mut velocity = Vec2 {
+                x: rng.gen_range(-1.0..1.0),
+                y: rng.gen_range(-1.0..1.0),
+            }
+                .normed() * 200.0;
+            let mut delta = 0.0;
+            loop {
+                let now = Instant::now();
+                t += delta;
+                let next_world_pos = pos + world_pos_offset + velocity * delta;
+                if !(0.0..1024.0).contains(&next_world_pos.x) {
+                    velocity.x = -velocity.x;
+                }
+                if !(0.0..768.0).contains(&next_world_pos.y) {
+                    velocity.y = -velocity.y;
+                }
+                pos += velocity * delta;
+                let radians = 1.0 * f64::PI() * t;
+                let rotation = Mat3x3::translation_vec2(pos)
+                    * Mat3x3::rotation(radians)
+                    * Mat3x3::translation_vec2(-pos);
+                let translation = Mat3x3::translation_vec2(pos);
+                let world = Mat3x3::translation_vec2(world_pos_offset);
+                render_data.lock().unwrap().transform = world * rotation * translation;
+                thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
+                delta = now.elapsed().as_secs_f64();
+            }
+        });
+    }
+
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
         let vs = main_test_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
         let fs = main_test_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
+        let (pos, _) = Self::create_vertices();
+        let vertex_buffer = Self::create_vertex_buffer(ctx)?;
+        let uniform_buffers = Self::create_uniform_buffers(ctx)?;
+        let viewport = window_ctx.create_default_viewport();
+        let render_data = RenderData::new();
+        Ok(Self {
+            vs,
+            fs,
+            vertex_buffer,
+            uniform_buffers,
+            viewport,
+            command_buffers: None,
+            render_data,
+            pos,
+        })
+    }
 
-        let vertex1 = Vec2 { x: -0.5, y: -0.5 };
-        let vertex2 = Vec2 { x: 0.0, y: 0.5 };
-        let vertex3 = Vec2 { x: 0.5, y: -0.25 };
-        let vertices = vec![vertex1, vertex2, vertex3]
+    fn create_vertex_buffer(ctx: &VulkanoContext) -> Result<Subbuffer<[TestVertex]>> {
+        let (_, vertices) = Self::create_vertices();
+        let vertices = vertices
             .into_iter()
             .map(|v| TestVertex { position: v.into() });
-        let vertex_buffer = Buffer::from_iter(
+        Ok(Buffer::from_iter(
             ctx.memory_allocator(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
@@ -173,9 +269,11 @@ impl TestRenderHandler {
                 ..Default::default()
             },
             vertices,
-        )?;
+        )?)
+    }
 
-        let uniform_buffers = DataPerImage::new_with_value(
+    fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
+        Ok(DataPerImage::new_with_value(
             ctx,
             Buffer::new_sized::<[[f32; 4]; 4]>(
                 ctx.memory_allocator(),
@@ -189,31 +287,7 @@ impl TestRenderHandler {
                     ..Default::default()
                 },
             )?,
-        );
-
-        let viewport = window_ctx.create_default_viewport();
-
-        let t = Arc::new(AtomicU64::default());
-        let t_update = t.clone();
-        std::thread::spawn(move || {
-            let mut delta = 0u64;
-            let mut rng = rand::thread_rng();
-            loop {
-                let now = Instant::now();
-                t_update.fetch_add(delta, Ordering::Release);
-                thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
-                delta = now.elapsed().as_micros() as u64;
-            }
-        });
-        Ok(Self {
-            vs,
-            fs,
-            vertex_buffer,
-            uniform_buffers,
-            viewport,
-            command_buffers: None,
-            t,
-        })
+        ))
     }
 
     fn create_pipeline(&self, ctx: &vk_core::VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
@@ -306,4 +380,17 @@ impl TestRenderHandler {
         self.command_buffers = Some(command_buffers);
         Ok(())
     }
+}
+
+fn run_test_cases() {
+    // TODO: proper test cases...
+    let a = Vec2 { x: 1.0, y: 1.0 };
+    crate::check!((a * 2.0).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
+    crate::check!((2.0 * a).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
+    crate::check_lt!(f64::abs((a * 2.0 - a).x - 1.0), f64::epsilon());
+    crate::check_lt!(f64::abs((a * 2.0 - a).y - 1.0), f64::epsilon());
+    crate::check!(
+        (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
+            .almost_eq(Mat3x3::one())
+    );
 }

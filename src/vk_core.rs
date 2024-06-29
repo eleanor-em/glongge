@@ -29,6 +29,7 @@ use vulkano::swapchain::{
 use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
 use vulkano::sync::GpuFuture;
 use vulkano::{swapchain, Validated, VulkanError, VulkanLibrary};
+use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 
 use crate::util::TimeIt;
@@ -43,7 +44,11 @@ pub struct WindowContext {
 impl WindowContext {
     pub fn new() -> Result<Self> {
         let event_loop = EventLoop::new();
-        let window = Arc::new(WindowBuilder::new().build(&event_loop)?);
+        let window = Arc::new(
+            WindowBuilder::new()
+                .with_inner_size(LogicalSize::new(1024, 768))
+                .build(&event_loop)?,
+        );
         Ok(Self { event_loop, window })
     }
 
