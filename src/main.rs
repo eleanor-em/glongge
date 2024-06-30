@@ -1,5 +1,6 @@
 #![feature(iterator_try_collect)]
 
+use std::cell::{Ref, RefCell};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -118,6 +119,33 @@ fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -
     Ok(())
 }
 
+struct SafeObjectList<'a> {
+    owner_index: usize,
+    objects: &'a [RefCell<SpinningTriangle>],
+    curr: usize,
+}
+
+impl<'a> SafeObjectList<'a> {
+    fn new(owner_index: usize, objects: &'a [RefCell<SpinningTriangle>]) -> Self {
+        Self { owner_index, objects, curr: 0, }
+    }
+}
+
+impl<'a> Iterator for SafeObjectList<'a> {
+    type Item = Ref<'a, SpinningTriangle>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.curr += 1;
+        if self.curr == self.owner_index {
+            self.next()
+        } else if self.curr >= self.objects.len() {
+            None
+        } else {
+            Some(self.objects[self.curr].borrow())
+        }
+    }
+}
+
 #[derive(Clone)]
 struct RenderData {
     position: Vec2,
@@ -132,7 +160,8 @@ struct SpinningTriangle {
 }
 
 impl SpinningTriangle {
-    const VELOCITY: f64 = 500.0;
+    const TRI_WIDTH: f64 = 5.0;
+    const VELOCITY: f64 = 200.0;
     const ANGULAR_VELOCITY: f64 = 1.0;
 
     fn new(pos: Vec2, vel_normed: Vec2) -> Self {
@@ -140,15 +169,14 @@ impl SpinningTriangle {
     }
 
     fn create_vertices(&self) -> Vec<Vec2> {
-        let tri_width = 1.0;
-        let tri_height = tri_width * 3.0.sqrt();
+        let tri_height = Self::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {
-            x: -tri_width,
+            x: -Self::TRI_WIDTH,
             y: -tri_height / 2.0 - centre_correction,
         };
         let vertex2 = Vec2 {
-            x: tri_width,
+            x: Self::TRI_WIDTH,
             y: -tri_height / 2.0 - centre_correction,
         };
         let vertex3 = Vec2 {
@@ -158,7 +186,7 @@ impl SpinningTriangle {
         vec![vertex1, vertex2, vertex3]
     }
 
-    fn on_update(&mut self, delta: f64, render_data: &mut RenderData) {
+    fn on_update(&mut self, delta: f64, others: SafeObjectList) -> RenderData {
         self.t += delta;
         let next_pos = self.pos + self.velocity * delta;
         if !(0.0..1024.0).contains(&next_pos.x) {
@@ -167,10 +195,17 @@ impl SpinningTriangle {
         if !(0.0..768.0).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
+        for other in others {
+            if (other.pos - self.pos).mag() < Self::TRI_WIDTH {
+                self.velocity = (self.pos - other.pos).normed() * Self::VELOCITY;
+            }
+        }
         self.pos += self.velocity * delta;
         let radians = Self::ANGULAR_VELOCITY * f64::PI() * self.t;
-        render_data.position = self.pos;
-        render_data.rotation = radians;
+        RenderData {
+            position: self.pos,
+            rotation: radians,
+        }
     }
 }
 
@@ -182,7 +217,7 @@ struct TestRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    objects: Option<Vec<SpinningTriangle>>,
+    objects: Option<Vec<RefCell<SpinningTriangle>>>,
     render_data: Arc<Mutex<Vec<RenderData>>>,
 }
 
@@ -220,7 +255,7 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
 
 impl TestRenderHandler {
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        const N: usize = 500000;
+        const N: usize = 2500;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
         let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
@@ -231,7 +266,7 @@ impl TestRenderHandler {
             .map(|i| {
                 let pos = Vec2 { x: xs[i], y: ys[i] };
                 let vel = Vec2 { x: vxs[i], y: vys[i] };
-                SpinningTriangle::new(pos, vel.normed())
+                RefCell::new(SpinningTriangle::new(pos, vel.normed()))
             })
             .collect();
 
@@ -241,7 +276,7 @@ impl TestRenderHandler {
             .context("failed to create shader module")?;
         let mut vertices = Vec::with_capacity(3 * N);
         for object in objects.iter() {
-            vertices.append(&mut object.create_vertices());
+            vertices.append(&mut object.borrow().create_vertices());
         }
         let vertex_buffers = Self::create_vertex_buffers(ctx, &vertices)?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
@@ -260,19 +295,18 @@ impl TestRenderHandler {
     }
 
     fn start_update_thread(&mut self) {
-        let mut objects = self.objects.take().unwrap();
+        let objects = self.objects.take().unwrap();
         let render_data = self.render_data.clone();
         std::thread::spawn(move || {
             let mut delta = 0.0;
-            let mut last_render_data = {
-                render_data.lock().unwrap().clone()
-            };
+            let mut last_render_data = render_data.lock().unwrap().clone();
             let mut timer = TimeIt::new("update");
             loop {
                 let now = Instant::now();
                 timer.start();
-                for (this_render_data, obj) in last_render_data.iter_mut().zip(objects.iter_mut()) {
-                    obj.on_update(delta, this_render_data);
+                for i in 0..objects.len() {
+                    let others = SafeObjectList::new(i, &objects);
+                    last_render_data[i] = objects[i].borrow_mut().on_update(delta, others);
                 }
                 render_data.lock().unwrap().clone_from_slice(&last_render_data);
                 timer.stop();
