@@ -119,7 +119,6 @@ fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -
 }
 
 struct RenderData {
-    // transform: Mat3x3,
     position: Vec2,
     rotation: f64,
 }
@@ -130,6 +129,7 @@ impl RenderData {
     }
 }
 
+#[derive(Clone)]
 struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
@@ -152,7 +152,7 @@ impl SpinningTriangle {
     }
 
     fn create_vertices(&self) -> Vec<Vec2> {
-        let tri_width = 50.0;
+        let tri_width = 1.0;
         let tri_height = tri_width * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {
@@ -196,8 +196,8 @@ struct TestRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    objects: Option<SpinningTriangle>,
-    render_data: Arc<Mutex<RenderData>>,
+    objects: Option<Vec<SpinningTriangle>>,
+    render_data: Vec<Arc<Mutex<RenderData>>>,
 }
 
 impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler {
@@ -217,31 +217,45 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
         _ctx: &vk_core::VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        if let Ok(render_data) = self.render_data.lock() {
-            for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
-                *vertex = TestVertex {
-                    position: (Mat3x3::translation_vec2(render_data.position)
-                        * Mat3x3::rotation(render_data.rotation)
-                        * self.vertices[i]).into()
-                };
+        let mut render_data = self.render_data.iter();
+        let mut obj = None;
+        for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
+            if i % 3 == 0 {
+                obj = render_data.next().map(|inner| inner.lock().unwrap());
             }
-            *self.uniform_buffers.current_value(per_image_ctx).write()? = Mat3x3::one().into();
+            let obj = obj.as_ref().unwrap();
+            *vertex = TestVertex {
+                position: (Mat3x3::translation_vec2(obj.position)
+                    * Mat3x3::rotation(obj.rotation)
+                    * self.vertices[i]).into()
+            };
         }
-        let transform = self.render_data.lock().unwrap();
+        *self.uniform_buffers.current_value(per_image_ctx).write()? = Mat3x3::one().into();
         Ok(self.command_buffers.clone().unwrap())
     }
 }
 
 impl TestRenderHandler {
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        let objects = SpinningTriangle::new(Vec2 { x: 256.0, y: 192.0 });
-        let render_data = objects.render_data.clone();
+        let mut rng = rand::thread_rng();
+        let objects: Vec<_> = (0..300000).into_iter()
+            .map(|_| {
+                SpinningTriangle::new(Vec2 {
+                    x: rng.gen_range(0.0..1024.0),
+                    y: rng.gen_range(0.0..768.0),
+                })
+            })
+            .collect();
+
+        let render_data = objects.iter().map(|obj| obj.render_data.clone()).collect();
 
         let vs = main_test_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
         let fs = main_test_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
-        let vertices = objects.create_vertices();
+        let vertices = objects.iter()
+            .map(SpinningTriangle::create_vertices)
+            .fold(Vec::new(), |acc, e| acc.into_iter().chain(e.into_iter()).collect());
         let vertex_buffer = Self::create_vertex_buffer(ctx, &vertices)?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
@@ -265,7 +279,9 @@ impl TestRenderHandler {
             let mut delta = 0.0;
             loop {
                 let now = Instant::now();
-                objects.on_update(delta);
+                for obj in objects.iter_mut() {
+                    obj.on_update(delta);
+                }
                 thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
                 delta = now.elapsed().as_secs_f64();
             }
