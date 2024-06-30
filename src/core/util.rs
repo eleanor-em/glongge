@@ -1,5 +1,6 @@
 use std::cmp;
 use std::time::Instant;
+
 use tracing::info;
 
 pub struct TimeIt {

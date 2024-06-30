@@ -6,35 +6,59 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use tracing::{info, warn};
-use vulkano::command_buffer::allocator::{
-    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
-};
-use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 
-use vulkano::command_buffer::{CommandBufferExecFuture, PrimaryCommandBufferAbstract};
-use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
-use vulkano::device::{
-    Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+use vulkano::{
+    command_buffer::{
+        allocator::{
+            StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+        },
+        CommandBufferExecFuture,
+        PrimaryCommandBufferAbstract
+    },
+    descriptor_set::allocator::StandardDescriptorSetAllocator,
+    device::{
+        Device,
+        DeviceCreateInfo,
+        DeviceExtensions,
+        Queue,
+        QueueCreateInfo,
+        QueueFlags,
+        physical::{PhysicalDevice, PhysicalDeviceType}
+    },
+    image::{
+        Image,
+        ImageUsage,
+        view::ImageView
+    },
+    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
+    memory::allocator::StandardMemoryAllocator,
+    pipeline::graphics::viewport::Viewport,
+    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
+    swapchain::{
+        self,
+        PresentFuture,
+        Surface,
+        Swapchain,
+        SwapchainAcquireFuture,
+        SwapchainCreateInfo,
+        SwapchainPresentInfo
+    },
+    sync::{
+        GpuFuture,
+        future::{FenceSignalFuture, JoinFuture}
+    },
+    Validated,
+    VulkanError,
+    VulkanLibrary
 };
-use vulkano::image::view::ImageView;
-use vulkano::image::{Image, ImageUsage};
-use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
-use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::graphics::viewport::Viewport;
-use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain::{
-    PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-    SwapchainPresentInfo,
+use winit::{
+    dpi::LogicalSize,
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::{Window, WindowBuilder}
 };
-use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
-use vulkano::sync::GpuFuture;
-use vulkano::{swapchain, Validated, VulkanError, VulkanLibrary};
-use winit::dpi::LogicalSize;
-use winit::event::{Event, WindowEvent};
 
-use crate::util::TimeIt;
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use crate::core::util::TimeIt;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
