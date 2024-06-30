@@ -5,9 +5,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rand::Rng;
+use rand::distributions::Distribution;
 
 use anyhow::{Context, Result};
 use num_traits::{Float, FloatConst, One, Zero};
+use rand::distributions::Uniform;
 use tracing::*;
 
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -118,22 +120,16 @@ fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -
     Ok(())
 }
 
+#[derive(Clone)]
 struct RenderData {
     position: Vec2,
     rotation: f64,
-}
-
-impl RenderData {
-    fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self { position: Vec2::zero(), rotation: 0.0 }))
-    }
 }
 
 #[derive(Clone)]
 struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
-    render_data: Arc<Mutex<RenderData>>,
     t: f64,
 }
 
@@ -141,14 +137,8 @@ impl SpinningTriangle {
     const VELOCITY: f64 = 500.0;
     const ANGULAR_VELOCITY: f64 = 1.0;
 
-    fn new(pos: Vec2) -> Self {
-        let mut rng = rand::thread_rng();
-        let velocity = Vec2 {
-            x: rng.gen_range(-1.0..1.0),
-            y: rng.gen_range(-1.0..1.0),
-        }
-            .normed() * Self::VELOCITY;
-        Self { pos, velocity, render_data: RenderData::new(), t: 0.0 }
+    fn new(pos: Vec2, vel_normed: Vec2) -> Self {
+        Self { pos, velocity: vel_normed * Self::VELOCITY, t: 0.0 }
     }
 
     fn create_vertices(&self) -> Vec<Vec2> {
@@ -170,7 +160,7 @@ impl SpinningTriangle {
         vec![vertex1, vertex2, vertex3]
     }
 
-    fn on_update(&mut self, delta: f64) {
+    fn on_update(&mut self, delta: f64, render_data: &mut RenderData) {
         self.t += delta;
         let next_pos = self.pos + self.velocity * delta;
         if !(0.0..1024.0).contains(&next_pos.x) {
@@ -181,10 +171,8 @@ impl SpinningTriangle {
         }
         self.pos += self.velocity * delta;
         let radians = Self::ANGULAR_VELOCITY * f64::PI() * self.t;
-        if let Ok(mut render_data) = self.render_data.lock() {
-            render_data.position = self.pos;
-            render_data.rotation = radians;
-        }
+        render_data.position = self.pos;
+        render_data.rotation = radians;
     }
 }
 
@@ -197,7 +185,7 @@ struct TestRenderHandler {
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     objects: Option<Vec<SpinningTriangle>>,
-    render_data: Vec<Arc<Mutex<RenderData>>>,
+    render_data: Arc<Mutex<Vec<RenderData>>>,
 }
 
 impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler {
@@ -217,18 +205,14 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
         _ctx: &vk_core::VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        let mut render_data = self.render_data.iter();
-        let mut obj = None;
-        for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
-            if i % 3 == 0 {
-                obj = render_data.next().map(|inner| inner.lock().unwrap());
+        if let Ok(render_data) = self.render_data.lock() {
+            for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
+                *vertex = TestVertex {
+                    position: (Mat3x3::translation_vec2(render_data[i/3].position)
+                        * Mat3x3::rotation(render_data[i/3].rotation)
+                        * self.vertices[i]).into()
+                };
             }
-            let obj = obj.as_ref().unwrap();
-            *vertex = TestVertex {
-                position: (Mat3x3::translation_vec2(obj.position)
-                    * Mat3x3::rotation(obj.rotation)
-                    * self.vertices[i]).into()
-            };
         }
         *self.uniform_buffers.current_value(per_image_ctx).write()? = Mat3x3::one().into();
         Ok(self.command_buffers.clone().unwrap())
@@ -237,25 +221,29 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
 
 impl TestRenderHandler {
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
+        const N: usize = 650000;
         let mut rng = rand::thread_rng();
-        let objects: Vec<_> = (0..300000).into_iter()
-            .map(|_| {
-                SpinningTriangle::new(Vec2 {
-                    x: rng.gen_range(0.0..1024.0),
-                    y: rng.gen_range(0.0..768.0),
-                })
+        let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
+        let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
+        let vxs: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
+        let vys: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
+        let render_data = Arc::new(Mutex::new(vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; N]));
+        let objects: Vec<_> = (0..N).into_iter()
+            .map(|i| {
+                let pos = Vec2 { x: xs[i], y: ys[i] };
+                let vel = Vec2 { x: vxs[i], y: vys[i] };
+                SpinningTriangle::new(pos, vel.normed())
             })
             .collect();
-
-        let render_data = objects.iter().map(|obj| obj.render_data.clone()).collect();
 
         let vs = main_test_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
         let fs = main_test_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
-        let vertices = objects.iter()
-            .map(SpinningTriangle::create_vertices)
-            .fold(Vec::new(), |acc, e| acc.into_iter().chain(e.into_iter()).collect());
+        let mut vertices = Vec::with_capacity(3 * N);
+        for object in objects.iter() {
+            vertices.append(&mut object.create_vertices());
+        }
         let vertex_buffer = Self::create_vertex_buffer(ctx, &vertices)?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
@@ -274,18 +262,22 @@ impl TestRenderHandler {
 
     fn start_update_thread(&mut self) {
         let mut objects = self.objects.take().unwrap();
+        let render_data = self.render_data.clone();
         std::thread::spawn(move || {
             let mut rng = rand::thread_rng();
             let mut delta = 0.0;
+            let mut last_render_data = {
+                render_data.lock().unwrap().clone()
+            };
             loop {
                 let now = Instant::now();
-                for obj in objects.iter_mut() {
-                    obj.on_update(delta);
+                for (this_render_data, obj) in last_render_data.iter_mut().zip(objects.iter_mut()) {
+                    obj.on_update(delta, this_render_data);
                 }
+                render_data.lock().unwrap().clone_from_slice(&last_render_data);
                 thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
                 delta = now.elapsed().as_secs_f64();
             }
-
         });
     }
 
