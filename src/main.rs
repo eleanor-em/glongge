@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 
 use anyhow::{Context, Result};
-use num_traits::{Float, FloatConst, One};
+use num_traits::{Float, FloatConst, One, Zero};
 use tracing::*;
 
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
@@ -119,12 +119,14 @@ fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -
 }
 
 struct RenderData {
-    transform: Mat3x3,
+    // transform: Mat3x3,
+    position: Vec2,
+    rotation: f64,
 }
 
 impl RenderData {
     fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self { transform: Mat3x3::one() }))
+        Arc::new(Mutex::new(Self { position: Vec2::zero(), rotation: 0.0 }))
     }
 }
 
@@ -179,15 +181,17 @@ impl SpinningTriangle {
         }
         self.pos += self.velocity * delta;
         let radians = Self::ANGULAR_VELOCITY * f64::PI() * self.t;
-        let rotation = Mat3x3::rotation(radians);
-        let translation = Mat3x3::translation_vec2(self.pos);
-        self.render_data.lock().unwrap().transform = translation * rotation;
+        if let Ok(mut render_data) = self.render_data.lock() {
+            render_data.position = self.pos;
+            render_data.rotation = radians;
+        }
     }
 }
 
 struct TestRenderHandler {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
+    vertices: Vec<Vec2>,
     vertex_buffer: Subbuffer<[TestVertex]>,
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
@@ -213,8 +217,17 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
         _ctx: &vk_core::VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        let transform = self.render_data.lock().unwrap().transform;
-        *self.uniform_buffers.current_value(per_image_ctx).write()? = transform.transposed().into();
+        if let Ok(render_data) = self.render_data.lock() {
+            for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
+                *vertex = TestVertex {
+                    position: (Mat3x3::translation_vec2(render_data.position)
+                        * Mat3x3::rotation(render_data.rotation)
+                        * self.vertices[i]).into()
+                };
+            }
+            *self.uniform_buffers.current_value(per_image_ctx).write()? = Mat3x3::one().into();
+        }
+        let transform = self.render_data.lock().unwrap();
         Ok(self.command_buffers.clone().unwrap())
     }
 }
@@ -228,12 +241,14 @@ impl TestRenderHandler {
             .context("failed to create shader module")?;
         let fs = main_test_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
-        let vertex_buffer = Self::create_vertex_buffer(ctx, &objects.create_vertices())?;
+        let vertices = objects.create_vertices();
+        let vertex_buffer = Self::create_vertex_buffer(ctx, &vertices)?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
         Ok(Self {
             vs,
             fs,
+            vertices,
             vertex_buffer,
             uniform_buffers,
             viewport,
