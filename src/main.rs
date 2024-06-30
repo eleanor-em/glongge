@@ -1,16 +1,13 @@
 #![feature(iterator_try_collect)]
 
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use rand::Rng;
 use rand::distributions::Distribution;
 
 use anyhow::{Context, Result};
 use num_traits::{Float, FloatConst, One, Zero};
 use rand::distributions::Uniform;
-use tracing::*;
 
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
@@ -42,6 +39,7 @@ mod vk_core;
 use crate::vk_core::{DataPerImage, PerImageContext};
 use linalg::{Mat3x3, Vec2};
 use vk_core::VulkanoContext;
+use crate::util::TimeIt;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -180,7 +178,7 @@ struct TestRenderHandler {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     vertices: Vec<Vec2>,
-    vertex_buffer: Subbuffer<[TestVertex]>,
+    vertex_buffers: DataPerImage<Subbuffer<[TestVertex]>>,
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
@@ -206,7 +204,8 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         if let Ok(render_data) = self.render_data.lock() {
-            for (i, vertex) in self.vertex_buffer.write()?.iter_mut().enumerate() {
+            let vertex_buffer = self.vertex_buffers.current_value_mut(per_image_ctx);
+            for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = TestVertex {
                     position: (Mat3x3::translation_vec2(render_data[i/3].position)
                         * Mat3x3::rotation(render_data[i/3].rotation)
@@ -221,14 +220,14 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
 
 impl TestRenderHandler {
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        const N: usize = 650000;
+        const N: usize = 500000;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
         let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
         let vxs: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
         let vys: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
         let render_data = Arc::new(Mutex::new(vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; N]));
-        let objects: Vec<_> = (0..N).into_iter()
+        let objects: Vec<_> = (0..N)
             .map(|i| {
                 let pos = Vec2 { x: xs[i], y: ys[i] };
                 let vel = Vec2 { x: vxs[i], y: vys[i] };
@@ -244,14 +243,14 @@ impl TestRenderHandler {
         for object in objects.iter() {
             vertices.append(&mut object.create_vertices());
         }
-        let vertex_buffer = Self::create_vertex_buffer(ctx, &vertices)?;
+        let vertex_buffers = Self::create_vertex_buffers(ctx, &vertices)?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
         Ok(Self {
             vs,
             fs,
             vertices,
-            vertex_buffer,
+            vertex_buffers,
             uniform_buffers,
             viewport,
             command_buffers: None,
@@ -264,40 +263,44 @@ impl TestRenderHandler {
         let mut objects = self.objects.take().unwrap();
         let render_data = self.render_data.clone();
         std::thread::spawn(move || {
-            let mut rng = rand::thread_rng();
             let mut delta = 0.0;
             let mut last_render_data = {
                 render_data.lock().unwrap().clone()
             };
+            let mut timer = TimeIt::new("update");
             loop {
                 let now = Instant::now();
+                timer.start();
                 for (this_render_data, obj) in last_render_data.iter_mut().zip(objects.iter_mut()) {
                     obj.on_update(delta, this_render_data);
                 }
                 render_data.lock().unwrap().clone_from_slice(&last_render_data);
-                thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
+                timer.stop();
+                timer.report_ms_every(5);
                 delta = now.elapsed().as_secs_f64();
             }
         });
     }
 
-    fn create_vertex_buffer(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<Subbuffer<[TestVertex]>> {
+    fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<DataPerImage<Subbuffer<[TestVertex]>>> {
         let vertices = vertices
             .iter()
             .map(|&v| TestVertex { position: v.into() });
-        Ok(Buffer::from_iter(
-            ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            vertices,
-        )?)
+        Ok(DataPerImage::new_with_value(
+            ctx,
+            Buffer::from_iter(
+                ctx.memory_allocator(),
+                BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                vertices,
+            )?))
     }
 
     fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
@@ -372,9 +375,10 @@ impl TestRenderHandler {
                 [],
             )?)
         })?;
-        let command_buffers = ctx.framebuffers().try_map_with(
+        let command_buffers = ctx.framebuffers().try_map_with_3(
             &uniform_buffer_sets,
-            |(framebuffer, uniform_buffer_set)| {
+            &self.vertex_buffers,
+            |((framebuffer, uniform_buffer_set), vertex_buffer)| {
                 let mut builder = AutoCommandBufferBuilder::primary(
                     ctx.command_buffer_allocator(),
                     ctx.queue().queue_family_index(),
@@ -399,8 +403,8 @@ impl TestRenderHandler {
                         0,
                         uniform_buffer_set.clone(),
                     )?
-                    .bind_vertex_buffers(0, self.vertex_buffer.clone())?
-                    .draw(self.vertex_buffer.len() as u32, 1, 0, 0)?
+                    .bind_vertex_buffers(0, vertex_buffer.clone())?
+                    .draw(vertex_buffer.len() as u32, 1, 0, 0)?
                     .end_render_pass(SubpassEndInfo::default())?;
                 Ok(builder.build()?)
             },

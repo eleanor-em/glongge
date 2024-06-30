@@ -137,6 +137,25 @@ impl<T: Clone> DataPerImage<T> {
                 .try_collect()?,
         })
     }
+    pub fn try_map_with_3<U: Clone, V: Clone, W: Clone, F>(
+        &self,
+        other1: &DataPerImage<U>,
+        other2: &DataPerImage<V>,
+        func: F,
+    ) -> Result<DataPerImage<W>>
+    where
+        F: FnMut(((&T, &U), &V)) -> Result<W>,
+    {
+        Ok(DataPerImage::<W> {
+            data: self
+                .as_slice()
+                .iter()
+                .zip(other1.as_slice())
+                .zip(other2.as_slice())
+                .map(func)
+                .try_collect()?,
+        })
+    }
     pub fn count<P>(&self, predicate: P) -> usize
     where
         P: Fn(&T) -> bool,
@@ -744,16 +763,15 @@ impl RenderPerfStats {
                 self.on_time as f64 / self.count as f64 * 100.0
             );
             let min_report_ms = 0.1;
-            self.total.report_ms_if_at_least(min_report_ms);
             self.render_wait.report_ms_if_at_least(min_report_ms);
             self.render_active.report_ms_if_at_least(min_report_ms);
             self.between_renders.report_ms_if_at_least(min_report_ms);
             self.handle_swapchain.report_ms_if_at_least(min_report_ms);
             self.acquire_and_sync.report_ms_if_at_least(min_report_ms);
             self.on_render.report_ms_if_at_least(min_report_ms);
-            self.submit_command_buffers
-                .report_ms_if_at_least(min_report_ms);
+            self.submit_command_buffers.report_ms_if_at_least(min_report_ms);
             self.end_step.report_ms_if_at_least(min_report_ms);
+            self.total.report_ms_if_at_least(min_report_ms);
             self.last_report = Instant::now();
             self.on_time = 0;
             self.count = 0;
