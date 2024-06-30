@@ -121,18 +121,18 @@ fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -
 
 struct SafeObjectList<'a> {
     owner_index: usize,
-    objects: &'a [RefCell<SpinningTriangle>],
+    objects: &'a [RefCell<Box<dyn SceneObject>>],
     curr: usize,
 }
 
 impl<'a> SafeObjectList<'a> {
-    fn new(owner_index: usize, objects: &'a [RefCell<SpinningTriangle>]) -> Self {
+    fn new(owner_index: usize, objects: &'a [RefCell<Box<dyn SceneObject>>]) -> Self {
         Self { owner_index, objects, curr: 0, }
     }
 }
 
 impl<'a> Iterator for SafeObjectList<'a> {
-    type Item = Ref<'a, SpinningTriangle>;
+    type Item = Ref<'a, Box<dyn SceneObject>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.curr += 1;
@@ -152,6 +152,12 @@ struct RenderData {
     rotation: f64,
 }
 
+trait SceneObject: Send {
+    fn create_vertices(&self) -> Vec<Vec2>;
+    fn on_update(&mut self, delta: f64, others: SafeObjectList) -> RenderData;
+    fn world_pos(&self) -> Vec2;
+}
+
 #[derive(Clone)]
 struct SpinningTriangle {
     pos: Vec2,
@@ -167,7 +173,8 @@ impl SpinningTriangle {
     fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         Self { pos, velocity: vel_normed * Self::VELOCITY, t: 0.0 }
     }
-
+}
+impl SceneObject for SpinningTriangle {
     fn create_vertices(&self) -> Vec<Vec2> {
         let tri_height = Self::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
@@ -196,8 +203,8 @@ impl SpinningTriangle {
             self.velocity.y = -self.velocity.y;
         }
         for other in others {
-            if (other.pos - self.pos).mag() < Self::TRI_WIDTH {
-                self.velocity = (self.pos - other.pos).normed() * Self::VELOCITY;
+            if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
+                self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
             }
         }
         self.pos += self.velocity * delta;
@@ -207,6 +214,8 @@ impl SpinningTriangle {
             rotation: radians,
         }
     }
+
+    fn world_pos(&self) -> Vec2 { self.pos }
 }
 
 struct TestRenderHandler {
@@ -217,7 +226,7 @@ struct TestRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    objects: Option<Vec<RefCell<SpinningTriangle>>>,
+    objects: Option<Vec<RefCell<Box<dyn SceneObject>>>>,
     render_data: Arc<Mutex<Vec<RenderData>>>,
 }
 
@@ -266,7 +275,7 @@ impl TestRenderHandler {
             .map(|i| {
                 let pos = Vec2 { x: xs[i], y: ys[i] };
                 let vel = Vec2 { x: vxs[i], y: vys[i] };
-                RefCell::new(SpinningTriangle::new(pos, vel.normed()))
+                RefCell::new(Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn SceneObject>)
             })
             .collect();
 
