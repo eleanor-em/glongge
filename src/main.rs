@@ -8,6 +8,7 @@ use rand::Rng;
 
 use anyhow::{Context, Result};
 use num_traits::{Float, FloatConst, One};
+use tracing::*;
 
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::{
@@ -74,12 +75,6 @@ mod main_test_vertex_shader {
             };
 
             void main() {
-                // Transforms (width=2, height=2) -> (width=1, height=1)
-                mat4 window_absolute_scale = mat4(
-                    vec4(2, 0, 0, 0),
-                    vec4(0, 2, 0, 0),
-                    vec4(0, 0, 1, 0),
-                    vec4(0, 0, 0, 1));
                 // Transforms (width=1, height=1) -> (width=1024, height=768)
                 mat4 window_pixel_scale = mat4(
                     vec4(1/1024.0, 0, 0, 0),
@@ -88,13 +83,12 @@ mod main_test_vertex_shader {
                     vec4(0, 0, 0, 1));
                 // Transforms (-1024/2, -768/2) top-left -> (0, 0) top-left
                 mat4 window_translation = mat4(
-                    vec4(1, 0, 0, 0),
-                    vec4(0, 1, 0, 0),
+                    vec4(2, 0, 0, 0),
+                    vec4(0, 2, 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(-1, -1, 0, 1));
-                mat4 window_scale = window_pixel_scale * window_absolute_scale;
-                vec4 world_position = vec4(transform * vec4(position, 0.0, 1.0));
-                gl_Position = vec4(window_translation * window_scale * world_position);
+                mat4 projection = window_translation * window_pixel_scale;
+                gl_Position = projection * transform * vec4(position, 0.0, 1.0);
             }
         ",
     }
@@ -116,7 +110,7 @@ mod main_test_fragment_shader {
 fn main_test(window_ctx: vk_core::WindowContext, ctx: vk_core::VulkanoContext) -> Result<()> {
     run_test_cases();
 
-    let handler = TestRenderHandler::new(&window_ctx, &ctx)?;
+    let mut handler = TestRenderHandler::new(&window_ctx, &ctx)?;
     handler.start_update_thread();
 
     let (event_loop, window) = window_ctx.consume();
@@ -134,6 +128,63 @@ impl RenderData {
     }
 }
 
+struct SpinningTriangle {
+    pos: Vec2,
+    velocity: Vec2,
+    render_data: Arc<Mutex<RenderData>>,
+    t: f64,
+}
+
+impl SpinningTriangle {
+    const VELOCITY: f64 = 500.0;
+    const ANGULAR_VELOCITY: f64 = 1.0;
+
+    fn new(pos: Vec2) -> Self {
+        let mut rng = rand::thread_rng();
+        let velocity = Vec2 {
+            x: rng.gen_range(-1.0..1.0),
+            y: rng.gen_range(-1.0..1.0),
+        }
+            .normed() * Self::VELOCITY;
+        Self { pos, velocity, render_data: RenderData::new(), t: 0.0 }
+    }
+
+    fn create_vertices(&self) -> Vec<Vec2> {
+        let tri_width = 50.0;
+        let tri_height = tri_width * 3.0.sqrt();
+        let centre_correction = -tri_height / 6.0;
+        let vertex1 = Vec2 {
+            x: -tri_width,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex2 = Vec2 {
+            x: tri_width,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex3 = Vec2 {
+            x: 0.0,
+            y: tri_height / 2.0 - centre_correction,
+        };
+        vec![vertex1, vertex2, vertex3]
+    }
+
+    fn on_update(&mut self, delta: f64) {
+        self.t += delta;
+        let next_pos = self.pos + self.velocity * delta;
+        if !(0.0..1024.0).contains(&next_pos.x) {
+            self.velocity.x = -self.velocity.x;
+        }
+        if !(0.0..768.0).contains(&next_pos.y) {
+            self.velocity.y = -self.velocity.y;
+        }
+        self.pos += self.velocity * delta;
+        let radians = Self::ANGULAR_VELOCITY * f64::PI() * self.t;
+        let rotation = Mat3x3::rotation(radians);
+        let translation = Mat3x3::translation_vec2(self.pos);
+        self.render_data.lock().unwrap().transform = translation * rotation;
+    }
+}
+
 struct TestRenderHandler {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
@@ -141,8 +192,8 @@ struct TestRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
+    objects: Option<SpinningTriangle>,
     render_data: Arc<Mutex<RenderData>>,
-    pos: Vec2,
 }
 
 impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler {
@@ -169,77 +220,17 @@ impl vk_core::RenderEventHandler<PrimaryAutoCommandBuffer> for TestRenderHandler
 }
 
 impl TestRenderHandler {
-    fn create_vertices() -> (Vec2, Vec<Vec2>) {
-        let tri_width = 100.0;
-        let tri_height = tri_width * 3.0.sqrt();
-        let centre_correction = -tri_height / 6.0;
-        let vertex1 = Vec2 {
-            x: -tri_width,
-            y: -tri_height / 2.0 - centre_correction,
-        };
-        let vertex2 = Vec2 {
-            x: tri_width,
-            y: -tri_height / 2.0 - centre_correction,
-        };
-        let vertex3 = Vec2 {
-            x: 0.0,
-            y: tri_height / 2.0 - centre_correction,
-        };
-        let pos = Vec2 {
-            x: (vertex1.x + vertex2.x + vertex3.x) / 3.0,
-            y: (vertex1.y + vertex2.y + vertex3.y) / 3.0,
-        };
-        (pos, vec![vertex1, vertex2, vertex3])
-    }
-
-    fn start_update_thread(&self) {
-        let render_data = self.render_data.clone();
-        let mut pos = self.pos;
-
-        std::thread::spawn(move || {
-            let mut rng = rand::thread_rng();
-            let mut t = 0.0;
-            let world_pos_offset = Vec2 { x: 512.0, y: 384.0 };
-            let mut velocity = Vec2 {
-                x: rng.gen_range(-1.0..1.0),
-                y: rng.gen_range(-1.0..1.0),
-            }
-                .normed() * 200.0;
-            let mut delta = 0.0;
-            loop {
-                let now = Instant::now();
-                t += delta;
-                let next_world_pos = pos + world_pos_offset + velocity * delta;
-                if !(0.0..1024.0).contains(&next_world_pos.x) {
-                    velocity.x = -velocity.x;
-                }
-                if !(0.0..768.0).contains(&next_world_pos.y) {
-                    velocity.y = -velocity.y;
-                }
-                pos += velocity * delta;
-                let radians = 1.0 * f64::PI() * t;
-                let rotation = Mat3x3::translation_vec2(pos)
-                    * Mat3x3::rotation(radians)
-                    * Mat3x3::translation_vec2(-pos);
-                let translation = Mat3x3::translation_vec2(pos);
-                let world = Mat3x3::translation_vec2(world_pos_offset);
-                render_data.lock().unwrap().transform = world * rotation * translation;
-                thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
-                delta = now.elapsed().as_secs_f64();
-            }
-        });
-    }
-
     fn new(window_ctx: &vk_core::WindowContext, ctx: &VulkanoContext) -> Result<Self> {
+        let objects = SpinningTriangle::new(Vec2 { x: 256.0, y: 192.0 });
+        let render_data = objects.render_data.clone();
+
         let vs = main_test_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
         let fs = main_test_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
-        let (pos, _) = Self::create_vertices();
-        let vertex_buffer = Self::create_vertex_buffer(ctx)?;
+        let vertex_buffer = Self::create_vertex_buffer(ctx, &objects.create_vertices())?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
-        let render_data = RenderData::new();
         Ok(Self {
             vs,
             fs,
@@ -247,16 +238,30 @@ impl TestRenderHandler {
             uniform_buffers,
             viewport,
             command_buffers: None,
+            objects: Some(objects),
             render_data,
-            pos,
         })
     }
 
-    fn create_vertex_buffer(ctx: &VulkanoContext) -> Result<Subbuffer<[TestVertex]>> {
-        let (_, vertices) = Self::create_vertices();
+    fn start_update_thread(&mut self) {
+        let mut objects = self.objects.take().unwrap();
+        std::thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+            let mut delta = 0.0;
+            loop {
+                let now = Instant::now();
+                objects.on_update(delta);
+                thread::sleep(Duration::from_micros(rng.gen_range(500..5_000)));
+                delta = now.elapsed().as_secs_f64();
+            }
+
+        });
+    }
+
+    fn create_vertex_buffer(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<Subbuffer<[TestVertex]>> {
         let vertices = vertices
-            .into_iter()
-            .map(|v| TestVertex { position: v.into() });
+            .iter()
+            .map(|&v| TestVertex { position: v.into() });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),
             BufferCreateInfo {
