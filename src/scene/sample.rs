@@ -1,12 +1,18 @@
 use std::time::{Duration, Instant};
 use num_traits::{Float, FloatConst};
 use rand::Rng;
-use tracing::info;
 
 use crate::{
     core::linalg::Vec2,
-    gg::core::{RenderData, SceneObject},
-    gg::core::UpdateContext
+    gg::{
+        core::{
+            RenderData,
+            SceneObject,
+            UpdateContext,
+            RenderableObject,
+            WorldObject
+        }
+    }
 };
 
 #[derive(Clone)]
@@ -34,29 +40,11 @@ impl SpinningTriangle {
     }
 }
 impl SceneObject for SpinningTriangle {
-    fn create_vertices(&self) -> Vec<Vec2> {
-        let tri_height = Self::TRI_WIDTH * 3.0.sqrt();
-        let centre_correction = -tri_height / 6.0;
-        let vertex1 = Vec2 {
-            x: -Self::TRI_WIDTH,
-            y: -tri_height / 2.0 - centre_correction,
-        };
-        let vertex2 = Vec2 {
-            x: Self::TRI_WIDTH,
-            y: -tri_height / 2.0 - centre_correction,
-        };
-        let vertex3 = Vec2 {
-            x: 0.0,
-            y: tri_height / 2.0 - centre_correction,
-        };
-        vec![vertex1, vertex2, vertex3]
-    }
-
     fn on_ready(&mut self) {
         self.last_spawn = Instant::now();
     }
 
-    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext) -> RenderData {
+    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
@@ -68,8 +56,10 @@ impl SceneObject for SpinningTriangle {
         }
         if self.alive_since.elapsed().as_secs() > 2 {
             for other in update_ctx.others() {
-                if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
-                    self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
+                if let Some(other) = other.as_world_object() {
+                    if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
+                        self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
+                    }
                 }
             }
         }
@@ -78,20 +68,46 @@ impl SceneObject for SpinningTriangle {
         if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
             self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.4) {
-                // info!("split!");
+            if rng.gen_bool(0.1) {
                 let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };
-                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, vel.normed())));
-                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, -vel.normed())));
+                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, (self.velocity - vel).normed())));
+                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, (self.velocity + vel).normed())));
                 update_ctx.remove_this_object();
             }
         }
-
-        RenderData {
-            position: self.pos,
-            rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
-        }
     }
 
+    fn as_world_object(&self) -> Option<&dyn WorldObject> { Some(self) }
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> { Some(self) }
+}
+
+impl WorldObject for SpinningTriangle {
     fn world_pos(&self) -> Vec2 { self.pos }
+}
+
+impl RenderableObject for SpinningTriangle {
+    fn create_vertices(&self) -> Vec<Vec2> {
+        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
+        let centre_correction = -tri_height / 6.0;
+        let vertex1 = Vec2 {
+            x: -SpinningTriangle::TRI_WIDTH,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex2 = Vec2 {
+            x: SpinningTriangle::TRI_WIDTH,
+            y: -tri_height / 2.0 - centre_correction,
+        };
+        let vertex3 = Vec2 {
+            x: 0.0,
+            y: tri_height / 2.0 - centre_correction,
+        };
+        vec![vertex1, vertex2, vertex3]
+    }
+
+    fn render_data(&self) -> RenderData {
+        RenderData {
+            position: self.pos,
+            rotation: SpinningTriangle::ANGULAR_VELOCITY * f64::PI() * self.t,
+        }
+    }
 }

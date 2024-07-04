@@ -3,7 +3,7 @@ use std::collections::hash_map::Values;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use num_traits::Zero;
+
 use tracing::info;
 
 use crate::{
@@ -14,10 +14,20 @@ use crate::{
 };
 
 pub trait SceneObject: Send {
-    fn create_vertices(&self) -> Vec<Vec2> { Vec::new() }
     fn on_ready(&mut self);
-    fn on_update(&mut self, delta: Duration, update_handler: UpdateContext) -> RenderData;
-    fn world_pos(&self) -> Vec2 { Vec2::zero() }
+    fn on_update(&mut self, delta: Duration, update_handler: UpdateContext);
+
+    fn as_world_object(&self) -> Option<&dyn WorldObject> { None }
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> { None }
+}
+
+pub trait WorldObject: SceneObject {
+    fn world_pos(&self) -> Vec2;
+}
+
+pub trait RenderableObject: SceneObject {
+    fn create_vertices(&self) -> Vec<Vec2>;
+    fn render_data(&self) -> RenderData;
 }
 
 pub struct UpdateContext<'a> {
@@ -49,10 +59,16 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
     pub(crate) fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, render_data_receiver: Arc<Mutex<Receiver>>) -> Self {
         let objects: HashMap<usize, _> = objects.into_iter().enumerate().collect();
         let vertices = objects.iter()
-            .map(|(&i, obj)| (i, obj.borrow().create_vertices()))
+            .filter_map(|(&i, obj)|
+                        obj.borrow()
+                            .as_renderable_object()
+                            .map(|obj| (i, obj.create_vertices())))
             .collect();
-        let render_data = objects.keys()
-            .map(|&i| (i, RenderData::empty()))
+        let render_data = objects.iter()
+            .filter_map(|(&i, obj)|
+            obj.borrow()
+                .as_renderable_object()
+                .map(|obj| (i, obj.render_data())))
             .collect();
         let rv = Self {
             objects,
@@ -81,11 +97,12 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
                 pending_add_objects: &mut pending_add_objects,
                 pending_remove_objects: &mut pending_remove_objects,
             };
-            let next_render_data = self.objects[&object_id]
-                .borrow_mut()
-                .on_update(delta, update_ctx);
-            self.render_data.insert(object_id, next_render_data);
-            other_map.insert(object_id, self.objects[&object_id].borrow());
+            let obj = &self.objects[&object_id];
+            obj.borrow_mut().on_update(delta, update_ctx);
+            other_map.insert(object_id, obj.borrow());
+            if let Some(obj) = obj.borrow().as_renderable_object() {
+                self.render_data.insert(object_id, obj.render_data());
+            }
         }
 
         (pending_add_objects, pending_remove_objects)
@@ -129,8 +146,10 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
                     Some(&last_id) => last_id + 1,
                     None => 0,
                 };
-                self.render_data.insert(next_id, RenderData::empty());
-                self.vertices.insert(next_id, new_obj.create_vertices());
+                if let Some(obj) = new_obj.as_renderable_object() {
+                    self.vertices.insert(next_id, obj.create_vertices());
+                    self.render_data.insert(next_id, obj.render_data());
+                }
                 self.objects.insert(next_id, RefCell::new(new_obj));
                 self.objects[&next_id].borrow_mut().on_ready();
             }
@@ -158,10 +177,6 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
 pub struct RenderData {
     pub position: Vec2,
     pub rotation: f64,
-}
-
-impl RenderData {
-    pub(crate) fn empty() -> Self { Self { position: Vec2::zero(), rotation: 0.0 } }
 }
 
 pub trait RenderDataReceiver {

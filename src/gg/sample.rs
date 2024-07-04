@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use num_traits::Zero;
 
 use anyhow::{Context, Result};
-use tracing::info;
 
 use vulkano::{
     pipeline::{
