@@ -1,6 +1,7 @@
 use std::time::Instant;
 use num_traits::{Float, FloatConst};
 use rand::Rng;
+use tracing::info;
 
 use crate::{
     core::linalg::Vec2,
@@ -14,6 +15,7 @@ pub struct SpinningTriangle {
     velocity: Vec2,
     t: f64,
     last_spawn: Instant,
+    alive_since: Instant,
 }
 
 impl SpinningTriangle {
@@ -22,7 +24,13 @@ impl SpinningTriangle {
     const ANGULAR_VELOCITY: f64 = 1.0;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
-        Self { pos, velocity: vel_normed * Self::VELOCITY, t: 0.0, last_spawn: Instant::now() }
+        Self {
+            pos,
+            velocity: vel_normed * Self::VELOCITY,
+            t: 0.0,
+            last_spawn: Instant::now(),
+            alive_since: Instant::now()
+        }
     }
 }
 impl SceneObject for SpinningTriangle {
@@ -57,19 +65,27 @@ impl SceneObject for SpinningTriangle {
         if !(0.0..768.0).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
-        for other in update_ctx.others() {
-            if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
-                self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
+        if self.alive_since.elapsed().as_secs() > 2 {
+            for other in update_ctx.others() {
+                if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
+                    self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
+                }
             }
         }
         self.pos += self.velocity * delta;
-        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
-            let mut rng = rand::thread_rng();
-            let pos = Vec2 { x: rng.gen_range(0.0..1024.0), y: rng.gen_range(0.0..768.0) };
-            let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };
-            update_ctx.add_object(Box::new(SpinningTriangle::new(pos, vel.normed())));
+
+        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 1000 {
             self.last_spawn = Instant::now();
+            let mut rng = rand::thread_rng();
+            if rng.gen_bool(0.2) {
+                info!("split!");
+                let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };
+                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, vel.normed())));
+                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, -vel.normed())));
+                update_ctx.remove_this_object();
+            }
         }
+
         RenderData {
             position: self.pos,
             rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,

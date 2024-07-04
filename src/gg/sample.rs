@@ -55,22 +55,31 @@ struct BasicVertex {
 }
 
 struct BasicRenderDataReceiver {
-    all_vertices: Vec<Vec2>,
-    pending_vertices: DataPerImage<Vec<Vec2>>,
+    vertices: Vec<Vec2>,
+    vertices_up_to_date: DataPerImage<bool>,
     render_data: Vec<RenderData>,
 }
+impl BasicRenderDataReceiver {
+    fn new(ctx: &VulkanoContext, vertices: Vec<Vec2>, render_data: Vec<RenderData>) -> Self {
+        Self {
+            vertices,
+            vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
+            render_data,
+        }
+    }
+}
 impl RenderDataReceiver for BasicRenderDataReceiver {
-    fn add_vertices(&mut self, mut vertices: Vec<Vec2>) {
-        self.pending_vertices.clone_from_value(vertices.clone());
-        self.all_vertices.append(&mut vertices);
+    fn replace_vertices(&mut self, vertices: Vec<Vec2>) {
+        self.vertices_up_to_date.clone_from_value(false);
+        self.vertices = vertices;
     }
 
-    fn update_from(&mut self, render_data: Vec<RenderData>) {
+    fn update_render_data(&mut self, render_data: Vec<RenderData>) {
         self.render_data = render_data;
     }
 
-    fn cloned(&self) -> Vec<RenderData> {
-        self.render_data.clone()
+    fn clone_data(&self) -> (Vec<Vec2>, Vec<RenderData>) {
+        (self.vertices.clone(), self.render_data.clone())
     }
 }
 
@@ -105,8 +114,8 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         if let Ok(mut receiver) = self.render_data_receiver.lock() {
-            if !receiver.pending_vertices.current_value(per_image_ctx).is_empty() {
-                *self.vertex_buffers.current_value_mut(per_image_ctx) = Self::create_single_vertex_buffer(ctx, &receiver.all_vertices)?;
+            if !receiver.vertices_up_to_date.current_value(per_image_ctx) {
+                *self.vertex_buffers.current_value_mut(per_image_ctx) = Self::create_single_vertex_buffer(ctx, &receiver.vertices)?;
                 *self.command_buffers.as_mut().unwrap().current_value_mut(per_image_ctx) =
                     self.create_single_command_buffer(
                         ctx,
@@ -114,13 +123,13 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                         self.uniform_buffer_sets.clone().unwrap().current_value(per_image_ctx).clone(),
                         self.vertex_buffers.current_value(per_image_ctx)
                     )?;
-                receiver.pending_vertices.current_value_mut(per_image_ctx).clear();
+                *receiver.vertices_up_to_date.current_value_mut(per_image_ctx) = true;
             }
 
             let vertex_buffer = self.vertex_buffers.current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
-                    position: receiver.all_vertices[i].into(),
+                    position: receiver.vertices[i].into(),
                     translation: receiver.render_data[i/3].position.into(),
                     rotation: receiver.render_data[i/3].rotation as f32,
                 };
@@ -139,11 +148,8 @@ impl BasicRenderHandler {
             vertices.append(&mut object.borrow().create_vertices());
         }
         let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; objects.len()];
-        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver {
-            all_vertices: vertices.clone(),
-            pending_vertices: DataPerImage::new_with_value(ctx, Vec::new()),
-            render_data,
-        }));
+        let render_data_receiver = Arc::new(Mutex::new(
+            BasicRenderDataReceiver::new(ctx, vertices.clone(), render_data)));
 
         let vs = basic_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;

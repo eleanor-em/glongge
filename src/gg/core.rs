@@ -1,4 +1,5 @@
 use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use num_traits::Zero;
@@ -19,14 +20,18 @@ pub trait SceneObject: Send {
 
 pub struct UpdateContext<'a> {
     others: SafeObjectList<'a>,
-    pending_objects: &'a mut Vec<Box<dyn SceneObject>>,
+    pending_add_objects: &'a mut Vec<Box<dyn SceneObject>>,
+    pending_remove_objects: &'a mut Vec<usize>,
 }
 
 impl<'a> UpdateContext<'a> {
     pub fn others(&self) -> SafeObjectList<'a> { self.others.clone() }
 
     pub fn add_object(&mut self, object: Box<dyn SceneObject>) {
-        self.pending_objects.push(object);
+        self.pending_add_objects.push(object);
+    }
+    pub fn remove_this_object(&mut self) {
+        self.pending_remove_objects.push(self.others.owner_index);
     }
 }
 
@@ -39,36 +44,51 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
     pub fn consume(mut self) {
         let mut delta = 0.0;
         let mut timer = TimeIt::new("update");
-        let mut render_data = self.render_data_receiver.lock().unwrap().cloned();
+        let mut vertices: Vec<Vec<Vec2>> = self.objects.iter()
+            .map(|obj| obj.borrow().create_vertices())
+            .collect();
+        let mut render_data = {
+            let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
+            render_data_receiver.replace_vertices(vertices.clone().into_iter().flatten().collect());
+            render_data_receiver.clone_data().1
+        };
         loop {
             let now = Instant::now();
             timer.start();
-            let mut pending_objects = Vec::new();
+            let mut pending_add_objects = Vec::new();
+            let mut pending_remove_objects = Vec::new();
             for i in 0..self.objects.len() {
                 let update_ctx = UpdateContext {
                     others: SafeObjectList::new(i, &self.objects),
-                    pending_objects: &mut pending_objects,
+                    pending_add_objects: &mut pending_add_objects,
+                    pending_remove_objects: &mut pending_remove_objects,
                 };
                 let next_render_data = self.objects[i]
                     .borrow_mut()
                     .on_update(delta, update_ctx);
                 render_data[i] = next_render_data;
             }
-            let vertices: Vec<Vec2> = pending_objects.iter()
-                .map(|obj| obj.create_vertices())
-                .flatten()
-                .collect();
-            for mut pending_obj in pending_objects {
+
+            let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
+
+            for remove_index in pending_remove_objects.into_iter().rev() {
+                vertices.remove(remove_index);
+                render_data.remove(remove_index);
+                self.objects.remove(remove_index);
+            }
+
+            for mut new_obj in pending_add_objects {
+                new_obj.on_ready();
                 render_data.push(RenderData::empty());
-                pending_obj.on_ready();
-                self.objects.push(RefCell::new(pending_obj));
+                vertices.push(new_obj.create_vertices());
+                self.objects.push(RefCell::new(new_obj));
             }
             {
                 let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
-                if !vertices.is_empty() {
-                    render_data_receiver.add_vertices(vertices);
+                if did_update_vertices {
+                    render_data_receiver.replace_vertices(vertices.clone().into_iter().flatten().collect());
                 }
-                render_data_receiver.update_from(render_data.clone());
+                render_data_receiver.update_render_data(render_data.clone());
             }
 
             timer.stop();
@@ -119,7 +139,7 @@ impl RenderData {
 }
 
 pub trait RenderDataReceiver {
-    fn add_vertices(&mut self, vertices: Vec<Vec2>);
-    fn update_from(&mut self, render_data: Vec<RenderData>);
-    fn cloned(&self) -> Vec<RenderData>;
+    fn replace_vertices(&mut self, vertices: Vec<Vec2>);
+    fn update_render_data(&mut self, render_data: Vec<RenderData>);
+    fn clone_data(&self) -> (Vec<Vec2>, Vec<RenderData>);
 }
