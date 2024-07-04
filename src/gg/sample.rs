@@ -1,9 +1,8 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
 use num_traits::{One, Zero};
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 
 use vulkano::{
     pipeline::{
@@ -35,18 +34,31 @@ use winit::window::Window;
 use crate::{
     core::{
         linalg::{Mat3x3, Vec2},
-        util::TimeIt,
         vk_core::{DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext},
     },
-    gg::core::{RenderData, SafeObjectList, SceneObject},
+    gg::core::{RenderData, SceneObject},
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
+use crate::gg::core::{RenderDataReceiver, UpdateHandler};
 
 #[derive(BufferContents, Vertex, Clone, Copy)]
 #[repr(C)]
 struct BasicVertex {
     #[format(R32G32_SFLOAT)]
     position: [f32; 2],
+}
+
+struct BasicRenderDataReceiver(Vec<RenderData>);
+impl RenderDataReceiver for BasicRenderDataReceiver {
+    fn update_from(&mut self, render_data: &[RenderData]) -> Result<()> {
+        let max_size = self.0.len();
+        self.0.clone_from_slice(&render_data[0..max_size]);
+        Ok(())
+    }
+
+    fn cloned(&self) -> Vec<RenderData> {
+        self.0.clone()
+    }
 }
 
 pub struct BasicRenderHandler {
@@ -57,8 +69,8 @@ pub struct BasicRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
     viewport: Viewport,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    objects: Option<Vec<RefCell<Box<dyn SceneObject>>>>,
-    render_data: Arc<Mutex<Vec<RenderData>>>,
+    update_handler: Option<UpdateHandler<BasicRenderDataReceiver>>,
+    render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
 }
 
 impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
@@ -67,7 +79,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         ctx: &VulkanoContext,
         _per_image_ctx: &mut MutexGuard<PerImageContext>,
         window: Arc<Window>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         self.viewport.extent = window.inner_size().into();
         self.create_command_buffers(ctx)?;
         Ok(())
@@ -75,15 +87,15 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 
     fn on_render(
         &mut self,
-        _ctx: &VulkanoContext,
+        ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
-    ) -> anyhow::Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        if let Ok(render_data) = self.render_data.lock() {
+    ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
+        if let Ok(render_data) = self.render_data_receiver.lock() {
             let vertex_buffer = self.vertex_buffers.current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
-                    position: (Mat3x3::translation_vec2(render_data[i/3].position)
-                        * Mat3x3::rotation(render_data[i/3].rotation)
+                    position: (Mat3x3::translation_vec2(render_data.0[i/3].position)
+                        * Mat3x3::rotation(render_data.0[i/3].rotation)
                         * self.vertices[i]).into()
                 };
             }
@@ -94,13 +106,14 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 }
 
 impl BasicRenderHandler {
-    pub fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, window_ctx: &WindowContext, ctx: &VulkanoContext) -> anyhow::Result<Self> {
+    pub fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
         // 3 vertices per object is a safe lower bound.
         let mut vertices = Vec::with_capacity(3 * objects.len());
         for object in objects.iter() {
             vertices.append(&mut object.borrow().create_vertices());
         }
-        let render_data = Arc::new(Mutex::new(vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; objects.len()]));
+        let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; objects.len()];
+        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver(render_data)));
 
         let vs = basic_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
@@ -117,34 +130,17 @@ impl BasicRenderHandler {
             uniform_buffers,
             viewport,
             command_buffers: None,
-            objects: Some(objects),
-            render_data,
+            update_handler: Some(UpdateHandler { objects, render_data_receiver: render_data_receiver.clone() }),
+            render_data_receiver,
         })
     }
 
-    pub(crate) fn start_update_thread(&mut self) {
-        let objects = self.objects.take().unwrap();
-        let render_data = self.render_data.clone();
-        std::thread::spawn(move || {
-            let mut delta = 0.0;
-            let mut last_render_data = render_data.lock().unwrap().clone();
-            let mut timer = TimeIt::new("update");
-            loop {
-                let now = Instant::now();
-                timer.start();
-                for i in 0..objects.len() {
-                    let others = SafeObjectList::new(i, &objects);
-                    last_render_data[i] = objects[i].borrow_mut().on_update(delta, others);
-                }
-                render_data.lock().unwrap().clone_from_slice(&last_render_data);
-                timer.stop();
-                timer.report_ms_every(5);
-                delta = now.elapsed().as_secs_f64();
-            }
-        });
+    pub fn start_update_thread(&mut self) {
+        let update_handler = self.update_handler.take().unwrap();
+        std::thread::spawn(move || update_handler.consume());
     }
 
-    fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> anyhow::Result<DataPerImage<Subbuffer<[BasicVertex]>>> {
+    fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<DataPerImage<Subbuffer<[BasicVertex]>>> {
         let vertices = vertices
             .iter()
             .map(|&v| BasicVertex { position: v.into() });
@@ -165,7 +161,7 @@ impl BasicRenderHandler {
             )?))
     }
 
-    fn create_uniform_buffers(ctx: &VulkanoContext) -> anyhow::Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
+    fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
         Ok(DataPerImage::new_with_value(
             ctx,
             Buffer::new_sized::<[[f32; 4]; 4]>(
@@ -183,7 +179,7 @@ impl BasicRenderHandler {
         ))
     }
 
-    fn create_pipeline(&self, ctx: &VulkanoContext) -> anyhow::Result<Arc<GraphicsPipeline>> {
+    fn create_pipeline(&self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
         let vs = self
             .vs
             .entry_point("main")
@@ -227,7 +223,7 @@ impl BasicRenderHandler {
         )?)
     }
 
-    fn create_command_buffers(&mut self, ctx: &VulkanoContext) -> anyhow::Result<()> {
+    fn create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
         let pipeline = self.create_pipeline(ctx)?;
         let uniform_buffer_sets = self.uniform_buffers.try_map(|buffer| {
             Ok(PersistentDescriptorSet::new(

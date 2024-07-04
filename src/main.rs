@@ -46,7 +46,7 @@ fn main() -> Result<()> {
 fn main_test(window_ctx: WindowContext, ctx: VulkanoContext) -> Result<()> {
     run_test_cases();
 
-    const N: usize = 500;
+    const N: usize = 10;
     let mut rng = rand::thread_rng();
     let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
     let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
