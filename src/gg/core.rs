@@ -93,9 +93,9 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
     fn update_render_data(&self, did_update_vertices: bool) {
         let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
         if did_update_vertices {
-            render_data_receiver.update_vertices(self.vertices.values().cloned().into_iter().flatten().collect());
+            render_data_receiver.update_vertices(self.vertices.values().flatten().cloned().collect());
         }
-        render_data_receiver.update_render_data(self.render_data.values().cloned().into_iter().collect());
+        render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
     }
     pub fn consume(mut self) {
         let mut delta = Duration::from_secs(0);

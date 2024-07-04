@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard};
-use num_traits::{One, Zero};
+use num_traits::Zero;
 
 use anyhow::{Context, Result};
 use tracing::info;
@@ -35,7 +35,7 @@ use winit::window::Window;
 
 use crate::{
     core::{
-        linalg::{Mat3x3, Vec2},
+        linalg::Vec2,
         vk_core::{DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext},
     },
     gg::core::{RenderData, SceneObject},
@@ -43,6 +43,12 @@ use crate::{
 };
 use crate::gg::core::{RenderDataReceiver, UpdateHandler};
 
+#[derive(BufferContents, Clone, Copy)]
+#[repr(C)]
+struct BasicUniformData {
+    window_width: f32,
+    window_height: f32,
+}
 #[derive(BufferContents, Vertex, Clone, Copy)]
 #[repr(C)]
 struct BasicVertex {
@@ -85,7 +91,7 @@ pub struct BasicRenderHandler {
     viewport: Viewport,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffers: Option<DataPerImage<Subbuffer<[BasicVertex]>>>,
-    uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
+    uniform_buffers: DataPerImage<Subbuffer<BasicUniformData>>,
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     update_handler: Option<UpdateHandler<BasicRenderDataReceiver>>,
@@ -112,12 +118,14 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         if let Ok(mut receiver) = self.render_data_receiver.clone().lock() {
+            // Create vertex buffers if we haven't already.
             if self.vertex_buffers.is_none() {
                 self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx,
                     || Self::create_single_vertex_buffer(ctx, &receiver.vertices))?);
                 self.create_command_buffers(ctx)?;
             }
 
+            // Update vertex and command buffers if vertex count changed.
             if !receiver.vertices_up_to_date.current_value(per_image_ctx) {
                 *self.vertex_buffers.as_mut().unwrap().current_value_mut(per_image_ctx) =
                     Self::create_single_vertex_buffer(ctx, &receiver.vertices)?;
@@ -131,6 +139,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 *receiver.vertices_up_to_date.current_value_mut(per_image_ctx) = true;
             }
 
+            // Write the vertices.
             let vertex_buffer = self.vertex_buffers.as_mut().unwrap().current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
@@ -140,7 +149,10 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 };
             }
         }
-        *self.uniform_buffers.current_value(per_image_ctx).write()? = Mat3x3::one().into();
+        *self.uniform_buffers.current_value(per_image_ctx).write()? = BasicUniformData {
+            window_width: self.viewport.extent[0],
+            window_height: self.viewport.extent[1],
+        };
         Ok(self.command_buffers.clone().unwrap())
     }
 }
@@ -196,10 +208,10 @@ impl BasicRenderHandler {
         )?)
     }
 
-    fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
+    fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<BasicUniformData>>> {
         Ok(DataPerImage::new_with_value(
             ctx,
-            Buffer::new_sized::<[[f32; 4]; 4]>(
+            Buffer::new_sized(
                 ctx.memory_allocator(),
                 BufferCreateInfo {
                     usage: BufferUsage::UNIFORM_BUFFER,
