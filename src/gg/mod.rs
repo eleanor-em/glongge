@@ -1,8 +1,8 @@
 pub mod sample;
 
 use std::{
-    cell::{Ref, RefCell},
-    collections::{hash_map::Values, HashMap},
+    cell::{RefCell, RefMut},
+    collections::HashMap,
     sync::{
         mpsc::{Receiver, Sender},
         Arc, Mutex,
@@ -13,6 +13,11 @@ use std::{
 use tracing::info;
 
 use crate::core::{linalg::Vec2, util::TimeIt};
+
+pub struct SceneObjectWithId<'a> {
+    object_id: usize,
+    inner: RefMut<'a, Box<dyn SceneObject>>,
+}
 
 pub trait SceneObject: Send {
     fn on_ready(&mut self);
@@ -35,17 +40,38 @@ pub trait RenderableObject: SceneObject {
     fn render_data(&self) -> RenderData;
 }
 
+impl<'a> SceneObjectWithId<'a> {
+    pub fn on_ready(&mut self) {
+        self.inner.on_ready()
+    }
+
+    pub fn on_update(&mut self, delta: Duration, update_handler: UpdateContext) {
+        self.inner.on_update(delta, update_handler)
+    }
+
+    pub fn as_world_object(&self) -> Option<&dyn WorldObject> {
+        self.inner.as_world_object()
+    }
+
+    pub fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+        self.inner.as_renderable_object()
+    }
+}
+
 pub struct UpdateContext<'a> {
     scene_instruction_tx: Sender<SceneInstruction>,
     object_id: usize,
-    others: &'a HashMap<usize, Ref<'a, Box<dyn SceneObject>>>,
+    others: &'a HashMap<usize, SceneObjectWithId<'a>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject>>,
     pending_remove_objects: &'a mut Vec<usize>,
 }
 
 impl<'a> UpdateContext<'a> {
-    pub fn others(&self) -> Values<usize, Ref<'a, Box<dyn SceneObject>>> {
-        self.others.values()
+    pub fn others(&self) -> Vec<&SceneObjectWithId> {
+        self.others
+            .values()
+            .filter(|obj| !self.pending_remove_objects.contains(&obj.object_id))
+            .collect()
     }
 
     pub fn add_object_vec(&mut self, mut objects: Vec<Box<dyn SceneObject>>) {
@@ -53,6 +79,9 @@ impl<'a> UpdateContext<'a> {
     }
     pub fn add_object(&mut self, object: Box<dyn SceneObject>) {
         self.pending_add_objects.push(object);
+    }
+    pub fn remove_other_object(&mut self, obj: &SceneObjectWithId) {
+        self.pending_remove_objects.push(obj.object_id);
     }
     pub fn remove_this_object(&mut self) {
         self.pending_remove_objects.push(self.object_id);
@@ -125,7 +154,15 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         let mut other_map: HashMap<usize, _> = self
             .objects
             .iter()
-            .map(|(&i, obj)| (i, obj.borrow()))
+            .map(|(&i, obj)| {
+                (
+                    i,
+                    SceneObjectWithId {
+                        object_id: i,
+                        inner: obj.borrow_mut(),
+                    },
+                )
+            })
             .collect();
         for &object_id in self.objects.keys() {
             other_map.remove(&object_id);
@@ -138,10 +175,16 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
             };
             let obj = &self.objects[&object_id];
             obj.borrow_mut().on_update(delta, update_ctx);
-            other_map.insert(object_id, obj.borrow());
             if let Some(obj) = obj.borrow().as_renderable_object() {
                 self.render_data.insert(object_id, obj.render_data());
             }
+            other_map.insert(
+                object_id,
+                SceneObjectWithId {
+                    object_id,
+                    inner: obj.borrow_mut(),
+                },
+            );
         }
 
         (pending_add_objects, pending_remove_objects)
