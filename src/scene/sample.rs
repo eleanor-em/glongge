@@ -1,56 +1,56 @@
 use num_traits::{Float, FloatConst};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
-use std::{
-    cell::RefCell,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use crate::{
-    core::linalg::Vec2,
-    gg::{
-        sample::BasicRenderHandler, RenderData, RenderableObject, SceneObject, UpdateContext,
-        WorldObject,
-    },
-    scene::Scene,
-};
+use crate::{core::linalg::Vec2, gg, gg::sample::BasicRenderHandler, scene::Scene};
 
 pub fn create_spinning_triangle_scene(
     render_handler: &BasicRenderHandler,
 ) -> Scene<BasicRenderHandler> {
-    const N: usize = 10;
-    let mut rng = rand::thread_rng();
-    let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
-        .sample_iter(&mut rng)
-        .take(N)
-        .collect();
-    let ys: Vec<f64> = Uniform::new(0.0, 768.0)
-        .sample_iter(&mut rng)
-        .take(N)
-        .collect();
-    let vxs: Vec<f64> = Uniform::new(-1.0, 1.0)
-        .sample_iter(&mut rng)
-        .take(N)
-        .collect();
-    let vys: Vec<f64> = Uniform::new(-1.0, 1.0)
-        .sample_iter(&mut rng)
-        .take(N)
-        .collect();
-    let objects: Vec<_> = (0..N)
-        .map(|i| {
-            let pos = Vec2 { x: xs[i], y: ys[i] };
-            let vel = Vec2 {
-                x: vxs[i],
-                y: vys[i],
-            };
-            RefCell::new(Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn SceneObject>)
-        })
-        .collect();
-    Scene::new(objects, render_handler)
+    Scene::new(vec![Box::new(Spawner {})], render_handler)
 }
 
-#[derive(Clone)]
-pub struct SpinningTriangle {
+struct Spawner {}
+
+impl gg::SceneObject for Spawner {
+    fn on_ready(&mut self) {}
+
+    fn on_update(&mut self, _delta: Duration, mut update_handler: gg::UpdateContext) {
+        const N: usize = 10;
+        let mut rng = rand::thread_rng();
+        let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
+            .sample_iter(&mut rng)
+            .take(N)
+            .collect();
+        let ys: Vec<f64> = Uniform::new(0.0, 768.0)
+            .sample_iter(&mut rng)
+            .take(N)
+            .collect();
+        let vxs: Vec<f64> = Uniform::new(-1.0, 1.0)
+            .sample_iter(&mut rng)
+            .take(N)
+            .collect();
+        let vys: Vec<f64> = Uniform::new(-1.0, 1.0)
+            .sample_iter(&mut rng)
+            .take(N)
+            .collect();
+        let objects = (0..N)
+            .map(|i| {
+                let pos = Vec2 { x: xs[i], y: ys[i] };
+                let vel = Vec2 {
+                    x: vxs[i],
+                    y: vys[i],
+                };
+                Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn gg::SceneObject>
+            })
+            .collect();
+        update_handler.add_object_vec(objects);
+        update_handler.remove_this_object();
+    }
+}
+
+struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,
@@ -73,10 +73,10 @@ impl SpinningTriangle {
         }
     }
 }
-impl SceneObject for SpinningTriangle {
+impl gg::SceneObject for SpinningTriangle {
     fn on_ready(&mut self) {}
 
-    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext) {
+    fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
@@ -118,30 +118,30 @@ impl SceneObject for SpinningTriangle {
         }
     }
 
-    fn as_world_object(&self) -> Option<&dyn WorldObject> {
+    fn as_world_object(&self) -> Option<&dyn gg::WorldObject> {
         Some(self)
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+    fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject> {
         Some(self)
     }
 }
 
-impl WorldObject for SpinningTriangle {
+impl gg::WorldObject for SpinningTriangle {
     fn world_pos(&self) -> Vec2 {
         self.pos
     }
 }
 
-impl RenderableObject for SpinningTriangle {
+impl gg::RenderableObject for SpinningTriangle {
     fn create_vertices(&self) -> Vec<Vec2> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {
-            x: -SpinningTriangle::TRI_WIDTH,
+            x: -Self::TRI_WIDTH,
             y: -tri_height / 2.0 - centre_correction,
         };
         let vertex2 = Vec2 {
-            x: SpinningTriangle::TRI_WIDTH,
+            x: Self::TRI_WIDTH,
             y: -tri_height / 2.0 - centre_correction,
         };
         let vertex3 = Vec2 {
@@ -151,10 +151,10 @@ impl RenderableObject for SpinningTriangle {
         vec![vertex1, vertex2, vertex3]
     }
 
-    fn render_data(&self) -> RenderData {
-        RenderData {
+    fn render_data(&self) -> gg::RenderData {
+        gg::RenderData {
             position: self.pos,
-            rotation: SpinningTriangle::ANGULAR_VELOCITY * f64::PI() * self.t,
+            rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
         }
     }
 }

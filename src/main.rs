@@ -28,23 +28,16 @@ fn main() -> Result<()> {
                 .with_line_number(true),
         )
         .init();
+    run_test_cases();
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    main_test(window_ctx, ctx)
-}
-
-// this is the "main" test (i.e. used for active dev)
-fn main_test(window_ctx: WindowContext, ctx: VulkanoContext) -> Result<()> {
-    run_test_cases();
-
-    // TODO: replace with Builder pattern
-    let handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
-    let mut scene = create_spinning_triangle_scene(&handler);
+    let render_handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
+    let mut scene = create_spinning_triangle_scene(&render_handler);
     scene.run();
 
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, ctx, handler).run(event_loop);
+    WindowEventHandler::new(window, ctx, render_handler).run(event_loop);
     Ok(())
 }
 

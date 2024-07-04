@@ -48,6 +48,9 @@ impl<'a> UpdateContext<'a> {
         self.others.values()
     }
 
+    pub fn add_object_vec(&mut self, mut objects: Vec<Box<dyn SceneObject>>) {
+        self.pending_add_objects.append(&mut objects);
+    }
     pub fn add_object(&mut self, object: Box<dyn SceneObject>) {
         self.pending_add_objects.push(object);
     }

@@ -22,13 +22,10 @@ pub struct Scene<RenderHandler: RenderEventHandler> {
 }
 
 impl<RenderHandler: RenderEventHandler> Scene<RenderHandler> {
-    pub fn new(
-        initial_objects: Vec<RefCell<Box<dyn SceneObject>>>,
-        render_handler: &RenderHandler,
-    ) -> Self {
+    pub fn new(initial_objects: Vec<Box<dyn SceneObject>>, render_handler: &RenderHandler) -> Self {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         Self {
-            initial_objects: Some(initial_objects),
+            initial_objects: Some(initial_objects.into_iter().map(RefCell::new).collect()),
             render_data_receiver: Some(render_handler.get_receiver()),
             scene_instruction_tx,
             scene_instruction_rx: Some(scene_instruction_rx),
