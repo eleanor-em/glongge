@@ -110,6 +110,20 @@ impl<T: Clone> DataPerImage<T> {
         let data = vec![initial_value; ctx.images.len()];
         Self { data }
     }
+    pub fn try_new_with_generator<F: Fn() -> Result<T>>(ctx: &VulkanoContext, generator: F) -> Result<Self> {
+        let mut data = Vec::new();
+        for _ in 0..ctx.images.len() {
+            data.push(generator()?);
+        }
+        Ok(Self { data })
+    }
+    pub fn new_with_generator<F: Fn() -> T>(ctx: &VulkanoContext, generator: F) -> Self {
+        let mut data = Vec::new();
+        for _ in 0..ctx.images.len() {
+            data.push(generator());
+        }
+        Self { data }
+    }
 
     pub fn clone_from_value(&mut self, new_value: T) {
         self.data = vec![new_value; self.data.len()];

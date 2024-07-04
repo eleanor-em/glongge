@@ -40,20 +40,33 @@ impl<'a> UpdateContext<'a> {
 
 pub struct UpdateHandler<Receiver: RenderDataReceiver> {
     objects: HashMap<usize, RefCell<Box<dyn SceneObject>>>,
+    vertices: HashMap<usize, Vec<Vec2>>,
+    render_data: HashMap<usize, RenderData>,
     render_data_receiver: Arc<Mutex<Receiver>>,
 }
 
 impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
     pub(crate) fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, render_data_receiver: Arc<Mutex<Receiver>>) -> Self {
-        Self {
-            objects: objects.into_iter().enumerate().collect(),
+        let objects: HashMap<usize, _> = objects.into_iter().enumerate().collect();
+        let vertices = objects.iter()
+            .map(|(&i, obj)| (i, obj.borrow().create_vertices()))
+            .collect();
+        let render_data = objects.keys()
+            .map(|&i| (i, RenderData::empty()))
+            .collect();
+        let rv = Self {
+            objects,
+            vertices,
+            render_data,
             render_data_receiver,
-        }
+        };
+        rv.update_render_data(true);
+        rv
     }
 }
 
 impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
-    fn call_on_update(&mut self, delta: Duration, render_data: &mut HashMap<usize, RenderData>) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
+    fn call_on_update(&mut self, delta: Duration) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
 
@@ -71,26 +84,21 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
             let next_render_data = self.objects[&object_id]
                 .borrow_mut()
                 .on_update(delta, update_ctx);
-            render_data.insert(object_id, next_render_data);
+            self.render_data.insert(object_id, next_render_data);
             other_map.insert(object_id, self.objects[&object_id].borrow());
         }
 
         (pending_add_objects, pending_remove_objects)
     }
+    fn update_render_data(&self, did_update_vertices: bool) {
+        let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
+        if did_update_vertices {
+            render_data_receiver.update_vertices(self.vertices.values().cloned().into_iter().flatten().collect());
+        }
+        render_data_receiver.update_render_data(self.render_data.values().cloned().into_iter().collect());
+    }
     pub fn consume(mut self) {
         let mut delta = Duration::from_secs(0);
-        let mut vertices: HashMap<usize, Vec<Vec2>> = self.objects.iter()
-            .map(|(&i, obj)| (i, obj.borrow().create_vertices()))
-            .collect();
-        let render_data = {
-            let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
-            render_data_receiver.replace_vertices(vertices.values().cloned().into_iter().flatten().collect());
-            render_data_receiver.clone_data().1
-        };
-        let mut render_data: HashMap<usize, RenderData> = self.objects.keys().zip(render_data.into_iter())
-            .map(|(&i, v)| (i, v))
-            .collect();
-
         let mut total_stats = TimeIt::new("total");
         let mut update_objects_stats = TimeIt::new("on_update");
         let mut add_objects_stats = TimeIt::new("add objects");
@@ -102,14 +110,15 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
             total_stats.start();
 
             update_objects_stats.start();
-            let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, &mut render_data);
+            let (pending_add_objects, pending_remove_objects) =
+                self.call_on_update(delta);
             let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
             update_objects_stats.stop();
 
             remove_objects_stats.start();
             for remove_index in pending_remove_objects.into_iter().rev() {
-                render_data.remove(&remove_index);
-                vertices.remove(&remove_index);
+                self.render_data.remove(&remove_index);
+                self.vertices.remove(&remove_index);
                 self.objects.remove(&remove_index);
             }
             remove_objects_stats.stop();
@@ -120,24 +129,17 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
                     Some(&last_id) => last_id + 1,
                     None => 0,
                 };
-                render_data.insert(next_id, RenderData::empty());
-                vertices.insert(next_id, new_obj.create_vertices());
+                self.render_data.insert(next_id, RenderData::empty());
+                self.vertices.insert(next_id, new_obj.create_vertices());
                 self.objects.insert(next_id, RefCell::new(new_obj));
                 self.objects[&next_id].borrow_mut().on_ready();
             }
             add_objects_stats.stop();
             render_data_stats.start();
-            {
-                let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
-                if did_update_vertices {
-                    render_data_receiver.replace_vertices(vertices.values().cloned().into_iter().flatten().collect());
-                }
-                render_data_receiver.update_render_data(render_data.values().cloned().into_iter().collect());
-            }
+            self.update_render_data(did_update_vertices);
             render_data_stats.stop();
 
             total_stats.stop();
-
             if last_report.elapsed().as_secs() >= 5 {
                 info!("update stats:");
                 update_objects_stats.report_ms_if_at_least(1.0);
@@ -163,7 +165,6 @@ impl RenderData {
 }
 
 pub trait RenderDataReceiver {
-    fn replace_vertices(&mut self, vertices: Vec<Vec2>);
+    fn update_vertices(&mut self, vertices: Vec<Vec2>);
     fn update_render_data(&mut self, render_data: Vec<RenderData>);
-    fn clone_data(&self) -> (Vec<Vec2>, Vec<RenderData>);
 }
