@@ -10,14 +10,14 @@ use crate::{
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
     },
     gg::sample::BasicRenderHandler,
+    scene::sample::create_spinning_triangle_scene,
 };
-use crate::scene::sample::create_spinning_triangle_scene;
 
 mod assert;
 mod core;
+mod gg;
 mod scene;
 mod shader;
-mod gg;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()

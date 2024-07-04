@@ -1,38 +1,48 @@
-use std::cell::RefCell;
-use std::time::{Duration, Instant};
 use num_traits::{Float, FloatConst};
-use rand::distributions::{
-    Distribution,
-    Uniform
-};
+use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
+use std::{
+    cell::RefCell,
+    time::{Duration, Instant},
+};
 
 use crate::{
     core::linalg::Vec2,
     gg::{
-        core::{
-            RenderData,
-            SceneObject,
-            UpdateContext,
-            RenderableObject,
-            WorldObject
-        },
-        sample::BasicRenderHandler,
+        sample::BasicRenderHandler, RenderData, RenderableObject, SceneObject, UpdateContext,
+        WorldObject,
     },
     scene::Scene,
 };
 
-pub fn create_spinning_triangle_scene(render_handler: &BasicRenderHandler) -> Scene<BasicRenderHandler> {
+pub fn create_spinning_triangle_scene(
+    render_handler: &BasicRenderHandler,
+) -> Scene<BasicRenderHandler> {
     const N: usize = 10;
     let mut rng = rand::thread_rng();
-    let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
-    let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
-    let vxs: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
-    let vys: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
+    let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
+        .sample_iter(&mut rng)
+        .take(N)
+        .collect();
+    let ys: Vec<f64> = Uniform::new(0.0, 768.0)
+        .sample_iter(&mut rng)
+        .take(N)
+        .collect();
+    let vxs: Vec<f64> = Uniform::new(-1.0, 1.0)
+        .sample_iter(&mut rng)
+        .take(N)
+        .collect();
+    let vys: Vec<f64> = Uniform::new(-1.0, 1.0)
+        .sample_iter(&mut rng)
+        .take(N)
+        .collect();
     let objects: Vec<_> = (0..N)
         .map(|i| {
             let pos = Vec2 { x: xs[i], y: ys[i] };
-            let vel = Vec2 { x: vxs[i], y: vys[i] };
+            let vel = Vec2 {
+                x: vxs[i],
+                y: vys[i],
+            };
             RefCell::new(Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn SceneObject>)
         })
         .collect();
@@ -59,14 +69,12 @@ impl SpinningTriangle {
             velocity: vel_normed * Self::VELOCITY,
             t: 0.0,
             last_spawn: Instant::now(),
-            alive_since: Instant::now()
+            alive_since: Instant::now(),
         }
     }
 }
 impl SceneObject for SpinningTriangle {
-    fn on_ready(&mut self) {
-        self.last_spawn = Instant::now();
-    }
+    fn on_ready(&mut self) {}
 
     fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext) {
         let delta_s = delta.as_secs_f64();
@@ -93,20 +101,35 @@ impl SceneObject for SpinningTriangle {
             self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
             if rng.gen_bool(0.1) {
-                let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };
-                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, (self.velocity - vel).normed())));
-                update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, (self.velocity + vel).normed())));
+                let vel = Vec2 {
+                    x: rng.gen_range(-1.0..1.0),
+                    y: rng.gen_range(-1.0..1.0),
+                };
+                update_ctx.add_object(Box::new(SpinningTriangle::new(
+                    self.pos,
+                    (self.velocity - vel).normed(),
+                )));
+                update_ctx.add_object(Box::new(SpinningTriangle::new(
+                    self.pos,
+                    (self.velocity + vel).normed(),
+                )));
                 update_ctx.remove_this_object();
             }
         }
     }
 
-    fn as_world_object(&self) -> Option<&dyn WorldObject> { Some(self) }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> { Some(self) }
+    fn as_world_object(&self) -> Option<&dyn WorldObject> {
+        Some(self)
+    }
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+        Some(self)
+    }
 }
 
 impl WorldObject for SpinningTriangle {
-    fn world_pos(&self) -> Vec2 { self.pos }
+    fn world_pos(&self) -> Vec2 {
+        self.pos
+    }
 }
 
 impl RenderableObject for SpinningTriangle {

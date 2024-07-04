@@ -1,68 +1,50 @@
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    marker::PhantomData,
+    rc::Rc,
+    sync::{Arc, Mutex, MutexGuard},
+    time::Instant,
+};
 
 use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 use crate::assert::*;
 
+use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use vulkano::{
     command_buffer::{
-        allocator::{
-            StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
-        },
-        CommandBufferExecFuture,
-        PrimaryCommandBufferAbstract
+        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+        CommandBufferExecFuture, PrimaryCommandBufferAbstract,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{
-        Device,
-        DeviceCreateInfo,
-        DeviceExtensions,
-        Queue,
-        QueueCreateInfo,
-        QueueFlags,
-        physical::{PhysicalDevice, PhysicalDeviceType}
+        physical::{PhysicalDevice, PhysicalDeviceType},
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
     },
-    image::{
-        Image,
-        ImageUsage,
-        view::ImageView
-    },
+    image::{view::ImageView, Image, ImageUsage},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::StandardMemoryAllocator,
     pipeline::graphics::viewport::Viewport,
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
     swapchain::{
-        self,
-        PresentFuture,
-        Surface,
-        Swapchain,
-        SwapchainAcquireFuture,
-        SwapchainCreateInfo,
-        SwapchainPresentInfo
+        self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        SwapchainPresentInfo,
     },
     sync::{
+        future::{FenceSignalFuture, JoinFuture},
         GpuFuture,
-        future::{FenceSignalFuture, JoinFuture}
     },
-    Validated,
-    VulkanError,
-    VulkanLibrary
+    Validated, VulkanError, VulkanLibrary,
 };
-use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder}
+    window::{Window, WindowBuilder},
 };
 
-use crate::core::util::TimeIt;
-use crate::gg::core::RenderDataReceiver;
+use crate::{core::util::TimeIt, gg::RenderDataReceiver};
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -114,7 +96,10 @@ impl<T: Clone> DataPerImage<T> {
         let data = vec![initial_value; ctx.images.len()];
         Self { data }
     }
-    pub fn try_new_with_generator<F: Fn() -> Result<T>>(ctx: &VulkanoContext, generator: F) -> Result<Self> {
+    pub fn try_new_with_generator<F: Fn() -> Result<T>>(
+        ctx: &VulkanoContext,
+        generator: F,
+    ) -> Result<Self> {
         let mut data = Vec::new();
         for _ in 0..ctx.images.len() {
             data.push(generator()?);
@@ -490,7 +475,8 @@ impl PerImageContext {
     }
 }
 
-pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer> {
+pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
+{
     type DataReceiver: RenderDataReceiver + 'static;
 
     fn on_resize(
@@ -511,10 +497,11 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = Prima
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;
 type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<SwapchainJoinFuture>>>;
 
-pub struct WindowEventHandler<
+pub struct WindowEventHandler<CommandBuffer, RenderHandler>
+where
     CommandBuffer: PrimaryCommandBufferAbstract,
     RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
-> {
+{
     window: Arc<Window>,
     ctx: VulkanoContext,
     render_handler: RenderHandler,
@@ -526,10 +513,10 @@ pub struct WindowEventHandler<
     command_buffer_type: PhantomData<CommandBuffer>,
 }
 
-impl<
-        CommandBuffer: PrimaryCommandBufferAbstract + 'static,
-        RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
-    > WindowEventHandler<CommandBuffer, RenderHandler>
+impl<CommandBuffer, RenderHandler> WindowEventHandler<CommandBuffer, RenderHandler>
+where
+    CommandBuffer: PrimaryCommandBufferAbstract + 'static,
+    RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
     pub fn new(window: Arc<Window>, ctx: VulkanoContext, handler: RenderHandler) -> Self {
         let fences = DataPerImage::new_with_value(&ctx, Rc::new(RefCell::new(None)));
@@ -816,7 +803,8 @@ impl RenderPerfStats {
             self.handle_swapchain.report_ms_if_at_least(min_report_ms);
             self.acquire_and_sync.report_ms_if_at_least(min_report_ms);
             self.on_render.report_ms_if_at_least(min_report_ms);
-            self.submit_command_buffers.report_ms_if_at_least(min_report_ms);
+            self.submit_command_buffers
+                .report_ms_if_at_least(min_report_ms);
             self.end_step.report_ms_if_at_least(min_report_ms);
             self.total.report_ms_if_at_least(min_report_ms);
             self.last_report = Instant::now();

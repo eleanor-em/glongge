@@ -1,45 +1,47 @@
-use std::sync::{Arc, Mutex, MutexGuard};
 use num_traits::Zero;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
 
+use vulkano::render_pass::Framebuffer;
 use vulkano::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
+    },
+    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
         graphics::{
-            vertex_input::{Vertex, VertexDefinition},
-            rasterization::RasterizationState,
-            multisample::MultisampleState,
-            input_assembly::InputAssemblyState,
-            GraphicsPipelineCreateInfo,
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
-            viewport::{Viewport, ViewportState}
+            input_assembly::InputAssemblyState,
+            multisample::MultisampleState,
+            rasterization::RasterizationState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::{Viewport, ViewportState},
+            GraphicsPipelineCreateInfo,
         },
-        GraphicsPipeline,
-        Pipeline,
-        PipelineBindPoint,
-        PipelineLayout,
+        layout::PipelineDescriptorSetLayoutCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
         PipelineShaderStageCreateInfo,
-        layout::PipelineDescriptorSetLayoutCreateInfo
     },
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
-    command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo},
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     render_pass::Subpass,
-    shader::ShaderModule
+    shader::ShaderModule,
 };
-use vulkano::render_pass::Framebuffer;
 use winit::window::Window;
 
+use crate::gg::RenderDataReceiver;
 use crate::{
     core::{
         linalg::Vec2,
-        vk_core::{DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext},
+        vk_core::{
+            DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext,
+        },
     },
-    gg::core::RenderData,
+    gg::RenderData,
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
-use crate::gg::core::RenderDataReceiver;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -119,32 +121,53 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         if let Ok(mut receiver) = self.render_data_receiver.clone().lock() {
             // Create vertex buffers if we haven't already.
             if self.vertex_buffers.is_none() {
-                self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx,
-                    || Self::create_single_vertex_buffer(ctx, &receiver.vertices))?);
+                self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
+                    Self::create_single_vertex_buffer(ctx, &receiver.vertices)
+                })?);
                 self.create_command_buffers(ctx)?;
             }
 
             // Update vertex and command buffers if vertex count changed.
             if !receiver.vertices_up_to_date.current_value(per_image_ctx) {
-                *self.vertex_buffers.as_mut().unwrap().current_value_mut(per_image_ctx) =
+                *self
+                    .vertex_buffers
+                    .as_mut()
+                    .unwrap()
+                    .current_value_mut(per_image_ctx) =
                     Self::create_single_vertex_buffer(ctx, &receiver.vertices)?;
-                *self.command_buffers.as_mut().unwrap().current_value_mut(per_image_ctx) =
-                    self.create_single_command_buffer(
-                        ctx,
-                        ctx.framebuffers().current_value(per_image_ctx).clone(),
-                        self.uniform_buffer_sets.clone().unwrap().current_value(per_image_ctx).clone(),
-                        self.vertex_buffers.as_ref().unwrap().current_value(per_image_ctx)
-                    )?;
-                *receiver.vertices_up_to_date.current_value_mut(per_image_ctx) = true;
+                *self
+                    .command_buffers
+                    .as_mut()
+                    .unwrap()
+                    .current_value_mut(per_image_ctx) = self.create_single_command_buffer(
+                    ctx,
+                    ctx.framebuffers().current_value(per_image_ctx).clone(),
+                    self.uniform_buffer_sets
+                        .clone()
+                        .unwrap()
+                        .current_value(per_image_ctx)
+                        .clone(),
+                    self.vertex_buffers
+                        .as_ref()
+                        .unwrap()
+                        .current_value(per_image_ctx),
+                )?;
+                *receiver
+                    .vertices_up_to_date
+                    .current_value_mut(per_image_ctx) = true;
             }
 
             // Write the vertices.
-            let vertex_buffer = self.vertex_buffers.as_mut().unwrap().current_value_mut(per_image_ctx);
+            let vertex_buffer = self
+                .vertex_buffers
+                .as_mut()
+                .unwrap()
+                .current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
                     position: receiver.vertices[i].into(),
-                    translation: receiver.render_data[i/3].position.into(),
-                    rotation: receiver.render_data[i/3].rotation as f32,
+                    translation: receiver.render_data[i / 3].position.into(),
+                    rotation: receiver.render_data[i / 3].rotation as f32,
                 };
             }
         }
@@ -162,13 +185,16 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 
 impl BasicRenderHandler {
     pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        let render_data_receiver = Arc::new(Mutex::new(
-            BasicRenderDataReceiver::new(ctx, Vec::new(), Vec::new())));
+        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
+            ctx,
+            Vec::new(),
+            Vec::new(),
+        )));
 
-        let vs = basic_vertex_shader::load(ctx.device())
-            .context("failed to create shader module")?;
-        let fs = basic_fragment_shader::load(ctx.device())
-            .context("failed to create shader module")?;
+        let vs =
+            basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
+        let fs =
+            basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         // TODO: better initial value for vertex_buffers
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
@@ -185,10 +211,15 @@ impl BasicRenderHandler {
         })
     }
 
-    fn create_single_vertex_buffer(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<Subbuffer<[BasicVertex]>> {
-        let vertices = vertices
-            .iter()
-            .map(|&v| BasicVertex { position: v.into(), translation: Vec2::zero().into(), rotation: 0.0 });
+    fn create_single_vertex_buffer(
+        ctx: &VulkanoContext,
+        vertices: &[Vec2],
+    ) -> Result<Subbuffer<[BasicVertex]>> {
+        let vertices = vertices.iter().map(|&v| BasicVertex {
+            position: v.into(),
+            translation: Vec2::zero().into(),
+            rotation: 0.0,
+        });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),
             BufferCreateInfo {
@@ -204,7 +235,9 @@ impl BasicRenderHandler {
         )?)
     }
 
-    fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<BasicUniformData>>> {
+    fn create_uniform_buffers(
+        ctx: &VulkanoContext,
+    ) -> Result<DataPerImage<Subbuffer<BasicUniformData>>> {
         Ok(DataPerImage::new_with_value(
             ctx,
             Buffer::new_sized(
@@ -231,7 +264,8 @@ impl BasicRenderHandler {
             .fs
             .entry_point("main")
             .context("fragment shader: entry point missing")?;
-        let vertex_input_state = BasicVertex::per_vertex().definition(&vs.info().input_interface)?;
+        let vertex_input_state =
+            BasicVertex::per_vertex().definition(&vs.info().input_interface)?;
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
             PipelineShaderStageCreateInfo::new(fs),
@@ -266,11 +300,13 @@ impl BasicRenderHandler {
         )?)
     }
 
-    fn create_single_command_buffer(&self,
-                                    ctx: &VulkanoContext,
-                                    framebuffer: Arc<Framebuffer>,
-                                    uniform_buffer_set: Arc<PersistentDescriptorSet>,
-                                    vertex_buffer: &Subbuffer<[BasicVertex]>) -> Result<Arc<PrimaryAutoCommandBuffer>> {
+    fn create_single_command_buffer(
+        &self,
+        ctx: &VulkanoContext,
+        framebuffer: Arc<Framebuffer>,
+        uniform_buffer_set: Arc<PersistentDescriptorSet>,
+        vertex_buffer: &Subbuffer<[BasicVertex]>,
+    ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
             ctx.queue().queue_family_index(),
@@ -317,7 +353,12 @@ impl BasicRenderHandler {
             &uniform_buffer_sets,
             self.vertex_buffers.as_ref().unwrap(),
             |((framebuffer, uniform_buffer_set), vertex_buffer)| {
-                self.create_single_command_buffer(ctx, framebuffer.clone(), uniform_buffer_set.clone(), vertex_buffer)
+                self.create_single_command_buffer(
+                    ctx,
+                    framebuffer.clone(),
+                    uniform_buffer_set.clone(),
+                    vertex_buffer,
+                )
             },
         )?;
         self.uniform_buffer_sets = Some(uniform_buffer_sets);

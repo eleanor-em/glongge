@@ -1,5 +1,4 @@
-use std::cmp;
-use std::time::Instant;
+use std::{cmp, time::Instant};
 
 use tracing::info;
 
@@ -25,10 +24,7 @@ impl TimeIt {
             last_report: Instant::now(),
         }
     }
-    fn reset(&mut self) {
-        *self = Self::new(&self.tag);
-        self.last_report = Instant::now();
-    }
+
     pub fn start(&mut self) {
         self.last_wall = Instant::now();
         self.last_ns = 0;
@@ -40,6 +36,7 @@ impl TimeIt {
         self.last_ns += delta;
         self.max_ns = cmp::max(self.max_ns, self.last_ns);
     }
+
     pub fn pause(&mut self) {
         let delta = self.last_wall.elapsed().as_nanos() as u64;
         self.total_ns += delta;
@@ -47,6 +44,11 @@ impl TimeIt {
     }
     pub fn unpause(&mut self) {
         self.last_wall = Instant::now();
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new(&self.tag);
+        self.last_report = Instant::now();
     }
     pub fn report_ms(&mut self) {
         info!(
