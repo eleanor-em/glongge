@@ -3,8 +3,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use num_traits::Zero;
 
-use anyhow::Result;
-
 use crate::{
     core::{
         linalg::Vec2,
@@ -56,12 +54,21 @@ impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
                     .on_update(delta, update_ctx);
                 render_data[i] = next_render_data;
             }
-            self.render_data_receiver.lock().unwrap().update_from(&render_data).unwrap();
-
+            let vertices: Vec<Vec2> = pending_objects.iter()
+                .map(|obj| obj.create_vertices())
+                .flatten()
+                .collect();
             for mut pending_obj in pending_objects {
                 render_data.push(RenderData::empty());
                 pending_obj.on_ready();
                 self.objects.push(RefCell::new(pending_obj));
+            }
+            {
+                let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
+                if !vertices.is_empty() {
+                    render_data_receiver.add_vertices(vertices);
+                }
+                render_data_receiver.update_from(render_data.clone());
             }
 
             timer.stop();
@@ -112,6 +119,7 @@ impl RenderData {
 }
 
 pub trait RenderDataReceiver {
-    fn update_from(&mut self, render_data: &[RenderData]) -> Result<()>;
+    fn add_vertices(&mut self, vertices: Vec<Vec2>);
+    fn update_from(&mut self, render_data: Vec<RenderData>);
     fn cloned(&self) -> Vec<RenderData>;
 }

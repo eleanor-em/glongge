@@ -63,7 +63,7 @@ impl SceneObject for SpinningTriangle {
             }
         }
         self.pos += self.velocity * delta;
-        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 500 {
+        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
             let mut rng = rand::thread_rng();
             let pos = Vec2 { x: rng.gen_range(0.0..1024.0), y: rng.gen_range(0.0..768.0) };
             let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };

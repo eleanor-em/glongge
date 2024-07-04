@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use num_traits::{One, Zero};
 
 use anyhow::{Context, Result};
+use tracing::info;
 
 use vulkano::{
     pipeline::{
@@ -29,6 +30,7 @@ use vulkano::{
     render_pass::Subpass,
     shader::ShaderModule
 };
+use vulkano::render_pass::Framebuffer;
 use winit::window::Window;
 
 use crate::{
@@ -52,26 +54,34 @@ struct BasicVertex {
     rotation: f32,
 }
 
-struct BasicRenderDataReceiver(Vec<RenderData>);
+struct BasicRenderDataReceiver {
+    all_vertices: Vec<Vec2>,
+    pending_vertices: DataPerImage<Vec<Vec2>>,
+    render_data: Vec<RenderData>,
+}
 impl RenderDataReceiver for BasicRenderDataReceiver {
-    fn update_from(&mut self, render_data: &[RenderData]) -> Result<()> {
-        let max_size = self.0.len();
-        self.0.clone_from_slice(&render_data[0..max_size]);
-        Ok(())
+    fn add_vertices(&mut self, mut vertices: Vec<Vec2>) {
+        self.pending_vertices.clone_from_value(vertices.clone());
+        self.all_vertices.append(&mut vertices);
+    }
+
+    fn update_from(&mut self, render_data: Vec<RenderData>) {
+        self.render_data = render_data;
     }
 
     fn cloned(&self) -> Vec<RenderData> {
-        self.0.clone()
+        self.render_data.clone()
     }
 }
 
 pub struct BasicRenderHandler {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    vertices: Vec<Vec2>,
     vertex_buffers: DataPerImage<Subbuffer<[BasicVertex]>>,
     uniform_buffers: DataPerImage<Subbuffer<[[f32; 4]; 4]>>,
+    uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     viewport: Viewport,
+    pipeline: Option<Arc<GraphicsPipeline>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     update_handler: Option<UpdateHandler<BasicRenderDataReceiver>>,
     render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
@@ -94,13 +104,25 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        if let Ok(render_data) = self.render_data_receiver.lock() {
+        if let Ok(mut receiver) = self.render_data_receiver.lock() {
+            if !receiver.pending_vertices.current_value(per_image_ctx).is_empty() {
+                *self.vertex_buffers.current_value_mut(per_image_ctx) = Self::create_single_vertex_buffer(ctx, &receiver.all_vertices)?;
+                *self.command_buffers.as_mut().unwrap().current_value_mut(per_image_ctx) =
+                    self.create_single_command_buffer(
+                        ctx,
+                        ctx.framebuffers().current_value(per_image_ctx).clone(),
+                        self.uniform_buffer_sets.clone().unwrap().current_value(per_image_ctx).clone(),
+                        self.vertex_buffers.current_value(per_image_ctx)
+                    )?;
+                receiver.pending_vertices.current_value_mut(per_image_ctx).clear();
+            }
+
             let vertex_buffer = self.vertex_buffers.current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
-                    position: self.vertices[i].into(),
-                    translation: render_data.0[i/3].position.into(),
-                    rotation: render_data.0[i/3].rotation as f32,
+                    position: receiver.all_vertices[i].into(),
+                    translation: receiver.render_data[i/3].position.into(),
+                    rotation: receiver.render_data[i/3].rotation as f32,
                 };
             }
         }
@@ -117,7 +139,11 @@ impl BasicRenderHandler {
             vertices.append(&mut object.borrow().create_vertices());
         }
         let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; objects.len()];
-        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver(render_data)));
+        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver {
+            all_vertices: vertices.clone(),
+            pending_vertices: DataPerImage::new_with_value(ctx, Vec::new()),
+            render_data,
+        }));
 
         let vs = basic_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
@@ -129,10 +155,11 @@ impl BasicRenderHandler {
         Ok(Self {
             vs,
             fs,
-            vertices,
             vertex_buffers,
             uniform_buffers,
+            uniform_buffer_sets: None,
             viewport,
+            pipeline: None,
             command_buffers: None,
             update_handler: Some(UpdateHandler { objects, render_data_receiver: render_data_receiver.clone() }),
             render_data_receiver,
@@ -144,25 +171,26 @@ impl BasicRenderHandler {
         std::thread::spawn(move || update_handler.consume());
     }
 
-    fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<DataPerImage<Subbuffer<[BasicVertex]>>> {
+    fn create_single_vertex_buffer(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<Subbuffer<[BasicVertex]>> {
         let vertices = vertices
             .iter()
             .map(|&v| BasicVertex { position: v.into(), translation: Vec2::zero().into(), rotation: 0.0 });
-        Ok(DataPerImage::new_with_value(
-            ctx,
-            Buffer::from_iter(
-                ctx.memory_allocator(),
-                BufferCreateInfo {
-                    usage: BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                vertices,
-            )?))
+        Ok(Buffer::from_iter(
+            ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            vertices,
+        )?)
+    }
+    fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<DataPerImage<Subbuffer<[BasicVertex]>>> {
+        Ok(DataPerImage::new_with_value(ctx, Self::create_single_vertex_buffer(ctx, vertices)?))
     }
 
     fn create_uniform_buffers(ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<[[f32; 4]; 4]>>> {
@@ -227,12 +255,49 @@ impl BasicRenderHandler {
         )?)
     }
 
+    fn create_single_command_buffer(&self,
+                                    ctx: &VulkanoContext,
+                                    framebuffer: Arc<Framebuffer>,
+                                    uniform_buffer_set: Arc<PersistentDescriptorSet>,
+                                    vertex_buffer: &Subbuffer<[BasicVertex]>) -> Result<Arc<PrimaryAutoCommandBuffer>> {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            ctx.command_buffer_allocator(),
+            ctx.queue().queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+        )?;
+
+        builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                    ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                },
+                SubpassBeginInfo {
+                    contents: SubpassContents::Inline,
+                    ..Default::default()
+                },
+            )?
+            .bind_pipeline_graphics(self.pipeline.clone().unwrap())?
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                self.pipeline.clone().unwrap().layout().clone(),
+                0,
+                uniform_buffer_set.clone(),
+            )?
+            .bind_vertex_buffers(0, vertex_buffer.clone())?
+            .draw(vertex_buffer.len() as u32, 1, 0, 0)?
+            .end_render_pass(SubpassEndInfo::default())?;
+        Ok(builder.build()?)
+    }
+
     fn create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
-        let pipeline = self.create_pipeline(ctx)?;
+        if self.pipeline.is_none() {
+            self.pipeline = Some(self.create_pipeline(ctx)?);
+        }
         let uniform_buffer_sets = self.uniform_buffers.try_map(|buffer| {
             Ok(PersistentDescriptorSet::new(
                 &ctx.descriptor_set_allocator(),
-                pipeline.layout().set_layouts()[0].clone(),
+                self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
                 [WriteDescriptorSet::buffer(0, buffer.clone())],
                 [],
             )?)
@@ -241,36 +306,10 @@ impl BasicRenderHandler {
             &uniform_buffer_sets,
             &self.vertex_buffers,
             |((framebuffer, uniform_buffer_set), vertex_buffer)| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    ctx.command_buffer_allocator(),
-                    ctx.queue().queue_family_index(),
-                    CommandBufferUsage::MultipleSubmit,
-                )?;
-
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
-                            ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                        },
-                        SubpassBeginInfo {
-                            contents: SubpassContents::Inline,
-                            ..Default::default()
-                        },
-                    )?
-                    .bind_pipeline_graphics(pipeline.clone())?
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Graphics,
-                        pipeline.layout().clone(),
-                        0,
-                        uniform_buffer_set.clone(),
-                    )?
-                    .bind_vertex_buffers(0, vertex_buffer.clone())?
-                    .draw(vertex_buffer.len() as u32, 1, 0, 0)?
-                    .end_render_pass(SubpassEndInfo::default())?;
-                Ok(builder.build()?)
+                self.create_single_command_buffer(ctx, framebuffer.clone(), uniform_buffer_set.clone(), vertex_buffer)
             },
         )?;
+        self.uniform_buffer_sets = Some(uniform_buffer_sets);
         self.command_buffers = Some(command_buffers);
         Ok(())
     }

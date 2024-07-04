@@ -111,6 +111,10 @@ impl<T: Clone> DataPerImage<T> {
         Self { data }
     }
 
+    pub fn clone_from_value(&mut self, new_value: T) {
+        self.data = vec![new_value; self.data.len()];
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
