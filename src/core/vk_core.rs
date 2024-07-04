@@ -7,6 +7,8 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use tracing::{info, warn};
 
+use crate::assert::*;
+
 use vulkano::{
     command_buffer::{
         allocator::{
@@ -103,7 +105,7 @@ pub struct DataPerImage<T: Clone> {
 
 impl<T: Clone> DataPerImage<T> {
     pub fn new_with_data(ctx: &VulkanoContext, data: Vec<T>) -> Self {
-        crate::check_eq!(data.len(), ctx.images.len());
+        check_eq!(data.len(), ctx.images.len());
         Self { data }
     }
     pub fn new_with_value(ctx: &VulkanoContext, initial_value: T) -> Self {
@@ -270,7 +272,7 @@ impl VulkanoContext {
         let render_pass = create_render_pass(device.clone(), swapchain.clone())?;
         let framebuffers = create_framebuffers(images.as_slice(), render_pass.clone())?;
 
-        crate::check_eq!(swapchain.image_count() as usize, images.len());
+        check_eq!(swapchain.image_count() as usize, images.len());
 
         info!(
             "created vulkano context in: {:.2} ms",
@@ -735,7 +737,7 @@ impl RenderPerfStats {
     }
 
     fn begin_handle_swapchain(&mut self) {
-        crate::check_eq!(self.state, RenderState::BetweenRenders);
+        check_eq!(self.state, RenderState::BetweenRenders);
         self.state = RenderState::HandleSwapchain;
         self.total.stop();
         self.total.start();
@@ -745,26 +747,26 @@ impl RenderPerfStats {
     }
 
     fn begin_acquire_and_sync(&mut self) {
-        crate::check_eq!(self.state, RenderState::HandleSwapchain);
+        check_eq!(self.state, RenderState::HandleSwapchain);
         self.state = RenderState::AcquireAndSync;
         self.acquire_and_sync.start();
     }
     fn begin_on_render(&mut self) {
-        crate::check_eq!(self.state, RenderState::AcquireAndSync);
+        check_eq!(self.state, RenderState::AcquireAndSync);
         self.state = RenderState::OnRender;
         self.acquire_and_sync.stop();
         self.on_render.start();
     }
 
     fn begin_submit_command_buffers(&mut self) {
-        crate::check_eq!(self.state, RenderState::OnRender);
+        check_eq!(self.state, RenderState::OnRender);
         self.state = RenderState::SubmitCommandBuffers;
         self.on_render.stop();
         self.submit_command_buffers.start();
     }
 
     fn end_render(&mut self) {
-        crate::check_eq!(self.state, RenderState::SubmitCommandBuffers);
+        check_eq!(self.state, RenderState::SubmitCommandBuffers);
         self.state = RenderState::EndRender;
         self.submit_command_buffers.stop();
         self.end_step.start();

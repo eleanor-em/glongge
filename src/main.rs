@@ -10,6 +10,7 @@ use rand::{
 use anyhow::Result;
 
 use crate::{
+    assert::*,
     core::{
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
@@ -72,11 +73,11 @@ fn main_test(window_ctx: WindowContext, ctx: VulkanoContext) -> Result<()> {
 fn run_test_cases() {
     // TODO: proper test cases...
     let a = Vec2 { x: 1.0, y: 1.0 };
-    crate::check!((a * 2.0).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
-    crate::check!((2.0 * a).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
-    crate::check_lt!(f64::abs((a * 2.0 - a).x - 1.0), f64::epsilon());
-    crate::check_lt!(f64::abs((a * 2.0 - a).y - 1.0), f64::epsilon());
-    crate::check!(
+    check!((a * 2.0).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
+    check!((2.0 * a).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
+    check_lt!(f64::abs((a * 2.0 - a).x - 1.0), f64::epsilon());
+    check_lt!(f64::abs((a * 2.0 - a).y - 1.0), f64::epsilon());
+    check!(
         (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
             .almost_eq(Mat3x3::one())
     );
