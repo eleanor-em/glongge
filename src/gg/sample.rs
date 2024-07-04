@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard};
 use num_traits::Zero;
 
@@ -37,10 +36,10 @@ use crate::{
         linalg::Vec2,
         vk_core::{DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext},
     },
-    gg::core::{RenderData, SceneObject},
+    gg::core::RenderData,
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
-use crate::gg::core::{RenderDataReceiver, UpdateHandler};
+use crate::gg::core::RenderDataReceiver;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -59,7 +58,7 @@ struct BasicVertex {
     rotation: f32,
 }
 
-struct BasicRenderDataReceiver {
+pub struct BasicRenderDataReceiver {
     vertices: Vec<Vec2>,
     vertices_up_to_date: DataPerImage<bool>,
     render_data: Vec<RenderData>,
@@ -93,11 +92,12 @@ pub struct BasicRenderHandler {
     uniform_buffers: DataPerImage<Subbuffer<BasicUniformData>>,
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    update_handler: Option<UpdateHandler<BasicRenderDataReceiver>>,
     render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
 }
 
 impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
+    type Receiver = BasicRenderDataReceiver;
+
     fn on_resize(
         &mut self,
         ctx: &VulkanoContext,
@@ -154,13 +154,16 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         };
         Ok(self.command_buffers.clone().unwrap())
     }
+
+    fn get_receiver(&self) -> Arc<Mutex<BasicRenderDataReceiver>> {
+        self.render_data_receiver.clone()
+    }
 }
 
 impl BasicRenderHandler {
-    pub fn new(initial_objects: Vec<RefCell<Box<dyn SceneObject>>>, window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; initial_objects.len()];
+    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
         let render_data_receiver = Arc::new(Mutex::new(
-            BasicRenderDataReceiver::new(ctx, Vec::new(), render_data)));
+            BasicRenderDataReceiver::new(ctx, Vec::new(), Vec::new())));
 
         let vs = basic_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
@@ -178,14 +181,8 @@ impl BasicRenderHandler {
             uniform_buffers,
             uniform_buffer_sets: None,
             command_buffers: None,
-            update_handler: Some(UpdateHandler::new(initial_objects, render_data_receiver.clone())),
             render_data_receiver,
         })
-    }
-
-    pub fn start_update_thread(&mut self) {
-        let update_handler = self.update_handler.take().unwrap();
-        std::thread::spawn(move || update_handler.consume());
     }
 
     fn create_single_vertex_buffer(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<Subbuffer<[BasicVertex]>> {

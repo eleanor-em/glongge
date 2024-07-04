@@ -1,13 +1,7 @@
 #![feature(iterator_try_collect)]
 
-use std::cell::RefCell;
-use num_traits::{Float, One};
-use rand::{
-    distributions::Distribution,
-    distributions::Uniform,
-};
-
 use anyhow::Result;
+use num_traits::{Float, One};
 
 use crate::{
     assert::*,
@@ -15,12 +9,9 @@ use crate::{
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
     },
-    gg::{
-        core::SceneObject,
-        sample::BasicRenderHandler,
-    },
-    scene::sample::SpinningTriangle,
+    gg::sample::BasicRenderHandler,
 };
+use crate::scene::sample::create_spinning_triangle_scene;
 
 mod assert;
 mod core;
@@ -47,23 +38,10 @@ fn main() -> Result<()> {
 fn main_test(window_ctx: WindowContext, ctx: VulkanoContext) -> Result<()> {
     run_test_cases();
 
-    const N: usize = 10;
-    let mut rng = rand::thread_rng();
-    let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
-    let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
-    let vxs: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
-    let vys: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
-    let objects: Vec<_> = (0..N)
-        .map(|i| {
-            let pos = Vec2 { x: xs[i], y: ys[i] };
-            let vel = Vec2 { x: vxs[i], y: vys[i] };
-            RefCell::new(Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn SceneObject>)
-        })
-        .collect();
-
     // TODO: replace with Builder pattern
-    let mut handler = BasicRenderHandler::new(objects, &window_ctx, &ctx)?;
-    handler.start_update_thread();
+    let handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
+    let mut scene = create_spinning_triangle_scene(&handler);
+    scene.run();
 
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, handler).run(event_loop);

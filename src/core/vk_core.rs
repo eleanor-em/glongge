@@ -53,6 +53,7 @@ use vulkano::{
     VulkanError,
     VulkanLibrary
 };
+use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -61,6 +62,7 @@ use winit::{
 };
 
 use crate::core::util::TimeIt;
+use crate::gg::core::RenderDataReceiver;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -488,7 +490,9 @@ impl PerImageContext {
     }
 }
 
-pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract> {
+pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer> {
+    type Receiver: RenderDataReceiver + 'static;
+
     fn on_resize(
         &mut self,
         ctx: &VulkanoContext,
@@ -500,6 +504,8 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract> {
         ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<CommandBuffer>>>;
+
+    fn get_receiver(&self) -> Arc<Mutex<Self::Receiver>>;
 }
 
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;

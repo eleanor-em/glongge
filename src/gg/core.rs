@@ -56,7 +56,8 @@ pub struct UpdateHandler<Receiver: RenderDataReceiver> {
 }
 
 impl<Receiver: RenderDataReceiver> UpdateHandler<Receiver> {
-    pub(crate) fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, render_data_receiver: Arc<Mutex<Receiver>>) -> Self {
+    pub(crate) fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>,
+                      render_data_receiver: Arc<Mutex<Receiver>>) -> Self {
         let objects: HashMap<usize, _> = objects.into_iter().enumerate().collect();
         let vertices = objects.iter()
             .filter_map(|(&i, obj)|
@@ -179,7 +180,7 @@ pub struct RenderData {
     pub rotation: f64,
 }
 
-pub trait RenderDataReceiver {
+pub trait RenderDataReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<Vec2>);
     fn update_render_data(&mut self, render_data: Vec<RenderData>);
 }

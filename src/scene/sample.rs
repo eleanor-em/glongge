@@ -1,5 +1,10 @@
+use std::cell::RefCell;
 use std::time::{Duration, Instant};
 use num_traits::{Float, FloatConst};
+use rand::distributions::{
+    Distribution,
+    Uniform
+};
 use rand::Rng;
 
 use crate::{
@@ -11,9 +16,28 @@ use crate::{
             UpdateContext,
             RenderableObject,
             WorldObject
-        }
-    }
+        },
+        sample::BasicRenderHandler,
+    },
+    scene::Scene,
 };
+
+pub fn create_spinning_triangle_scene(render_handler: &BasicRenderHandler) -> Scene<BasicRenderHandler> {
+    const N: usize = 10;
+    let mut rng = rand::thread_rng();
+    let xs: Vec<f64> = Uniform::new(0.0, 1024.0).sample_iter(&mut rng).take(N).collect();
+    let ys: Vec<f64> = Uniform::new(0.0, 768.0).sample_iter(&mut rng).take(N).collect();
+    let vxs: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
+    let vys: Vec<f64> = Uniform::new(-1.0, 1.0).sample_iter(&mut rng).take(N).collect();
+    let objects: Vec<_> = (0..N)
+        .map(|i| {
+            let pos = Vec2 { x: xs[i], y: ys[i] };
+            let vel = Vec2 { x: vxs[i], y: vys[i] };
+            RefCell::new(Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn SceneObject>)
+        })
+        .collect();
+    Scene::new(objects, render_handler)
+}
 
 #[derive(Clone)]
 pub struct SpinningTriangle {
@@ -54,7 +78,7 @@ impl SceneObject for SpinningTriangle {
         if !(0.0..768.0).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
-        if self.alive_since.elapsed().as_secs() > 2 {
+        if self.alive_since.elapsed().as_secs_f64() > 0.1 {
             for other in update_ctx.others() {
                 if let Some(other) = other.as_world_object() {
                     if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
