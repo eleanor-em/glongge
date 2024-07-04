@@ -87,13 +87,16 @@ pub struct DataPerImage<T: Clone> {
     data: Vec<T>,
 }
 
+impl <T: Clone + Copy> DataPerImage<T> {
+    pub fn new_with_value(ctx: &VulkanoContext, initial_value: T) -> Self {
+        let data = vec![initial_value; ctx.images.len()];
+        Self { data }
+    }
+}
+
 impl<T: Clone> DataPerImage<T> {
     pub fn new_with_data(ctx: &VulkanoContext, data: Vec<T>) -> Self {
         check_eq!(data.len(), ctx.images.len());
-        Self { data }
-    }
-    pub fn new_with_value(ctx: &VulkanoContext, initial_value: T) -> Self {
-        let data = vec![initial_value; ctx.images.len()];
         Self { data }
     }
     pub fn try_new_with_generator<F: Fn() -> Result<T>>(
@@ -310,9 +313,10 @@ impl VulkanoContext {
         let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
             ..self.swapchain.create_info()
-        })?;
+        }).map_err(Validated::unwrap)?;
         self.swapchain = new_swapchain;
-        self.framebuffers = create_framebuffers(&new_images, self.render_pass.clone())?;
+        self.images = DataPerImage { data: new_images };
+        self.framebuffers = create_framebuffers(self.images.as_slice(), self.render_pass.clone())?;
         Ok(())
     }
 }
@@ -456,7 +460,7 @@ fn create_framebuffers(
                     },
                 )
             })
-            .try_collect()?,
+            .try_collect().map_err(Validated::unwrap)?,
     })
 }
 
@@ -482,7 +486,6 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = Prima
     fn on_resize(
         &mut self,
         ctx: &VulkanoContext,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
         window: Arc<Window>,
     ) -> Result<()>;
     fn on_render(
@@ -506,8 +509,6 @@ where
     ctx: VulkanoContext,
     render_handler: RenderHandler,
 
-    window_was_resized: bool,
-    should_recreate_swapchain: bool,
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
     command_buffer_type: PhantomData<CommandBuffer>,
@@ -519,13 +520,11 @@ where
     RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
     pub fn new(window: Arc<Window>, ctx: VulkanoContext, handler: RenderHandler) -> Self {
-        let fences = DataPerImage::new_with_value(&ctx, Rc::new(RefCell::new(None)));
+        let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
         Self {
             window,
             ctx,
             render_handler: handler,
-            window_was_resized: false,
-            should_recreate_swapchain: false,
             fences,
             render_stats: RenderPerfStats::new(),
             command_buffer_type: PhantomData,
@@ -536,22 +535,14 @@ where
         event_loop.run(move |event, _, control_flow| self.run_inner(event, control_flow).unwrap());
     }
 
-    fn maybe_recreate_swapchain(
-        &mut self,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
+    fn recreate_swapchain(
+        &mut self
     ) -> Result<()> {
-        if self.window_was_resized || self.should_recreate_swapchain {
-            self.should_recreate_swapchain = false;
-            self.ctx
-                .recreate_swapchain(self.window.clone())
-                .context("could not recreate swapchain")?;
-        }
-        if self.window_was_resized {
-            self.window_was_resized = false;
-            self.render_handler
-                .on_resize(&self.ctx, per_image_ctx, self.window.clone())?;
-        }
-        Ok(())
+        self.ctx
+            .recreate_swapchain(self.window.clone())
+            .context("could not recreate swapchain")?;
+        self.render_handler
+            .on_resize(&self.ctx, self.window.clone())
     }
 
     fn idle(
@@ -566,7 +557,6 @@ where
         self.render_stats.begin_submit_command_buffers();
         self.submit_command_buffers(per_image_ctx, command_buffers, ready_future)?;
         self.render_stats.end_render();
-        self.update_last_image_idx(per_image_ctx)?;
         Ok(())
     }
 
@@ -576,11 +566,11 @@ where
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
         self.render_stats.pause_render_active();
-        if let Some(fence) = self.fences.current_value(per_image_ctx).borrow().as_ref() {
-            fence.wait(None)?;
+        if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
+            fence.wait(None).map_err(Validated::unwrap)?;
         }
         self.render_stats.unpause_render_active();
-        let last_fence = match self.fences.last_value(per_image_ctx).take() {
+        let last_fence = match self.fences.current_value(per_image_ctx).take() {
             Some(fence) => fence.boxed(),
             _ => {
                 // synchronise only if there is no previous future (swapchain was just created)
@@ -651,28 +641,27 @@ where
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                self.window_was_resized = true;
                 Ok(())
             }
             Event::MainEventsCleared => {
+                self.render_stats.begin_handle_swapchain();
                 let per_image_ctx = self.ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();
-                self.render_stats.begin_handle_swapchain();
-                self.maybe_recreate_swapchain(&mut per_image_ctx)?;
                 // XXX: "acquire_next_image" is somewhat misleading, since it does not block
                 let rv = match swapchain::acquire_next_image(self.ctx.swapchain(), None)
                     .map_err(Validated::unwrap)
                 {
                     Ok((image_idx, suboptimal, acquire_future)) => {
-                        if suboptimal {
-                            self.should_recreate_swapchain = true;
-                        }
                         per_image_ctx.current.replace(image_idx as usize);
-                        self.idle(&mut per_image_ctx, acquire_future)
+                        if suboptimal {
+                            self.recreate_swapchain()?;
+                        } else {
+                            self.idle(&mut per_image_ctx, acquire_future)?;
+                        }
+                        self.update_last_image_idx(&mut per_image_ctx)
                     }
                     Err(VulkanError::OutOfDate) => {
-                        self.should_recreate_swapchain = true;
-                        Ok(())
+                        self.recreate_swapchain()
                     }
                     Err(e) => Err(e.into()),
                 };

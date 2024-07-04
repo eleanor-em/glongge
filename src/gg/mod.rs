@@ -228,19 +228,23 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                 remove_objects_stats.stop();
 
                 add_objects_stats.start();
+                let mut next_id = *self.objects.keys().max().unwrap_or(&0);
+                let first_new_id = next_id + 1;
                 for new_obj in pending_add_objects {
-                    let next_id = match self.objects.keys().max() {
-                        Some(&last_id) => last_id + 1,
-                        None => 0,
-                    };
+                    next_id += 1;
                     if let Some(obj) = new_obj.as_renderable_object() {
                         self.vertices.insert(next_id, obj.create_vertices());
                         self.render_data.insert(next_id, obj.render_data());
                     }
                     self.objects.insert(next_id, RefCell::new(new_obj));
-                    self.objects[&next_id].borrow_mut().on_ready();
+                }
+                // Ensure all objects actually exist before calling on_ready().
+                let last_new_id = next_id;
+                for i in first_new_id..=last_new_id {
+                    self.objects[&i].borrow_mut().on_ready();
                 }
                 add_objects_stats.stop();
+
                 render_data_stats.start();
                 self.update_render_data(did_update_vertices);
                 render_data_stats.stop();

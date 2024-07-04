@@ -2,33 +2,26 @@ use num_traits::Zero;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Context, Result};
+use tracing::info;
 
 use vulkano::render_pass::Framebuffer;
-use vulkano::{
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
+use vulkano::{buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+    RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
+}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{
+    graphics::{
+        color_blend::{ColorBlendAttachmentState, ColorBlendState},
+        input_assembly::InputAssemblyState,
+        multisample::MultisampleState,
+        rasterization::RasterizationState,
+        vertex_input::{Vertex, VertexDefinition},
+        viewport::{Viewport, ViewportState},
+        GraphicsPipelineCreateInfo,
     },
-    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    pipeline::{
-        graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},
-            input_assembly::InputAssemblyState,
-            multisample::MultisampleState,
-            rasterization::RasterizationState,
-            vertex_input::{Vertex, VertexDefinition},
-            viewport::{Viewport, ViewportState},
-            GraphicsPipelineCreateInfo,
-        },
-        layout::PipelineDescriptorSetLayoutCreateInfo,
-        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
-        PipelineShaderStageCreateInfo,
-    },
-    render_pass::Subpass,
-    shader::ShaderModule,
-};
+    layout::PipelineDescriptorSetLayoutCreateInfo,
+    GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+    PipelineShaderStageCreateInfo,
+}, render_pass::Subpass, shader::ShaderModule, Validated};
 use winit::window::Window;
 
 use crate::gg::RenderDataReceiver;
@@ -49,7 +42,7 @@ struct BasicUniformData {
     window_width: f32,
     window_height: f32,
 }
-#[derive(BufferContents, Vertex, Clone, Copy)]
+#[derive(BufferContents, Vertex, Debug, Clone, Copy)]
 #[repr(C)]
 struct BasicVertex {
     #[format(R32G32_SFLOAT)]
@@ -66,11 +59,11 @@ pub struct BasicRenderDataReceiver {
     render_data: Vec<RenderData>,
 }
 impl BasicRenderDataReceiver {
-    fn new(ctx: &VulkanoContext, vertices: Vec<Vec2>, render_data: Vec<RenderData>) -> Self {
+    fn new(ctx: &VulkanoContext) -> Self {
         Self {
-            vertices,
+            vertices: Vec::new(),
             vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
-            render_data,
+            render_data: Vec::new(),
         }
     }
 }
@@ -91,7 +84,7 @@ pub struct BasicRenderHandler {
     viewport: Viewport,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffers: Option<DataPerImage<Subbuffer<[BasicVertex]>>>,
-    uniform_buffers: DataPerImage<Subbuffer<BasicUniformData>>,
+    uniform_buffers: Option<DataPerImage<Subbuffer<BasicUniformData>>>,
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
@@ -102,14 +95,16 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 
     fn on_resize(
         &mut self,
-        ctx: &VulkanoContext,
-        _per_image_ctx: &mut MutexGuard<PerImageContext>,
+        _ctx: &VulkanoContext,
         window: Arc<Window>,
     ) -> Result<()> {
+        info!("on_resize()");
         self.viewport.extent = window.inner_size().into();
-        if self.vertex_buffers.is_some() {
-            self.create_command_buffers(ctx)?;
-        }
+        self.vertex_buffers = None;
+        self.command_buffers = None;
+        self.pipeline = None;
+        self.uniform_buffers = None;
+        self.uniform_buffer_sets = None;
         Ok(())
     }
 
@@ -124,6 +119,12 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
                     Self::create_single_vertex_buffer(ctx, &receiver.vertices)
                 })?);
+                self.command_buffers = None;
+                receiver
+                    .vertices_up_to_date
+                    .clone_from_value(true);
+            }
+            if self.command_buffers.is_none() {
                 self.create_command_buffers(ctx)?;
             }
 
@@ -171,7 +172,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 };
             }
         }
-        *self.uniform_buffers.current_value(per_image_ctx).write()? = BasicUniformData {
+        *self.uniform_buffers.as_mut().unwrap().current_value(per_image_ctx).write()? = BasicUniformData {
             window_width: self.viewport.extent[0],
             window_height: self.viewport.extent[1],
         };
@@ -186,9 +187,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 impl BasicRenderHandler {
     pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
         let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
-            ctx,
-            Vec::new(),
-            Vec::new(),
+            ctx
         )));
 
         let vs =
@@ -196,7 +195,6 @@ impl BasicRenderHandler {
         let fs =
             basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         // TODO: better initial value for vertex_buffers
-        let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
         Ok(Self {
             vs,
@@ -204,7 +202,7 @@ impl BasicRenderHandler {
             viewport,
             pipeline: None,
             vertex_buffers: None,
-            uniform_buffers,
+            uniform_buffers: None,
             uniform_buffer_sets: None,
             command_buffers: None,
             render_data_receiver,
@@ -232,27 +230,7 @@ impl BasicRenderHandler {
                 ..Default::default()
             },
             vertices,
-        )?)
-    }
-
-    fn create_uniform_buffers(
-        ctx: &VulkanoContext,
-    ) -> Result<DataPerImage<Subbuffer<BasicUniformData>>> {
-        Ok(DataPerImage::new_with_value(
-            ctx,
-            Buffer::new_sized(
-                ctx.memory_allocator(),
-                BufferCreateInfo {
-                    usage: BufferUsage::UNIFORM_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-            )?,
-        ))
+        ).map_err(Validated::unwrap)?)
     }
 
     fn create_pipeline(&self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
@@ -274,7 +252,7 @@ impl BasicRenderHandler {
             ctx.device(),
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
                 .into_pipeline_layout_create_info(ctx.device())?,
-        )?;
+        ).map_err(Validated::unwrap)?;
         let subpass = Subpass::from(ctx.render_pass(), 0).context("failed to create subpass")?;
 
         Ok(GraphicsPipeline::new(
@@ -334,23 +312,42 @@ impl BasicRenderHandler {
             .bind_vertex_buffers(0, vertex_buffer.clone())?
             .draw(vertex_buffer.len() as u32, 1, 0, 0)?
             .end_render_pass(SubpassEndInfo::default())?;
-        Ok(builder.build()?)
+        Ok(builder.build().map_err(Validated::unwrap)?)
     }
 
     fn create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
         if self.pipeline.is_none() {
             self.pipeline = Some(self.create_pipeline(ctx)?);
         }
-        let uniform_buffer_sets = self.uniform_buffers.try_map(|buffer| {
-            Ok(PersistentDescriptorSet::new(
-                &ctx.descriptor_set_allocator(),
-                self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
-                [WriteDescriptorSet::buffer(0, buffer.clone())],
-                [],
-            )?)
-        })?;
-        let command_buffers = ctx.framebuffers().try_map_with_3(
-            &uniform_buffer_sets,
+        if self.uniform_buffers.is_none() {
+            self.uniform_buffers = Some(DataPerImage::try_new_with_generator(
+                ctx,
+                || Ok(Buffer::new_sized(
+                    ctx.memory_allocator(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::UNIFORM_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                ).map_err(Validated::unwrap)?),
+            )?);
+        }
+        if self.uniform_buffer_sets.is_none() {
+            self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {
+                Ok(PersistentDescriptorSet::new(
+                    &ctx.descriptor_set_allocator(),
+                    self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
+                    [WriteDescriptorSet::buffer(0, buffer.clone())],
+                    [],
+                ).map_err(Validated::unwrap)?)
+            })?);
+        }
+        self.command_buffers = Some(ctx.framebuffers().try_map_with_3(
+            self.uniform_buffer_sets.as_ref().unwrap(),
             self.vertex_buffers.as_ref().unwrap(),
             |((framebuffer, uniform_buffer_set), vertex_buffer)| {
                 self.create_single_command_buffer(
@@ -360,9 +357,7 @@ impl BasicRenderHandler {
                     vertex_buffer,
                 )
             },
-        )?;
-        self.uniform_buffer_sets = Some(uniform_buffer_sets);
-        self.command_buffers = Some(command_buffers);
+        )?);
         Ok(())
     }
 }
