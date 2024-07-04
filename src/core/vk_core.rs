@@ -491,7 +491,7 @@ impl PerImageContext {
 }
 
 pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer> {
-    type Receiver: RenderDataReceiver + 'static;
+    type DataReceiver: RenderDataReceiver + 'static;
 
     fn on_resize(
         &mut self,
@@ -505,7 +505,7 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = Prima
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<CommandBuffer>>>;
 
-    fn get_receiver(&self) -> Arc<Mutex<Self::Receiver>>;
+    fn get_receiver(&self) -> Arc<Mutex<Self::DataReceiver>>;
 }
 
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;

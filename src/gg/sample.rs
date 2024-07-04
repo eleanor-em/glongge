@@ -96,7 +96,7 @@ pub struct BasicRenderHandler {
 }
 
 impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
-    type Receiver = BasicRenderDataReceiver;
+    type DataReceiver = BasicRenderDataReceiver;
 
     fn on_resize(
         &mut self,
