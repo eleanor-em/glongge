@@ -141,21 +141,17 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 }
 
 impl BasicRenderHandler {
-    pub fn new(objects: Vec<RefCell<Box<dyn SceneObject>>>, window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        // 3 vertices per object is a safe lower bound.
-        let mut vertices = Vec::with_capacity(3 * objects.len());
-        for object in objects.iter() {
-            vertices.append(&mut object.borrow().create_vertices());
-        }
-        let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; objects.len()];
+    pub fn new(initial_objects: Vec<RefCell<Box<dyn SceneObject>>>, window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
+        let render_data = vec![RenderData { position: Vec2::zero(), rotation: 0.0 }; initial_objects.len()];
         let render_data_receiver = Arc::new(Mutex::new(
-            BasicRenderDataReceiver::new(ctx, vertices.clone(), render_data)));
+            BasicRenderDataReceiver::new(ctx, Vec::new(), render_data)));
 
         let vs = basic_vertex_shader::load(ctx.device())
             .context("failed to create shader module")?;
         let fs = basic_fragment_shader::load(ctx.device())
             .context("failed to create shader module")?;
-        let vertex_buffers = Self::create_vertex_buffers(ctx, &vertices)?;
+        // TODO: better initial value for vertex_buffers
+        let vertex_buffers = Self::create_vertex_buffers(ctx, &vec![Vec2::zero()])?;
         let uniform_buffers = Self::create_uniform_buffers(ctx)?;
         let viewport = window_ctx.create_default_viewport();
         Ok(Self {
@@ -167,7 +163,7 @@ impl BasicRenderHandler {
             viewport,
             pipeline: None,
             command_buffers: None,
-            update_handler: Some(UpdateHandler { objects, render_data_receiver: render_data_receiver.clone() }),
+            update_handler: Some(UpdateHandler::new(initial_objects, render_data_receiver.clone())),
             render_data_receiver,
         })
     }

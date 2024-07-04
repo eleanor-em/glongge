@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use num_traits::{Float, FloatConst};
 use rand::Rng;
 use tracing::info;
@@ -56,9 +56,10 @@ impl SceneObject for SpinningTriangle {
         self.last_spawn = Instant::now();
     }
 
-    fn on_update(&mut self, delta: f64, mut update_ctx: UpdateContext) -> RenderData {
-        self.t += delta;
-        let next_pos = self.pos + self.velocity * delta;
+    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext) -> RenderData {
+        let delta_s = delta.as_secs_f64();
+        self.t += delta_s;
+        let next_pos = self.pos + self.velocity * delta_s;
         if !(0.0..1024.0).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
@@ -72,13 +73,13 @@ impl SceneObject for SpinningTriangle {
                 }
             }
         }
-        self.pos += self.velocity * delta;
+        self.pos += self.velocity * delta_s;
 
-        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 1000 {
+        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
             self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.2) {
-                info!("split!");
+            if rng.gen_bool(0.4) {
+                // info!("split!");
                 let vel = Vec2 { x: rng.gen_range(-1.0..1.0), y: rng.gen_range(-1.0..1.0) };
                 update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, vel.normed())));
                 update_ctx.add_object(Box::new(SpinningTriangle::new(self.pos, -vel.normed())));
