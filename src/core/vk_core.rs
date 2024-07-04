@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::assert::*;
 
@@ -92,6 +92,10 @@ impl <T: Clone + Copy> DataPerImage<T> {
         let data = vec![initial_value; ctx.images.len()];
         Self { data }
     }
+
+    pub fn clone_from_value(&mut self, new_value: T) {
+        self.data = vec![new_value; self.data.len()];
+    }
 }
 
 impl<T: Clone> DataPerImage<T> {
@@ -115,10 +119,6 @@ impl<T: Clone> DataPerImage<T> {
             data.push(generator());
         }
         Self { data }
-    }
-
-    pub fn clone_from_value(&mut self, new_value: T) {
-        self.data = vec![new_value; self.data.len()];
     }
 
     pub fn len(&self) -> usize {
@@ -538,11 +538,13 @@ where
     fn recreate_swapchain(
         &mut self
     ) -> Result<()> {
+        self.fences = DataPerImage::new_with_generator(&self.ctx, || Rc::new(RefCell::new(None)));
         self.ctx
             .recreate_swapchain(self.window.clone())
             .context("could not recreate swapchain")?;
         self.render_handler
-            .on_resize(&self.ctx, self.window.clone())
+            .on_resize(&self.ctx, self.window.clone())?;
+        Ok(())
     }
 
     fn idle(
@@ -567,7 +569,11 @@ where
     ) -> Result<SwapchainJoinFuture> {
         self.render_stats.pause_render_active();
         if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
-            fence.wait(None).map_err(Validated::unwrap)?;
+            if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
+                // try to continue -- it might be an outdated future
+                // XXX: macOS often just segfaults instead of giving an error here
+                error!("{}", e);
+            }
         }
         self.render_stats.unpause_render_active();
         let last_fence = match self.fences.current_value(per_image_ctx).take() {
@@ -641,7 +647,7 @@ where
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                Ok(())
+                self.recreate_swapchain()
             }
             Event::MainEventsCleared => {
                 self.render_stats.begin_handle_swapchain();
