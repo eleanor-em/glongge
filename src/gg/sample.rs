@@ -46,6 +46,10 @@ use crate::gg::core::{RenderDataReceiver, UpdateHandler};
 struct BasicVertex {
     #[format(R32G32_SFLOAT)]
     position: [f32; 2],
+    #[format(R32G32_SFLOAT)]
+    translation: [f32; 2],
+    #[format(R32_SFLOAT)]
+    rotation: f32,
 }
 
 struct BasicRenderDataReceiver(Vec<RenderData>);
@@ -94,9 +98,9 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
             let vertex_buffer = self.vertex_buffers.current_value_mut(per_image_ctx);
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
-                    position: (Mat3x3::translation_vec2(render_data.0[i/3].position)
-                        * Mat3x3::rotation(render_data.0[i/3].rotation)
-                        * self.vertices[i]).into()
+                    position: self.vertices[i].into(),
+                    translation: render_data.0[i/3].position.into(),
+                    rotation: render_data.0[i/3].rotation as f32,
                 };
             }
         }
@@ -143,7 +147,7 @@ impl BasicRenderHandler {
     fn create_vertex_buffers(ctx: &VulkanoContext, vertices: &[Vec2]) -> Result<DataPerImage<Subbuffer<[BasicVertex]>>> {
         let vertices = vertices
             .iter()
-            .map(|&v| BasicVertex { position: v.into() });
+            .map(|&v| BasicVertex { position: v.into(), translation: Vec2::zero().into(), rotation: 0.0 });
         Ok(DataPerImage::new_with_value(
             ctx,
             Buffer::from_iter(
