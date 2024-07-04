@@ -76,10 +76,10 @@ impl WindowContext {
         Ok(Self { event_loop, window })
     }
 
-    pub fn event_loop(&self) -> &EventLoop<()> {
+    fn event_loop(&self) -> &EventLoop<()> {
         &self.event_loop
     }
-    pub fn window(&self) -> Arc<Window> {
+    fn window(&self) -> Arc<Window> {
         self.window.clone()
     }
 
@@ -206,7 +206,6 @@ impl<T: Clone> DataPerImage<T> {
 }
 
 pub struct VulkanoContext {
-    surface: Arc<Surface>,
     device: Arc<Device>,
     queue: Arc<Queue>,
     memory_allocator: Arc<StandardMemoryAllocator>,
@@ -260,7 +259,8 @@ impl VulkanoContext {
             start.elapsed().as_micros() as f64 / 1_000.0
         );
         Ok(Self {
-            surface,
+            // Appears to not be necessary:
+            // surface,
             device,
             queue,
             memory_allocator,
@@ -289,10 +289,7 @@ impl VulkanoContext {
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
     }
-    pub fn surface(&self) -> Arc<Surface> {
-        self.surface.clone()
-    }
-    pub fn swapchain(&self) -> Arc<Swapchain> {
+    fn swapchain(&self) -> Arc<Swapchain> {
         self.swapchain.clone()
     }
     pub fn render_pass(&self) -> Arc<RenderPass> {
@@ -302,7 +299,7 @@ impl VulkanoContext {
         self.framebuffers.clone()
     }
 
-    pub fn recreate_swapchain(&mut self, window: Arc<Window>) -> Result<()> {
+    fn recreate_swapchain(&mut self, window: Arc<Window>) -> Result<()> {
         let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
             ..self.swapchain.create_info()
