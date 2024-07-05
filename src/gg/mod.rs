@@ -21,7 +21,12 @@ pub struct SceneObjectWithId<'a> {
 
 pub trait SceneObject: Send {
     fn on_ready(&mut self);
-    fn on_update(&mut self, delta: Duration, update_handler: UpdateContext);
+    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext);
+    // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
+    #[allow(unused_variables)]
+    fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext) {}
+    #[allow(unused_variables)]
+    fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext) {}
 
     fn as_world_object(&self) -> Option<&dyn WorldObject> {
         None
@@ -44,9 +49,11 @@ impl<'a> SceneObjectWithId<'a> {
     pub fn on_ready(&mut self) {
         self.inner.on_ready()
     }
-
-    pub fn on_update(&mut self, delta: Duration, update_handler: UpdateContext) {
-        self.inner.on_update(delta, update_handler)
+    pub fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext) {
+        self.inner.on_update(delta, update_ctx)
+    }
+    pub fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext) {
+        self.inner.on_update_end(delta, update_ctx)
     }
 
     pub fn as_world_object(&self) -> Option<&dyn WorldObject> {
@@ -61,14 +68,14 @@ impl<'a> SceneObjectWithId<'a> {
 pub struct UpdateContext<'a> {
     scene_instruction_tx: Sender<SceneInstruction>,
     object_id: usize,
-    others: &'a HashMap<usize, SceneObjectWithId<'a>>,
+    other_map: &'a HashMap<usize, SceneObjectWithId<'a>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject>>,
     pending_remove_objects: &'a mut Vec<usize>,
 }
 
 impl<'a> UpdateContext<'a> {
     pub fn others(&self) -> Vec<&SceneObjectWithId> {
-        self.others
+        self.other_map
             .values()
             .filter(|obj| !self.pending_remove_objects.contains(&obj.object_id))
             .collect()
@@ -147,56 +154,6 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
 }
 
 impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
-    fn call_on_update(&mut self, delta: Duration) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
-        let mut pending_add_objects = Vec::new();
-        let mut pending_remove_objects = Vec::new();
-
-        let mut other_map: HashMap<usize, _> = self
-            .objects
-            .iter()
-            .map(|(&i, obj)| {
-                (
-                    i,
-                    SceneObjectWithId {
-                        object_id: i,
-                        inner: obj.borrow_mut(),
-                    },
-                )
-            })
-            .collect();
-        for &object_id in self.objects.keys() {
-            other_map.remove(&object_id);
-            let update_ctx = UpdateContext {
-                scene_instruction_tx: self.scene_instruction_tx.clone(),
-                object_id,
-                others: &other_map,
-                pending_add_objects: &mut pending_add_objects,
-                pending_remove_objects: &mut pending_remove_objects,
-            };
-            let obj = &self.objects[&object_id];
-            obj.borrow_mut().on_update(delta, update_ctx);
-            if let Some(obj) = obj.borrow().as_renderable_object() {
-                self.render_data.insert(object_id, obj.render_data());
-            }
-            other_map.insert(
-                object_id,
-                SceneObjectWithId {
-                    object_id,
-                    inner: obj.borrow_mut(),
-                },
-            );
-        }
-
-        (pending_add_objects, pending_remove_objects)
-    }
-    fn update_render_data(&self, did_update_vertices: bool) {
-        let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
-        if did_update_vertices {
-            render_data_receiver
-                .update_vertices(self.vertices.values().flatten().cloned().collect());
-        }
-        render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
-    }
     pub fn consume(mut self) {
         let mut delta = Duration::from_secs(0);
         let mut total_stats = TimeIt::new("total");
@@ -269,6 +226,67 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                 None => {}
             }
         }
+    }
+
+    fn call_on_update(&mut self, delta: Duration) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
+        let mut pending_add_objects = Vec::new();
+        let mut pending_remove_objects = Vec::new();
+
+        {
+            let mut other_map: HashMap<usize, _> = self
+                .objects
+                .iter()
+                .map(|(&i, obj)| (i, SceneObjectWithId {
+                    object_id: i,
+                    inner: obj.borrow_mut(),
+                }))
+                .collect();
+            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                     |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
+            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                     |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
+            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                     |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
+        }
+
+        // render_data()
+        for &object_id in self.objects.keys() {
+            if let Some(obj) = self.objects[&object_id].borrow().as_renderable_object() {
+                self.render_data.insert(object_id, obj.render_data());
+            }
+        }
+        (pending_add_objects, pending_remove_objects)
+    }
+    fn iter_with_other_map<'a, F>(&'a self,
+                                  delta: Duration,
+                                  pending_add_objects: &mut Vec<Box<dyn SceneObject>>,
+                                  pending_remove_objects: &mut Vec<usize>,
+                                  other_map: &mut HashMap<usize, SceneObjectWithId<'a>>,
+                                  call_obj_event: F)
+    where F: Fn(RefMut<Box<dyn SceneObject>>, Duration, UpdateContext) {
+        for &object_id in self.objects.keys() {
+            other_map.remove(&object_id);
+            let update_ctx = UpdateContext {
+                scene_instruction_tx: self.scene_instruction_tx.clone(),
+                object_id, other_map, pending_add_objects, pending_remove_objects,
+            };
+            let obj = &self.objects[&object_id];
+            call_obj_event(obj.borrow_mut(), delta, update_ctx);
+            other_map.insert(
+                object_id,
+                SceneObjectWithId {
+                    object_id,
+                    inner: obj.borrow_mut(),
+                },
+            );
+        }
+    }
+    fn update_render_data(&self, did_update_vertices: bool) {
+        let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
+        if did_update_vertices {
+            render_data_receiver.update_vertices(self.vertices.values().flatten().cloned().collect());
+        }
+        render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
     }
 }
 

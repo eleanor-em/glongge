@@ -4,6 +4,7 @@ use rand::Rng;
 use std::time::{Duration, Instant};
 
 use crate::{core::linalg::Vec2, gg, gg::sample::BasicRenderHandler, scene::Scene};
+use crate::gg::UpdateContext;
 
 pub fn create_spinning_triangle_scene(
     render_handler: &BasicRenderHandler,
@@ -16,8 +17,8 @@ struct Spawner {}
 impl gg::SceneObject for Spawner {
     fn on_ready(&mut self) {}
 
-    fn on_update(&mut self, _delta: Duration, mut update_handler: gg::UpdateContext) {
-        const N: usize = 10;
+    fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext) {
+        const N: usize = 200;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
             .sample_iter(&mut rng)
@@ -45,8 +46,8 @@ impl gg::SceneObject for Spawner {
                 Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn gg::SceneObject>
             })
             .collect();
-        update_handler.add_object_vec(objects);
-        update_handler.remove_this_object();
+        update_ctx.add_object_vec(objects);
+        update_ctx.remove_this_object();
     }
 }
 
@@ -86,21 +87,12 @@ impl gg::SceneObject for SpinningTriangle {
         if !(0.0..768.0).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
-        if self.alive_since.elapsed().as_secs_f64() > 0.1 {
-            for other in update_ctx.others() {
-                if let Some(other) = other.as_world_object() {
-                    if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
-                        self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
-                    }
-                }
-            }
-        }
         self.pos += self.velocity * delta_s;
 
         if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
             self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.1) {
+            if rng.gen_bool(0.05) {
                 let vel = Vec2 {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
@@ -114,6 +106,18 @@ impl gg::SceneObject for SpinningTriangle {
                     (self.velocity + vel).normed(),
                 )));
                 update_ctx.remove_this_object();
+            }
+        }
+    }
+
+    fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext) {
+        if self.alive_since.elapsed().as_secs_f64() > 0.1 {
+            for other in update_ctx.others() {
+                if let Some(other) = other.as_world_object() {
+                    if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
+                        self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
+                    }
+                }
             }
         }
     }
