@@ -9,17 +9,16 @@ pub struct Vec2 {
 
 impl Vec2 {
     pub fn up() -> Vec2 {
-        Vec2 { x: 0.0, y: 1.0 }
+        Vec2 { x: 0.0, y: -1.0 }
     }
     pub fn right() -> Vec2 {
         Vec2 { x: 1.0, y: 0.0 }
     }
-    pub fn down() -> Vec2 {
-        Vec2 { x: 0.0, y: -1.0 }
-    }
+    pub fn down() -> Vec2 { Vec2 { x: 0.0, y: 1.0 } }
     pub fn left() -> Vec2 {
         Vec2 { x: -1.0, y: 0.0 }
     }
+    pub fn one() -> Vec2 { Vec2 { x: 1.0, y: 1.0 } }
 
     pub fn mag(&self) -> f64 {
         f64::sqrt(self.x * self.x + self.y * self.y)

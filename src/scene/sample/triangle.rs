@@ -21,7 +21,7 @@ use crate::{
     scene::Scene,
 };
 
-pub fn create_spinning_triangle_scene(
+pub fn create_scene(
     render_handler: &BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<BasicRenderHandler> {

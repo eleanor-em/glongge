@@ -11,7 +11,7 @@ use crate::{
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
     },
     gg::sample::BasicRenderHandler,
-    scene::sample::create_spinning_triangle_scene,
+    scene::sample::{rectangle, triangle},
 };
 use crate::core::input::InputHandler;
 
@@ -36,7 +36,8 @@ fn main() -> Result<()> {
     let ctx = VulkanoContext::new(&window_ctx)?;
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
     let input_handler = InputHandler::new();
-    let mut scene = create_spinning_triangle_scene(&render_handler, input_handler.clone());
+    let mut scene = rectangle::create_scene(&render_handler, input_handler.clone());
+    let mut _scene = triangle::create_scene(&render_handler, input_handler.clone());
     scene.run();
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler).run(event_loop);
