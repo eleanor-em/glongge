@@ -25,9 +25,13 @@ impl Vec2 {
     }
     pub fn normed(&self) -> Vec2 {
         let mag = self.mag();
-        Vec2 {
-            x: self.x / mag,
-            y: self.y / mag,
+        if mag == 0.0 {
+            Vec2::zero()
+        } else {
+            Vec2 {
+                x: self.x / mag,
+                y: self.y / mag,
+            }
         }
     }
 

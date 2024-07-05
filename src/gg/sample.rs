@@ -66,6 +66,8 @@ struct BasicVertex {
     translation: [f32; 2],
     #[format(R32_SFLOAT)]
     rotation: f32,
+    #[format(R32G32B32A32_SFLOAT)]
+    blend_colour: [f32; 4],
 }
 
 pub struct BasicRenderDataReceiver {
@@ -191,6 +193,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                     position: receiver.vertices[i].into(),
                     translation: receiver.render_data[i / 6].position.into(),
                     rotation: receiver.render_data[i / 6].rotation as f32,
+                    blend_colour: receiver.render_data[i / 6].colour,
                 };
             }
         }
@@ -238,6 +241,7 @@ impl BasicRenderHandler {
             position: v.into(),
             translation: Vec2::zero().into(),
             rotation: 0.0,
+            blend_colour: [0.0, 0.0, 0.0, 0.0],
         });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),

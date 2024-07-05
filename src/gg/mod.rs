@@ -1,4 +1,5 @@
 pub mod sample;
+pub mod scene;
 
 use std::{
     cell::{RefCell, RefMut},
@@ -9,6 +10,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use std::collections::BTreeMap;
 
 use tracing::info;
 
@@ -26,6 +28,7 @@ pub struct SceneObjectWithId<'a> {
 
 pub trait SceneObject: Send {
     fn on_ready(&mut self);
+    fn get_name(&self) -> &'static str;
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext);
     // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
@@ -122,9 +125,9 @@ pub enum SceneInstruction {
 }
 
 pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
-    objects: HashMap<usize, RefCell<Box<dyn SceneObject>>>,
-    vertices: HashMap<usize, Vec<Vec2>>,
-    render_data: HashMap<usize, RenderData>,
+    objects: BTreeMap<usize, RefCell<Box<dyn SceneObject>>>,
+    vertices: BTreeMap<usize, Vec<Vec2>>,
+    render_data: BTreeMap<usize, RenderData>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -140,7 +143,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Self {
-        let objects: HashMap<usize, _> = objects.into_iter().enumerate().collect();
+        let objects: BTreeMap<usize, _> = objects.into_iter().enumerate().collect();
         let vertices = objects
             .iter()
             .filter_map(|(&i, obj)| {
@@ -321,6 +324,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
 pub struct RenderData {
     pub position: Vec2,
     pub rotation: f64,
+    pub colour: [f32; 4],
 }
 
 pub trait RenderDataReceiver: Send {

@@ -10,15 +10,16 @@ use crate::{
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
     },
-    gg::sample::BasicRenderHandler,
-    scene::sample::{rectangle, triangle},
+    gg::{
+        sample::BasicRenderHandler,
+        scene::sample::{rectangle, triangle}
+    }
 };
 use crate::core::input::InputHandler;
 
 mod assert;
 mod core;
 mod gg;
-mod scene;
 mod shader;
 
 fn main() -> Result<()> {

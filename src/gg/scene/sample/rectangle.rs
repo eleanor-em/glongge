@@ -2,32 +2,92 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant}
 };
-use num_traits::FloatConst;
+use num_traits::{FloatConst, Zero};
 use rand::{
     distributions::{Distribution, Uniform},
     Rng
 };
 
-use crate::{core::{
-    linalg::Vec2,
-    input::{InputHandler, KeyCode}
-}, gg::{
-    self,
-    sample::BasicRenderHandler,
-    UpdateContext
-}, scene::Scene, shader};
+use crate::{
+    core::{
+        linalg::Vec2,
+        input::{InputHandler, KeyCode}
+    },
+    gg::{
+        self,
+        sample::BasicRenderHandler,
+        scene::Scene,
+        UpdateContext
+    },
+    shader,
+};
+use crate::gg::{RenderableObject, WorldObject};
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<BasicRenderHandler> {
-    Scene::new(vec![Box::new(Spawner {})], render_handler, input_handler)
+    Scene::new(vec![Box::new(Spawner {}),
+                    Box::new(Player { pos: Vec2 { x: 512.0, y: 384.0 } })],
+               render_handler, input_handler)
+}
+
+struct Player {
+    pos: Vec2,
+}
+
+impl Player {
+    const SIZE: f64 = 190.0;
+    const SPEED: f64 = 170.0;
+}
+
+impl gg::SceneObject for Player {
+    fn on_ready(&mut self) {}
+    fn get_name(&self) -> &'static str { "Player" }
+
+    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext) {
+        let mut direction = Vec2::zero();
+        if update_ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
+        if update_ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
+        if update_ctx.input().down(KeyCode::Up) { direction += Vec2::up(); }
+        if update_ctx.input().down(KeyCode::Down) { direction += Vec2::down(); }
+        self.pos += Self::SPEED * direction.normed() * delta.as_secs_f64();
+    }
+
+    fn as_world_object(&self) -> Option<&dyn WorldObject> {
+        Some(self)
+    }
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+        Some(self)
+    }
+}
+
+impl gg::WorldObject for Player {
+    fn world_pos(&self) -> Vec2 {
+        self.pos
+    }
+}
+
+impl gg::RenderableObject for Player {
+    fn create_vertices(&self) -> Vec<Vec2> {
+        shader::vertex::rectangle(-Self::SIZE/2.0 * Vec2::one(),
+                                  Self::SIZE * Vec2::one())
+    }
+
+    fn render_data(&self) -> gg::RenderData {
+        gg::RenderData {
+            position: self.pos,
+            rotation: 0.0,
+            colour: [0.0, 1.0, 0.0, 1.0],
+        }
+    }
 }
 
 struct Spawner {}
 
 impl gg::SceneObject for Spawner {
     fn on_ready(&mut self) {}
+    fn get_name(&self) -> &'static str { "Spawner" }
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext) {
         const N: usize = 10;
@@ -86,6 +146,7 @@ impl SpinningRectangle {
 }
 impl gg::SceneObject for SpinningRectangle {
     fn on_ready(&mut self) {}
+    fn get_name(&self) -> &'static str { "SpinningRectangle" }
 
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext) {
         let delta_s = delta.as_secs_f64();
@@ -126,7 +187,8 @@ impl gg::SceneObject for SpinningRectangle {
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
                 if let Some(other) = other.as_world_object() {
-                    if (other.world_pos() - self.pos).mag() < Self::SIZE {
+                    let other_size = if other.get_name() == "Player" { Player::SIZE } else { Self::SIZE };
+                    if (other.world_pos() - self.pos).mag() < (Self::SIZE + other_size) / 2.0 {
                         self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
                     }
                 }
@@ -150,14 +212,15 @@ impl gg::WorldObject for SpinningRectangle {
 
 impl gg::RenderableObject for SpinningRectangle {
     fn create_vertices(&self) -> Vec<Vec2> {
-        shader::vertex::rectangle(-SpinningRectangle::SIZE/2.0 * Vec2::one(),
-                                  SpinningRectangle::SIZE * Vec2::one())
+        shader::vertex::rectangle(-Self::SIZE/2.0 * Vec2::one(),
+                                  Self::SIZE * Vec2::one())
     }
 
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
             position: self.pos,
             rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
+            colour: [1.0, 0.0, 0.0, 1.0],
         }
     }
 }

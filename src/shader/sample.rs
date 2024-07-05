@@ -7,6 +7,9 @@ pub mod basic_vertex_shader {
             layout(location = 0) in vec2 position;
             layout(location = 1) in vec2 translation;
             layout(location = 2) in float rotation;
+            layout(location = 3) in vec4 blend_colour;
+            layout(location = 0) out vec4 colour;
+
             layout(set = 0, binding = 0) uniform Data {
                 float window_width;
                 float window_height;
@@ -39,6 +42,7 @@ pub mod basic_vertex_shader {
                     vec4(0, 0, 1, 0),
                     vec4(translation, 0, 1));
                 gl_Position = projection * translation_mat * rotation_mat * vec4(position, 0, 1);
+                colour = blend_colour;
             }
         ",
     }
@@ -49,10 +53,11 @@ pub mod basic_fragment_shader {
         src: r"
             #version 460
 
-            layout(location = 0) out vec4 f_color;
+            layout(location = 0) in vec4 colour;
+            layout(location = 0) out vec4 f_colour;
 
             void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                f_colour = colour;
             }
         ",
     }

@@ -16,9 +16,9 @@ use crate::{
     gg::{
         self,
         sample::BasicRenderHandler,
+        scene::Scene,
         UpdateContext
     },
-    scene::Scene,
 };
 
 pub fn create_scene(
@@ -32,6 +32,7 @@ struct Spawner {}
 
 impl gg::SceneObject for Spawner {
     fn on_ready(&mut self) {}
+    fn get_name(&self) -> &'static str { "Spawner" }
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext) {
         const N: usize = 10;
@@ -90,6 +91,7 @@ impl SpinningTriangle {
 }
 impl gg::SceneObject for SpinningTriangle {
     fn on_ready(&mut self) {}
+    fn get_name(&self) -> &'static str { "SpinningTriangle" }
 
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext) {
         let delta_s = delta.as_secs_f64();
@@ -175,6 +177,7 @@ impl gg::RenderableObject for SpinningTriangle {
         gg::RenderData {
             position: self.pos,
             rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
+            colour: [1.0, 0.0, 0.0, 1.0],
         }
     }
 }
