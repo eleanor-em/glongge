@@ -48,6 +48,7 @@ use winit::{
 };
 
 use crate::{core::util::TimeIt, gg::RenderDataReceiver};
+use crate::core::input::InputHandler;
 use crate::core::linalg::Vec2;
 
 pub struct WindowContext {
@@ -541,6 +542,7 @@ where
     scale_factor: f64,
     ctx: VulkanoContext,
     render_handler: RenderHandler,
+    input_handler: Arc<Mutex<InputHandler>>,
 
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
@@ -552,14 +554,15 @@ where
     CommandBuffer: PrimaryCommandBufferAbstract + 'static,
     RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
-    pub fn new(window: Arc<Window>, ctx: VulkanoContext, handler: RenderHandler) -> Self {
+    pub fn new(window: Arc<Window>, ctx: VulkanoContext, render_handler: RenderHandler, input_handler: Arc<Mutex<InputHandler>>) -> Self {
         let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
         let scale_factor = window.scale_factor();
         Self {
             window,
             scale_factor,
             ctx,
-            render_handler: handler,
+            render_handler,
+            input_handler,
             fences,
             render_stats: RenderPerfStats::new(),
             command_buffer_type: PhantomData,
@@ -677,14 +680,18 @@ where
                 *control_flow = ControlFlow::Exit;
                 Ok(())
             }
-            Event::WindowEvent {
-                event: WindowEvent::ScaleFactorChanged {
-                    scale_factor: new_scale_factor,
-                    ..
-                },
-                ..
-            } => {
-                self.scale_factor = new_scale_factor;
+            Event::WindowEvent { event: WindowEvent::KeyboardInput { input: winit::event::KeyboardInput {
+                state, virtual_keycode, ..
+            }, .. }, .. } => {
+                if let Some(virtual_keycode) = virtual_keycode {
+                    self.input_handler.lock().unwrap().queue_event(virtual_keycode, state);
+                }
+                Ok(())
+            }
+            Event::WindowEvent { event: WindowEvent::ScaleFactorChanged {
+                scale_factor, ..
+            }, .. } => {
+                self.scale_factor = scale_factor;
                 self.recreate_swapchain()
             }
             Event::WindowEvent {

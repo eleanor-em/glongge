@@ -13,6 +13,7 @@ use crate::{
     gg::sample::BasicRenderHandler,
     scene::sample::create_spinning_triangle_scene,
 };
+use crate::core::input::InputHandler;
 
 mod assert;
 mod core;
@@ -34,10 +35,11 @@ fn main() -> Result<()> {
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
-    let mut scene = create_spinning_triangle_scene(&render_handler);
+    let input_handler = InputHandler::new();
+    let mut scene = create_spinning_triangle_scene(&render_handler, input_handler.clone());
     scene.run();
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, ctx, render_handler).run(event_loop);
+    WindowEventHandler::new(window, ctx, render_handler, input_handler).run(event_loop);
     Ok(())
 }
 

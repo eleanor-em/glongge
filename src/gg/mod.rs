@@ -17,6 +17,7 @@ use crate::core::{
     util::TimeIt,
     vk_core::AdjustedViewport
 };
+use crate::core::input::InputHandler;
 
 pub struct SceneObjectWithId<'a> {
     object_id: usize,
@@ -70,6 +71,7 @@ impl<'a> SceneObjectWithId<'a> {
 }
 
 pub struct UpdateContext<'a> {
+    input_handler: &'a InputHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     object_id: usize,
     other_map: &'a HashMap<usize, SceneObjectWithId<'a>>,
@@ -79,6 +81,8 @@ pub struct UpdateContext<'a> {
 }
 
 impl<'a> UpdateContext<'a> {
+    pub fn input(&self) -> &InputHandler { self.input_handler }
+
     pub fn others(&self) -> Vec<&SceneObjectWithId> {
         self.other_map
             .values()
@@ -123,6 +127,7 @@ pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
     render_data: HashMap<usize, RenderData>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
+    input_handler: Arc<Mutex<InputHandler>>,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
 }
@@ -131,6 +136,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
     pub(crate) fn new(
         objects: Vec<RefCell<Box<dyn SceneObject>>>,
         render_data_receiver: Arc<Mutex<RenderReceiver>>,
+        input_handler: Arc<Mutex<InputHandler>>,
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Self {
@@ -158,6 +164,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
             render_data,
             viewport,
             render_data_receiver,
+            input_handler,
             scene_instruction_tx,
             scene_instruction_rx,
         };
@@ -183,8 +190,10 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                 let now = Instant::now();
                 total_stats.start();
 
+                let input_handler = self.input_handler.lock().unwrap().clone();
+
                 update_objects_stats.start();
-                let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta);
+                let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, &input_handler);
                 let did_update_vertices =
                     !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
                 update_objects_stats.stop();
@@ -219,6 +228,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                 self.update_render_data(did_update_vertices);
                 render_data_stats.stop();
 
+                self.input_handler.lock().unwrap().update_step();
                 total_stats.stop();
                 if last_report.elapsed().as_secs() >= 5 {
                     info!("update stats:");
@@ -241,7 +251,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         }
     }
 
-    fn call_on_update(&mut self, delta: Duration) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
+    fn call_on_update(&mut self, delta: Duration, input_handler: &InputHandler) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
 
@@ -254,11 +264,11 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                     inner: obj.borrow_mut(),
                 }))
                 .collect();
-            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
-            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
-            self.iter_with_other_map(delta, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
         }
 
@@ -272,6 +282,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
     }
     fn iter_with_other_map<'a, F>(&'a self,
                                   delta: Duration,
+                                  input_handler: &InputHandler,
                                   pending_add_objects: &mut Vec<Box<dyn SceneObject>>,
                                   pending_remove_objects: &mut Vec<usize>,
                                   other_map: &mut HashMap<usize, SceneObjectWithId<'a>>,
@@ -280,6 +291,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         for &object_id in self.objects.keys() {
             other_map.remove(&object_id);
             let update_ctx = UpdateContext {
+                input_handler,
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
                 object_id, other_map, pending_add_objects, pending_remove_objects,
                 viewport: self.viewport.clone(),

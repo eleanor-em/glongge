@@ -1,15 +1,31 @@
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant}
+};
 use num_traits::{Float, FloatConst};
-use rand::distributions::{Distribution, Uniform};
-use rand::Rng;
-use std::time::{Duration, Instant};
+use rand::{
+    distributions::{Distribution, Uniform},
+    Rng
+};
 
-use crate::{core::linalg::Vec2, gg, gg::sample::BasicRenderHandler, scene::Scene};
-use crate::gg::UpdateContext;
+use crate::{
+    core::{
+        linalg::Vec2,
+        input::{InputHandler, KeyCode}
+    },
+    gg::{
+        self,
+        sample::BasicRenderHandler,
+        UpdateContext
+    },
+    scene::Scene,
+};
 
 pub fn create_spinning_triangle_scene(
     render_handler: &BasicRenderHandler,
+    input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<BasicRenderHandler> {
-    Scene::new(vec![Box::new(Spawner {})], render_handler)
+    Scene::new(vec![Box::new(Spawner {})], render_handler, input_handler)
 }
 
 struct Spawner {}
@@ -18,7 +34,7 @@ impl gg::SceneObject for Spawner {
     fn on_ready(&mut self) {}
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext) {
-        const N: usize = 200;
+        const N: usize = 10;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
             .sample_iter(&mut rng)
@@ -55,7 +71,6 @@ struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,
-    last_spawn: Instant,
     alive_since: Instant,
 }
 
@@ -69,7 +84,6 @@ impl SpinningTriangle {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             t: 0.0,
-            last_spawn: Instant::now(),
             alive_since: Instant::now(),
         }
     }
@@ -89,12 +103,11 @@ impl gg::SceneObject for SpinningTriangle {
         }
         self.pos += self.velocity * delta_s;
 
-        if self.last_spawn.elapsed().as_secs() >= 1 &&
+        if update_ctx.input().pressed(KeyCode::Space) &&
                 update_ctx.others().len() < 2500 &&
                 update_ctx.viewport().contains(self.pos) {
-            self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.05) {
+            if rng.gen_bool(0.2) {
                 let vel = Vec2 {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
