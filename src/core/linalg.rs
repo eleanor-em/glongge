@@ -35,6 +35,8 @@ impl Vec2 {
         }
     }
 
+    pub fn dot(&self, other: Vec2) -> f64 { self.x * other.x + self.y * other.y }
+
     pub fn almost_eq(self, rhs: Vec2) -> bool {
         (self - rhs).mag() < f64::epsilon()
     }
@@ -217,9 +219,9 @@ impl Mat3x3 {
     pub fn rotation(radians: f64) -> Mat3x3 {
         Mat3x3 {
             xx: f64::cos(radians),
-            xy: -f64::sin(radians),
+            xy: f64::sin(radians),
             xw: 0.0,
-            yx: f64::sin(radians),
+            yx: -f64::sin(radians),
             yy: f64::cos(radians),
             yw: 0.0,
             wx: 0.0,

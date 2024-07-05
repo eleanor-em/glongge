@@ -46,6 +46,7 @@ pub trait SceneObject: Send {
 
 pub trait WorldObject: SceneObject {
     fn world_pos(&self) -> Vec2;
+    fn rotation(&self) -> f64;
 }
 
 pub trait RenderableObject: SceneObject {

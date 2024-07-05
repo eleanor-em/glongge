@@ -20,6 +20,7 @@ use crate::{
         UpdateContext
     },
 };
+use crate::gg::WorldObject;
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
@@ -152,6 +153,10 @@ impl gg::WorldObject for SpinningTriangle {
     fn world_pos(&self) -> Vec2 {
         self.pos
     }
+
+    fn rotation(&self) -> f64 {
+        Self::ANGULAR_VELOCITY * f64::PI() * self.t
+    }
 }
 
 impl gg::RenderableObject for SpinningTriangle {
@@ -176,7 +181,7 @@ impl gg::RenderableObject for SpinningTriangle {
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
             position: self.pos,
-            rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
+            rotation: self.rotation(),
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }

@@ -21,6 +21,7 @@ use crate::{
     },
     shader,
 };
+use crate::core::collision::BoxCollider;
 use crate::gg::{RenderableObject, WorldObject};
 
 pub fn create_scene(
@@ -28,12 +29,13 @@ pub fn create_scene(
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<BasicRenderHandler> {
     Scene::new(vec![Box::new(Spawner {}),
-                    Box::new(Player { pos: Vec2 { x: 512.0, y: 384.0 } })],
+                    Box::new(Player { pos: Vec2 { x: 512.0, y: 384.0 }, vel: Vec2::zero() })],
                render_handler, input_handler)
 }
 
 struct Player {
     pos: Vec2,
+    vel: Vec2,
 }
 
 impl Player {
@@ -45,13 +47,37 @@ impl gg::SceneObject for Player {
     fn on_ready(&mut self) {}
     fn get_name(&self) -> &'static str { "Player" }
 
-    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext) {
+    fn on_update_begin(&mut self, delta: Duration, _update_ctx: UpdateContext) {
+        self.pos += self.vel * delta.as_secs_f64();
+    }
+
+    fn on_update(&mut self, _delta: Duration, update_ctx: UpdateContext) {
         let mut direction = Vec2::zero();
         if update_ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
         if update_ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
         if update_ctx.input().down(KeyCode::Up) { direction += Vec2::up(); }
         if update_ctx.input().down(KeyCode::Down) { direction += Vec2::down(); }
-        self.pos += Self::SPEED * direction.normed() * delta.as_secs_f64();
+        self.vel = Self::SPEED * direction.normed();
+    }
+    fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext) {
+        for other in update_ctx.others() {
+            if let Some(other) = other.as_world_object() {
+                let my_bb = BoxCollider {
+                    centre: self.pos,
+                    rotation: self.rotation(),
+                    extents: Vec2 { x: Self::SIZE, y: Self::SIZE },
+                };
+                let their_bb = BoxCollider {
+                    centre: other.world_pos(),
+                    rotation: other.rotation(),
+                    extents: Vec2 { x: SpinningRectangle::SIZE, y: SpinningRectangle::SIZE }
+                };
+                if my_bb.collides_with(&their_bb) {
+                    self.vel = Vec2::zero();
+                    return;
+                }
+            }
+        }
     }
 
     fn as_world_object(&self) -> Option<&dyn WorldObject> {
@@ -65,6 +91,10 @@ impl gg::SceneObject for Player {
 impl gg::WorldObject for Player {
     fn world_pos(&self) -> Vec2 {
         self.pos
+    }
+
+    fn rotation(&self) -> f64 {
+        0.0
     }
 }
 
@@ -148,6 +178,10 @@ impl gg::SceneObject for SpinningRectangle {
     fn on_ready(&mut self) {}
     fn get_name(&self) -> &'static str { "SpinningRectangle" }
 
+    fn on_update_begin(&mut self, delta: Duration, _update_ctx: UpdateContext) {
+        self.pos += self.velocity * delta.as_secs_f64();
+    }
+
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
@@ -158,7 +192,6 @@ impl gg::SceneObject for SpinningRectangle {
         if !(0.0..update_ctx.viewport().logical_height() as f64).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
-        self.pos += self.velocity * delta_s;
 
         if update_ctx.input().pressed(KeyCode::Space) &&
                 update_ctx.others().len() < 2500 &&
@@ -187,8 +220,21 @@ impl gg::SceneObject for SpinningRectangle {
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
                 if let Some(other) = other.as_world_object() {
-                    let other_size = if other.get_name() == "Player" { Player::SIZE } else { Self::SIZE };
-                    if (other.world_pos() - self.pos).mag() < (Self::SIZE + other_size) / 2.0 {
+                    let my_bb = BoxCollider {
+                        centre: self.pos,
+                        rotation: self.rotation(),
+                        extents: Vec2 { x: Self::SIZE, y: Self::SIZE },
+                    };
+                    let their_bb = BoxCollider {
+                        centre: other.world_pos(),
+                        rotation: other.rotation(),
+                        extents: if other.get_name() == "Player" {
+                            Vec2 { x: Player::SIZE, y: Player::SIZE }
+                        } else {
+                            Vec2 { x: Self::SIZE, y: Self::SIZE }
+                        }
+                    };
+                    if my_bb.collides_with(&their_bb) {
                         self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
                     }
                 }
@@ -208,6 +254,10 @@ impl gg::WorldObject for SpinningRectangle {
     fn world_pos(&self) -> Vec2 {
         self.pos
     }
+
+    fn rotation(&self) -> f64 {
+        Self::ANGULAR_VELOCITY * f64::PI() * self.t
+    }
 }
 
 impl gg::RenderableObject for SpinningRectangle {
@@ -219,7 +269,7 @@ impl gg::RenderableObject for SpinningRectangle {
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
             position: self.pos,
-            rotation: Self::ANGULAR_VELOCITY * f64::PI() * self.t,
+            rotation: self.rotation(),
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }
