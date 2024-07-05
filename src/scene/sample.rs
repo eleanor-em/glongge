@@ -81,15 +81,17 @@ impl gg::SceneObject for SpinningTriangle {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
-        if !(0.0..1024.0).contains(&next_pos.x) {
+        if !(0.0..update_ctx.viewport().logical_width() as f64).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
-        if !(0.0..768.0).contains(&next_pos.y) {
+        if !(0.0..update_ctx.viewport().logical_height() as f64).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
         self.pos += self.velocity * delta_s;
 
-        if self.last_spawn.elapsed().as_secs() >= 1 && update_ctx.others().len() < 2500 {
+        if self.last_spawn.elapsed().as_secs() >= 1 &&
+                update_ctx.others().len() < 2500 &&
+                update_ctx.viewport().contains(self.pos) {
             self.last_spawn = Instant::now();
             let mut rng = rand::thread_rng();
             if rng.gen_bool(0.05) {
@@ -111,7 +113,8 @@ impl gg::SceneObject for SpinningTriangle {
     }
 
     fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext) {
-        if self.alive_since.elapsed().as_secs_f64() > 0.1 {
+        if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
+                update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
                 if let Some(other) = other.as_world_object() {
                     if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {

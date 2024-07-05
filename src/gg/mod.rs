@@ -12,7 +12,11 @@ use std::{
 
 use tracing::info;
 
-use crate::core::{linalg::Vec2, util::TimeIt};
+use crate::core::{
+    linalg::Vec2,
+    util::TimeIt,
+    vk_core::AdjustedViewport
+};
 
 pub struct SceneObjectWithId<'a> {
     object_id: usize,
@@ -71,6 +75,7 @@ pub struct UpdateContext<'a> {
     other_map: &'a HashMap<usize, SceneObjectWithId<'a>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject>>,
     pending_remove_objects: &'a mut Vec<usize>,
+    viewport: AdjustedViewport,
 }
 
 impl<'a> UpdateContext<'a> {
@@ -93,10 +98,15 @@ impl<'a> UpdateContext<'a> {
     pub fn remove_this_object(&mut self) {
         self.pending_remove_objects.push(self.object_id);
     }
+
     pub fn scene_stop(&self) {
         self.scene_instruction_tx
             .send(SceneInstruction::Stop)
             .unwrap();
+    }
+
+    pub fn viewport(&self) -> AdjustedViewport {
+        self.viewport.clone()
     }
 }
 
@@ -111,6 +121,7 @@ pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
     objects: HashMap<usize, RefCell<Box<dyn SceneObject>>>,
     vertices: HashMap<usize, Vec<Vec2>>,
     render_data: HashMap<usize, RenderData>,
+    viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
@@ -140,10 +151,12 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                     .map(|obj| (i, obj.render_data()))
             })
             .collect();
-        let rv = Self {
+        let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
+        let mut rv = Self {
             objects,
             vertices,
             render_data,
+            viewport,
             render_data_receiver,
             scene_instruction_tx,
             scene_instruction_rx,
@@ -269,6 +282,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
             let update_ctx = UpdateContext {
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
                 object_id, other_map, pending_add_objects, pending_remove_objects,
+                viewport: self.viewport.clone(),
             };
             let obj = &self.objects[&object_id];
             call_obj_event(obj.borrow_mut(), delta, update_ctx);
@@ -281,12 +295,13 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
             );
         }
     }
-    fn update_render_data(&self, did_update_vertices: bool) {
+    fn update_render_data(&mut self, did_update_vertices: bool) {
         let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
         if did_update_vertices {
             render_data_receiver.update_vertices(self.vertices.values().flatten().cloned().collect());
         }
         render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
+        self.viewport = render_data_receiver.current_viewport();
     }
 }
 
@@ -299,4 +314,5 @@ pub struct RenderData {
 pub trait RenderDataReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<Vec2>);
     fn update_render_data(&mut self, render_data: Vec<RenderData>);
+    fn current_viewport(&self) -> AdjustedViewport;
 }

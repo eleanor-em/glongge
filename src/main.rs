@@ -1,7 +1,8 @@
 #![feature(iterator_try_collect)]
 
-use anyhow::Result;
 use num_traits::{Float, One};
+
+use anyhow::Result;
 
 use crate::{
     assert::*,

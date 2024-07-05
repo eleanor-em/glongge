@@ -10,20 +10,23 @@ pub mod basic_vertex_shader {
             layout(set = 0, binding = 0) uniform Data {
                 float window_width;
                 float window_height;
+                float scale_factor;
             };
 
             void main() {
+                // map ([0, window_width], [0, window_height]) to ([0, 1], [0, 1])
                 mat4 window_pixel_scale = mat4(
-                    vec4(1/window_width, 0, 0, 0),
-                    vec4(0, 1/window_height, 0, 0),
+                    vec4(scale_factor / window_width, 0, 0, 0),
+                    vec4(0, scale_factor / window_height, 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
+                // map ([0, 1], [0, 1]) to ([-1, 1], [-1, 1])
                 mat4 window_translation = mat4(
-                    vec4(4, 0, 0, 0),
-                    vec4(0, 4, 0, 0),
-                    vec4(0, 0, 1, 0),
+                    vec4( 2,  0, 0, 0),
+                    vec4( 0,  2, 0, 0),
+                    vec4( 0,  0, 1, 0),
                     vec4(-1, -1, 0, 1));
-                mat4 projection = window_translation * window_pixel_scale;
+                mat4 projection =  window_translation * window_pixel_scale;
 
                 mat4 rotation_mat = mat4(
                     vec4(cos(rotation), -sin(rotation), 0, 0),

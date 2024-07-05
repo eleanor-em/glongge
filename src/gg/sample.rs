@@ -4,27 +4,37 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use anyhow::{Context, Result};
 use tracing::info;
 
-use vulkano::render_pass::Framebuffer;
-use vulkano::{buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
-}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{
-    graphics::{
-        color_blend::{ColorBlendAttachmentState, ColorBlendState},
-        input_assembly::InputAssemblyState,
-        multisample::MultisampleState,
-        rasterization::RasterizationState,
-        vertex_input::{Vertex, VertexDefinition},
-        viewport::{Viewport, ViewportState},
-        GraphicsPipelineCreateInfo,
+use vulkano::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
     },
-    layout::PipelineDescriptorSetLayoutCreateInfo,
-    GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
-    PipelineShaderStageCreateInfo,
-}, render_pass::Subpass, shader::ShaderModule, Validated};
+    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
+    pipeline::{
+        graphics::{
+            color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            input_assembly::InputAssemblyState,
+            multisample::MultisampleState,
+            rasterization::RasterizationState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::ViewportState,
+            GraphicsPipelineCreateInfo,
+        },
+        layout::PipelineDescriptorSetLayoutCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        PipelineShaderStageCreateInfo,
+    },
+    render_pass::{
+        Framebuffer,
+        Subpass
+    },
+    shader::ShaderModule,
+    Validated
+};
 use winit::window::Window;
 
-use crate::gg::RenderDataReceiver;
 use crate::{
     core::{
         linalg::Vec2,
@@ -32,15 +42,20 @@ use crate::{
             DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext,
         },
     },
-    gg::RenderData,
-    shader::sample::{basic_fragment_shader, basic_vertex_shader},
+    gg::{
+        RenderDataReceiver,
+        RenderData
+    },
+    shader::sample::{basic_fragment_shader, basic_vertex_shader}
 };
+use crate::core::vk_core::AdjustedViewport;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
 struct BasicUniformData {
     window_width: f32,
     window_height: f32,
+    scale_factor: f32,
 }
 #[derive(BufferContents, Vertex, Debug, Clone, Copy)]
 #[repr(C)]
@@ -57,13 +72,15 @@ pub struct BasicRenderDataReceiver {
     vertices: Vec<Vec2>,
     vertices_up_to_date: DataPerImage<bool>,
     render_data: Vec<RenderData>,
+    viewport: AdjustedViewport,
 }
 impl BasicRenderDataReceiver {
-    fn new(ctx: &VulkanoContext) -> Self {
+    fn new(ctx: &VulkanoContext, viewport: AdjustedViewport) -> Self {
         Self {
             vertices: Vec::new(),
             vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
             render_data: Vec::new(),
+            viewport,
         }
     }
 }
@@ -76,12 +93,16 @@ impl RenderDataReceiver for BasicRenderDataReceiver {
     fn update_render_data(&mut self, render_data: Vec<RenderData>) {
         self.render_data = render_data;
     }
+
+    fn current_viewport(&self) -> AdjustedViewport {
+        self.viewport.clone()
+    }
 }
 
 pub struct BasicRenderHandler {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    viewport: Viewport,
+    viewport: AdjustedViewport,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffers: Option<DataPerImage<Subbuffer<[BasicVertex]>>>,
     uniform_buffers: Option<DataPerImage<Subbuffer<BasicUniformData>>>,
@@ -99,12 +120,13 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         window: Arc<Window>,
     ) -> Result<()> {
         info!("on_resize()");
-        self.viewport.extent = window.inner_size().into();
+        self.viewport.update_from_window(window.clone());
         self.vertex_buffers = None;
         self.command_buffers = None;
         self.pipeline = None;
         self.uniform_buffers = None;
         self.uniform_buffer_sets = None;
+        self.render_data_receiver.lock().unwrap().viewport = self.viewport.clone();
         Ok(())
     }
 
@@ -173,8 +195,9 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
             }
         }
         *self.uniform_buffers.as_mut().unwrap().current_value(per_image_ctx).write()? = BasicUniformData {
-            window_width: self.viewport.extent[0],
-            window_height: self.viewport.extent[1],
+            window_width: self.viewport.physical_width(),
+            window_height: self.viewport.physical_height(),
+            scale_factor: self.viewport.scale_factor(),
         };
         Ok(self.command_buffers.clone().unwrap())
     }
@@ -186,16 +209,14 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 
 impl BasicRenderHandler {
     pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
-            ctx
-        )));
-
         let vs =
             basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
         let fs =
             basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
-        // TODO: better initial value for vertex_buffers
         let viewport = window_ctx.create_default_viewport();
+        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
+            ctx, viewport.clone()
+        )));
         Ok(Self {
             vs,
             fs,
@@ -263,7 +284,7 @@ impl BasicRenderHandler {
                 vertex_input_state: Some(vertex_input_state),
                 input_assembly_state: Some(InputAssemblyState::default()),
                 viewport_state: Some(ViewportState {
-                    viewports: [self.viewport.clone()].into_iter().collect(),
+                    viewports: [self.viewport.inner()].into_iter().collect(),
                     ..Default::default()
                 }),
                 rasterization_state: Some(RasterizationState::default()),

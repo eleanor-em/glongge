@@ -11,11 +11,12 @@ use tracing::{error, info, warn};
 
 use crate::assert::*;
 
-use vulkano::command_buffer::PrimaryAutoCommandBuffer;
 use vulkano::{
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        CommandBufferExecFuture, PrimaryCommandBufferAbstract,
+        CommandBufferExecFuture,
+        PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::{
@@ -35,7 +36,9 @@ use vulkano::{
         future::{FenceSignalFuture, JoinFuture},
         GpuFuture,
     },
-    Validated, VulkanError, VulkanLibrary,
+    Validated,
+    VulkanError,
+    VulkanLibrary
 };
 use winit::{
     dpi::LogicalSize,
@@ -45,6 +48,7 @@ use winit::{
 };
 
 use crate::{core::util::TimeIt, gg::RenderDataReceiver};
+use crate::core::linalg::Vec2;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -73,12 +77,40 @@ impl WindowContext {
         (self.event_loop, self.window)
     }
 
-    pub fn create_default_viewport(&self) -> Viewport {
-        Viewport {
-            offset: [0.0, 0.0],
-            extent: self.window.inner_size().into(),
-            depth_range: 0.0..=1.0,
+    pub fn create_default_viewport(&self) -> AdjustedViewport {
+        AdjustedViewport {
+            inner: Viewport {
+                offset: [0.0, 0.0],
+                extent: self.window.inner_size().into(),
+                depth_range: 0.0..=1.0,
+            },
+            scale_factor: self.window.scale_factor(),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct AdjustedViewport {
+    inner: Viewport,
+    scale_factor: f64,
+}
+
+impl AdjustedViewport {
+    pub fn update_from_window(&mut self, window: Arc<Window>) {
+        self.inner.extent = window.inner_size().into();
+        self.scale_factor = window.scale_factor();
+    }
+
+    pub fn physical_width(&self) -> f32 { self.inner.extent[0] }
+    pub fn physical_height(&self) -> f32 { self.inner.extent[1] }
+    pub fn logical_width(&self) -> f32 { self.inner.extent[0] / self.scale_factor() }
+    pub fn logical_height(&self) -> f32 { self.inner.extent[1] / self.scale_factor() }
+    pub fn scale_factor(&self) -> f32 { self.scale_factor as f32 }
+
+    pub fn inner(&self) -> Viewport { self.inner.clone() }
+    pub fn contains(&self, pos: Vec2) -> bool {
+        (0.0..self.logical_width() as f64).contains(&pos.x) &&
+            (0.0..self.logical_height() as f64).contains(&pos.x)
     }
 }
 
@@ -506,6 +538,7 @@ where
     RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
     window: Arc<Window>,
+    scale_factor: f64,
     ctx: VulkanoContext,
     render_handler: RenderHandler,
 
@@ -521,8 +554,10 @@ where
 {
     pub fn new(window: Arc<Window>, ctx: VulkanoContext, handler: RenderHandler) -> Self {
         let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
+        let scale_factor = window.scale_factor();
         Self {
             window,
+            scale_factor,
             ctx,
             render_handler: handler,
             fences,
@@ -641,6 +676,16 @@ where
             } => {
                 *control_flow = ControlFlow::Exit;
                 Ok(())
+            }
+            Event::WindowEvent {
+                event: WindowEvent::ScaleFactorChanged {
+                    scale_factor: new_scale_factor,
+                    ..
+                },
+                ..
+            } => {
+                self.scale_factor = new_scale_factor;
+                self.recreate_swapchain()
             }
             Event::WindowEvent {
                 event: WindowEvent::Resized(_),
