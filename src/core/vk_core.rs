@@ -621,7 +621,7 @@ where
     fn update_last_image_idx(
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
-    ) -> Result<()> {
+    ) {
         let expected_image_idx = (per_image_ctx.last + 1) % self.ctx.images.len();
         let image_idx = per_image_ctx.current.unwrap();
         if image_idx != expected_image_idx && per_image_ctx.last != image_idx {
@@ -631,7 +631,6 @@ where
             );
         }
         per_image_ctx.last = image_idx;
-        Ok(())
     }
 
     fn run_inner(&mut self, event: Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
@@ -657,18 +656,14 @@ where
                 let rv = match swapchain::acquire_next_image(self.ctx.swapchain(), None)
                     .map_err(Validated::unwrap)
                 {
-                    Ok((image_idx, suboptimal, acquire_future)) => {
+                    Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
                         per_image_ctx.current.replace(image_idx as usize);
-                        if suboptimal {
-                            self.recreate_swapchain()?;
-                        } else {
-                            self.idle(&mut per_image_ctx, acquire_future)?;
-                        }
-                        self.update_last_image_idx(&mut per_image_ctx)
-                    }
-                    Err(VulkanError::OutOfDate) => {
-                        self.recreate_swapchain()
-                    }
+                        self.idle(&mut per_image_ctx, acquire_future)?;
+                        self.update_last_image_idx(&mut per_image_ctx);
+                        Ok(())
+                    },
+                    Ok((_, /* suboptimal= */ true, _)) => self.recreate_swapchain(),
+                    Err(VulkanError::OutOfDate) => self.recreate_swapchain(),
                     Err(e) => Err(e.into()),
                 };
                 self.render_stats.report_and_end_step();
