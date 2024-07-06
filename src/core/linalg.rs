@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use num_traits::{float::Float, One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,

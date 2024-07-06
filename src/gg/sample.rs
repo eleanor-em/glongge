@@ -46,7 +46,7 @@ use crate::{
     shader::sample::{basic_fragment_shader, basic_vertex_shader}
 };
 use crate::core::vk_core::AdjustedViewport;
-use crate::gg::RenderDataWithIndices;
+use crate::gg::RenderDataFull;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -71,7 +71,7 @@ struct BasicVertex {
 pub struct BasicRenderDataReceiver {
     vertices: Vec<Vec2>,
     vertices_up_to_date: DataPerImage<bool>,
-    render_data: Vec<RenderDataWithIndices>,
+    render_data: Vec<RenderDataFull>,
     viewport: AdjustedViewport,
 }
 impl BasicRenderDataReceiver {
@@ -90,7 +90,7 @@ impl RenderDataReceiver for BasicRenderDataReceiver {
         self.vertices = vertices;
     }
 
-    fn update_render_data(&mut self, render_data: Vec<RenderDataWithIndices>) {
+    fn update_render_data(&mut self, render_data: Vec<RenderDataFull>) {
         self.render_data = render_data;
     }
 
@@ -191,8 +191,8 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 for vertex_index in render_data.vertex_indices.clone() {
                     out_vertices.push(BasicVertex {
                         position: receiver.vertices[vertex_index].into(),
-                        translation: render_data.inner.transform.position.into(),
-                        rotation: render_data.inner.transform.rotation as f32,
+                        translation: render_data.transform.position.into(),
+                        rotation: render_data.transform.rotation as f32,
                         blend_colour: render_data.inner.colour,
                     });
                 }

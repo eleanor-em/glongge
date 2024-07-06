@@ -14,17 +14,22 @@ use std::{
     },
 };
 use crate::core::input::InputHandler;
+use crate::gg::ObjectTypeEnum;
 
-pub struct Scene<RenderHandler: RenderEventHandler> {
-    initial_objects: Option<Vec<RefCell<Box<dyn SceneObject>>>>,
+pub struct Scene<ObjectType, RenderHandler: RenderEventHandler> {
+    initial_objects: Option<Vec<RefCell<Box<dyn SceneObject<ObjectType>>>>>,
     render_data_receiver: Option<Arc<Mutex<RenderHandler::DataReceiver>>>,
     input_handler: Option<Arc<Mutex<InputHandler>>>,
     scene_instruction_rx: Option<Receiver<SceneInstruction>>,
     scene_instruction_tx: Sender<SceneInstruction>,
 }
 
-impl<RenderHandler: RenderEventHandler> Scene<RenderHandler> {
-    pub fn new(initial_objects: Vec<Box<dyn SceneObject>>, render_handler: &RenderHandler, input_handler: Arc<Mutex<InputHandler>>) -> Self {
+impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<ObjectType, RenderHandler> {
+    pub fn new(initial_objects: Vec<Box<dyn SceneObject<ObjectType>>>, render_handler: &RenderHandler, input_handler: Arc<Mutex<InputHandler>>) -> Self {
+        for ty in ObjectType::all_values() {
+            check_eq!(ty, ty.as_type_roundtrip());
+        }
+
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         Self {
             initial_objects: Some(initial_objects.into_iter().map(RefCell::new).collect()),

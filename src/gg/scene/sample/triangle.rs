@@ -2,11 +2,12 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant}
 };
-use num_traits::{Float, FloatConst};
+use num_traits::{Float, FloatConst, Zero};
 use rand::{
     distributions::{Distribution, Uniform},
     Rng
 };
+use glongge_derive::register_object_type;
 
 use crate::{
     core::{
@@ -17,25 +18,33 @@ use crate::{
         self,
         sample::BasicRenderHandler,
         scene::Scene,
+        SceneObject,
         UpdateContext
     },
 };
-use crate::gg::{SceneObject, Transform};
+use crate::gg::Transform;
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
-) -> Scene<BasicRenderHandler> {
+) -> Scene<ObjectType, BasicRenderHandler> {
     Scene::new(vec![Box::new(Spawner {})], render_handler, input_handler)
 }
 
+#[register_object_type]
+pub enum ObjectType {
+    Spawner,
+    SpinningTriangle,
+}
+
+#[derive(Default)]
 struct Spawner {}
 
-impl gg::SceneObject for Spawner {
+impl gg::SceneObject<ObjectType> for Spawner {
     fn on_ready(&mut self) {}
-    fn get_name(&self) -> &'static str { "Spawner" }
+    fn get_type(&self) -> ObjectType { ObjectType::Spawner }
 
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext) {
+    fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         const N: usize = 10;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
@@ -61,7 +70,7 @@ impl gg::SceneObject for Spawner {
                     x: vxs[i],
                     y: vys[i],
                 };
-                Box::new(SpinningTriangle::new(pos, vel.normed())) as Box<dyn gg::SceneObject>
+                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0.0, alive_since: Instant::now() }) as Box<dyn gg::SceneObject<ObjectType>>
             })
             .collect();
         update_ctx.add_object_vec(objects);
@@ -80,6 +89,12 @@ struct SpinningTriangle {
     alive_since: Instant,
 }
 
+impl Default for SpinningTriangle {
+    fn default() -> Self {
+        Self { pos: Vec2::zero(), velocity: Vec2::zero(), t: 0.0, alive_since: Instant::now() }
+    }
+}
+
 impl SpinningTriangle {
     const TRI_WIDTH: f64 = 5.0;
     const VELOCITY: f64 = 200.0;
@@ -96,11 +111,11 @@ impl SpinningTriangle {
 
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
-impl gg::SceneObject for SpinningTriangle {
+impl gg::SceneObject<ObjectType> for SpinningTriangle {
     fn on_ready(&mut self) {}
-    fn get_name(&self) -> &'static str { "SpinningTriangle" }
+    fn get_type(&self) -> ObjectType { ObjectType::SpinningTriangle }
 
-    fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext) {
+    fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
@@ -134,7 +149,7 @@ impl gg::SceneObject for SpinningTriangle {
         }
     }
 
-    fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext) {
+    fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
@@ -152,12 +167,12 @@ impl gg::SceneObject for SpinningTriangle {
         }
     }
 
-    fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject> {
+    fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject<ObjectType>> {
         Some(self)
     }
 }
 
-impl gg::RenderableObject for SpinningTriangle {
+impl gg::RenderableObject<ObjectType> for SpinningTriangle {
     fn create_vertices(&self) -> Vec<Vec2> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
@@ -178,7 +193,6 @@ impl gg::RenderableObject for SpinningTriangle {
 
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
-            transform: self.transform(),
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }

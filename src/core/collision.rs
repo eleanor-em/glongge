@@ -1,10 +1,15 @@
-use std::ops::Range;
+use std::ops::{Neg, Range};
 use num_traits::Float;
 use crate::{
     core::linalg::Vec2,
     core::util::range
 };
 use crate::gg::Transform;
+
+pub trait Collider {
+    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2>;
+    fn collides_with(&self, other: &dyn Collider) -> Option<Vec2>;
+}
 
 #[derive(Clone)]
 pub struct BoxCollider {
@@ -39,7 +44,24 @@ impl BoxCollider {
         self.centre + self.half_widths().rotated(self.rotation)
     }
 
-    pub fn collides_with(&self, other: &BoxCollider) -> Option<Vec2> {
+    fn vertices(&self) -> Vec<Vec2> { vec![self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()] }
+    fn normals(&self) -> Vec<Vec2> {
+        vec![Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
+    }
+    fn project(&self, axis: Vec2) -> Range<f64> {
+        let mut min = f64::max_value();
+        let mut max = f64::min_value();
+        for vertex in self.vertices() {
+            let proj = axis.dot(vertex);
+            min = f64::min(min, proj);
+            max = f64::max(max, proj);
+        }
+        min..max
+    }
+}
+
+impl Collider for BoxCollider {
+    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
         let mut mtv = f64::max_value() * Vec2::right();
 
         for axis in [self.normals(), other.normals()].into_iter().flatten() {
@@ -70,18 +92,7 @@ impl BoxCollider {
         }
     }
 
-    fn vertices(&self) -> Vec<Vec2> { vec![self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()] }
-    fn normals(&self) -> Vec<Vec2> {
-        vec![Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
-    }
-    fn project(&self, axis: Vec2) -> Range<f64> {
-        let mut min = f64::max_value();
-        let mut max = f64::min_value();
-        for vertex in self.vertices() {
-            let proj = axis.dot(vertex);
-            min = f64::min(min, proj);
-            max = f64::max(max, proj);
-        }
-        min..max
+    fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
+        other.collides_with_box(self).map(Vec2::neg)
     }
 }

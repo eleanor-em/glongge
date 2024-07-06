@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+glongge-derive = { path = "glongge-derive" }
 # core
 num-traits = "0.2.19"
 rand = "0.8.5"

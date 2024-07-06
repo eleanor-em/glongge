@@ -4,6 +4,7 @@ pub mod scene;
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
+    default::Default,
     sync::{
         mpsc::{Receiver, Sender},
         Arc, Mutex,
@@ -11,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::ops::Range;
 use num_traits::Zero;
 
@@ -22,11 +24,17 @@ use crate::core::{
     util::TimeIt,
     vk_core::AdjustedViewport
 };
+use crate::core::collision::Collider;
 use crate::core::input::InputHandler;
 
-pub struct SceneObjectWithId<'a> {
+pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
+    fn as_type_roundtrip(self) -> Self;
+    fn all_values() -> Vec<Self>;
+}
+
+pub struct SceneObjectWithId<'a, ObjectType> {
     object_id: usize,
-    inner: RefMut<'a, Box<dyn SceneObject>>,
+    inner: RefMut<'a, Box<dyn SceneObject<ObjectType>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -41,36 +49,38 @@ impl Default for Transform {
     }
 }
 
-pub trait SceneObject: Send {
-    fn get_name(&self) -> &'static str;
+pub trait SceneObject<ObjectType>: Send {
+    fn get_type(&self) -> ObjectType;
+
     fn on_ready(&mut self);
-    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext);
+    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>);
     // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
-    fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext) {}
+    fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext) {}
+    fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
 
     fn transform(&self) -> Transform;
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }
+    fn collider(&self) -> Option<Box<dyn Collider>> { None }
 }
 
-pub trait RenderableObject: SceneObject {
+pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
     fn create_vertices(&self) -> Vec<Vec2>;
     fn render_data(&self) -> RenderData;
 }
 
-impl<'a> SceneObjectWithId<'a> {
-    fn get_name(&self) -> &'static str { self.inner.get_name() }
+impl<'a, ObjectType> SceneObjectWithId<'a, ObjectType> {
+    fn get_type(&self) -> ObjectType { self.inner.get_type() }
     pub fn on_ready(&mut self) {
         self.inner.on_ready()
     }
-    pub fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext) {
+    pub fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         self.inner.on_update(delta, update_ctx)
     }
-    pub fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext) {
+    pub fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         self.inner.on_update_end(delta, update_ctx)
     }
 
@@ -78,38 +88,39 @@ impl<'a> SceneObjectWithId<'a> {
         self.inner.transform()
     }
 
-    pub fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
+    pub fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         self.inner.as_renderable_object()
     }
+    pub fn collider(&self) -> Option<Box<dyn Collider>> { self.inner.collider() }
 }
 
-pub struct UpdateContext<'a> {
+pub struct UpdateContext<'a, ObjectType> {
     input_handler: &'a InputHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     object_id: usize,
-    other_map: &'a HashMap<usize, SceneObjectWithId<'a>>,
-    pending_add_objects: &'a mut Vec<Box<dyn SceneObject>>,
+    other_map: &'a HashMap<usize, SceneObjectWithId<'a, ObjectType>>,
+    pending_add_objects: &'a mut Vec<Box<dyn SceneObject<ObjectType>>>,
     pending_remove_objects: &'a mut Vec<usize>,
     viewport: AdjustedViewport,
 }
 
-impl<'a> UpdateContext<'a> {
+impl<'a, ObjectType> UpdateContext<'a, ObjectType> {
     pub fn input(&self) -> &InputHandler { self.input_handler }
 
-    pub fn others(&self) -> Vec<&SceneObjectWithId> {
+    pub fn others(&self) -> Vec<&SceneObjectWithId<ObjectType>> {
         self.other_map
             .values()
             .filter(|obj| !self.pending_remove_objects.contains(&obj.object_id))
             .collect()
     }
 
-    pub fn add_object_vec(&mut self, mut objects: Vec<Box<dyn SceneObject>>) {
+    pub fn add_object_vec(&mut self, mut objects: Vec<Box<dyn SceneObject<ObjectType>>>) {
         self.pending_add_objects.append(&mut objects);
     }
-    pub fn add_object(&mut self, object: Box<dyn SceneObject>) {
+    pub fn add_object(&mut self, object: Box<dyn SceneObject<ObjectType>>) {
         self.pending_add_objects.push(object);
     }
-    pub fn remove_other_object(&mut self, obj: &SceneObjectWithId) {
+    pub fn remove_other_object(&mut self, obj: &SceneObjectWithId<ObjectType>) {
         self.pending_remove_objects.push(obj.object_id);
     }
     pub fn remove_this_object(&mut self) {
@@ -134,10 +145,10 @@ pub enum SceneInstruction {
     Stop,
 }
 
-pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
-    objects: BTreeMap<usize, RefCell<Box<dyn SceneObject>>>,
+pub struct UpdateHandler<ObjectType, RenderReceiver: RenderDataReceiver> {
+    objects: BTreeMap<usize, RefCell<Box<dyn SceneObject<ObjectType>>>>,
     vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
-    render_data: BTreeMap<usize, RenderDataWithIndices>,
+    render_data: BTreeMap<usize, RenderDataFull>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -145,9 +156,9 @@ pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
     scene_instruction_rx: Receiver<SceneInstruction>,
 }
 
-impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
+impl<ObjectType, RenderReceiver: RenderDataReceiver> UpdateHandler<ObjectType, RenderReceiver> {
     pub(crate) fn new(
-        objects: Vec<RefCell<Box<dyn SceneObject>>>,
+        objects: Vec<RefCell<Box<dyn SceneObject<ObjectType>>>>,
         render_data_receiver: Arc<Mutex<RenderReceiver>>,
         input_handler: Arc<Mutex<InputHandler>>,
         scene_instruction_tx: Sender<SceneInstruction>,
@@ -163,8 +174,9 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
                 vertex_index += new_vertices.len();
                 vertices.insert(i, (vertex_index_range.clone(), new_vertices));
-                render_data.insert(i, RenderDataWithIndices {
+                render_data.insert(i, RenderDataFull {
                     inner: obj.render_data(),
+                    transform: obj.transform(),
                     vertex_indices: vertex_index_range,
                 });
             }
@@ -185,7 +197,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
     }
 }
 
-impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
+impl<ObjectType, RenderReceiver: RenderDataReceiver> UpdateHandler<ObjectType, RenderReceiver> {
     pub fn consume(mut self) {
         let mut delta = Duration::from_secs(0);
         let mut total_stats = TimeIt::new("total");
@@ -243,8 +255,9 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                         let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
                         next_vertex_index += new_vertices.len();
                         self.vertices.insert(next_id, (vertex_indices.clone(), new_vertices));
-                        self.render_data.insert(next_id, RenderDataWithIndices {
+                        self.render_data.insert(next_id, RenderDataFull {
                             inner: obj.render_data(),
+                            transform: obj.transform(),
                             vertex_indices,
                         });
                     }
@@ -284,7 +297,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         }
     }
 
-    fn call_on_update(&mut self, delta: Duration, input_handler: &InputHandler) -> (Vec<Box<dyn SceneObject>>, Vec<usize>) {
+    fn call_on_update(&mut self, delta: Duration, input_handler: &InputHandler) -> (Vec<Box<dyn SceneObject<ObjectType>>>, Vec<usize>) {
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
 
@@ -305,10 +318,11 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
                                      |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
         }
 
-        // render_data()
         for object_id in self.objects.keys() {
             if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
-                self.render_data.get_mut(object_id).unwrap().inner = obj.render_data();
+                let render_data = self.render_data.get_mut(object_id).unwrap();
+                render_data.inner = obj.render_data();
+                render_data.transform = obj.transform();
             }
         }
         (pending_add_objects, pending_remove_objects)
@@ -316,11 +330,11 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
     fn iter_with_other_map<'a, F>(&'a self,
                                   delta: Duration,
                                   input_handler: &InputHandler,
-                                  pending_add_objects: &mut Vec<Box<dyn SceneObject>>,
+                                  pending_add_objects: &mut Vec<Box<dyn SceneObject<ObjectType>>>,
                                   pending_remove_objects: &mut Vec<usize>,
-                                  other_map: &mut HashMap<usize, SceneObjectWithId<'a>>,
+                                  other_map: &mut HashMap<usize, SceneObjectWithId<'a, ObjectType>>,
                                   call_obj_event: F)
-    where F: Fn(RefMut<Box<dyn SceneObject>>, Duration, UpdateContext) {
+    where F: Fn(RefMut<Box<dyn SceneObject<ObjectType>>>, Duration, UpdateContext<ObjectType>) {
         for &object_id in self.objects.keys() {
             other_map.remove(&object_id);
             let update_ctx = UpdateContext {
@@ -355,18 +369,18 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
 
 #[derive(Clone)]
 pub struct RenderData {
-    pub transform: Transform,
     pub colour: [f32; 4],
 }
 
 #[derive(Clone)]
-pub struct RenderDataWithIndices {
+pub struct RenderDataFull {
     inner: RenderData,
+    transform: Transform,
     vertex_indices: Range<usize>,
 }
 
 pub trait RenderDataReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<Vec2>);
-    fn update_render_data(&mut self, render_data: Vec<RenderDataWithIndices>);
+    fn update_render_data(&mut self, render_data: Vec<RenderDataFull>);
     fn current_viewport(&self) -> AdjustedViewport;
 }

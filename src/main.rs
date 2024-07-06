@@ -15,7 +15,6 @@ use crate::{
         scene::sample::{rectangle, triangle}
     }
 };
-use crate::core::collision::BoxCollider;
 use crate::core::input::InputHandler;
 
 mod assert;
@@ -76,16 +75,4 @@ fn run_test_cases() {
         check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated(-90_f64.to_radians()));
         check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated(-45_f64.to_radians()));
     }
-
-    let box1 = BoxCollider {
-        centre: Vec2 { x: 5., y: 5. },
-        extents: Vec2 { x: 10., y: 10. },
-        rotation: 0.0,
-    };
-    let box2 = BoxCollider {
-        centre: Vec2 { x: 10.999, y: 7. },
-        extents: Vec2 { x: 2., y: 2. },
-        rotation: 0.0,
-    };
-    println!("{:?}", box1.collides_with(&box2));
 }
