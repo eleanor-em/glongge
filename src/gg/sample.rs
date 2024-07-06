@@ -191,8 +191,8 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
             for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
                 *vertex = BasicVertex {
                     position: receiver.vertices[i].into(),
-                    translation: receiver.render_data[i / 6].position.into(),
-                    rotation: receiver.render_data[i / 6].rotation as f32,
+                    translation: receiver.render_data[i / 6].transform.position.into(),
+                    rotation: receiver.render_data[i / 6].transform.rotation as f32,
                     blend_colour: receiver.render_data[i / 6].colour,
                 };
             }

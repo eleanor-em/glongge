@@ -20,7 +20,7 @@ use crate::{
         UpdateContext
     },
 };
-use crate::gg::WorldObject;
+use crate::gg::Transform;
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
@@ -67,6 +67,10 @@ impl gg::SceneObject for Spawner {
         update_ctx.add_object_vec(objects);
         update_ctx.remove_this_object();
     }
+
+    fn transform(&self) -> Transform {
+        Transform::default()
+    }
 }
 
 struct SpinningTriangle {
@@ -89,6 +93,8 @@ impl SpinningTriangle {
             alive_since: Instant::now(),
         }
     }
+
+    fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
 impl gg::SceneObject for SpinningTriangle {
     fn on_ready(&mut self) {}
@@ -132,30 +138,22 @@ impl gg::SceneObject for SpinningTriangle {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
-                if let Some(other) = other.as_world_object() {
-                    if (other.world_pos() - self.pos).mag() < Self::TRI_WIDTH {
-                        self.velocity = (self.pos - other.world_pos()).normed() * Self::VELOCITY;
-                    }
+                if (other.transform().position -  self.pos).mag() < Self::TRI_WIDTH {
+                    self.velocity = (self.pos - other.transform().position).normed() * Self::VELOCITY;
                 }
             }
         }
     }
 
-    fn as_world_object(&self) -> Option<&dyn gg::WorldObject> {
-        Some(self)
+    fn transform(&self) -> Transform {
+        Transform {
+            position: self.pos,
+            rotation: self.rotation(),
+        }
     }
+
     fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject> {
         Some(self)
-    }
-}
-
-impl gg::WorldObject for SpinningTriangle {
-    fn world_pos(&self) -> Vec2 {
-        self.pos
-    }
-
-    fn rotation(&self) -> f64 {
-        Self::ANGULAR_VELOCITY * f64::PI() * self.t
     }
 }
 
@@ -180,8 +178,10 @@ impl gg::RenderableObject for SpinningTriangle {
 
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
-            position: self.pos,
-            rotation: self.rotation(),
+            transform: Transform {
+                position: self.pos,
+                rotation: self.rotation(),
+            },
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }

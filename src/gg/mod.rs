@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 use std::collections::BTreeMap;
+use num_traits::Zero;
 
 use tracing::info;
 
@@ -26,9 +27,21 @@ pub struct SceneObjectWithId<'a> {
     inner: RefMut<'a, Box<dyn SceneObject>>,
 }
 
+#[derive(Copy, Clone)]
+pub struct Transform {
+    pub position: Vec2,
+    pub rotation: f64,
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self { position: Vec2::zero(), rotation: 0.0 }
+    }
+}
+
 pub trait SceneObject: Send {
-    fn on_ready(&mut self);
     fn get_name(&self) -> &'static str;
+    fn on_ready(&mut self);
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext);
     // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
@@ -36,17 +49,10 @@ pub trait SceneObject: Send {
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext) {}
 
-    fn as_world_object(&self) -> Option<&dyn WorldObject> {
-        None
-    }
+    fn transform(&self) -> Transform;
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
         None
     }
-}
-
-pub trait WorldObject: SceneObject {
-    fn world_pos(&self) -> Vec2;
-    fn rotation(&self) -> f64;
 }
 
 pub trait RenderableObject: SceneObject {
@@ -55,6 +61,7 @@ pub trait RenderableObject: SceneObject {
 }
 
 impl<'a> SceneObjectWithId<'a> {
+    fn get_name(&self) -> &'static str { self.inner.get_name() }
     pub fn on_ready(&mut self) {
         self.inner.on_ready()
     }
@@ -65,8 +72,8 @@ impl<'a> SceneObjectWithId<'a> {
         self.inner.on_update_end(delta, update_ctx)
     }
 
-    pub fn as_world_object(&self) -> Option<&dyn WorldObject> {
-        self.inner.as_world_object()
+    pub fn transform(&self) -> Transform {
+        self.inner.transform()
     }
 
     pub fn as_renderable_object(&self) -> Option<&dyn RenderableObject> {
@@ -323,8 +330,7 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
 
 #[derive(Clone)]
 pub struct RenderData {
-    pub position: Vec2,
-    pub rotation: f64,
+    pub transform: Transform,
     pub colour: [f32; 4],
 }
 
