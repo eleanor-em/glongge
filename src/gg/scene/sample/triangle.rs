@@ -20,7 +20,7 @@ use crate::{
         UpdateContext
     },
 };
-use crate::gg::Transform;
+use crate::gg::{SceneObject, Transform};
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
@@ -138,7 +138,7 @@ impl gg::SceneObject for SpinningTriangle {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
-                if (other.transform().position -  self.pos).mag() < Self::TRI_WIDTH {
+                if (other.transform().position -  self.pos).len() < Self::TRI_WIDTH {
                     self.velocity = (self.pos - other.transform().position).normed() * Self::VELOCITY;
                 }
             }
@@ -178,10 +178,7 @@ impl gg::RenderableObject for SpinningTriangle {
 
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
-            transform: Transform {
-                position: self.pos,
-                rotation: self.rotation(),
-            },
+            transform: self.transform(),
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }

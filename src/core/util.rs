@@ -85,3 +85,32 @@ impl TimeIt {
         self.last_ns as f64 / 1_000_000.0
     }
 }
+
+pub mod range {
+    use std::ops::Range;
+
+    pub fn contains_f64(r1: &Range<f64>, r2: &Range<f64>) -> bool {
+        r1.start <= r2.start && r1.end >= r2.end
+    }
+
+    pub fn overlap_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<Range<f64>> {
+        if r1.start > r2.start {
+            return overlap_f64(r2, r1);
+        }
+        if r1.end < r2.start {
+            return None;
+        }
+
+        let start = r2.start;
+        let end = f64::min(r1.end, r2.end);
+        if start == end {
+            None
+        } else {
+            Some(start..end)
+        }
+    }
+
+    pub fn overlap_len_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<f64> {
+        overlap_f64(r1, r2).map(|r| r.end - r.start)
+    }
+}

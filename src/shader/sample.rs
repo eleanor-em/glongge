@@ -32,8 +32,8 @@ pub mod basic_vertex_shader {
                 mat4 projection =  window_translation * window_pixel_scale;
 
                 mat4 rotation_mat = mat4(
-                    vec4(cos(rotation), -sin(rotation), 0, 0),
-                    vec4(sin(rotation), cos(rotation), 0, 0),
+                    vec4(cos(rotation), sin(rotation), 0, 0),
+                    vec4(-sin(rotation), cos(rotation), 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
                 mat4 translation_mat = mat4(

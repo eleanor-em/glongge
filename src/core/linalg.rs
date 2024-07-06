@@ -1,3 +1,5 @@
+use std::fmt;
+use std::fmt::Formatter;
 use num_traits::{float::Float, One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -8,37 +10,32 @@ pub struct Vec2 {
 }
 
 impl Vec2 {
-    pub fn up() -> Vec2 {
-        Vec2 { x: 0.0, y: -1.0 }
-    }
-    pub fn right() -> Vec2 {
-        Vec2 { x: 1.0, y: 0.0 }
-    }
-    pub fn down() -> Vec2 { Vec2 { x: 0.0, y: 1.0 } }
-    pub fn left() -> Vec2 {
-        Vec2 { x: -1.0, y: 0.0 }
-    }
-    pub fn one() -> Vec2 { Vec2 { x: 1.0, y: 1.0 } }
+    pub fn right() -> Vec2 { Vec2 { x: 1., y: 0. } }
+    pub fn up() -> Vec2 { Vec2 { x: 0., y: -1. } }
+    pub fn left() -> Vec2 { Vec2 { x: -1., y: 0. } }
+    pub fn down() -> Vec2 { Vec2 { x: 0., y: 1. } }
+    pub fn one() -> Vec2 { Vec2 { x: 1., y: 1. } }
 
-    pub fn mag(&self) -> f64 {
-        f64::sqrt(self.x * self.x + self.y * self.y)
-    }
+    pub fn len(&self) -> f64 { self.dot(*self).sqrt() }
     pub fn normed(&self) -> Vec2 {
-        let mag = self.mag();
-        if mag == 0.0 {
-            Vec2::zero()
-        } else {
-            Vec2 {
-                x: self.x / mag,
-                y: self.y / mag,
-            }
+        match self.len() {
+            0.0 => Vec2::zero(),
+            len => *self / len
         }
     }
 
     pub fn dot(&self, other: Vec2) -> f64 { self.x * other.x + self.y * other.y }
+    pub fn angle_radians(&self, other: Vec2) -> f64 { self.normed().dot(other.normed()).acos() }
 
-    pub fn almost_eq(self, rhs: Vec2) -> bool {
-        (self - rhs).mag() < f64::epsilon()
+    pub fn rotated(&self, radians: f64) -> Vec2 {
+        Mat3x3::rotation(radians) * *self
+    }
+    pub fn reflect(&self, normal: Vec2) -> Vec2 {
+        *self - 2.0 * self.dot(normal) * normal
+    }
+
+    pub fn almost_eq(&self, rhs: Vec2) -> bool {
+        (*self - rhs).len() < f32::epsilon() as f64
     }
 }
 
@@ -77,6 +74,12 @@ impl From<Vec2> for [f64; 2] {
 impl From<Vec2> for [f32; 2] {
     fn from(value: Vec2) -> Self {
         [value.x as f32, value.y as f32]
+    }
+}
+
+impl fmt::Display for Vec2 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "vec({}, {})", self.x, self.y)
     }
 }
 
@@ -219,9 +222,9 @@ impl Mat3x3 {
     pub fn rotation(radians: f64) -> Mat3x3 {
         Mat3x3 {
             xx: f64::cos(radians),
-            xy: f64::sin(radians),
+            xy: -f64::sin(radians),
             xw: 0.0,
-            yx: -f64::sin(radians),
+            yx: f64::sin(radians),
             yy: f64::cos(radians),
             yw: 0.0,
             wx: 0.0,

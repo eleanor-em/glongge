@@ -111,7 +111,7 @@ impl AdjustedViewport {
     pub fn inner(&self) -> Viewport { self.inner.clone() }
     pub fn contains(&self, pos: Vec2) -> bool {
         (0.0..self.logical_width() as f64).contains(&pos.x) &&
-            (0.0..self.logical_height() as f64).contains(&pos.x)
+            (0.0..self.logical_height() as f64).contains(&pos.y)
     }
 }
 

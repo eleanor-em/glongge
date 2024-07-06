@@ -15,6 +15,7 @@ use crate::{
         scene::sample::{rectangle, triangle}
     }
 };
+use crate::core::collision::BoxCollider;
 use crate::core::input::InputHandler;
 
 mod assert;
@@ -56,4 +57,35 @@ fn run_test_cases() {
         (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
             .almost_eq(Mat3x3::one())
     );
+
+    check_almost_eq!(Vec2::right().rotated(45_f64.to_radians()), Vec2 { x: 1.0, y: 1.0 }.normed());
+    check_almost_eq!(Vec2::right().rotated(90_f64.to_radians()), Vec2::down());
+    check_almost_eq!(Vec2::right().rotated(135_f64.to_radians()), Vec2 { x: -1.0, y: 1.0 }.normed());
+    check_almost_eq!(Vec2::right().rotated(180_f64.to_radians()), Vec2::left());
+    check_almost_eq!(Vec2::right().rotated(225_f64.to_radians()), Vec2 { x: -1.0, y: -1.0 }.normed());
+    check_almost_eq!(Vec2::right().rotated(270_f64.to_radians()), Vec2::up());
+    check_almost_eq!(Vec2::right().rotated(315_f64.to_radians()), Vec2 { x: 1.0, y: -1.0 }.normed());
+    check_almost_eq!(Vec2::right().rotated(360_f64.to_radians()), Vec2::right());
+
+    for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
+        check_almost_eq!(vec.rotated(45_f64.to_radians()), vec.rotated(-315_f64.to_radians()));
+        check_almost_eq!(vec.rotated(90_f64.to_radians()), vec.rotated(-270_f64.to_radians()));
+        check_almost_eq!(vec.rotated(135_f64.to_radians()), vec.rotated(-225_f64.to_radians()));
+        check_almost_eq!(vec.rotated(180_f64.to_radians()), vec.rotated(-180_f64.to_radians()));
+        check_almost_eq!(vec.rotated(225_f64.to_radians()), vec.rotated(-135_f64.to_radians()));
+        check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated(-90_f64.to_radians()));
+        check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated(-45_f64.to_radians()));
+    }
+
+    let box1 = BoxCollider {
+        centre: Vec2 { x: 5., y: 5. },
+        extents: Vec2 { x: 10., y: 10. },
+        rotation: 0.0,
+    };
+    let box2 = BoxCollider {
+        centre: Vec2 { x: 10.999, y: 7. },
+        extents: Vec2 { x: 2., y: 2. },
+        rotation: 0.0,
+    };
+    println!("{:?}", box1.collides_with(&box2));
 }

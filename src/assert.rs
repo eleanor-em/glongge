@@ -128,6 +128,23 @@ macro_rules! check_eq {
 }
 pub(crate) use check_eq;
 
+macro_rules! check_almost_eq {
+    ($lhs:expr, $rhs:expr) => {{
+        $crate::assert::assert_same_type(&$lhs, &$rhs);
+        if !($lhs.almost_eq($rhs)) {
+            panic!(
+                "check failed: {}: {} ~= {}: {:?} vs. {:?}",
+                $crate::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs
+            );
+        }
+    }};
+}
+pub(crate) use check_almost_eq;
+
 // macro_rules! check_ne {
 //     ($lhs:expr, $rhs:expr) => {{
 //         $crate::assert::assert_same_type(&$lhs, &$rhs);
