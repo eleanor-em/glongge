@@ -24,19 +24,19 @@ macro_rules! check {
 }
 pub(crate) use check;
 
-// macro_rules! check_false {
-//     ($lhs:expr) => {
-//         $crate::assert::assert_type::<bool>(&$lhs);
-//         if $lhs {
-//             panic!(
-//                 "check failed: {}: !{}",
-//                 $crate::assert::current_location!(),
-//                 stringify!($lhs),
-//             );
-//         }
-//     };
-// }
-// pub(crate) use check_false;
+macro_rules! check_false {
+    ($lhs:expr) => {
+        $crate::assert::assert_type::<bool>(&$lhs);
+        if $lhs {
+            panic!(
+                "check failed: {}: !{}",
+                $crate::assert::current_location!(),
+                stringify!($lhs),
+            );
+        }
+    };
+}
+pub(crate) use check_false;
 
 macro_rules! check_lt {
     ($lhs:expr, $rhs:expr) => {{

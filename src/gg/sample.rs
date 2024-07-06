@@ -42,13 +42,11 @@ use crate::{
             DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext,
         },
     },
-    gg::{
-        RenderDataReceiver,
-        RenderData
-    },
+    gg::RenderDataReceiver,
     shader::sample::{basic_fragment_shader, basic_vertex_shader}
 };
 use crate::core::vk_core::AdjustedViewport;
+use crate::gg::RenderDataWithIndices;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -73,7 +71,7 @@ struct BasicVertex {
 pub struct BasicRenderDataReceiver {
     vertices: Vec<Vec2>,
     vertices_up_to_date: DataPerImage<bool>,
-    render_data: Vec<RenderData>,
+    render_data: Vec<RenderDataWithIndices>,
     viewport: AdjustedViewport,
 }
 impl BasicRenderDataReceiver {
@@ -92,7 +90,7 @@ impl RenderDataReceiver for BasicRenderDataReceiver {
         self.vertices = vertices;
     }
 
-    fn update_render_data(&mut self, render_data: Vec<RenderData>) {
+    fn update_render_data(&mut self, render_data: Vec<RenderDataWithIndices>) {
         self.render_data = render_data;
     }
 
@@ -188,14 +186,18 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                 .as_mut()
                 .unwrap()
                 .current_value_mut(per_image_ctx);
-            for (i, vertex) in vertex_buffer.write()?.iter_mut().enumerate() {
-                *vertex = BasicVertex {
-                    position: receiver.vertices[i].into(),
-                    translation: receiver.render_data[i / 6].transform.position.into(),
-                    rotation: receiver.render_data[i / 6].transform.rotation as f32,
-                    blend_colour: receiver.render_data[i / 6].colour,
-                };
+            let mut out_vertices = Vec::new();
+            for render_data in receiver.render_data.iter() {
+                for vertex_index in render_data.vertex_indices.clone() {
+                    out_vertices.push(BasicVertex {
+                        position: receiver.vertices[vertex_index].into(),
+                        translation: render_data.inner.transform.position.into(),
+                        rotation: render_data.inner.transform.rotation as f32,
+                        blend_colour: render_data.inner.colour,
+                    });
+                }
             }
+            vertex_buffer.write()?.swap_with_slice(&mut out_vertices);
         }
         *self.uniform_buffers.as_mut().unwrap().current_value(per_image_ctx).write()? = BasicUniformData {
             window_width: self.viewport.physical_width(),

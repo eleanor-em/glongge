@@ -11,9 +11,11 @@ use std::{
     time::{Duration, Instant},
 };
 use std::collections::BTreeMap;
+use std::ops::Range;
 use num_traits::Zero;
 
 use tracing::info;
+use crate::assert::{check, check_false};
 
 use crate::core::{
     linalg::Vec2,
@@ -134,8 +136,8 @@ pub enum SceneInstruction {
 
 pub struct UpdateHandler<RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<usize, RefCell<Box<dyn SceneObject>>>,
-    vertices: BTreeMap<usize, Vec<Vec2>>,
-    render_data: BTreeMap<usize, RenderData>,
+    vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
+    render_data: BTreeMap<usize, RenderDataWithIndices>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -152,22 +154,21 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Self {
         let objects: BTreeMap<usize, _> = objects.into_iter().enumerate().collect();
-        let vertices = objects
-            .iter()
-            .filter_map(|(&i, obj)| {
-                obj.borrow()
-                    .as_renderable_object()
-                    .map(|obj| (i, obj.create_vertices()))
-            })
-            .collect();
-        let render_data = objects
-            .iter()
-            .filter_map(|(&i, obj)| {
-                obj.borrow()
-                    .as_renderable_object()
-                    .map(|obj| (i, obj.render_data()))
-            })
-            .collect();
+        let mut vertices = BTreeMap::new();
+        let mut render_data = BTreeMap::new();
+        let mut vertex_index = 0;
+        for (&i, obj) in objects.iter() {
+            if let Some(obj) = obj.borrow().as_renderable_object() {
+                let new_vertices = obj.create_vertices();
+                let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
+                vertex_index += new_vertices.len();
+                vertices.insert(i, (vertex_index_range.clone(), new_vertices));
+                render_data.insert(i, RenderDataWithIndices {
+                    inner: obj.render_data(),
+                    vertex_indices: vertex_index_range,
+                });
+            }
+        }
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
         let mut rv = Self {
             objects,
@@ -211,20 +212,41 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
 
                 remove_objects_stats.start();
                 for remove_index in pending_remove_objects.into_iter().rev() {
-                    self.render_data.remove(&remove_index);
-                    self.vertices.remove(&remove_index);
+                    if self.render_data.contains_key(&remove_index) {
+                        check!(self.vertices.contains_key(&remove_index));
+                        self.render_data.remove(&remove_index);
+                        let vertices_removed = self.vertices[&remove_index].1.len();
+                        for (&i, (count, _)) in self.vertices.iter_mut() {
+                            if i >= remove_index {
+                                *count = (count.start - vertices_removed)..(count.end - vertices_removed);
+                            }
+                        }
+                        self.vertices.remove(&remove_index);
+                    } else {
+                        check_false!(self.vertices.contains_key(&remove_index));
+                    }
                     self.objects.remove(&remove_index);
                 }
                 remove_objects_stats.stop();
 
                 add_objects_stats.start();
                 let mut next_id = *self.objects.keys().max().unwrap_or(&0);
+                let mut next_vertex_index = self.vertices.values()
+                    .map(|(count, _)| count.end)
+                    .max()
+                    .unwrap_or(0);
                 let first_new_id = next_id + 1;
                 for new_obj in pending_add_objects {
                     next_id += 1;
                     if let Some(obj) = new_obj.as_renderable_object() {
-                        self.vertices.insert(next_id, obj.create_vertices());
-                        self.render_data.insert(next_id, obj.render_data());
+                        let new_vertices = obj.create_vertices();
+                        let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
+                        next_vertex_index += new_vertices.len();
+                        self.vertices.insert(next_id, (vertex_indices.clone(), new_vertices));
+                        self.render_data.insert(next_id, RenderDataWithIndices {
+                            inner: obj.render_data(),
+                            vertex_indices,
+                        });
                     }
                     self.objects.insert(next_id, RefCell::new(new_obj));
                 }
@@ -284,9 +306,9 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
         }
 
         // render_data()
-        for &object_id in self.objects.keys() {
-            if let Some(obj) = self.objects[&object_id].borrow().as_renderable_object() {
-                self.render_data.insert(object_id, obj.render_data());
+        for object_id in self.objects.keys() {
+            if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
+                self.render_data.get_mut(object_id).unwrap().inner = obj.render_data();
             }
         }
         (pending_add_objects, pending_remove_objects)
@@ -321,7 +343,10 @@ impl<RenderReceiver: RenderDataReceiver> UpdateHandler<RenderReceiver> {
     fn update_render_data(&mut self, did_update_vertices: bool) {
         let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
         if did_update_vertices {
-            render_data_receiver.update_vertices(self.vertices.values().flatten().cloned().collect());
+            render_data_receiver.update_vertices(self.vertices.values()
+                .cloned()
+                .flat_map(|(_, values)| values)
+                .collect());
         }
         render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
         self.viewport = render_data_receiver.current_viewport();
@@ -334,8 +359,14 @@ pub struct RenderData {
     pub colour: [f32; 4],
 }
 
+#[derive(Clone)]
+pub struct RenderDataWithIndices {
+    inner: RenderData,
+    vertex_indices: Range<usize>,
+}
+
 pub trait RenderDataReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<Vec2>);
-    fn update_render_data(&mut self, render_data: Vec<RenderData>);
+    fn update_render_data(&mut self, render_data: Vec<RenderDataWithIndices>);
     fn current_viewport(&self) -> AdjustedViewport;
 }
