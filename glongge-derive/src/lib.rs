@@ -21,20 +21,34 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
-    let match_exp = as_type_roundtrip_exp(&input.data);
-    let vec = members_vec(&input.data);
+    let match_exp = as_type_roundtrip_impl(&input.data);
+    let vec = all_values_impl(&input.data);
 
     let expanded = quote! {
         impl gg::ObjectTypeEnum for #name {
             fn as_type_roundtrip(self) -> Self { #match_exp }
             fn all_values() -> Vec<Self> { #vec }
+            fn checked_downcast<T: Default + SceneObject<Self>>(obj: &dyn SceneObject<Self>) -> &T {
+                let expected = T::default().get_type();
+                if obj.get_type() != expected {
+                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), expected)
+                }
+                unsafe { & *(obj as *const dyn SceneObject<Self> as *const T) }
+            }
+            fn checked_downcast_mut<T: Default + SceneObject<Self>>(obj: &mut dyn SceneObject<Self>) -> &mut T {
+                let expected = T::default().get_type();
+                if obj.get_type() != expected {
+                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), expected)
+                }
+                unsafe { &mut *(obj as *mut dyn SceneObject<Self> as *mut T) }
+            }
         }
     };
 
     proc_macro::TokenStream::from(expanded)
 }
 
-fn as_type_roundtrip_exp(data: &Data) -> proc_macro2::TokenStream {
+fn as_type_roundtrip_impl(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
@@ -53,7 +67,7 @@ fn as_type_roundtrip_exp(data: &Data) -> proc_macro2::TokenStream {
     }
 }
 
-fn members_vec(data: &Data) -> proc_macro2::TokenStream {
+fn all_values_impl(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {

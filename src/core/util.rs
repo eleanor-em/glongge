@@ -114,3 +114,10 @@ pub mod range {
         overlap_f64(r1, r2).map(|r| r.end - r.start)
     }
 }
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct GgInstant(pub(crate) Instant);
+
+impl Default for GgInstant {
+    fn default() -> Self { Self(Instant::now()) }
+}

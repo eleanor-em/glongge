@@ -30,6 +30,8 @@ use crate::core::input::InputHandler;
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_type_roundtrip(self) -> Self;
     fn all_values() -> Vec<Self>;
+    fn checked_downcast<T: Default + SceneObject<Self>>(obj: &dyn SceneObject<Self>) -> &T;
+    fn checked_downcast_mut<T: Default + SceneObject<Self>>(obj: &mut dyn SceneObject<Self>) -> &mut T;
 }
 
 pub struct SceneObjectWithId<'a, ObjectType> {
@@ -72,8 +74,12 @@ pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
     fn render_data(&self) -> RenderData;
 }
 
-impl<'a, ObjectType> SceneObjectWithId<'a, ObjectType> {
+impl<'a, ObjectType: ObjectTypeEnum> SceneObjectWithId<'a, ObjectType> {
     fn get_type(&self) -> ObjectType { self.inner.get_type() }
+    pub fn checked_downcast<T: Default + SceneObject<ObjectType>>(&self) -> &T {
+        ObjectType::checked_downcast::<T>(self.inner.as_ref())
+    }
+
     pub fn on_ready(&mut self) {
         self.inner.on_ready()
     }
