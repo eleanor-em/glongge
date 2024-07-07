@@ -197,12 +197,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             }
         }
         let collision_map = objects.iter().filter_map(|(&id, obj)| {
-            let obj = obj.borrow();
+            let obj_tags = obj.borrow().emit_collisions_for();
             let other_ids: HashSet<usize> = objects.iter()
                 .filter(|(&other_id, _)| other_id != id)
                 .filter(|(_, other_obj)| {
                     !other_obj.borrow().collision_tags()
-                        .intersection(&obj.emit_collisions_for())
+                        .intersection(&obj_tags)
                         .collect::<Vec<_>>().is_empty()
                 })
                 .map(|(&other_id, _)| other_id)
@@ -230,6 +230,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 });
             }
         }
+
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
         let mut rv = Self {
             objects,
@@ -263,78 +264,18 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 let now = Instant::now();
                 total_stats.start();
 
-                let input_handler = self.input_handler.lock().unwrap().clone();
-
                 update_objects_stats.start();
-                let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, &input_handler);
-                let did_update_vertices =
-                    !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
+                let input_handler = self.input_handler.lock().unwrap().clone();
+                let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, input_handler);
+                let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
                 update_objects_stats.stop();
 
                 remove_objects_stats.start();
-                for remove_index in pending_remove_objects.into_iter().rev() {
-                    if self.render_data.contains_key(&remove_index) {
-                        check!(self.vertices.contains_key(&remove_index));
-                        self.render_data.remove(&remove_index);
-                        let vertices_removed = self.vertices[&remove_index].1.len();
-                        for (&i, (count, _)) in self.vertices.iter_mut() {
-                            if i >= remove_index {
-                                *count = (count.start - vertices_removed)..(count.end - vertices_removed);
-                            }
-                        }
-                        self.vertices.remove(&remove_index);
-                    } else {
-                        check_false!(self.vertices.contains_key(&remove_index));
-                    }
-                    self.objects.remove(&remove_index);
-                    for object_ids in self.object_ids_by_tag.values_mut() {
-                        object_ids.remove(&remove_index);
-                    }
-                    for object_ids in self.collision_map.values_mut() {
-                        object_ids.remove(&remove_index);
-                    }
-                    self.collision_map.remove(&remove_index);
-                }
+                self.update_with_removed_objects(pending_remove_objects);
                 remove_objects_stats.stop();
 
                 add_objects_stats.start();
-                let mut next_id = *self.objects.keys().max().unwrap_or(&0);
-                let mut next_vertex_index = self.vertices.values()
-                    .map(|(count, _)| count.end)
-                    .max()
-                    .unwrap_or(0);
-                let first_new_id = next_id + 1;
-                for new_obj in pending_add_objects {
-                    next_id += 1;
-                    if let Some(obj) = new_obj.as_renderable_object() {
-                        let new_vertices = obj.create_vertices();
-                        let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
-                        next_vertex_index += new_vertices.len();
-                        self.vertices.insert(next_id, (vertex_indices.clone(), new_vertices));
-                        self.render_data.insert(next_id, RenderDataFull {
-                            inner: obj.render_data(),
-                            transform: obj.transform(),
-                            vertex_indices,
-                        });
-                    }
-                    let mut other_ids: HashSet<usize> = HashSet::new();
-                    for tag in new_obj.collision_tags().clone() {
-                        for &other_id in self.object_ids_by_tag[tag].iter() {
-                            other_ids.insert(other_id);
-                        }
-                        self.object_ids_by_tag.get_mut(tag).unwrap()
-                            .insert(next_id);
-                    }
-                    if !other_ids.is_empty() {
-                        self.collision_map.insert(next_id, other_ids);
-                    }
-                    self.objects.insert(next_id, Rc::new(RefCell::new(new_obj)));
-                }
-                // Ensure all objects actually exist before calling on_ready().
-                let last_new_id = next_id;
-                for i in first_new_id..=last_new_id {
-                    self.objects[&i].borrow_mut().on_ready();
-                }
+                self.update_with_added_objects(pending_add_objects);
                 add_objects_stats.stop();
 
                 render_data_stats.start();
@@ -364,7 +305,69 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
     }
 
-    fn call_on_update(&mut self, delta: Duration, input_handler: &InputHandler) -> (Vec<Box<dyn SceneObject<ObjectType>>>, Vec<usize>) {
+    fn update_with_removed_objects(&mut self, pending_remove_objects: Vec<usize>) {
+        for remove_index in pending_remove_objects.into_iter().rev() {
+            match self.render_data.remove(&remove_index) {
+                Some(_) => {
+                    check!(self.vertices.contains_key(&remove_index));
+                    let vertices_removed = self.vertices[&remove_index].1.len();
+                    self.vertices.iter_mut()
+                        .filter(|(&i, _)| i >= remove_index)
+                        .for_each(|(_, (count, _))| {
+                            *count = (count.start - vertices_removed)..(count.end - vertices_removed);
+                        });
+                    self.vertices.remove(&remove_index);
+                }
+                None => {
+                    check_false!(self.vertices.contains_key(&remove_index));
+                }
+            }
+            self.objects.remove(&remove_index);
+            self.object_ids_by_tag.values_mut().for_each(|ids| { ids.remove(&remove_index); });
+            self.collision_map.remove(&remove_index);
+            self.collision_map.values_mut().for_each(|ids| { ids.remove(&remove_index); });
+        }
+    }
+    fn update_with_added_objects(&mut self, pending_add_objects: Vec<AnySceneObject<ObjectType>>) {
+        // TODO: leak new_id as 'static?
+        let mut new_id = *self.objects.last_key_value()
+            .map(|(id, _)| id)
+            .unwrap_or(&0);
+        let mut next_vertex_index = self.vertices.last_key_value()
+            .map(|(_, (indices, _))| indices.end)
+            .unwrap_or(0);
+        let first_new_id = new_id + 1;
+
+        for new_obj in pending_add_objects {
+            new_id += 1;
+            if let Some(obj) = new_obj.as_renderable_object() {
+                let new_vertices = obj.create_vertices();
+                let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
+                next_vertex_index += new_vertices.len();
+                self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
+                self.render_data.insert(new_id, RenderDataFull {
+                    inner: obj.render_data(),
+                    transform: obj.transform(),
+                    vertex_indices,
+                });
+            }
+            self.collision_map.insert(new_id, HashSet::new());
+            new_obj.collision_tags().into_iter().for_each(|tag| {
+                self.object_ids_by_tag[tag].iter().for_each(|&id| {
+                    self.collision_map.get_mut(&new_id).unwrap().insert(id);
+                });
+                self.object_ids_by_tag.get_mut(tag).unwrap().insert(new_id);
+            });
+            self.objects.insert(new_id, Rc::new(RefCell::new(new_obj)));
+        }
+
+        // Ensure all objects actually exist before calling on_ready().
+        for i in first_new_id..=new_id {
+            self.objects[&i].borrow_mut().on_ready();
+        }
+    }
+
+    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, Vec<usize>) {
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
         let mut other_map: HashMap<usize, _> = self
@@ -376,9 +379,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             }))
             .collect();
 
-        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                  |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
-        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                  |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
 
         self.collision_map.iter()
@@ -399,7 +402,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 obj.borrow_mut().on_collision(other_obj, mtv)
             });
 
-        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
 
         for object_id in self.objects.keys() {
