@@ -2,33 +2,41 @@ pub mod sample;
 pub mod scene;
 
 use std::{
-    cell::{RefCell, RefMut},
-    collections::HashMap,
+    any::{Any, TypeId},
+    cell::{
+        Ref,
+        RefCell,
+        RefMut
+    },
+    collections::{
+        BTreeMap,
+        HashSet,
+        HashMap
+    },
     default::Default,
+    fmt::Debug,
+    ops::Range,
+    rc::Rc,
     sync::{
         mpsc::{Receiver, Sender},
         Arc, Mutex,
     },
     time::{Duration, Instant},
 };
-use std::any::{Any, TypeId};
-use std::cell::Ref;
-use std::collections::{BTreeMap, HashSet};
-use std::fmt::Debug;
-use std::ops::Range;
-use std::rc::Rc;
 use num_traits::Zero;
 
 use tracing::info;
-use crate::assert::{check, check_false};
 
-use crate::core::{
-    linalg::Vec2,
-    util::TimeIt,
-    vk_core::AdjustedViewport
+use crate::{
+    assert::{check, check_false},
+    core::{
+        collision::Collider,
+        input::InputHandler,
+        linalg::Vec2,
+        util::TimeIt,
+        vk_core::AdjustedViewport,
+    }
 };
-use crate::core::collision::Collider;
-use crate::core::input::InputHandler;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
@@ -55,10 +63,10 @@ pub trait SceneObject<ObjectType>: Send {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn on_ready(&mut self);
-    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>);
-    // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
+    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>);
+    // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
@@ -69,8 +77,8 @@ pub trait SceneObject<ObjectType>: Send {
         None
     }
     fn collider(&self) -> Option<Box<dyn Collider>> { None }
-    fn collision_tags(&self) -> Vec<&'static str> { vec![] }
-    fn emit_collisions_for(&self) -> Vec<&'static str> { vec![] }
+    fn collision_tags(&self) -> HashSet<&'static str> { [].into() }
+    fn emit_collisions_for(&self) -> HashSet<&'static str> { [].into() }
 }
 
 pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
@@ -158,6 +166,7 @@ pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
+    collision_map: HashMap<usize, HashSet<usize>>,
     vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
     render_data: BTreeMap<usize, RenderDataFull>,
     viewport: AdjustedViewport,
@@ -187,6 +196,23 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 object_ids_by_tag.get_mut(tag).unwrap().insert(id);
             }
         }
+        let collision_map = objects.iter().filter_map(|(&id, obj)| {
+            let obj = obj.borrow();
+            let other_ids: HashSet<usize> = objects.iter()
+                .filter(|(&other_id, _)| other_id != id)
+                .filter(|(_, other_obj)| {
+                    !other_obj.borrow().collision_tags()
+                        .intersection(&obj.emit_collisions_for())
+                        .collect::<Vec<_>>().is_empty()
+                })
+                .map(|(&other_id, _)| other_id)
+                .collect();
+            if other_ids.is_empty() {
+                None
+            } else {
+                Some((id, other_ids))
+            }
+        }).collect();
 
         let mut vertices = BTreeMap::new();
         let mut render_data = BTreeMap::new();
@@ -208,6 +234,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         let mut rv = Self {
             objects,
             object_ids_by_tag,
+            collision_map,
             vertices,
             render_data,
             viewport,
@@ -263,6 +290,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                     for object_ids in self.object_ids_by_tag.values_mut() {
                         object_ids.remove(&remove_index);
                     }
+                    for object_ids in self.collision_map.values_mut() {
+                        object_ids.remove(&remove_index);
+                    }
+                    self.collision_map.remove(&remove_index);
                 }
                 remove_objects_stats.stop();
 
@@ -286,9 +317,16 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                             vertex_indices,
                         });
                     }
+                    let mut other_ids: HashSet<usize> = HashSet::new();
                     for tag in new_obj.collision_tags().clone() {
+                        for &other_id in self.object_ids_by_tag[tag].iter() {
+                            other_ids.insert(other_id);
+                        }
                         self.object_ids_by_tag.get_mut(tag).unwrap()
                             .insert(next_id);
+                    }
+                    if !other_ids.is_empty() {
+                        self.collision_map.insert(next_id, other_ids);
                     }
                     self.objects.insert(next_id, Rc::new(RefCell::new(new_obj)));
                 }
@@ -329,46 +367,40 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
     fn call_on_update(&mut self, delta: Duration, input_handler: &InputHandler) -> (Vec<Box<dyn SceneObject<ObjectType>>>, Vec<usize>) {
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
+        let mut other_map: HashMap<usize, _> = self
+            .objects
+            .iter()
+            .map(|(&i, obj)| (i, SceneObjectWithId {
+                object_id: i,
+                inner: obj.clone(),
+            }))
+            .collect();
 
-        {
-            let mut other_map: HashMap<usize, _> = self
-                .objects
-                .iter()
-                .map(|(&i, obj)| (i, SceneObjectWithId {
-                    object_id: i,
-                    inner: obj.clone(),
-                }))
-                .collect();
-            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                                     |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
-            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                                     |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                 |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                 |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
 
-            for obj_id in self.object_ids_by_tag.values().flatten().collect::<HashSet<_>>() {
-                let mut obj = self.objects[obj_id].borrow_mut();
-                let collider = obj.collider()
-                    .unwrap_or_else(|| panic!("object {} ({:?}) registered for collisions but had no collider", obj_id, obj.get_type()));
-                // TODO: cache the below calculation.
-                for other_obj_id in obj.emit_collisions_for().iter()
-                        .flat_map(|tag| self.object_ids_by_tag[tag].iter())
-                        .collect::<HashSet<_>>()
-                        .into_iter().filter(|id| *id != obj_id) {
-                    let other_obj = self.objects[other_obj_id].clone();
-                    let other_collider = other_obj.borrow().collider()
-                        .unwrap_or_else(|| panic!("object {} ({:?}) registered for collisions but had no collider", other_obj_id, other_obj.borrow().get_type()));
-                    if let Some(mtv) = collider.collides_with(other_collider.as_ref()) {
-                        let other = SceneObjectWithId {
-                            object_id: *other_obj_id,
-                            inner: other_obj,
+        self.collision_map.iter()
+            .flat_map(|(obj_id, others)| {
+                others.iter().filter_map(|other_id| {
+                    let collider = self.objects[obj_id].borrow().collider().unwrap();
+                    let other_collider = self.objects[other_id].borrow().collider().unwrap();
+                    collider.collides_with(other_collider.as_ref()).map(|mtv| {
+                        let other_obj = SceneObjectWithId {
+                            object_id: *other_id,
+                            inner: self.objects[other_id].clone(),
                         };
-                        obj.on_collision(other, mtv);
-                    }
-                }
-            }
+                        (self.objects[obj_id].clone(), other_obj, mtv)
+                    })
+                })
+            })
+            .for_each(|(obj, other_obj, mtv)| {
+                obj.borrow_mut().on_collision(other_obj, mtv)
+            });
 
-            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                                     |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
-        }
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                               |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
 
         for object_id in self.objects.keys() {
             if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {

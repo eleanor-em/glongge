@@ -1,9 +1,10 @@
 use std::{
     any::Any,
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::{
         Duration,
-    }
+    },
 };
 use num_traits::{FloatConst, Zero};
 use rand::{
@@ -23,6 +24,8 @@ use crate::{
         scene::Scene,
         UpdateContext,
         RenderableObject,
+        RenderData,
+        SceneObject,
         SceneObjectWithId,
         Transform
     },
@@ -61,13 +64,12 @@ impl Player {
     const SPEED: f64 = 300.0;
 }
 
-impl gg::SceneObject<ObjectType> for Player {
+impl SceneObject<ObjectType> for Player {
     fn get_type(&self) -> ObjectType { ObjectType::Player }
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
     fn on_ready(&mut self) {}
-
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
         if update_ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
@@ -84,39 +86,37 @@ impl gg::SceneObject<ObjectType> for Player {
             rotation: f64::FRAC_PI_4(),
         }
     }
-
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
     fn collider(&self) -> Option<Box<dyn Collider>> {
         Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
-        vec![RECTANGLE_COLL_TAG]
+    fn collision_tags(&self) -> HashSet<&'static str> {
+        [RECTANGLE_COLL_TAG].into()
     }
 }
 
-impl gg::RenderableObject<ObjectType> for Player {
+impl RenderableObject<ObjectType> for Player {
     fn create_vertices(&self) -> Vec<Vec2> {
         shader::vertex::rectangle(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> gg::RenderData {
-        gg::RenderData { colour: [0.0, 1.0, 0.0, 1.0], }
+    fn render_data(&self) -> RenderData {
+        RenderData { colour: [0.0, 1.0, 0.0, 1.0], }
     }
 }
 
 #[derive(Default)]
 struct Spawner {}
 
-impl gg::SceneObject<ObjectType> for Spawner {
+impl SceneObject<ObjectType> for Spawner {
     fn get_type(&self) -> ObjectType { ObjectType::Spawner }
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
     fn on_ready(&mut self) {}
-
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         const N: usize = 10;
         let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
             .sample_iter(rand::thread_rng())
@@ -140,7 +140,6 @@ impl gg::SceneObject<ObjectType> for Spawner {
     fn transform(&self) -> Transform {
         Transform::default()
     }
-
 }
 
 #[derive(Default)]
@@ -165,13 +164,12 @@ impl SpinningRectangle {
 
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
-impl gg::SceneObject<ObjectType> for SpinningRectangle {
+impl SceneObject<ObjectType> for SpinningRectangle {
     fn get_type(&self) -> ObjectType { ObjectType::SpinningRectangle }
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
     fn on_ready(&mut self) {}
-
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
         if !(0.0..update_ctx.viewport().logical_width() as f64).contains(&next_pos.x) {
@@ -181,7 +179,7 @@ impl gg::SceneObject<ObjectType> for SpinningRectangle {
             self.velocity.y = -self.velocity.y;
         }
     }
-    fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
+    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         self.t += delta.as_secs_f64();
         self.pos += self.velocity * delta.as_secs_f64();
 
@@ -211,35 +209,33 @@ impl gg::SceneObject<ObjectType> for SpinningRectangle {
         self.pos += mtv;
     }
 
-    fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject<ObjectType>> {
-        Some(self)
-    }
-
     fn transform(&self) -> Transform {
         Transform {
             position: self.pos,
             rotation: self.rotation(),
         }
     }
-
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+        Some(self)
+    }
     fn collider(&self) -> Option<Box<dyn Collider>> {
         Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
-        vec![RECTANGLE_COLL_TAG]
+    fn collision_tags(&self) -> HashSet<&'static str> {
+        [RECTANGLE_COLL_TAG].into()
     }
-    fn emit_collisions_for(&self) -> Vec<&'static str> {
-        vec![RECTANGLE_COLL_TAG]
+    fn emit_collisions_for(&self) -> HashSet<&'static str> {
+        [RECTANGLE_COLL_TAG].into()
     }
 }
 
-impl gg::RenderableObject<ObjectType> for SpinningRectangle {
+impl RenderableObject<ObjectType> for SpinningRectangle {
     fn create_vertices(&self) -> Vec<Vec2> {
         shader::vertex::rectangle(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> gg::RenderData {
-        gg::RenderData {
+    fn render_data(&self) -> RenderData {
+        RenderData {
             colour: [1.0, 0.0, 0.0, 1.0],
         }
     }
