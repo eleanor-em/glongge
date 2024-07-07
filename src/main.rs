@@ -42,7 +42,8 @@ fn main() -> Result<()> {
     let mut _scene = triangle::create_scene(&render_handler, input_handler.clone());
     scene.run();
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, ctx, render_handler, input_handler).run(event_loop);
+    WindowEventHandler::new(window, ctx, render_handler, input_handler)
+        .run(event_loop, false);
     Ok(())
 }
 

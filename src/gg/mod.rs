@@ -163,6 +163,52 @@ pub enum SceneInstruction {
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
 
+struct UpdatePerfStats {
+    total_stats: TimeIt,
+    on_update_begin: TimeIt,
+    on_update: TimeIt,
+    on_update_end: TimeIt,
+    detect_collision: TimeIt,
+    on_collision: TimeIt,
+    remove_objects: TimeIt,
+    add_objects: TimeIt,
+    render_data: TimeIt,
+    last_report: Instant,
+}
+
+impl UpdatePerfStats {
+    fn new() -> Self {
+        Self {
+            total_stats: TimeIt::new("total"),
+            on_update_begin: TimeIt::new("on_update_begin"),
+            on_update: TimeIt::new("on_update"),
+            on_update_end: TimeIt::new("on_update_end"),
+            detect_collision: TimeIt::new("detect collisions"),
+            on_collision: TimeIt::new("on_collision"),
+            remove_objects: TimeIt::new("remove objects"),
+            add_objects: TimeIt::new("add objects"),
+            render_data: TimeIt::new("render_data"),
+            last_report: Instant::now(),
+        }
+    }
+
+    fn report(&mut self) {
+        if self.last_report.elapsed().as_secs() >= 5 {
+            info!("update stats:");
+            self.on_update_begin.report_ms_if_at_least(1.0);
+            self.on_update.report_ms_if_at_least(1.0);
+            self.on_update_end.report_ms_if_at_least(1.0);
+            self.detect_collision.report_ms_if_at_least(1.0);
+            self.on_collision.report_ms_if_at_least(1.0);
+            self.remove_objects.report_ms_if_at_least(1.0);
+            self.add_objects.report_ms_if_at_least(1.0);
+            self.render_data.report_ms_if_at_least(1.0);
+            self.total_stats.report_ms();
+            self.last_report = Instant::now();
+        }
+    }
+}
+
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
@@ -174,6 +220,7 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataR
     input_handler: Arc<Mutex<InputHandler>>,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
+    perf_stats: UpdatePerfStats,
 }
 
 impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandler<ObjectType, RenderReceiver> {
@@ -243,6 +290,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             input_handler,
             scene_instruction_tx,
             scene_instruction_rx,
+            perf_stats: UpdatePerfStats::new(),
         };
         rv.update_render_data(true);
         rv
@@ -250,49 +298,24 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
 
     pub fn consume(mut self) {
         let mut delta = Duration::from_secs(0);
-        let mut total_stats = TimeIt::new("total");
-        let mut update_objects_stats = TimeIt::new("on_update");
-        let mut add_objects_stats = TimeIt::new("add objects");
-        let mut remove_objects_stats = TimeIt::new("remove objects");
-        let mut render_data_stats = TimeIt::new("render_data");
-        let mut last_report = Instant::now();
-
         let mut is_running = true;
 
         loop {
             if is_running {
                 let now = Instant::now();
-                total_stats.start();
+                self.perf_stats.total_stats.start();
 
-                update_objects_stats.start();
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, input_handler);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
-                update_objects_stats.stop();
 
-                remove_objects_stats.start();
                 self.update_with_removed_objects(pending_remove_objects);
-                remove_objects_stats.stop();
-
-                add_objects_stats.start();
                 self.update_with_added_objects(pending_add_objects);
-                add_objects_stats.stop();
-
-                render_data_stats.start();
                 self.update_render_data(did_update_vertices);
-                render_data_stats.stop();
-
                 self.input_handler.lock().unwrap().update_step();
-                total_stats.stop();
-                if last_report.elapsed().as_secs() >= 5 {
-                    info!("update stats:");
-                    update_objects_stats.report_ms_if_at_least(1.0);
-                    remove_objects_stats.report_ms_if_at_least(1.0);
-                    add_objects_stats.report_ms_if_at_least(1.0);
-                    render_data_stats.report_ms_if_at_least(1.0);
-                    total_stats.report_ms();
-                    last_report = Instant::now();
-                }
+
+                self.perf_stats.total_stats.stop();
+                self.perf_stats.report();
                 delta = now.elapsed();
             }
 
@@ -306,6 +329,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
     }
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: Vec<usize>) {
+        self.perf_stats.remove_objects.start();
         for remove_index in pending_remove_objects.into_iter().rev() {
             match self.render_data.remove(&remove_index) {
                 Some(_) => {
@@ -327,8 +351,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             self.collision_map.remove(&remove_index);
             self.collision_map.values_mut().for_each(|ids| { ids.remove(&remove_index); });
         }
+        self.perf_stats.remove_objects.stop();
     }
     fn update_with_added_objects(&mut self, pending_add_objects: Vec<AnySceneObject<ObjectType>>) {
+        self.perf_stats.add_objects.start();
         // TODO: leak new_id as 'static?
         let mut new_id = *self.objects.last_key_value()
             .map(|(id, _)| id)
@@ -365,9 +391,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         for i in first_new_id..=new_id {
             self.objects[&i].borrow_mut().on_ready();
         }
+        self.perf_stats.add_objects.stop();
     }
 
     fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, Vec<usize>) {
+        self.perf_stats.on_update_begin.start();
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
         let mut other_map: HashMap<usize, _> = self
@@ -381,10 +409,14 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
 
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                  |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
+        self.perf_stats.on_update_begin.stop();
+        self.perf_stats.on_update.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                  |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
+        self.perf_stats.on_update.stop();
 
-        self.collision_map.iter()
+        self.perf_stats.detect_collision.start();
+        let collisions: Vec<_> = self.collision_map.iter()
             .flat_map(|(obj_id, others)| {
                 others.iter().filter_map(|other_id| {
                     let collider = self.objects[obj_id].borrow().collider().unwrap();
@@ -398,20 +430,18 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                     })
                 })
             })
-            .for_each(|(obj, other_obj, mtv)| {
-                obj.borrow_mut().on_collision(other_obj, mtv)
-            });
+            .collect();
+        self.perf_stats.detect_collision.stop();
+        self.perf_stats.on_collision.start();
+        collisions.into_iter().for_each(|(obj, other_obj, mtv)| {
+            obj.borrow_mut().on_collision(other_obj, mtv)
+        });
+        self.perf_stats.on_collision.stop();
 
+        self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
-
-        for object_id in self.objects.keys() {
-            if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
-                let render_data = self.render_data.get_mut(object_id).unwrap();
-                render_data.inner = obj.render_data();
-                render_data.transform = obj.transform();
-            }
-        }
+        self.perf_stats.on_update_end.stop();
         (pending_add_objects, pending_remove_objects)
     }
     fn iter_with_other_map<F>(&self,
@@ -442,6 +472,14 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
     }
     fn update_render_data(&mut self, did_update_vertices: bool) {
+        self.perf_stats.render_data.start();
+        for object_id in self.objects.keys() {
+            if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
+                let render_data = self.render_data.get_mut(object_id).unwrap();
+                render_data.inner = obj.render_data();
+                render_data.transform = obj.transform();
+            }
+        }
         let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
         if did_update_vertices {
             render_data_receiver.update_vertices(self.vertices.values()
@@ -451,6 +489,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
         render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
         self.viewport = render_data_receiver.current_viewport();
+        self.perf_stats.render_data.stop();
     }
 }
 

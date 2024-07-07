@@ -569,8 +569,10 @@ where
         }
     }
 
-    pub fn run(mut self, event_loop: EventLoop<()>) {
-        event_loop.run(move |event, _, control_flow| self.run_inner(event, control_flow).unwrap());
+    pub fn run(mut self, event_loop: EventLoop<()>, report_stats: bool) {
+        event_loop.run(move |event, _, control_flow| {
+            self.run_inner(event, control_flow, report_stats).unwrap();
+        });
     }
 
     fn recreate_swapchain(
@@ -671,7 +673,7 @@ where
         per_image_ctx.last = image_idx;
     }
 
-    fn run_inner(&mut self, event: Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
+    fn run_inner(&mut self, event: Event<()>, control_flow: &mut ControlFlow, report_stats: bool) -> Result<()> {
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -718,7 +720,7 @@ where
                     Err(VulkanError::OutOfDate) => self.recreate_swapchain(),
                     Err(e) => Err(e.into()),
                 };
-                self.render_stats.report_and_end_step();
+                self.render_stats.report_and_end_step(report_stats);
                 rv
             }
             _ => Ok(()),
@@ -816,7 +818,7 @@ impl RenderPerfStats {
         self.render_active.unpause();
     }
 
-    fn report_and_end_step(&mut self) {
+    fn report_and_end_step(&mut self, report_stats: bool) {
         // in some error conditions, we are in a different state at the end of a step:
         // crate::check_eq!(self.state, RenderState::EndRender);
         self.state = RenderState::BetweenRenders;
@@ -833,7 +835,7 @@ impl RenderPerfStats {
         self.count += 1;
 
         // arbitrary; report every 5 seconds
-        if self.last_report.elapsed().as_secs() >= 5 {
+        if report_stats && self.last_report.elapsed().as_secs() >= 5 {
             info!(
                 "frames on time: {:.1}%",
                 self.on_time as f64 / self.count as f64 * 100.0

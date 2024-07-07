@@ -1,5 +1,5 @@
 use std::ops::{Neg, Range};
-use num_traits::Float;
+use num_traits::{Float, Zero};
 use crate::{
     core::{
         linalg::Vec2,
@@ -66,30 +66,32 @@ impl BoxCollider {
 
 impl Collider for BoxCollider {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        let mut mtv = f64::max_value() * Vec2::right();
+        let mut min_axis = Vec2::zero();
+        let mut min_dist = f64::max_value();
 
-        for axis in [self.normals(), other.normals()].into_iter().flatten() {
+        for &axis in [self.normals(), other.normals()].as_flattened() {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
             match range::overlap_len_f64(&self_proj, &other_proj) {
                 Some(0.0) => return None,
                 Some(mut dist) => {
-                    if dist == 0.0 { return None; }
                     if range::contains_f64(&self_proj, &other_proj) ||
-                        range::contains_f64(&other_proj, &self_proj) {
+                            range::contains_f64(&other_proj, &self_proj) {
                         let starts = (self_proj.start - other_proj.start).abs();
                         let ends = (self_proj.end - other_proj.end).abs();
                         dist += f64::min(starts, ends);
                     }
-                    if dist < mtv.len() {
-                        mtv = dist * axis;
+                    if dist < min_dist {
+                        min_dist = dist;
+                        min_axis = axis;
                     }
                 },
                 _ => return None,
             }
         }
 
-        if self.centre.dot(mtv) < other.centre.dot(mtv) {
+        let mtv = min_dist * min_axis;
+        if self.centre.dot(min_axis) < other.centre.dot(min_axis) {
             Some(-mtv)
         } else {
             Some(mtv)
