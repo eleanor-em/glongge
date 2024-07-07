@@ -1,6 +1,10 @@
 use std::{
+    any::Any,
     sync::{Arc, Mutex},
-    time::Duration
+    time::{
+        Duration,
+        Instant
+    }
 };
 use num_traits::{FloatConst, Zero};
 use rand::{
@@ -10,8 +14,9 @@ use rand::{
 
 use crate::{
     core::{
+        collision::{BoxCollider, Collider},
+        input::{InputHandler, KeyCode},
         linalg::Vec2,
-        input::{InputHandler, KeyCode}
     },
     gg::{
         self,
@@ -20,18 +25,20 @@ use crate::{
         UpdateContext
     },
     shader,
+    gg::{RenderableObject, SceneObject, SceneObjectWithId, Transform}
 };
-use crate::core::collision::{BoxCollider, Collider};
-use crate::gg::{RenderableObject, SceneObject, SceneObjectWithId, Transform};
 use glongge_derive::register_object_type;
-use crate::core::util::GgInstant;
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
     Scene::new(vec![Box::new(Spawner {}),
-                    Box::new(Player { pos: Vec2 { x: 500.0, y: 500.0 }, ..Default::default() })],
+                    Box::new(Player {
+                        pos: Vec2 { x: 500.0, y: 500.0 },
+                        vel: Vec2::zero(),
+                        last_hello: Instant::now()
+                    })],
                render_handler, input_handler)
 }
 
@@ -42,20 +49,20 @@ pub enum ObjectType {
     SpinningRectangle,
 }
 
-#[derive(Default)]
 struct Player {
     pos: Vec2,
     vel: Vec2,
-    last_hello: GgInstant,
+    last_hello: Instant,
 }
 
 impl Player {
     const SIZE: f64 = 200.0;
     const SPEED: f64 = 300.0;
 
-    fn hello(&self) {
-        if self.last_hello.0.elapsed().as_secs_f64() > 1.0 {
+    fn hello(&mut self) {
+        if self.last_hello.elapsed().as_secs_f64() > 1.0 {
             println!("hello!");
+            self.last_hello = Instant::now();
         }
     }
 }
@@ -87,6 +94,8 @@ impl gg::SceneObject<ObjectType> for Player {
     fn collider(&self) -> Option<Box<dyn Collider>> {
         Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
     }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 impl gg::RenderableObject<ObjectType> for Player {
@@ -103,8 +112,11 @@ impl gg::RenderableObject<ObjectType> for Player {
 struct Spawner {}
 
 impl gg::SceneObject<ObjectType> for Spawner {
-    fn on_ready(&mut self) {}
     fn get_type(&self) -> ObjectType { ObjectType::Spawner }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn on_ready(&mut self) {}
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         const N: usize = 10;
@@ -142,6 +154,7 @@ impl gg::SceneObject<ObjectType> for Spawner {
     fn transform(&self) -> Transform {
         Transform::default()
     }
+
 }
 
 #[derive(Default)]
@@ -174,8 +187,11 @@ impl SpinningRectangle {
     }
 }
 impl gg::SceneObject<ObjectType> for SpinningRectangle {
-    fn on_ready(&mut self) {}
     fn get_type(&self) -> ObjectType { ObjectType::SpinningRectangle }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn on_ready(&mut self) {}
 
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
@@ -216,13 +232,13 @@ impl gg::SceneObject<ObjectType> for SpinningRectangle {
         let mut player_scene_obj = None;
         for other in update_ctx.others() {
             if other.get_type() == ObjectType::Player {
-                player_scene_obj = Some(other);
-                other.checked_downcast::<Player>().hello();
+                player_scene_obj = Some(other.clone());
+                other.checked_downcast_mut::<Player>().hello();
             } else {
-                self.collision_response(other);
+                self.collision_response(&other);
             }
         }
-        self.collision_response(player_scene_obj.unwrap());
+        self.collision_response(&player_scene_obj.unwrap());
     }
 
     fn as_renderable_object(&self) -> Option<&dyn gg::RenderableObject<ObjectType>> {

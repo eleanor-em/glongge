@@ -2,6 +2,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant}
 };
+use std::any::Any;
 use num_traits::{Float, FloatConst, Zero};
 use rand::{
     distributions::{Distribution, Uniform},
@@ -18,7 +19,6 @@ use crate::{
         self,
         sample::BasicRenderHandler,
         scene::Scene,
-        SceneObject,
         UpdateContext
     },
 };
@@ -41,8 +41,11 @@ pub enum ObjectType {
 struct Spawner {}
 
 impl gg::SceneObject<ObjectType> for Spawner {
-    fn on_ready(&mut self) {}
     fn get_type(&self) -> ObjectType { ObjectType::Spawner }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn on_ready(&mut self) {}
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         const N: usize = 10;
@@ -112,9 +115,11 @@ impl SpinningTriangle {
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
 impl gg::SceneObject<ObjectType> for SpinningTriangle {
-    fn on_ready(&mut self) {}
     fn get_type(&self) -> ObjectType { ObjectType::SpinningTriangle }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn on_ready(&mut self) {}
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;

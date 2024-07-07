@@ -1,10 +1,12 @@
 use std::ops::{Neg, Range};
 use num_traits::Float;
 use crate::{
-    core::linalg::Vec2,
-    core::util::range
+    core::{
+        linalg::Vec2,
+        util::range
+    },
+    gg::Transform
 };
-use crate::gg::Transform;
 
 pub trait Collider {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2>;
@@ -44,18 +46,20 @@ impl BoxCollider {
         self.centre + self.half_widths().rotated(self.rotation)
     }
 
-    fn vertices(&self) -> Vec<Vec2> { vec![self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()] }
-    fn normals(&self) -> Vec<Vec2> {
-        vec![Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
+    fn vertices(&self) -> [Vec2; 4] {
+        [self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()]
+    }
+    fn normals(&self) -> [Vec2; 2] {
+        [Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
     }
     fn project(&self, axis: Vec2) -> Range<f64> {
-        let mut min = f64::max_value();
-        let mut max = f64::min_value();
-        for vertex in self.vertices() {
-            let proj = axis.dot(vertex);
-            min = f64::min(min, proj);
-            max = f64::max(max, proj);
-        }
+        let (min, max) = self.vertices()
+            .map(|vertex| axis.dot(vertex))
+            .into_iter()
+            .fold((f64::NEG_INFINITY, f64::INFINITY),
+                  |(acc_min, acc_max), next| {
+                    (f64::min(acc_min, next), f64::max(acc_max, next))
+                });
         min..max
     }
 }
