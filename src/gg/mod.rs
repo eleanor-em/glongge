@@ -74,6 +74,10 @@ pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
     fn render_data(&self) -> RenderData;
 }
 
+impl<ObjectType, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
+    fn from(value: Box<T>) -> Self { value }
+}
+
 #[derive(Clone)]
 pub struct SceneObjectWithId<ObjectType> {
     object_id: usize,
@@ -99,17 +103,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
         self.inner.borrow_mut().on_update_end(delta, update_ctx)
     }
 
-    pub fn transform(&self) -> Transform {
-        self.inner.borrow().transform()
-    }
-
-    pub fn borrow(&self) -> Ref<Box<dyn SceneObject<ObjectType>>> {
-        self.inner.borrow()
-    }
-
-    // pub fn as_renderable_object(&self) -> Ref<Option<&dyn RenderableObject<ObjectType>>> {
-    //     Ref::map(self.inner.borrow(), |obj| &obj.as_renderable_object())
-    // }
+    pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
     pub fn collider(&self) -> Option<Box<dyn Collider>> { self.inner.borrow().collider() }
 }
 

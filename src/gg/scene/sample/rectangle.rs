@@ -120,31 +120,19 @@ impl gg::SceneObject<ObjectType> for Spawner {
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         const N: usize = 10;
-        let mut rng = rand::thread_rng();
-        let xs: Vec<f64> = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
-            .sample_iter(&mut rng)
+        let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
+            .sample_iter(rand::thread_rng())
+            .zip(Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
+                .sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0)
+                .sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0)
+                .sample_iter(rand::thread_rng()))
             .take(N)
-            .collect();
-        let ys: Vec<f64> = Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
-            .sample_iter(&mut rng)
-            .take(N)
-            .collect();
-        let vxs: Vec<f64> = Uniform::new(-1.0, 1.0)
-            .sample_iter(&mut rng)
-            .take(N)
-            .collect();
-        let vys: Vec<f64> = Uniform::new(-1.0, 1.0)
-            .sample_iter(&mut rng)
-            .take(N)
-            .collect();
-        let objects = (0..N)
-            .map(|i| {
-                let pos = Vec2 { x: xs[i], y: ys[i] };
-                let vel = Vec2 {
-                    x: vxs[i],
-                    y: vys[i],
-                };
-                Box::new(SpinningRectangle::new(pos, vel.normed())) as Box<dyn gg::SceneObject<ObjectType>>
+            .map(|(((x, y), vx), vy)|  {
+                let pos = Vec2 { x, y };
+                let vel = Vec2 { x: vx, y: vy };
+                Box::new(SpinningRectangle::new(pos, vel.normed())).into()
             })
             .collect();
         update_ctx.add_object_vec(objects);
