@@ -1,4 +1,5 @@
 #![feature(iterator_try_collect)]
+#![feature(map_try_insert)]
 
 use num_traits::{Float, One};
 

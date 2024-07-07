@@ -56,7 +56,7 @@ impl BoxCollider {
         let (min, max) = self.vertices()
             .map(|vertex| axis.dot(vertex))
             .into_iter()
-            .fold((f64::NEG_INFINITY, f64::INFINITY),
+            .fold((f64::max_value(), f64::min_value()),
                   |(acc_min, acc_max), next| {
                     (f64::min(acc_min, next), f64::max(acc_max, next))
                 });

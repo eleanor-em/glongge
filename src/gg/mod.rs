@@ -13,7 +13,7 @@ use std::{
 };
 use std::any::{Any, TypeId};
 use std::cell::Ref;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Range;
 use std::rc::Rc;
@@ -61,12 +61,16 @@ pub trait SceneObject<ObjectType>: Send {
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_collision(&mut self, other: SceneObjectWithId<ObjectType>, mtv: Vec2) {}
 
     fn transform(&self) -> Transform;
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }
     fn collider(&self) -> Option<Box<dyn Collider>> { None }
+    fn collision_tags(&self) -> Vec<&'static str> { vec![] }
+    fn emit_collisions_for(&self) -> Vec<&'static str> { vec![] }
 }
 
 pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
@@ -85,22 +89,12 @@ pub struct SceneObjectWithId<ObjectType> {
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
-    fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
+    pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
     pub fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
         Ref::map(self.inner.borrow(), |obj| ObjectType::checked_downcast::<T>(obj.as_ref()))
     }
     pub fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
         RefMut::map(self.inner.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj.as_mut()))
-    }
-
-    pub fn on_ready(&mut self) {
-        self.inner.borrow_mut().on_ready()
-    }
-    pub fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
-        self.inner.borrow_mut().on_update(delta, update_ctx)
-    }
-    pub fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
-        self.inner.borrow_mut().on_update_end(delta, update_ctx)
     }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
@@ -163,6 +157,7 @@ pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
 
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+    object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
     vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
     render_data: BTreeMap<usize, RenderDataFull>,
     viewport: AdjustedViewport,
@@ -184,6 +179,15 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             .map(RefCell::new)
             .map(Rc::new)
             .enumerate().collect();
+        let mut object_ids_by_tag: HashMap<&'static str, HashSet<usize>> = HashMap::new();
+        for (&id, tags) in objects.iter()
+                .map(|(id, obj)| (id, obj.borrow().collision_tags())) {
+            for tag in tags {
+                let _ = object_ids_by_tag.try_insert(tag, HashSet::new());
+                object_ids_by_tag.get_mut(tag).unwrap().insert(id);
+            }
+        }
+
         let mut vertices = BTreeMap::new();
         let mut render_data = BTreeMap::new();
         let mut vertex_index = 0;
@@ -203,6 +207,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
         let mut rv = Self {
             objects,
+            object_ids_by_tag,
             vertices,
             render_data,
             viewport,
@@ -255,6 +260,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                         check_false!(self.vertices.contains_key(&remove_index));
                     }
                     self.objects.remove(&remove_index);
+                    for object_ids in self.object_ids_by_tag.values_mut() {
+                        object_ids.remove(&remove_index);
+                    }
                 }
                 remove_objects_stats.stop();
 
@@ -277,6 +285,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                             transform: obj.transform(),
                             vertex_indices,
                         });
+                    }
+                    for tag in new_obj.collision_tags().clone() {
+                        self.object_ids_by_tag.get_mut(tag).unwrap()
+                            .insert(next_id);
                     }
                     self.objects.insert(next_id, Rc::new(RefCell::new(new_obj)));
                 }
@@ -331,6 +343,29 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                                      |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
             self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
+
+            for obj_id in self.object_ids_by_tag.values().flatten().collect::<HashSet<_>>() {
+                let mut obj = self.objects[obj_id].borrow_mut();
+                let collider = obj.collider()
+                    .unwrap_or_else(|| panic!("object {} ({:?}) registered for collisions but had no collider", obj_id, obj.get_type()));
+                // TODO: cache the below calculation.
+                for other_obj_id in obj.emit_collisions_for().iter()
+                        .flat_map(|tag| self.object_ids_by_tag[tag].iter())
+                        .collect::<HashSet<_>>()
+                        .into_iter().filter(|id| *id != obj_id) {
+                    let other_obj = self.objects[other_obj_id].clone();
+                    let other_collider = other_obj.borrow().collider()
+                        .unwrap_or_else(|| panic!("object {} ({:?}) registered for collisions but had no collider", other_obj_id, other_obj.borrow().get_type()));
+                    if let Some(mtv) = collider.collides_with(other_collider.as_ref()) {
+                        let other = SceneObjectWithId {
+                            object_id: *other_obj_id,
+                            inner: other_obj,
+                        };
+                        obj.on_collision(other, mtv);
+                    }
+                }
+            }
+
             self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
         }
