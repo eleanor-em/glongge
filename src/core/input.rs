@@ -6,8 +6,6 @@ use winit::event::ElementState;
 
 pub use winit::event::VirtualKeyCode as KeyCode;
 
-use crate::assert::*;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputState {
     Pressed,
@@ -59,8 +57,12 @@ impl InputHandler {
         for (key, state) in self.queued_events.drain(..) {
             match self.data.get(&key) {
                 None => {
-                    check_eq!(state, ElementState::Pressed);
-                    self.data.insert(key, InputState::Pressed);
+                    // I don't really understand this, but some OS stuff can cause a Released state
+                    // here.
+                    self.data.insert(key, match state {
+                        ElementState::Pressed => InputState::Pressed,
+                        ElementState::Released => InputState::Released,
+                    });
                 }
                 Some(InputState::Pressed | InputState::Held) => {
                     match state {
