@@ -28,12 +28,20 @@ use num_traits::Zero;
 use tracing::info;
 
 use crate::{
-    assert::{check, check_false},
+    assert::{
+        check,
+        check_false,
+        check_eq,
+        check_ne
+    },
     core::{
         collision::Collider,
         input::InputHandler,
         linalg::Vec2,
-        util::TimeIt,
+        util::{
+            TimeIt,
+            UnorderedPair
+        },
         vk_core::AdjustedViewport,
     }
 };
@@ -78,7 +86,7 @@ pub trait SceneObject<ObjectType>: Send {
     }
     fn collider(&self) -> Option<Box<dyn Collider>> { None }
     fn collision_tags(&self) -> HashSet<&'static str> { [].into() }
-    fn emit_collisions_for(&self) -> HashSet<&'static str> { [].into() }
+    fn listening_tags(&self) -> HashSet<&'static str> { [].into() }
 }
 
 pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
@@ -211,13 +219,12 @@ impl UpdatePerfStats {
 
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>,
-    object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
-    collision_map: HashMap<usize, HashSet<usize>>,
     vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
     render_data: BTreeMap<usize, RenderDataFull>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
+    collision_handler: CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     perf_stats: UpdatePerfStats,
@@ -235,32 +242,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             .map(RefCell::new)
             .map(Rc::new)
             .enumerate().collect();
-        let mut object_ids_by_tag: HashMap<&'static str, HashSet<usize>> = HashMap::new();
-        for (&id, tags) in objects.iter()
-                .map(|(id, obj)| (id, obj.borrow().collision_tags())) {
-            for tag in tags {
-                let _ = object_ids_by_tag.try_insert(tag, HashSet::new());
-                object_ids_by_tag.get_mut(tag).unwrap().insert(id);
-            }
-        }
-        let collision_map = objects.iter().filter_map(|(&id, obj)| {
-            let obj_tags = obj.borrow().emit_collisions_for();
-            let other_ids: HashSet<usize> = objects.iter()
-                .filter(|(&other_id, _)| other_id != id)
-                .filter(|(_, other_obj)| {
-                    !other_obj.borrow().collision_tags()
-                        .intersection(&obj_tags)
-                        .collect::<Vec<_>>().is_empty()
-                })
-                .map(|(&other_id, _)| other_id)
-                .collect();
-            if other_ids.is_empty() {
-                None
-            } else {
-                Some((id, other_ids))
-            }
-        }).collect();
-
+        let collision_handler = CollisionHandler::new(&objects);
         let mut vertices = BTreeMap::new();
         let mut render_data = BTreeMap::new();
         let mut vertex_index = 0;
@@ -281,13 +263,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
         let mut rv = Self {
             objects,
-            object_ids_by_tag,
-            collision_map,
             vertices,
             render_data,
             viewport,
             render_data_receiver,
             input_handler,
+            collision_handler,
             scene_instruction_tx,
             scene_instruction_rx,
             perf_stats: UpdatePerfStats::new(),
@@ -347,9 +328,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 }
             }
             self.objects.remove(&remove_index);
-            self.object_ids_by_tag.values_mut().for_each(|ids| { ids.remove(&remove_index); });
-            self.collision_map.remove(&remove_index);
-            self.collision_map.values_mut().for_each(|ids| { ids.remove(&remove_index); });
+            self.collision_handler.update_with_remove_object(remove_index);
         }
         self.perf_stats.remove_objects.stop();
     }
@@ -377,15 +356,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                     vertex_indices,
                 });
             }
-            self.collision_map.insert(new_id, HashSet::new());
-            new_obj.collision_tags().into_iter().for_each(|tag| {
-                self.object_ids_by_tag[tag].iter().for_each(|&id| {
-                    self.collision_map.get_mut(&new_id).unwrap().insert(id);
-                });
-                self.object_ids_by_tag.get_mut(tag).unwrap().insert(new_id);
-            });
+            self.collision_handler.update_with_add_object(new_id, &new_obj);
             self.objects.insert(new_id, Rc::new(RefCell::new(new_obj)));
         }
+
 
         // Ensure all objects actually exist before calling on_ready().
         for i in first_new_id..=new_id {
@@ -408,39 +382,31 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             .collect();
 
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                                 |mut obj, delta, update_ctx| obj.on_update_begin(delta, update_ctx));
+                                 |mut obj, delta, update_ctx| {
+                                     obj.on_update_begin(delta, update_ctx)
+                                 });
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.on_update.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                                 |mut obj, delta, update_ctx| obj.on_update(delta, update_ctx));
+                                 |mut obj, delta, update_ctx| {
+                                     obj.on_update(delta, update_ctx)
+                                 });
         self.perf_stats.on_update.stop();
 
         self.perf_stats.detect_collision.start();
-        let collisions: Vec<_> = self.collision_map.iter()
-            .flat_map(|(obj_id, others)| {
-                others.iter().filter_map(|other_id| {
-                    let collider = self.objects[obj_id].borrow().collider().unwrap();
-                    let other_collider = self.objects[other_id].borrow().collider().unwrap();
-                    collider.collides_with(other_collider.as_ref()).map(|mtv| {
-                        let other_obj = SceneObjectWithId {
-                            object_id: *other_id,
-                            inner: self.objects[other_id].clone(),
-                        };
-                        (self.objects[obj_id].clone(), other_obj, mtv)
-                    })
-                })
-            })
-            .collect();
+        let collisions = self.collision_handler.get_collisions(&self.objects);
         self.perf_stats.detect_collision.stop();
         self.perf_stats.on_collision.start();
-        collisions.into_iter().for_each(|(obj, other_obj, mtv)| {
-            obj.borrow_mut().on_collision(other_obj, mtv)
-        });
+        for Collision { this, other, mtv } in collisions {
+            this.borrow_mut().on_collision(other, mtv)
+        }
         self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
-                               |mut obj, delta, update_ctx| obj.on_update_end(delta, update_ctx));
+                               |mut obj, delta, update_ctx| {
+                                   obj.on_update_end(delta, update_ctx)
+                               });
         self.perf_stats.on_update_end.stop();
         (pending_add_objects, pending_remove_objects)
     }
@@ -490,6 +456,104 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
         self.viewport = render_data_receiver.current_viewport();
         self.perf_stats.render_data.stop();
+    }
+}
+
+struct Collision<ObjectType: ObjectTypeEnum> {
+    this: Rc<RefCell<AnySceneObject<ObjectType>>>,
+    other: SceneObjectWithId<ObjectType>,
+    mtv: Vec2,
+}
+
+struct CollisionHandler {
+    object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
+    object_ids_by_listening_tag: HashMap<&'static str, HashSet<usize>>,
+    possible_collisions: HashSet<UnorderedPair<usize>>,
+}
+
+impl CollisionHandler {
+    pub fn new<ObjectType: ObjectTypeEnum>(
+        objects: &BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>)
+    -> Self {
+        let mut rv = Self {
+            object_ids_by_tag: HashMap::new(),
+            object_ids_by_listening_tag: HashMap::new(),
+            possible_collisions: HashSet::new()
+        };
+        for (id, obj) in objects.iter() {
+            rv.update_with_add_object(*id, &obj.borrow());
+        }
+        rv
+    }
+    pub fn update_with_add_object<ObjectType: ObjectTypeEnum>(&mut self, added_id: usize, obj: &AnySceneObject<ObjectType>) {
+        let collision_tags = obj.collision_tags();
+        let listening_tags = obj.listening_tags();
+        let all_tags = collision_tags.union(&listening_tags).copied().collect::<HashSet<_>>();
+        // Ensure all tags exist in the maps.
+        check_eq!(self.object_ids_by_tag.keys().collect::<Vec<_>>(),
+                  self.object_ids_by_listening_tag.keys().collect::<Vec<_>>());
+        let keys = self.object_ids_by_tag.keys().copied().collect::<HashSet<_>>();
+        for tag in keys.symmetric_difference(&all_tags) {
+            self.object_ids_by_tag.insert(tag, HashSet::new());
+            self.object_ids_by_listening_tag.insert(tag, HashSet::new());
+        }
+        // Add to possible_collisions.
+        for tag in all_tags {
+            for id in self.object_ids_by_tag.get(tag).unwrap()
+                    .union(self.object_ids_by_listening_tag.get(tag).unwrap()) {
+                check_ne!(*id, added_id);
+                self.possible_collisions.insert(UnorderedPair::new(*id, added_id));
+            }
+        }
+        // Update the maps.
+        for (_, ids) in self.object_ids_by_tag.iter_mut()
+                .filter(|(tag, _)| collision_tags.contains(*tag)) {
+            ids.insert(added_id);
+        }
+        for (_, ids) in self.object_ids_by_listening_tag.iter_mut()
+                .filter(|(tag, _)| listening_tags.contains(*tag)) {
+            ids.insert(added_id);
+        }
+    }
+    pub fn update_with_remove_object(&mut self, removed_id: usize) {
+        for (_, ids) in self.object_ids_by_tag.iter_mut() {
+            ids.remove(&removed_id);
+        }
+        for (_, ids) in self.object_ids_by_listening_tag.iter_mut() {
+            ids.remove(&removed_id);
+        }
+        self.possible_collisions.retain(|pair| !pair.contains(&removed_id));
+    }
+    pub fn get_collisions<ObjectType: ObjectTypeEnum>(
+        &self,
+        objects: &BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>)
+    -> Vec<Collision<ObjectType>> {
+        self.possible_collisions.iter().copied()
+            .filter_map(|ids| {
+                let this = objects[ids.fst()].borrow().collider().unwrap();
+                let other = objects[ids.snd()].borrow().collider().unwrap();
+                this.collides_with(other.as_ref()).map(|mtv| (ids, mtv))
+            })
+            .flat_map(|(ids, mtv)| {
+                let this = objects[ids.fst()].clone();
+                let other = objects[ids.snd()].clone();
+                vec![Collision {
+                    this: this.clone(),
+                    other: SceneObjectWithId {
+                        object_id: *ids.snd(),
+                        inner: other.clone(),
+                    },
+                    mtv,
+                }, Collision {
+                    this: other,
+                    other: SceneObjectWithId {
+                        object_id: *ids.fst(),
+                        inner: this,
+                    },
+                    mtv: -mtv,
+                }]
+            })
+            .collect()
     }
 }
 

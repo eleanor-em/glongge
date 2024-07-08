@@ -1,4 +1,5 @@
 use std::{cmp, time::Instant};
+use std::hash::Hash;
 
 use tracing::info;
 
@@ -113,4 +114,17 @@ pub mod range {
     pub fn overlap_len_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<f64> {
         overlap_f64(r1, r2).map(|r| r.end - r.start)
     }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash>(T, T);
+impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T> {
+    pub fn new(a: T, b: T) -> Self {
+        if a < b { Self(a, b) } else { Self(b, a) }
+    }
+
+    pub fn fst(&self) -> &T { &self.0 }
+    pub fn snd(&self) -> &T { &self.1 }
+
+    pub fn contains(&self, value: &T) -> bool { self.fst() == value || self.snd() == value }
 }

@@ -224,7 +224,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn collision_tags(&self) -> HashSet<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
-    fn emit_collisions_for(&self) -> HashSet<&'static str> {
+    fn listening_tags(&self) -> HashSet<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
 }
