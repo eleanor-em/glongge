@@ -7,14 +7,12 @@ use std::{
     },
 };
 use num_traits::{FloatConst, Zero};
-use rand::{
-    distributions::{Distribution, Uniform},
-    Rng
-};
+use rand::{distributions::{Distribution, Uniform}, Rng};
 
 use crate::{
     core::{
         collision::{BoxCollider, Collider},
+        colour::Colour,
         input::{InputHandler, KeyCode},
         linalg::Vec2,
     },
@@ -103,7 +101,7 @@ impl RenderableObject<ObjectType> for Player {
     }
 
     fn render_data(&self) -> RenderData {
-        RenderData { colour: [0.0, 1.0, 0.0, 1.0], }
+        RenderData { col: Colour::green(), }
     }
 }
 
@@ -147,6 +145,7 @@ struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,
+    col: Colour,
 }
 
 impl SpinningRectangle {
@@ -155,10 +154,21 @@ impl SpinningRectangle {
     const ANGULAR_VELOCITY: f64 = 2.0;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
+        let mut rng = rand::thread_rng();
+        let col = match rng.gen_range(0..6) {
+            0 => Colour::red(),
+            1 => Colour::blue(),
+            2 => Colour::green(),
+            3 => Colour::cyan(),
+            4 => Colour::magenta(),
+            5 => Colour::yellow(),
+            _ => panic!(),
+        };
         Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             t: 0.0,
+            col,
         }
     }
 
@@ -204,9 +214,12 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             }
         }
     }
-    fn on_collision(&mut self, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) {
+    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) {
         self.velocity = self.velocity.reflect(mtv.normed());
         self.pos += mtv;
+        if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {
+            rect.col = self.col;
+        }
     }
 
     fn transform(&self) -> Transform {
@@ -236,7 +249,7 @@ impl RenderableObject<ObjectType> for SpinningRectangle {
 
     fn render_data(&self) -> RenderData {
         RenderData {
-            colour: [1.0, 0.0, 0.0, 1.0],
+            col: self.col,
         }
     }
 }

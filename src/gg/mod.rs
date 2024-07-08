@@ -45,6 +45,7 @@ use crate::{
         vk_core::AdjustedViewport,
     }
 };
+use crate::core::colour::Colour;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
@@ -106,10 +107,23 @@ pub struct SceneObjectWithId<ObjectType> {
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
-    pub fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
+    pub fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>> {
+        Ref::filter_map(self.inner.borrow(), |obj| {
+            obj.as_any().downcast_ref::<T>()
+        }).ok()
+    }
+    pub fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> Option<RefMut<T>> {
+        RefMut::filter_map(self.inner.borrow_mut(), |obj| {
+            obj.as_any_mut().downcast_mut::<T>()
+        }).ok()
+    }
+    // TODO: the below may turn out to still be useful.
+    #[allow(dead_code)]
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
         Ref::map(self.inner.borrow(), |obj| ObjectType::checked_downcast::<T>(obj.as_ref()))
     }
-    pub fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
+    #[allow(dead_code)]
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
         RefMut::map(self.inner.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj.as_mut()))
     }
 
@@ -559,7 +573,7 @@ impl CollisionHandler {
 
 #[derive(Clone)]
 pub struct RenderData {
-    pub colour: [f32; 4],
+    pub col: Colour,
 }
 
 #[derive(Clone)]

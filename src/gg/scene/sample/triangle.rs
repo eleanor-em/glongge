@@ -22,6 +22,7 @@ use crate::{
         UpdateContext
     },
 };
+use crate::core::colour::Colour;
 use crate::gg::Transform;
 
 pub fn create_scene(
@@ -198,7 +199,7 @@ impl gg::RenderableObject<ObjectType> for SpinningTriangle {
 
     fn render_data(&self) -> gg::RenderData {
         gg::RenderData {
-            colour: [1.0, 0.0, 0.0, 1.0],
+            col: Colour::red(),
         }
     }
 }

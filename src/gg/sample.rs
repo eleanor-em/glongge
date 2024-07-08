@@ -193,7 +193,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                         position: receiver.vertices[vertex_index].into(),
                         translation: render_data.transform.position.into(),
                         rotation: render_data.transform.rotation as f32,
-                        blend_colour: render_data.inner.colour,
+                        blend_colour: render_data.inner.col.into(),
                     });
                 }
             }
