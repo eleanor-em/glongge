@@ -66,6 +66,13 @@ impl Default for Transform {
     }
 }
 
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ObjectId(usize);
+
+impl ObjectId {
+    fn next(&self) -> Self { ObjectId(self.0 + 1) }
+}
+
 pub trait SceneObject<ObjectType>: Send {
     fn get_type(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
@@ -101,7 +108,7 @@ impl<ObjectType, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn 
 
 #[derive(Clone)]
 pub struct SceneObjectWithId<ObjectType> {
-    object_id: usize,
+    object_id: ObjectId,
     inner: Rc<RefCell<Box<dyn SceneObject<ObjectType>>>>,
 }
 
@@ -134,10 +141,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
 pub struct UpdateContext<'a, ObjectType> {
     input_handler: &'a InputHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
-    object_id: usize,
-    other_map: &'a HashMap<usize, SceneObjectWithId<ObjectType>>,
+    object_id: ObjectId,
+    other_map: &'a HashMap<ObjectId, SceneObjectWithId<ObjectType>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject<ObjectType>>>,
-    pending_remove_objects: &'a mut Vec<usize>,
+    pending_remove_objects: &'a mut Vec<ObjectId>,
     viewport: AdjustedViewport,
 }
 
@@ -232,9 +239,9 @@ impl UpdatePerfStats {
 }
 
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
-    objects: BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>,
-    vertices: BTreeMap<usize, (Range<usize>, Vec<Vec2>)>,
-    render_data: BTreeMap<usize, RenderDataFull>,
+    objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+    vertices: BTreeMap<ObjectId, (Range<usize>, Vec<Vec2>)>,
+    render_data: BTreeMap<ObjectId, RenderDataFull>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -252,10 +259,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Self {
-        let objects: BTreeMap<usize, _> = objects.into_iter()
+        let objects = objects.into_iter()
             .map(RefCell::new)
             .map(Rc::new)
-            .enumerate().collect();
+            .enumerate()
+            .map(|(i, obj)| (ObjectId(i), obj))
+            .collect();
         let collision_handler = CollisionHandler::new(&objects);
         let mut vertices = BTreeMap::new();
         let mut render_data = BTreeMap::new();
@@ -323,7 +332,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
     }
 
-    fn update_with_removed_objects(&mut self, pending_remove_objects: Vec<usize>) {
+    fn update_with_removed_objects(&mut self, pending_remove_objects: Vec<ObjectId>) {
         self.perf_stats.remove_objects.start();
         for remove_index in pending_remove_objects.into_iter().rev() {
             match self.render_data.remove(&remove_index) {
@@ -351,14 +360,14 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         // TODO: leak new_id as 'static?
         let mut new_id = *self.objects.last_key_value()
             .map(|(id, _)| id)
-            .unwrap_or(&0);
+            .unwrap_or(&ObjectId(0));
         let mut next_vertex_index = self.vertices.last_key_value()
             .map(|(_, (indices, _))| indices.end)
             .unwrap_or(0);
-        let first_new_id = new_id + 1;
+        let first_new_id = new_id.next();
 
         for new_obj in pending_add_objects {
-            new_id += 1;
+            new_id = new_id.next();
             if let Some(obj) = new_obj.as_renderable_object() {
                 let new_vertices = obj.create_vertices();
                 let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
@@ -376,18 +385,17 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
 
 
         // Ensure all objects actually exist before calling on_ready().
-        for i in first_new_id..=new_id {
-            self.objects[&i].borrow_mut().on_ready();
+        for i in first_new_id.0..=new_id.0 {
+            self.objects[&ObjectId(i)].borrow_mut().on_ready();
         }
         self.perf_stats.add_objects.stop();
     }
 
-    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, Vec<usize>) {
+    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, Vec<ObjectId>) {
         self.perf_stats.on_update_begin.start();
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = Vec::new();
-        let mut other_map: HashMap<usize, _> = self
-            .objects
+        let mut other_map = self.objects
             .iter()
             .map(|(&i, obj)| (i, SceneObjectWithId {
                 object_id: i,
@@ -428,8 +436,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                               delta: Duration,
                               input_handler: &InputHandler,
                               pending_add_objects: &mut Vec<AnySceneObject<ObjectType>>,
-                              pending_remove_objects: &mut Vec<usize>,
-                              other_map: &mut HashMap<usize, SceneObjectWithId<ObjectType>>,
+                              pending_remove_objects: &mut Vec<ObjectId>,
+                              other_map: &mut HashMap<ObjectId, SceneObjectWithId<ObjectType>>,
                               call_obj_event: F)
     where F: Fn(RefMut<AnySceneObject<ObjectType>>, Duration, UpdateContext<ObjectType>) {
         for &object_id in self.objects.keys() {
@@ -480,14 +488,14 @@ struct Collision<ObjectType: ObjectTypeEnum> {
 }
 
 struct CollisionHandler {
-    object_ids_by_tag: HashMap<&'static str, HashSet<usize>>,
-    object_ids_by_listening_tag: HashMap<&'static str, HashSet<usize>>,
-    possible_collisions: HashSet<UnorderedPair<usize>>,
+    object_ids_by_tag: HashMap<&'static str, HashSet<ObjectId>>,
+    object_ids_by_listening_tag: HashMap<&'static str, HashSet<ObjectId>>,
+    possible_collisions: HashSet<UnorderedPair<ObjectId>>,
 }
 
 impl CollisionHandler {
     pub fn new<ObjectType: ObjectTypeEnum>(
-        objects: &BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>)
+        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>)
     -> Self {
         let mut rv = Self {
             object_ids_by_tag: HashMap::new(),
@@ -499,7 +507,7 @@ impl CollisionHandler {
         }
         rv
     }
-    pub fn update_with_add_object<ObjectType: ObjectTypeEnum>(&mut self, added_id: usize, obj: &AnySceneObject<ObjectType>) {
+    pub fn update_with_add_object<ObjectType: ObjectTypeEnum>(&mut self, added_id: ObjectId, obj: &AnySceneObject<ObjectType>) {
         let collision_tags = obj.collision_tags();
         let listening_tags = obj.listening_tags();
         let all_tags = collision_tags.union(&listening_tags).copied().collect::<HashSet<_>>();
@@ -529,7 +537,7 @@ impl CollisionHandler {
             ids.insert(added_id);
         }
     }
-    pub fn update_with_remove_object(&mut self, removed_id: usize) {
+    pub fn update_with_remove_object(&mut self, removed_id: ObjectId) {
         for (_, ids) in self.object_ids_by_tag.iter_mut() {
             ids.remove(&removed_id);
         }
@@ -540,7 +548,7 @@ impl CollisionHandler {
     }
     pub fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
-        objects: &BTreeMap<usize, Rc<RefCell<AnySceneObject<ObjectType>>>>)
+        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>)
     -> Vec<Collision<ObjectType>> {
         self.possible_collisions.iter().copied()
             .filter_map(|ids| {
