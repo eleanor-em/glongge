@@ -1,5 +1,8 @@
-use std::{cmp, time::Instant};
-use std::hash::Hash;
+use std::{
+    cmp,
+    hash::Hash,
+    time::Instant,
+};
 
 use tracing::info;
 

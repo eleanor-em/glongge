@@ -18,7 +18,7 @@ use crate::{
     },
     gg::{
         self,
-        sample::BasicRenderHandler,
+        render::BasicRenderHandler,
         scene::Scene,
         UpdateContext,
         RenderableObject,

@@ -1,5 +1,5 @@
-use num_traits::Zero;
 use std::sync::{Arc, Mutex, MutexGuard};
+use num_traits::Zero;
 
 use anyhow::{Context, Result};
 use tracing::info;
@@ -39,14 +39,20 @@ use crate::{
     core::{
         linalg::Vec2,
         vk_core::{
-            DataPerImage, PerImageContext, RenderEventHandler, VulkanoContext, WindowContext,
-        },
+            AdjustedViewport,
+            DataPerImage,
+            PerImageContext,
+            RenderEventHandler,
+            VulkanoContext,
+            WindowContext,
+        }
     },
-    gg::RenderDataReceiver,
-    shader::sample::{basic_fragment_shader, basic_vertex_shader}
+    gg::{
+        RenderDataReceiver,
+        RenderDataFull
+    },
+    shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
-use crate::core::vk_core::AdjustedViewport;
-use crate::gg::RenderDataFull;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -199,11 +205,6 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
             }
             vertex_buffer.write()?.swap_with_slice(&mut out_vertices);
         }
-        *self.uniform_buffers.as_mut().unwrap().current_value(per_image_ctx).write()? = BasicUniformData {
-            window_width: self.viewport.physical_width(),
-            window_height: self.viewport.physical_height(),
-            scale_factor: self.viewport.scale_factor(),
-        };
         Ok(self.command_buffers.clone().unwrap())
     }
 
@@ -214,10 +215,8 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 
 impl BasicRenderHandler {
     pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
-        let vs =
-            basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
-        let fs =
-            basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
+        let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
+        let fs = basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         let viewport = window_ctx.create_default_viewport();
         let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
             ctx, viewport.clone()
@@ -349,19 +348,27 @@ impl BasicRenderHandler {
         if self.uniform_buffers.is_none() {
             self.uniform_buffers = Some(DataPerImage::try_new_with_generator(
                 ctx,
-                || Ok(Buffer::new_sized(
-                    ctx.memory_allocator(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::UNIFORM_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                ).map_err(Validated::unwrap)?),
-            )?);
+                || {
+                    let buf = Buffer::new_sized(
+                        ctx.memory_allocator(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::UNIFORM_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                    ).map_err(Validated::unwrap)?;
+                    *buf.write()? = BasicUniformData {
+                        window_width: self.viewport.physical_width(),
+                        window_height: self.viewport.physical_height(),
+                        scale_factor: self.viewport.scale_factor(),
+                    };
+                    Ok(buf)
+                })?
+            );
         }
         if self.uniform_buffer_sets.is_none() {
             self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {

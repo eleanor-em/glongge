@@ -53,14 +53,13 @@ impl BoxCollider {
         [Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
     }
     fn project(&self, axis: Vec2) -> Range<f64> {
-        let (min, max) = self.vertices()
-            .map(|vertex| axis.dot(vertex))
-            .into_iter()
-            .fold((f64::max_value(), f64::min_value()),
-                  |(acc_min, acc_max), next| {
-                    (f64::min(acc_min, next), f64::max(acc_max, next))
-                });
-        min..max
+        let mut start = f64::max_value();
+        let mut end = f64::min_value();
+        for projection in self.vertices().map(|vertex| axis.dot(vertex)) {
+            start = start.min(projection);
+            end = end.max(projection);
+        }
+        start..end
     }
 }
 

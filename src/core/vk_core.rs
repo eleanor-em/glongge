@@ -9,8 +9,6 @@ use std::{
 use anyhow::{Context, Result};
 use tracing::{error, info, warn};
 
-use crate::assert::*;
-
 use vulkano::{
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
@@ -47,9 +45,15 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::{core::util::TimeIt, gg::RenderDataReceiver};
-use crate::core::input::InputHandler;
-use crate::core::linalg::Vec2;
+use crate::{
+    assert::*,
+    core::{
+        input::InputHandler,
+        linalg::Vec2,
+        util::TimeIt,
+    },
+    gg::RenderDataReceiver,
+};
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,

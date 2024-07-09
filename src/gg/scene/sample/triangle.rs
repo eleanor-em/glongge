@@ -1,8 +1,8 @@
 use std::{
+    any::Any,
     sync::{Arc, Mutex},
-    time::{Duration, Instant}
+    time::{Duration, Instant},
 };
-use std::any::Any;
 use num_traits::{Float, FloatConst, Zero};
 use rand::{
     distributions::{Distribution, Uniform},
@@ -17,7 +17,7 @@ use crate::{
     },
     gg::{
         self,
-        sample::BasicRenderHandler,
+        render::BasicRenderHandler,
         scene::Scene,
         UpdateContext
     },

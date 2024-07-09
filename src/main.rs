@@ -7,15 +7,15 @@ use anyhow::Result;
 use crate::{
     assert::*,
     core::{
+        input::InputHandler,
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
     },
     gg::{
-        sample::BasicRenderHandler,
+        render::BasicRenderHandler,
         scene::sample::{rectangle, triangle}
-    }
+    },
 };
-use crate::core::input::InputHandler;
 
 mod assert;
 mod core;

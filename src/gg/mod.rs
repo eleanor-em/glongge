@@ -1,4 +1,4 @@
-pub mod sample;
+pub mod render;
 pub mod scene;
 
 use std::{
@@ -36,6 +36,7 @@ use crate::{
     },
     core::{
         collision::Collider,
+        colour::Colour,
         input::InputHandler,
         linalg::Vec2,
         util::{
@@ -45,7 +46,6 @@ use crate::{
         vk_core::AdjustedViewport,
     }
 };
-use crate::core::colour::Colour;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
