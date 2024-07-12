@@ -15,6 +15,7 @@ impl Colour {
     pub fn magenta() -> Self { Self { r: 1., b: 1., ..Default::default() } }
     pub fn cyan() -> Self { Self { g: 1., b: 1., ..Default::default() } }
     pub fn black() -> Self { Self::default() }
+    pub fn white() -> Self { Self { r: 1., g: 1., b: 1., a: 1. } }
 }
 
 impl Default for Colour {

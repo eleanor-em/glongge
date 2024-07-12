@@ -54,6 +54,7 @@ use crate::{
     },
     gg::RenderDataReceiver,
 };
+use crate::resource::ResourceHandler;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -547,6 +548,7 @@ where
     ctx: VulkanoContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
+    resource_handler: Arc<Mutex<ResourceHandler>>,
 
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
@@ -558,7 +560,13 @@ where
     CommandBuffer: PrimaryCommandBufferAbstract + 'static,
     RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
-    pub fn new(window: Arc<Window>, ctx: VulkanoContext, render_handler: RenderHandler, input_handler: Arc<Mutex<InputHandler>>) -> Self {
+    pub fn new(
+        window: Arc<Window>,
+        ctx: VulkanoContext,
+        render_handler: RenderHandler,
+        input_handler: Arc<Mutex<InputHandler>>,
+        resource_handler: Arc<Mutex<ResourceHandler>>,
+    ) -> Self {
         let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
         let scale_factor = window.scale_factor();
         Self {
@@ -567,6 +575,7 @@ where
             ctx,
             render_handler,
             input_handler,
+            resource_handler,
             fences,
             render_stats: RenderPerfStats::new(),
             command_buffer_type: PhantomData,
@@ -612,6 +621,10 @@ where
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
         self.render_stats.pause_render_active();
+        if let Some(uploads) = self.resource_handler.lock().unwrap().texture.build_command_buffer(&self.ctx)? {
+            uploads.flush()?;
+            info!("loaded textures");
+        }
         if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
             if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future

@@ -7,8 +7,13 @@ pub mod basic_vertex_shader {
             layout(location = 0) in vec2 position;
             layout(location = 1) in vec2 translation;
             layout(location = 2) in float rotation;
-            layout(location = 3) in vec4 blend_colour;
-            layout(location = 0) out vec4 colour;
+            layout(location = 3) in vec2 uv;
+            layout(location = 4) in uint texture_id;
+            layout(location = 5) in vec4 blend_col;
+
+            layout(location = 0) out vec2 f_uv;
+            layout(location = 1) out uint f_texture_id;
+            layout(location = 2) out vec4 f_blend_col;
 
             layout(set = 0, binding = 0) uniform Data {
                 float window_width;
@@ -42,7 +47,9 @@ pub mod basic_vertex_shader {
                     vec4(0, 0, 1, 0),
                     vec4(translation, 0, 1));
                 gl_Position = projection * translation_mat * rotation_mat * vec4(position, 0, 1);
-                colour = blend_colour;
+                f_uv = uv;
+                f_texture_id = texture_id;
+                f_blend_col = blend_col;
             }
         ",
     }
@@ -53,11 +60,19 @@ pub mod basic_fragment_shader {
         src: r"
             #version 460
 
-            layout(location = 0) in vec4 colour;
+            layout(location = 0) in vec2 f_uv;
+            layout(location = 1) flat in uint f_texture_id;
+            layout(location = 2) in vec4 f_blend_col;
+
             layout(location = 0) out vec4 f_colour;
 
+            layout(set = 0, binding = 1) uniform sampler2D tex[16];
+
             void main() {
-                f_colour = colour;
+                // TODO: eliminate branch here
+                if (f_texture_id < 16) {
+                    f_colour = texture(tex[f_texture_id], f_uv) * f_blend_col;
+                }
             }
         ",
     }

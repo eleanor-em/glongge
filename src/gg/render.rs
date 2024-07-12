@@ -1,20 +1,29 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    default::Default,
+    sync::{Arc, Mutex, MutexGuard}
+};
 use num_traits::Zero;
 
 use anyhow::{Context, Result};
 use tracing::info;
 
 use vulkano::{
+    Validated,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
         RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
         graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            color_blend::{
+                ColorBlendAttachmentState,
+                ColorBlendState,
+                AttachmentBlend
+            },
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
@@ -23,7 +32,10 @@ use vulkano::{
             GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
-        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        GraphicsPipeline,
+        Pipeline,
+        PipelineBindPoint,
+        PipelineLayout,
         PipelineShaderStageCreateInfo,
     },
     render_pass::{
@@ -31,7 +43,6 @@ use vulkano::{
         Subpass
     },
     shader::ShaderModule,
-    Validated
 };
 use winit::window::Window;
 
@@ -49,14 +60,18 @@ use crate::{
     },
     gg::{
         RenderDataReceiver,
-        RenderDataFull
+        RenderInfoFull
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
+use crate::assert::check_le;
+use crate::gg::VertexWithUV;
+use crate::resource::ResourceHandler;
+use crate::resource::texture::TextureId;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
-struct BasicUniformData {
+struct UniformData {
     window_width: f32,
     window_height: f32,
     scale_factor: f32,
@@ -70,14 +85,18 @@ struct BasicVertex {
     translation: [f32; 2],
     #[format(R32_SFLOAT)]
     rotation: f32,
+    #[format(R32G32_SFLOAT)]
+    uv: [f32; 2],
+    #[format(R32_UINT)]
+    texture_id: u32,
     #[format(R32G32B32A32_SFLOAT)]
-    blend_colour: [f32; 4],
+    blend_col: [f32; 4],
 }
 
 pub struct BasicRenderDataReceiver {
-    vertices: Vec<Vec2>,
+    vertices: Vec<VertexWithUV>,
     vertices_up_to_date: DataPerImage<bool>,
-    render_data: Vec<RenderDataFull>,
+    render_data: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
 }
 impl BasicRenderDataReceiver {
@@ -91,12 +110,12 @@ impl BasicRenderDataReceiver {
     }
 }
 impl RenderDataReceiver for BasicRenderDataReceiver {
-    fn update_vertices(&mut self, vertices: Vec<Vec2>) {
+    fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
         self.vertices_up_to_date.clone_from_value(false);
         self.vertices = vertices;
     }
 
-    fn update_render_data(&mut self, render_data: Vec<RenderDataFull>) {
+    fn update_render_data(&mut self, render_data: Vec<RenderInfoFull>) {
         self.render_data = render_data;
     }
 
@@ -106,12 +125,13 @@ impl RenderDataReceiver for BasicRenderDataReceiver {
 }
 
 pub struct BasicRenderHandler {
+    resource_handler: Arc<Mutex<ResourceHandler>>,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: AdjustedViewport,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffers: Option<DataPerImage<Subbuffer<[BasicVertex]>>>,
-    uniform_buffers: Option<DataPerImage<Subbuffer<BasicUniformData>>>,
+    uniform_buffers: Option<DataPerImage<Subbuffer<UniformData>>>,
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
@@ -196,10 +216,12 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
             for render_data in receiver.render_data.iter() {
                 for vertex_index in render_data.vertex_indices.clone() {
                     out_vertices.push(BasicVertex {
-                        position: receiver.vertices[vertex_index].into(),
+                        position: receiver.vertices[vertex_index].vertex.into(),
+                        uv: receiver.vertices[vertex_index].uv.into(),
+                        texture_id: render_data.inner.texture_id.unwrap_or(TextureId::no_texture()).into(),
                         translation: render_data.transform.position.into(),
                         rotation: render_data.transform.rotation as f32,
-                        blend_colour: render_data.inner.col.into(),
+                        blend_col: render_data.inner.col.into(),
                     });
                 }
             }
@@ -214,7 +236,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 }
 
 impl BasicRenderHandler {
-    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext) -> Result<Self> {
+    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext, resource_handler: Arc<Mutex<ResourceHandler>>) -> Result<Self> {
         let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
         let fs = basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         let viewport = window_ctx.create_default_viewport();
@@ -222,6 +244,7 @@ impl BasicRenderHandler {
             ctx, viewport.clone()
         )));
         Ok(Self {
+            resource_handler,
             vs,
             fs,
             viewport,
@@ -236,13 +259,15 @@ impl BasicRenderHandler {
 
     fn create_single_vertex_buffer(
         ctx: &VulkanoContext,
-        vertices: &[Vec2],
+        vertices: &[VertexWithUV],
     ) -> Result<Subbuffer<[BasicVertex]>> {
         let vertices = vertices.iter().map(|&v| BasicVertex {
-            position: v.into(),
+            position: v.vertex.into(),
             translation: Vec2::zero().into(),
             rotation: 0.0,
-            blend_colour: [0.0, 0.0, 0.0, 0.0],
+            uv: v.uv.into(),
+            texture_id: TextureId::no_texture().into(),
+            blend_col: [0.0, 0.0, 0.0, 0.0],
         });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),
@@ -283,7 +308,7 @@ impl BasicRenderHandler {
 
         Ok(GraphicsPipeline::new(
             ctx.device(),
-            None,
+            /* cache= */ None,
             GraphicsPipelineCreateInfo {
                 stages: stages.into_iter().collect(),
                 vertex_input_state: Some(vertex_input_state),
@@ -296,7 +321,10 @@ impl BasicRenderHandler {
                 multisample_state: Some(MultisampleState::default()),
                 color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
-                    ColorBlendAttachmentState::default(),
+                    ColorBlendAttachmentState {
+                        blend: Some(AttachmentBlend::alpha()),
+                        ..Default::default()
+                    },
                 )),
                 subpass: Some(subpass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)
@@ -361,7 +389,7 @@ impl BasicRenderHandler {
                             ..Default::default()
                         },
                     ).map_err(Validated::unwrap)?;
-                    *buf.write()? = BasicUniformData {
+                    *buf.write()? = UniformData {
                         window_width: self.viewport.physical_width(),
                         window_height: self.viewport.physical_height(),
                         scale_factor: self.viewport.scale_factor(),
@@ -371,11 +399,31 @@ impl BasicRenderHandler {
             );
         }
         if self.uniform_buffer_sets.is_none() {
+            let sampler = Sampler::new(
+                ctx.device(),
+                SamplerCreateInfo {
+                    mag_filter: Filter::Nearest,
+                    min_filter: Filter::Nearest,
+                    address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                    border_color: BorderColor::FloatTransparentBlack,
+                    ..Default::default()
+                }).map_err(Validated::unwrap)?;
+            let mut textures = self.resource_handler.lock().unwrap()
+                .texture.values().into_iter().map(|tex| tex.image_view().unwrap()).collect::<Vec<_>>();
+            check_le!(textures.len(), 16);
+            textures.extend(vec![textures.first().unwrap().clone(); 16 - textures.len()]);
             self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {
                 Ok(PersistentDescriptorSet::new(
                     &ctx.descriptor_set_allocator(),
                     self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
-                    [WriteDescriptorSet::buffer(0, buffer.clone())],
+                    [
+                        WriteDescriptorSet::buffer(0, buffer.clone()),
+                        WriteDescriptorSet::image_view_sampler_array(
+                            1,
+                            0,
+                            textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
+                        ),
+                    ],
                     [],
                 ).map_err(Validated::unwrap)?)
             })?);

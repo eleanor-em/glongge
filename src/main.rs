@@ -16,10 +16,12 @@ use crate::{
         scene::sample::{rectangle, triangle}
     },
 };
+use crate::resource::ResourceHandler;
 
 mod assert;
 mod core;
 mod gg;
+mod resource;
 mod shader;
 
 fn main() -> Result<()> {
@@ -35,13 +37,15 @@ fn main() -> Result<()> {
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    let render_handler = BasicRenderHandler::new(&window_ctx, &ctx)?;
+    let resource_handler = ResourceHandler::new();
+    resource_handler.lock().unwrap().texture.load_file(&ctx, "res/wesh.png".to_string())?;
+    let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?;
     let input_handler = InputHandler::new();
     let mut scene = rectangle::create_scene(&render_handler, input_handler.clone());
     let mut _scene = triangle::create_scene(&render_handler, input_handler.clone());
     scene.run();
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, ctx, render_handler, input_handler)
+    WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
         .run(event_loop, false);
     Ok(())
 }

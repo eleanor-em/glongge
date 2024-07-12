@@ -355,6 +355,7 @@ dependencies = [
  "anyhow",
  "glongge-derive",
  "num-traits",
+ "png",
  "rand",
  "tracing",
  "tracing-subscriber",

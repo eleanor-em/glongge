@@ -22,7 +22,7 @@ use crate::{
         scene::Scene,
         UpdateContext,
         RenderableObject,
-        RenderData,
+        RenderInfo,
         SceneObject,
         SceneObjectWithId,
         Transform
@@ -30,6 +30,8 @@ use crate::{
     shader,
 };
 use glongge_derive::register_object_type;
+use crate::gg::VertexWithUV;
+use crate::resource::texture::TextureId;
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
@@ -96,12 +98,12 @@ impl SceneObject<ObjectType> for Player {
 }
 
 impl RenderableObject<ObjectType> for Player {
-    fn create_vertices(&self) -> Vec<Vec2> {
-        shader::vertex::rectangle(Vec2::zero(), Self::SIZE * Vec2::one())
+    fn create_vertices(&self) -> Vec<VertexWithUV> {
+        shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> RenderData {
-        RenderData { col: Colour::green(), }
+    fn render_data(&self) -> RenderInfo {
+        RenderInfo { col: Colour::green(), texture_id: Some(TextureId(0)) }
     }
 }
 
@@ -243,13 +245,14 @@ impl SceneObject<ObjectType> for SpinningRectangle {
 }
 
 impl RenderableObject<ObjectType> for SpinningRectangle {
-    fn create_vertices(&self) -> Vec<Vec2> {
-        shader::vertex::rectangle(Vec2::zero(), Self::SIZE * Vec2::one())
+    fn create_vertices(&self) -> Vec<VertexWithUV> {
+        shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> RenderData {
-        RenderData {
+    fn render_data(&self) -> RenderInfo {
+        RenderInfo {
             col: self.col,
+            texture_id: Some(TextureId(0)),
         }
     }
 }

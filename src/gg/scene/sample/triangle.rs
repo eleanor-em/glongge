@@ -23,7 +23,7 @@ use crate::{
     },
 };
 use crate::core::colour::Colour;
-use crate::gg::Transform;
+use crate::gg::{Transform, VertexWithUV};
 
 pub fn create_scene(
     render_handler: &BasicRenderHandler,
@@ -179,7 +179,7 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
 }
 
 impl gg::RenderableObject<ObjectType> for SpinningTriangle {
-    fn create_vertices(&self) -> Vec<Vec2> {
+    fn create_vertices(&self) -> Vec<VertexWithUV> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {
@@ -194,12 +194,13 @@ impl gg::RenderableObject<ObjectType> for SpinningTriangle {
             x: 0.0,
             y: tri_height / 2.0 - centre_correction,
         };
-        vec![vertex1, vertex2, vertex3]
+        VertexWithUV::from_iter(vec![vertex1, vertex2, vertex3])
     }
 
-    fn render_data(&self) -> gg::RenderData {
-        gg::RenderData {
+    fn render_data(&self) -> gg::RenderInfo {
+        gg::RenderInfo {
             col: Colour::red(),
+            ..Default::default()
         }
     }
 }

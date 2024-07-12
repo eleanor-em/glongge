@@ -46,6 +46,7 @@ use crate::{
         vk_core::AdjustedViewport,
     }
 };
+use crate::resource::texture::TextureId;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
@@ -97,9 +98,30 @@ pub trait SceneObject<ObjectType>: Send {
     fn listening_tags(&self) -> HashSet<&'static str> { [].into() }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct VertexWithUV {
+    pub vertex: Vec2,
+    pub uv: Vec2,
+}
+
+impl VertexWithUV {
+    pub fn from_vertex(vertex: Vec2) -> Self {
+        Self { vertex, uv: Vec2::zero() }
+    }
+
+    pub fn from_iter<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
+        vertices.into_iter().map(Self::from_vertex).collect()
+    }
+    pub fn zip_from_iter<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
+        vertices.into_iter().zip(uvs)
+            .map(|(vertex, uv)| Self { vertex, uv })
+            .collect()
+    }
+}
+
 pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
-    fn create_vertices(&self) -> Vec<Vec2>;
-    fn render_data(&self) -> RenderData;
+    fn create_vertices(&self) -> Vec<VertexWithUV>;
+    fn render_data(&self) -> RenderInfo;
 }
 
 impl<ObjectType, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
@@ -240,8 +262,8 @@ impl UpdatePerfStats {
 
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
-    vertices: BTreeMap<ObjectId, (Range<usize>, Vec<Vec2>)>,
-    render_data: BTreeMap<ObjectId, RenderDataFull>,
+    vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
+    render_data: BTreeMap<ObjectId, RenderInfoFull>,
     viewport: AdjustedViewport,
     render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -275,7 +297,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
                 vertex_index += new_vertices.len();
                 vertices.insert(i, (vertex_index_range.clone(), new_vertices));
-                render_data.insert(i, RenderDataFull {
+                render_data.insert(i, RenderInfoFull {
                     inner: obj.render_data(),
                     transform: obj.transform(),
                     vertex_indices: vertex_index_range,
@@ -373,7 +395,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
                 next_vertex_index += new_vertices.len();
                 self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
-                self.render_data.insert(new_id, RenderDataFull {
+                self.render_data.insert(new_id, RenderInfoFull {
                     inner: obj.render_data(),
                     transform: obj.transform(),
                     vertex_indices,
@@ -580,19 +602,26 @@ impl CollisionHandler {
 }
 
 #[derive(Clone)]
-pub struct RenderData {
+pub struct RenderInfo {
     pub col: Colour,
+    pub texture_id: Option<TextureId>,
+}
+
+impl Default for RenderInfo {
+    fn default() -> Self {
+        Self { col: Colour::white(), texture_id: None }
+    }
 }
 
 #[derive(Clone)]
-pub struct RenderDataFull {
-    inner: RenderData,
+pub struct RenderInfoFull {
+    inner: RenderInfo,
     transform: Transform,
     vertex_indices: Range<usize>,
 }
 
 pub trait RenderDataReceiver: Send {
-    fn update_vertices(&mut self, vertices: Vec<Vec2>);
-    fn update_render_data(&mut self, render_data: Vec<RenderDataFull>);
+    fn update_vertices(&mut self, vertices: Vec<VertexWithUV>);
+    fn update_render_data(&mut self, render_data: Vec<RenderInfoFull>);
     fn current_viewport(&self) -> AdjustedViewport;
 }
