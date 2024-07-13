@@ -15,8 +15,8 @@ use crate::{
         render::BasicRenderHandler,
         scene::sample::{rectangle, triangle}
     },
+    resource::ResourceHandler
 };
-use crate::resource::ResourceHandler;
 
 mod assert;
 mod core;
@@ -37,12 +37,18 @@ fn main() -> Result<()> {
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    let resource_handler = ResourceHandler::new();
-    resource_handler.lock().unwrap().texture.load_file(&ctx, "res/wesh.png".to_string())?;
+    let resource_handler = ResourceHandler::new(ctx.clone());
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?;
     let input_handler = InputHandler::new();
-    let mut scene = rectangle::create_scene(&render_handler, input_handler.clone());
-    let mut _scene = triangle::create_scene(&render_handler, input_handler.clone());
+    let mut scene = rectangle::create_scene(
+        resource_handler.clone(),
+        render_handler.clone(),
+        input_handler.clone());
+    let mut _scene = triangle::create_scene(
+        resource_handler.clone(),
+        render_handler.clone(),
+        input_handler.clone()
+    );
     scene.run();
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)

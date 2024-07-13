@@ -25,24 +25,29 @@ use crate::{
         RenderInfo,
         SceneObject,
         SceneObjectWithId,
-        Transform
+        Transform,
+        VertexWithUV
+    },
+    resource::{
+        ResourceHandler,
+        texture::TextureId
     },
     shader,
 };
 use glongge_derive::register_object_type;
-use crate::gg::VertexWithUV;
-use crate::resource::texture::TextureId;
 
 pub fn create_scene(
-    render_handler: &BasicRenderHandler,
+    resource_handler: ResourceHandler,
+    render_handler: BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
     Scene::new(vec![Box::new(Spawner {}),
-                    Box::new(Player {
-                        pos: Vec2 { x: 500.0, y: 500.0 },
-                        vel: Vec2::zero(),
-                    })],
-               render_handler, input_handler)
+                Box::new(Player {
+                    pos: Vec2 { x: 500.0, y: 500.0 },
+                    vel: Vec2::zero(),
+                    texture_id: TextureId::default(),
+                })],
+               input_handler, resource_handler, render_handler)
 }
 
 #[register_object_type]
@@ -57,6 +62,7 @@ const RECTANGLE_COLL_TAG: &str = "RECTANGLE_COLL_TAG";
 struct Player {
     pos: Vec2,
     vel: Vec2,
+    texture_id: TextureId,
 }
 
 impl Player {
@@ -69,6 +75,9 @@ impl SceneObject<ObjectType> for Player {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {
+        self.texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string()).unwrap();
+    }
     fn on_ready(&mut self) {}
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
@@ -103,7 +112,7 @@ impl RenderableObject<ObjectType> for Player {
     }
 
     fn render_data(&self) -> RenderInfo {
-        RenderInfo { col: Colour::green(), texture_id: Some(TextureId(0)) }
+        RenderInfo { col: Colour::green(), texture_id: Some(self.texture_id) }
     }
 }
 
@@ -148,10 +157,11 @@ struct SpinningRectangle {
     velocity: Vec2,
     t: f64,
     col: Colour,
+    texture_id: TextureId,
 }
 
 impl SpinningRectangle {
-    const SIZE: f64 = 12.0;
+    const SIZE: f64 = 16.0;
     const VELOCITY: f64 = 220.0;
     const ANGULAR_VELOCITY: f64 = 2.0;
 
@@ -171,6 +181,7 @@ impl SpinningRectangle {
             velocity: vel_normed * Self::VELOCITY,
             t: 0.0,
             col,
+            texture_id: TextureId::default(),
         }
     }
 
@@ -181,6 +192,9 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {
+        self.texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string()).unwrap();
+    }
     fn on_ready(&mut self) {}
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
@@ -252,7 +266,7 @@ impl RenderableObject<ObjectType> for SpinningRectangle {
     fn render_data(&self) -> RenderInfo {
         RenderInfo {
             col: self.col,
-            texture_id: Some(TextureId(0)),
+            texture_id: Some(self.texture_id),
         }
     }
 }

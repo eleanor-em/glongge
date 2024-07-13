@@ -253,6 +253,7 @@ impl<T: Clone> DataPerImage<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct VulkanoContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
@@ -548,7 +549,7 @@ where
     ctx: VulkanoContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
-    resource_handler: Arc<Mutex<ResourceHandler>>,
+    resource_handler: ResourceHandler,
 
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
@@ -565,7 +566,7 @@ where
         ctx: VulkanoContext,
         render_handler: RenderHandler,
         input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: Arc<Mutex<ResourceHandler>>,
+        resource_handler: ResourceHandler,
     ) -> Self {
         let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
         let scale_factor = window.scale_factor();
@@ -621,7 +622,7 @@ where
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
         self.render_stats.pause_render_active();
-        if let Some(uploads) = self.resource_handler.lock().unwrap().texture.build_command_buffer(&self.ctx)? {
+        if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.ctx)? {
             uploads.flush()?;
             info!("loaded textures");
         }

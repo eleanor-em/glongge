@@ -1,17 +1,19 @@
-use std::sync::{Arc, Mutex};
-use crate::resource::texture::TextureHandler;
+use crate::{
+    core::vk_core::VulkanoContext,
+    resource::texture::TextureHandler
+};
 
 pub mod texture;
 
+#[derive(Clone)]
 pub struct ResourceHandler {
     pub texture: TextureHandler,
 }
 
 impl ResourceHandler {
-    // TODO: can probably do smarter synchronisation than just Mutex here.
-    pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
-            texture: TextureHandler::new()
-        }))
+    pub fn new(ctx: VulkanoContext) -> Self {
+        Self {
+            texture: TextureHandler::new(ctx.clone()),
+        }
     }
 }

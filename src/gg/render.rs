@@ -47,6 +47,7 @@ use vulkano::{
 use winit::window::Window;
 
 use crate::{
+    assert::check_le,
     core::{
         linalg::Vec2,
         vk_core::{
@@ -59,15 +60,16 @@ use crate::{
         }
     },
     gg::{
+        RenderInfoFull,
         RenderDataReceiver,
-        RenderInfoFull
+        VertexWithUV,
+    },
+    resource::{
+        ResourceHandler,
+        texture::TextureId
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
-use crate::assert::check_le;
-use crate::gg::VertexWithUV;
-use crate::resource::ResourceHandler;
-use crate::resource::texture::TextureId;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -124,8 +126,9 @@ impl RenderDataReceiver for BasicRenderDataReceiver {
     }
 }
 
+#[derive(Clone)]
 pub struct BasicRenderHandler {
-    resource_handler: Arc<Mutex<ResourceHandler>>,
+    resource_handler: ResourceHandler,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: AdjustedViewport,
@@ -218,7 +221,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
                     out_vertices.push(BasicVertex {
                         position: receiver.vertices[vertex_index].vertex.into(),
                         uv: receiver.vertices[vertex_index].uv.into(),
-                        texture_id: render_data.inner.texture_id.unwrap_or(TextureId::no_texture()).into(),
+                        texture_id: render_data.inner.texture_id.unwrap_or_default().into(),
                         translation: render_data.transform.position.into(),
                         rotation: render_data.transform.rotation as f32,
                         blend_col: render_data.inner.col.into(),
@@ -236,7 +239,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
 }
 
 impl BasicRenderHandler {
-    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext, resource_handler: Arc<Mutex<ResourceHandler>>) -> Result<Self> {
+    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext, resource_handler: ResourceHandler) -> Result<Self> {
         let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
         let fs = basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         let viewport = window_ctx.create_default_viewport();
@@ -266,7 +269,7 @@ impl BasicRenderHandler {
             translation: Vec2::zero().into(),
             rotation: 0.0,
             uv: v.uv.into(),
-            texture_id: TextureId::no_texture().into(),
+            texture_id: TextureId::default().into(),
             blend_col: [0.0, 0.0, 0.0, 0.0],
         });
         Ok(Buffer::from_iter(
@@ -408,8 +411,10 @@ impl BasicRenderHandler {
                     border_color: BorderColor::FloatTransparentBlack,
                     ..Default::default()
                 }).map_err(Validated::unwrap)?;
-            let mut textures = self.resource_handler.lock().unwrap()
-                .texture.values().into_iter().map(|tex| tex.image_view().unwrap()).collect::<Vec<_>>();
+            let mut textures = self.resource_handler.texture.wait_values()
+                .into_iter()
+                .filter_map(|tex| tex.image_view())
+                .collect::<Vec<_>>();
             check_le!(textures.len(), 16);
             textures.extend(vec![textures.first().unwrap().clone(); 16 - textures.len()]);
             self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {

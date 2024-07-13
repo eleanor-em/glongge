@@ -17,13 +17,15 @@ use crate::{
         SceneInstruction,
         SceneObject,
         UpdateHandler,
-    }
+    },
+    resource::ResourceHandler
 };
 
 struct SceneInnerData<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
     initial_objects: Vec<Box<dyn SceneObject<ObjectType>>>,
-    render_data_receiver: Arc<Mutex<RenderHandler::DataReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
+    resource_handler: ResourceHandler,
+    render_data_receiver: Arc<Mutex<RenderHandler::DataReceiver>>,
     scene_instruction_rx: Receiver<SceneInstruction>,
 }
 
@@ -34,15 +36,17 @@ pub struct Scene<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> 
 
 impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<ObjectType, RenderHandler> {
     pub fn new(initial_objects: Vec<AnySceneObject<ObjectType>>,
-               render_handler: &RenderHandler,
-               input_handler: Arc<Mutex<InputHandler>>) -> Self {
+               input_handler: Arc<Mutex<InputHandler>>,
+               resource_handler: ResourceHandler,
+               render_handler: RenderHandler) -> Self {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         Self {
             scene_instruction_tx,
             inner: Some(SceneInnerData {
                 initial_objects,
-                render_data_receiver: render_handler.get_receiver(),
                 input_handler,
+                resource_handler,
+                render_data_receiver: render_handler.get_receiver(),
                 scene_instruction_rx,
             }),
         }
@@ -54,8 +58,9 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<Object
         std::thread::spawn(move || {
             let update_handler = UpdateHandler::new(
                 inner.initial_objects,
-                inner.render_data_receiver,
                 inner.input_handler,
+                inner.resource_handler,
+                inner.render_data_receiver,
                 scene_instruction_tx,
                 inner.scene_instruction_rx,
             );

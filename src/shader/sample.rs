@@ -64,15 +64,14 @@ pub mod basic_fragment_shader {
             layout(location = 1) flat in uint f_texture_id;
             layout(location = 2) in vec4 f_blend_col;
 
-            layout(location = 0) out vec4 f_colour;
+            layout(location = 0) out vec4 f_col;
 
             layout(set = 0, binding = 1) uniform sampler2D tex[16];
 
             void main() {
-                // TODO: eliminate branch here
-                if (f_texture_id < 16) {
-                    f_colour = texture(tex[f_texture_id], f_uv) * f_blend_col;
-                }
+                vec4 tex_col = texture(tex[f_texture_id], f_uv);
+                f_col.rgb = mix(tex_col.rgb, f_blend_col.rgb, 0.5);
+                f_col.a = tex_col.a * f_blend_col.a;
             }
         ",
     }

@@ -12,6 +12,7 @@ use glongge_derive::register_object_type;
 
 use crate::{
     core::{
+        colour::Colour,
         linalg::Vec2,
         input::{InputHandler, KeyCode}
     },
@@ -19,17 +20,20 @@ use crate::{
         self,
         render::BasicRenderHandler,
         scene::Scene,
-        UpdateContext
+        Transform,
+        UpdateContext,
+        VertexWithUV
     },
+    resource::ResourceHandler
 };
-use crate::core::colour::Colour;
-use crate::gg::{Transform, VertexWithUV};
 
 pub fn create_scene(
-    render_handler: &BasicRenderHandler,
+    resource_handler: ResourceHandler,
+    render_handler: BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
-    Scene::new(vec![Box::new(Spawner {})], render_handler, input_handler)
+    Scene::new(vec![Box::new(Spawner {})],
+               input_handler, resource_handler, render_handler)
 }
 
 #[register_object_type]

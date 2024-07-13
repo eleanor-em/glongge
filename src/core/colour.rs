@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone)]
 pub struct Colour {
     pub r: f64,

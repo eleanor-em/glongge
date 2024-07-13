@@ -44,9 +44,12 @@ use crate::{
             UnorderedPair
         },
         vk_core::AdjustedViewport,
+    },
+    resource::{
+        ResourceHandler,
+        texture::TextureId
     }
 };
-use crate::resource::texture::TextureId;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
@@ -79,6 +82,8 @@ pub trait SceneObject<ObjectType>: Send {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
+    #[allow(unused_variables)]
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {}
     fn on_ready(&mut self);
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
@@ -265,8 +270,9 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataR
     vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
     render_data: BTreeMap<ObjectId, RenderInfoFull>,
     viewport: AdjustedViewport,
-    render_data_receiver: Arc<Mutex<RenderReceiver>>,
     input_handler: Arc<Mutex<InputHandler>>,
+    resource_handler: ResourceHandler,
+    render_data_receiver: Arc<Mutex<RenderReceiver>>,
     collision_handler: CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
@@ -276,12 +282,13 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataR
 impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandler<ObjectType, RenderReceiver> {
     pub(crate) fn new(
         objects: Vec<AnySceneObject<ObjectType>>,
-        render_data_receiver: Arc<Mutex<RenderReceiver>>,
         input_handler: Arc<Mutex<InputHandler>>,
+        mut resource_handler: ResourceHandler,
+        render_data_receiver: Arc<Mutex<RenderReceiver>>,
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Self {
-        let objects = objects.into_iter()
+        let mut objects = objects.into_iter()
             .map(RefCell::new)
             .map(Rc::new)
             .enumerate()
@@ -306,13 +313,19 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
 
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
+
+        for object in objects.values_mut() {
+            object.borrow_mut().on_load(&mut resource_handler);
+        }
+
         let mut rv = Self {
             objects,
             vertices,
             render_data,
             viewport,
-            render_data_receiver,
             input_handler,
+            resource_handler,
+            render_data_receiver,
             collision_handler,
             scene_instruction_tx,
             scene_instruction_rx,
@@ -406,7 +419,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
 
 
-        // Ensure all objects actually exist before calling on_ready().
+        for i in first_new_id.0..=new_id.0 {
+            self.objects[&ObjectId(i)].borrow_mut().on_load(&mut self.resource_handler);
+        }
         for i in first_new_id.0..=new_id.0 {
             self.objects[&ObjectId(i)].borrow_mut().on_ready();
         }
