@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     default::Default,
     fs,
     io::Cursor,
@@ -81,7 +81,7 @@ impl Texture {
 }
 
 struct TextureHandlerInner {
-    loaded_files: HashMap<String, TextureId>,
+    loaded_files: BTreeMap<String, TextureId>,
     textures: BTreeMap<TextureId, Texture>,
 }
 
@@ -99,7 +99,7 @@ impl TextureHandler {
         Self {
             ctx,
             inner: Arc::new(Mutex::new(TextureHandlerInner {
-                loaded_files: HashMap::new(),
+                loaded_files: BTreeMap::new(),
                 textures,
             })),
         }

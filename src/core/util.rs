@@ -56,7 +56,7 @@ impl TimeIt {
     }
     pub fn report_ms(&mut self) {
         info!(
-            "TimeIt [{:>16}]: {} events, mean={:.2} ms, max={:.2} ms",
+            "TimeIt [{:>18}]: {} events, mean={:.2} ms, max={:.2} ms",
             self.tag,
             self.n,
             self.mean_ms(),
@@ -125,9 +125,28 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T
     pub fn new(a: T, b: T) -> Self {
         if a < b { Self(a, b) } else { Self(b, a) }
     }
+    pub fn new_distinct(a: T, b: T) -> Option<Self> {
+        if a != b {
+            Some(Self::new(a, b))
+        } else {
+            None
+        }
+    }
 
     pub fn fst(&self) -> &T { &self.0 }
     pub fn snd(&self) -> &T { &self.1 }
 
     pub fn contains(&self, value: &T) -> bool { self.fst() == value || self.snd() == value }
+}
+
+impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(T, T)> for UnorderedPair<T> {
+    fn from(value: (T, T)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)> for UnorderedPair<T> {
+    fn from(value: (&T, &T)) -> Self {
+        Self::new(*value.0, *value.1)
+    }
 }

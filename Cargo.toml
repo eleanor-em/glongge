@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 glongge-derive = { path = "glongge-derive" }
 # core
+itertools = "0.13.0"
 num-traits = "0.2.19"
 rand = "0.8.5"
 # utilities

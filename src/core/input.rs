@@ -1,7 +1,7 @@
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex}
 };
+use std::collections::BTreeMap;
 use winit::event::ElementState;
 
 pub use winit::event::VirtualKeyCode as KeyCode;
@@ -15,13 +15,13 @@ enum InputState {
 
 #[derive(Clone)]
 pub struct InputHandler {
-    data: HashMap<KeyCode, InputState>,
+    data: BTreeMap<KeyCode, InputState>,
     queued_events: Vec<(KeyCode, ElementState)>,
 }
 
 impl InputHandler {
     pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(InputHandler { data: HashMap::new(), queued_events: Vec::new() }))
+        Arc::new(Mutex::new(InputHandler { data: BTreeMap::new(), queued_events: Vec::new() }))
     }
 
     pub fn pressed(&self, key: KeyCode) -> bool {

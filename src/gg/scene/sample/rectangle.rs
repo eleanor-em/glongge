@@ -1,6 +1,5 @@
 use std::{
     any::Any,
-    collections::HashSet,
     sync::{Arc, Mutex},
     time::{
         Duration,
@@ -101,7 +100,7 @@ impl SceneObject<ObjectType> for Player {
     fn collider(&self) -> Option<Box<dyn Collider>> {
         Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
     }
-    fn collision_tags(&self) -> HashSet<&'static str> {
+    fn collision_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
 }
@@ -126,7 +125,7 @@ impl SceneObject<ObjectType> for Spawner {
 
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
-        const N: usize = 10;
+        const N: usize = 1;
         let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
             .sample_iter(rand::thread_rng())
             .zip(Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
@@ -209,25 +208,17 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         self.t += delta.as_secs_f64();
         self.pos += self.velocity * delta.as_secs_f64();
 
-        if update_ctx.input().pressed(KeyCode::Space) &&
-                update_ctx.others().len() < 2500 &&
-                update_ctx.viewport().contains(self.pos) {
+        if update_ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.3) {
-                let vel = Vec2 {
-                    x: rng.gen_range(-1.0..1.0),
-                    y: rng.gen_range(-1.0..1.0),
-                };
-                update_ctx.add_object(Box::new(SpinningRectangle::new(
-                    self.pos,
-                    (self.velocity - vel).normed(),
-                )));
-                update_ctx.add_object(Box::new(SpinningRectangle::new(
-                    self.pos,
-                    (self.velocity + vel).normed(),
-                )));
-                update_ctx.remove_this_object();
-            }
+            let vel = Vec2 {
+                x: rng.gen_range(-1.0..1.0),
+                y: rng.gen_range(-1.0..1.0),
+            };
+            update_ctx.add_object(Box::new(SpinningRectangle::new(
+                self.pos,
+                (self.velocity + vel).normed(),
+            )));
+            self.velocity -= vel;
         }
     }
     fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) {
@@ -250,10 +241,10 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn collider(&self) -> Option<Box<dyn Collider>> {
         Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
     }
-    fn collision_tags(&self) -> HashSet<&'static str> {
+    fn collision_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
-    fn listening_tags(&self) -> HashSet<&'static str> {
+    fn listening_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
 }
