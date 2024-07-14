@@ -14,7 +14,11 @@ use vulkano::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
         RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
     },
-    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    descriptor_set::{
+        PersistentDescriptorSet,
+        WriteDescriptorSet,
+        layout::DescriptorSetLayoutCreateFlags
+    },
     image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
@@ -66,7 +70,10 @@ use crate::{
     },
     resource::{
         ResourceHandler,
-        texture::TextureId
+        texture::{
+            MAX_TEXTURE_COUNT,
+            TextureId,
+        }
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
@@ -302,10 +309,13 @@ impl BasicRenderHandler {
             PipelineShaderStageCreateInfo::new(vs),
             PipelineShaderStageCreateInfo::new(fs),
         ];
+        let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+        for layout in create_info.set_layouts.iter_mut() {
+            layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+        }
         let layout = PipelineLayout::new(
             ctx.device(),
-            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(ctx.device())?,
+            create_info.into_pipeline_layout_create_info(ctx.device())?,
         ).map_err(Validated::unwrap)?;
         let subpass = Subpass::from(ctx.render_pass(), 0).context("failed to create subpass")?;
 
@@ -415,8 +425,8 @@ impl BasicRenderHandler {
                 .into_iter()
                 .filter_map(|tex| tex.image_view())
                 .collect::<Vec<_>>();
-            check_le!(textures.len(), 16);
-            textures.extend(vec![textures.first().unwrap().clone(); 16 - textures.len()]);
+            check_le!(textures.len(), MAX_TEXTURE_COUNT);
+            textures.extend(vec![textures.first().unwrap().clone(); MAX_TEXTURE_COUNT - textures.len()]);
             self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {
                 Ok(PersistentDescriptorSet::new(
                     &ctx.descriptor_set_allocator(),

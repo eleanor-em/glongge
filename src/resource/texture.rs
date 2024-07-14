@@ -31,6 +31,8 @@ use crate::{
     core::vk_core::VulkanoContext
 };
 
+pub const MAX_TEXTURE_COUNT: usize = 1023;
+
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct TextureId(usize);
 
@@ -43,7 +45,7 @@ impl TextureId {
 impl From<TextureId> for u32 {
     fn from(value: TextureId) -> Self {
         // TODO: better bounds checking
-        check_lt!(value.0, 16);
+        check_lt!(value.0, MAX_TEXTURE_COUNT);
         value.0 as u32
     }
 }

@@ -66,7 +66,7 @@ pub mod basic_fragment_shader {
 
             layout(location = 0) out vec4 f_col;
 
-            layout(set = 0, binding = 1) uniform sampler2D tex[16];
+            layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
                 vec4 tex_col = texture(tex[f_texture_id], f_uv);

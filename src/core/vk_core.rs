@@ -1,10 +1,4 @@
-use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    rc::Rc,
-    sync::{Arc, Mutex, MutexGuard},
-    time::Instant,
-};
+use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
 
 use anyhow::{Context, Result};
 use tracing::{error, info, warn};
@@ -38,6 +32,8 @@ use vulkano::{
     VulkanError,
     VulkanLibrary
 };
+use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocatorCreateInfo;
+use vulkano::device::Features;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -289,7 +285,10 @@ impl VulkanoContext {
         ));
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             device.clone(),
-            Default::default(),
+            StandardDescriptorSetAllocatorCreateInfo {
+                update_after_bind: true,
+                ..Default::default()
+            }
         ));
         let (swapchain, images) = create_swapchain(
             window_ctx.window(),
@@ -364,6 +363,9 @@ fn macos_instance<T>(
     event_loop: &EventLoop<T>,
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
+    if env::consts::OS == "macos" {
+        assert_eq!(env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS")?, "1");
+    }
     let required_extensions = Surface::required_extensions(event_loop);
     let instance_create_info = InstanceCreateInfo {
         flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
@@ -379,6 +381,11 @@ fn any_physical_device(
     Ok(instance
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
+        .filter(|p| p.supported_features().contains(&Features {
+            // Required for extra texture samplers on macOS:
+            descriptor_indexing: true,
+            ..Default::default()
+        }))
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
