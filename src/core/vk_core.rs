@@ -523,6 +523,26 @@ impl PerImageContext {
             current: None,
         }))
     }
+
+    pub fn replace_current_value<T: Clone>(self: &mut MutexGuard<Self>, target: &mut Option<DataPerImage<T>>, value: T) {
+        *self.current_value_as_mut(target) = value;
+    }
+    pub fn set_current_value<T: Clone>(self: &mut MutexGuard<Self>, target: &mut DataPerImage<T>, value: T) {
+        *target.current_value_mut(self) = value;
+    }
+    pub fn get_current_value<T: Copy + Clone>(self: &mut MutexGuard<Self>, target: &DataPerImage<T>) -> T {
+        *target.current_value(self)
+    }
+
+    pub fn current_value_cloned<T: Clone>(self: &MutexGuard<Self>, from: &DataPerImage<T>) -> T {
+        from.current_value(self).clone()
+    }
+    pub fn current_value_as_ref<'a, T: Clone>(self: &MutexGuard<Self>, from: &'a Option<DataPerImage<T>>) -> &'a T {
+        from.as_ref().unwrap().current_value(self)
+    }
+    pub fn current_value_as_mut<'a, T: Clone>(self: &mut MutexGuard<Self>, from: &'a mut Option<DataPerImage<T>>) -> &'a mut T {
+        from.as_mut().unwrap().current_value_mut(self)
+    }
 }
 
 pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>

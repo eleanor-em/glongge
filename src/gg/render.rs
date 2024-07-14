@@ -147,104 +147,6 @@ pub struct BasicRenderHandler {
     render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
 }
 
-impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
-    type DataReceiver = BasicRenderDataReceiver;
-
-    fn on_resize(
-        &mut self,
-        _ctx: &VulkanoContext,
-        window: Arc<Window>,
-    ) -> Result<()> {
-        info!("on_resize()");
-        self.viewport.update_from_window(window.clone());
-        self.vertex_buffers = None;
-        self.command_buffers = None;
-        self.pipeline = None;
-        self.uniform_buffers = None;
-        self.uniform_buffer_sets = None;
-        self.render_data_receiver.lock().unwrap().viewport = self.viewport.clone();
-        Ok(())
-    }
-
-    fn on_render(
-        &mut self,
-        ctx: &VulkanoContext,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
-    ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        if let Ok(mut receiver) = self.render_data_receiver.clone().lock() {
-            // Create vertex buffers if we haven't already.
-            if self.vertex_buffers.is_none() {
-                self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
-                    Self::create_single_vertex_buffer(ctx, &receiver.vertices)
-                })?);
-                self.command_buffers = None;
-                receiver
-                    .vertices_up_to_date
-                    .clone_from_value(true);
-            }
-            if self.command_buffers.is_none() {
-                self.create_command_buffers(ctx)?;
-            }
-
-            // Update vertex and command buffers if vertex count changed.
-            if !receiver.vertices_up_to_date.current_value(per_image_ctx) {
-                *self
-                    .vertex_buffers
-                    .as_mut()
-                    .unwrap()
-                    .current_value_mut(per_image_ctx) =
-                    Self::create_single_vertex_buffer(ctx, &receiver.vertices)?;
-                *self
-                    .command_buffers
-                    .as_mut()
-                    .unwrap()
-                    .current_value_mut(per_image_ctx) = self.create_single_command_buffer(
-                    ctx,
-                    ctx.framebuffers().current_value(per_image_ctx).clone(),
-                    self.uniform_buffer_sets
-                        .clone()
-                        .unwrap()
-                        .current_value(per_image_ctx)
-                        .clone(),
-                    self.vertex_buffers
-                        .as_ref()
-                        .unwrap()
-                        .current_value(per_image_ctx),
-                )?;
-                *receiver
-                    .vertices_up_to_date
-                    .current_value_mut(per_image_ctx) = true;
-            }
-
-            // Write the vertices.
-            let vertex_buffer = self
-                .vertex_buffers
-                .as_mut()
-                .unwrap()
-                .current_value_mut(per_image_ctx);
-            let mut out_vertices = Vec::new();
-            for render_data in receiver.render_data.iter() {
-                for vertex_index in render_data.vertex_indices.clone() {
-                    out_vertices.push(BasicVertex {
-                        position: receiver.vertices[vertex_index].vertex.into(),
-                        uv: receiver.vertices[vertex_index].uv.into(),
-                        texture_id: render_data.inner.texture_id.unwrap_or_default().into(),
-                        translation: render_data.transform.position.into(),
-                        rotation: render_data.transform.rotation as f32,
-                        blend_col: render_data.inner.col.into(),
-                    });
-                }
-            }
-            vertex_buffer.write()?.swap_with_slice(&mut out_vertices);
-        }
-        Ok(self.command_buffers.clone().unwrap())
-    }
-
-    fn get_receiver(&self) -> Arc<Mutex<BasicRenderDataReceiver>> {
-        self.render_data_receiver.clone()
-    }
-}
-
 impl BasicRenderHandler {
     pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext, resource_handler: ResourceHandler) -> Result<Self> {
         let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
@@ -267,6 +169,21 @@ impl BasicRenderHandler {
         })
     }
 
+    fn get_or_create_vertex_buffers(&mut self,
+                                    ctx: &VulkanoContext,
+                                    receiver: &mut MutexGuard<BasicRenderDataReceiver>
+    ) -> Result<&DataPerImage<Subbuffer<[BasicVertex]>>> {
+        if self.vertex_buffers.is_none() {
+            self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
+                Self::create_single_vertex_buffer(ctx, &receiver.vertices)
+            })?);
+            self.command_buffers = None;
+            receiver
+                .vertices_up_to_date
+                .clone_from_value(true);
+        }
+        Ok(self.vertex_buffers.as_ref().unwrap())
+    }
     fn create_single_vertex_buffer(
         ctx: &VulkanoContext,
         vertices: &[VertexWithUV],
@@ -292,6 +209,48 @@ impl BasicRenderHandler {
             },
             vertices,
         ).map_err(Validated::unwrap)?)
+    }
+
+    fn maybe_update_with_new_vertices(&mut self,
+                                      ctx: &VulkanoContext,
+                                      receiver: &mut MutexGuard<BasicRenderDataReceiver>,
+                                      per_image_ctx: &mut MutexGuard<PerImageContext>
+    ) -> Result<()> {
+        if !per_image_ctx.get_current_value(&receiver.vertices_up_to_date) {
+            per_image_ctx.replace_current_value(
+                &mut self.vertex_buffers,
+                Self::create_single_vertex_buffer(ctx, &receiver.vertices)?);
+            let command_buffer = self.create_single_command_buffer(
+                ctx,
+                per_image_ctx.current_value_cloned(&ctx.framebuffers()),
+                per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets).clone(),
+                per_image_ctx.current_value_as_ref(&self.vertex_buffers),
+            )?;
+            per_image_ctx.replace_current_value(&mut self.command_buffers, command_buffer);
+            per_image_ctx.set_current_value(&mut receiver.vertices_up_to_date, true);
+        }
+        Ok(())
+    }
+
+    fn write_vertex_buffer(&mut self,
+                           receiver: &mut MutexGuard<BasicRenderDataReceiver>,
+                           per_image_ctx: &mut MutexGuard<PerImageContext>) -> Result<()> {
+        let vertex_buffer = per_image_ctx.current_value_as_mut(&mut self.vertex_buffers);
+        let mut out_vertices = Vec::new();
+        for render_data in receiver.render_data.iter() {
+            for vertex_index in render_data.vertex_indices.clone() {
+                out_vertices.push(BasicVertex {
+                    position: receiver.vertices[vertex_index].vertex.into(),
+                    uv: receiver.vertices[vertex_index].uv.into(),
+                    texture_id: render_data.inner.texture_id.unwrap_or_default().into(),
+                    translation: render_data.transform.position.into(),
+                    rotation: render_data.transform.rotation as f32,
+                    blend_col: render_data.inner.col.into(),
+                });
+            }
+        }
+        vertex_buffer.write()?.swap_with_slice(&mut out_vertices);
+        Ok(())
     }
 
     fn create_pipeline(&self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
@@ -382,7 +341,10 @@ impl BasicRenderHandler {
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
 
-    fn create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
+
+    fn get_or_create_command_buffers(&mut self,
+                                     ctx: &VulkanoContext
+    ) -> Result<()> {
         if self.pipeline.is_none() {
             self.pipeline = Some(self.create_pipeline(ctx)?);
         }
@@ -456,5 +418,43 @@ impl BasicRenderHandler {
             },
         )?);
         Ok(())
+    }
+}
+
+impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
+    type DataReceiver = BasicRenderDataReceiver;
+
+    fn on_resize(
+        &mut self,
+        _ctx: &VulkanoContext,
+        window: Arc<Window>,
+    ) -> Result<()> {
+        info!("on_resize()");
+        self.viewport.update_from_window(window.clone());
+        self.vertex_buffers = None;
+        self.command_buffers = None;
+        self.pipeline = None;
+        self.uniform_buffers = None;
+        self.uniform_buffer_sets = None;
+        self.render_data_receiver.lock().unwrap().viewport = self.viewport.clone();
+        Ok(())
+    }
+
+    fn on_render(
+        &mut self,
+        ctx: &VulkanoContext,
+        per_image_ctx: &mut MutexGuard<PerImageContext>,
+    ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
+        if let Ok(mut receiver) = self.render_data_receiver.clone().lock() {
+            self.get_or_create_vertex_buffers(ctx, &mut receiver)?;
+            self.get_or_create_command_buffers(ctx)?;
+            self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
+            self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
+        }
+        Ok(self.command_buffers.clone().unwrap())
+    }
+
+    fn get_receiver(&self) -> Arc<Mutex<BasicRenderDataReceiver>> {
+        self.render_data_receiver.clone()
     }
 }

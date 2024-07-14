@@ -1,4 +1,5 @@
 #![feature(iterator_try_collect)]
+#![feature(arbitrary_self_types)]
 
 use num_traits::{Float, One};
 
