@@ -133,10 +133,9 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T
         }
     }
 
-    pub fn fst(&self) -> &T { &self.0 }
-    pub fn snd(&self) -> &T { &self.1 }
-
-    pub fn contains(&self, value: &T) -> bool { self.fst() == value || self.snd() == value }
+    pub fn fst(&self) -> T { self.0 }
+    pub fn snd(&self) -> T { self.1 }
+    pub fn contains(&self, value: T) -> bool { self.fst() == value || self.snd() == value }
 }
 
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(T, T)> for UnorderedPair<T> {

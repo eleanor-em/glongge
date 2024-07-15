@@ -588,7 +588,7 @@ impl CollisionHandler {
         for (_, ids) in self.object_ids_by_listening_tag.iter_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
-        self.possible_collisions.retain(|pair| !removed_ids.contains(pair.fst()) && !removed_ids.contains(pair.snd()));
+        self.possible_collisions.retain(|pair| !removed_ids.contains(&pair.fst()) && !removed_ids.contains(&pair.snd()));
     }
     pub fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
@@ -596,24 +596,24 @@ impl CollisionHandler {
     -> Vec<Collision<ObjectType>> {
         self.possible_collisions.iter().copied()
             .filter_map(|ids| {
-                let this = objects[ids.fst()].borrow().collider().unwrap();
-                let other = objects[ids.snd()].borrow().collider().unwrap();
+                let this = objects[&ids.fst()].borrow().collider().unwrap();
+                let other = objects[&ids.snd()].borrow().collider().unwrap();
                 this.collides_with(other.as_ref()).map(|mtv| (ids, mtv))
             })
             .flat_map(|(ids, mtv)| {
-                let this = objects[ids.fst()].clone();
-                let other = objects[ids.snd()].clone();
+                let this = objects[&ids.fst()].clone();
+                let other = objects[&ids.snd()].clone();
                 vec![Collision {
                     this: this.clone(),
                     other: SceneObjectWithId {
-                        object_id: *ids.snd(),
+                        object_id: ids.snd(),
                         inner: other.clone(),
                     },
                     mtv,
                 }, Collision {
                     this: other,
                     other: SceneObjectWithId {
-                        object_id: *ids.fst(),
+                        object_id: ids.fst(),
                         inner: this,
                     },
                     mtv: -mtv,
