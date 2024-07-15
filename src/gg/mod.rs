@@ -26,6 +26,7 @@ use std::ops::Add;
 use itertools::Itertools;
 use num_traits::Zero;
 
+use anyhow::{anyhow, Result};
 use tracing::info;
 
 use crate::{
@@ -87,7 +88,7 @@ pub trait SceneObject<ObjectType>: Send {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     #[allow(unused_variables)]
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {}
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
     fn on_ready(&mut self);
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
@@ -204,9 +205,7 @@ impl<'a, ObjectType: Clone> UpdateContext<'a, ObjectType> {
     }
 
     pub fn scene_stop(&self) {
-        self.scene_instruction_tx
-            .send(SceneInstruction::Stop)
-            .unwrap();
+        self.scene_instruction_tx.send(SceneInstruction::Stop).unwrap();
     }
 
     pub fn viewport(&self) -> AdjustedViewport {
@@ -291,7 +290,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         render_data_receiver: Arc<Mutex<RenderReceiver>>,
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut objects = objects.into_iter()
             .enumerate()
             .map(|(i, obj)| (ObjectId(i), obj))
@@ -317,7 +316,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
 
         for object in objects.values_mut() {
-            object.on_load(&mut resource_handler);
+            object.on_load(&mut resource_handler)?;
         }
 
         let objects = objects.into_iter()
@@ -337,11 +336,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             scene_instruction_rx,
             perf_stats: UpdatePerfStats::new(),
         };
-        rv.update_render_data(true);
-        rv
+        rv.update_render_data(true)?;
+        Ok(rv)
     }
 
-    pub fn consume(mut self) {
+    pub fn consume(mut self) -> Result<()> {
         let mut delta = Duration::from_secs(0);
         let mut is_running = true;
 
@@ -355,8 +354,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_remove_objects(pending_remove_objects);
-                self.update_with_added_objects(pending_add_objects);
-                self.update_render_data(did_update_vertices);
+                self.update_with_added_objects(pending_add_objects)?;
+                self.update_render_data(did_update_vertices)?;
                 self.input_handler.lock().unwrap().update_step();
 
                 self.perf_stats.total_stats.stop();
@@ -365,7 +364,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             }
 
             match self.scene_instruction_rx.try_iter().next() {
-                Some(SceneInstruction::Stop) => return,
+                Some(SceneInstruction::Stop) => {},
                 Some(SceneInstruction::Pause) => is_running = false,
                 Some(SceneInstruction::Resume) => is_running = true,
                 None => {}
@@ -395,7 +394,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         }
         self.perf_stats.remove_objects.stop();
     }
-    fn update_with_added_objects(&mut self, pending_add_objects: Vec<AnySceneObject<ObjectType>>) {
+    fn update_with_added_objects(&mut self, pending_add_objects: Vec<AnySceneObject<ObjectType>>) -> Result<()> {
         self.perf_stats.add_objects.start();
         if !pending_add_objects.is_empty() {
             // TODO: leak new_id as 'static?
@@ -406,7 +405,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 .enumerate()
                 .map(|(i, obj)| (first_new_id + i, obj))
                 .collect::<BTreeMap<ObjectId, _>>();
-            let last_new_id = *pending_add_objects.last_key_value().unwrap().0;
+            let last_new_id = *pending_add_objects.last_key_value()
+                .expect("pending_add_objects empty?")
+                .0;
             self.collision_handler.update_with_add_objects(&pending_add_objects);
 
             let mut next_vertex_index = self.vertices.last_key_value()
@@ -429,11 +430,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
 
             for i in first_new_id.0..=last_new_id.0 {
                 let mut obj = self.objects[&ObjectId(i)].borrow_mut();
-                obj.on_load(&mut self.resource_handler);
+                obj.on_load(&mut self.resource_handler)?;
                 obj.on_ready();
             }
         }
         self.perf_stats.add_objects.stop();
+        Ok(())
     }
 
     fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
@@ -504,11 +506,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             );
         }
     }
-    fn update_render_data(&mut self, did_update_vertices: bool) {
+    fn update_render_data(&mut self, did_update_vertices: bool) -> Result<()> {
         self.perf_stats.render_data.start();
         for object_id in self.objects.keys() {
             if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
-                let render_data = self.render_data.get_mut(object_id).unwrap();
+                let render_data = self.render_data.get_mut(object_id)
+                    .ok_or(anyhow!("missing object_id in render_data: {:?}", object_id))?;
                 render_data.inner = obj.render_data();
                 render_data.transform = obj.transform();
             }
@@ -523,6 +526,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
         self.viewport = render_data_receiver.current_viewport();
         self.perf_stats.render_data.stop();
+        Ok(())
     }
 }
 
@@ -569,13 +573,15 @@ impl CollisionHandler {
                 new_object_ids_by_listening_tag.get(tag).unwrap_or(&Vec::new()));
         }
         for (tag, emitters) in new_object_ids_by_tag {
-            let listeners = self.object_ids_by_listening_tag.get(tag).unwrap();
+            let listeners = self.object_ids_by_listening_tag.get(tag)
+                .unwrap_or_else(|| panic!("object_ids_by_listening tag missing tag: {}", tag));
             let new_possible_collisions = emitters.into_iter().cartesian_product(listeners.iter())
                 .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(emitter, *listener));
             self.possible_collisions.extend(new_possible_collisions);
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
-            let emitters = self.object_ids_by_tag.get(tag).unwrap();
+            let emitters = self.object_ids_by_tag.get(tag)
+                .unwrap_or_else(|| panic!("object_ids_by_tag tag missing tag: {}", tag));
             let new_possible_collisions = emitters.iter().cartesian_product(listeners.into_iter())
                 .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(*emitter, listener));
             self.possible_collisions.extend(new_possible_collisions);
@@ -596,8 +602,10 @@ impl CollisionHandler {
     -> Vec<Collision<ObjectType>> {
         self.possible_collisions.iter().copied()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].borrow().collider().unwrap();
-                let other = objects[&ids.snd()].borrow().collider().unwrap();
+                let this = objects[&ids.fst()].borrow().collider()
+                    .unwrap_or_else(|| panic!("object id {:?} missing collider, but in possible_collisions", ids.fst()));
+                let other = objects[&ids.snd()].borrow().collider()
+                    .unwrap_or_else(|| panic!("object id {:?} missing collider, but in possible_collisions", ids.snd()));
                 this.collides_with(other.as_ref()).map(|mtv| (ids, mtv))
             })
             .flat_map(|(ids, mtv)| {

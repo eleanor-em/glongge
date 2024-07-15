@@ -163,13 +163,13 @@ impl<T: Clone> DataPerImage<T> {
         &self.data[per_image_ctx.last]
     }
     pub fn current_value(&self, per_image_ctx: &MutexGuard<PerImageContext>) -> &T {
-        &self.data[per_image_ctx.current.unwrap()]
+        &self.data[per_image_ctx.current.expect("no current value?")]
     }
     pub fn last_value_mut(&mut self, per_image_ctx: &mut MutexGuard<PerImageContext>) -> &mut T {
         &mut self.data[per_image_ctx.last]
     }
     pub fn current_value_mut(&mut self, per_image_ctx: &mut MutexGuard<PerImageContext>) -> &mut T {
-        &mut self.data[per_image_ctx.current.unwrap()]
+        &mut self.data[per_image_ctx.current.expect("no current value?")]
     }
 
     pub fn map<U: Clone, F>(&self, func: F) -> DataPerImage<U>
@@ -538,10 +538,10 @@ impl PerImageContext {
         from.current_value(self).clone()
     }
     pub fn current_value_as_ref<'a, T: Clone>(self: &MutexGuard<Self>, from: &'a Option<DataPerImage<T>>) -> &'a T {
-        from.as_ref().unwrap().current_value(self)
+        from.as_ref().expect("no current value?").current_value(self)
     }
     pub fn current_value_as_mut<'a, T: Clone>(self: &mut MutexGuard<Self>, from: &'a mut Option<DataPerImage<T>>) -> &'a mut T {
-        from.as_mut().unwrap().current_value_mut(self)
+        from.as_mut().expect("no current value?").current_value_mut(self)
     }
 }
 
@@ -680,8 +680,7 @@ where
         command_buffers: DataPerImage<Arc<CommandBuffer>>,
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
-        // TODO: raise custom error type instead of unwrap()
-        let image_idx = per_image_ctx.current.unwrap();
+        let image_idx = per_image_ctx.current.expect("no current image?");
         self.fences
             .current_value_mut(per_image_ctx)
             .borrow_mut()
@@ -708,7 +707,7 @@ where
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) {
         let expected_image_idx = (per_image_ctx.last + 1) % self.ctx.images.len();
-        let image_idx = per_image_ctx.current.unwrap();
+        let image_idx = per_image_ctx.current.expect("no current image?");
         if image_idx != expected_image_idx && per_image_ctx.last != image_idx {
             info!(
                 "out-of-order framebuffer: {} -> {}",

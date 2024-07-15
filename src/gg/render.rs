@@ -328,9 +328,11 @@ impl BasicRenderHandler {
                     ..Default::default()
                 },
             )?
+            // TODO: eliminate unwrap here
             .bind_pipeline_graphics(self.pipeline.clone().unwrap())?
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
+                // TODO: eliminate unwrap here
                 self.pipeline.clone().unwrap().layout().clone(),
                 0,
                 uniform_buffer_set.clone(),
@@ -342,9 +344,7 @@ impl BasicRenderHandler {
     }
 
 
-    fn get_or_create_command_buffers(&mut self,
-                                     ctx: &VulkanoContext
-    ) -> Result<()> {
+    fn maybe_create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
         if self.pipeline.is_none() {
             self.pipeline = Some(self.create_pipeline(ctx)?);
         }
@@ -385,13 +385,18 @@ impl BasicRenderHandler {
                 }).map_err(Validated::unwrap)?;
             let mut textures = self.resource_handler.texture.wait_values()
                 .into_iter()
+                // TODO: method ref?
                 .filter_map(|tex| tex.image_view())
                 .collect::<Vec<_>>();
             check_le!(textures.len(), MAX_TEXTURE_COUNT);
-            textures.extend(vec![textures.first().unwrap().clone(); MAX_TEXTURE_COUNT - textures.len()]);
+            let blank = textures.first()
+                .expect("textures.first() should always contain a blank texture")
+                .clone();
+            textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
             self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {
                 Ok(PersistentDescriptorSet::new(
                     &ctx.descriptor_set_allocator(),
+                    // TODO: eliminate unwrap() here
                     self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
                     [
                         WriteDescriptorSet::buffer(0, buffer.clone()),
@@ -405,18 +410,20 @@ impl BasicRenderHandler {
                 ).map_err(Validated::unwrap)?)
             })?);
         }
-        self.command_buffers = Some(ctx.framebuffers().try_map_with_3(
-            self.uniform_buffer_sets.as_ref().unwrap(),
-            self.vertex_buffers.as_ref().unwrap(),
-            |((framebuffer, uniform_buffer_set), vertex_buffer)| {
-                self.create_single_command_buffer(
-                    ctx,
-                    framebuffer.clone(),
-                    uniform_buffer_set.clone(),
-                    vertex_buffer,
-                )
-            },
-        )?);
+        if self.command_buffers.is_none() {
+            self.command_buffers = Some(ctx.framebuffers().try_map_with_3(
+                self.uniform_buffer_sets.as_ref().unwrap(),
+                self.vertex_buffers.as_ref().unwrap(),
+                |((framebuffer, uniform_buffer_set), vertex_buffer)| {
+                    self.create_single_command_buffer(
+                        ctx,
+                        framebuffer.clone(),
+                        uniform_buffer_set.clone(),
+                        vertex_buffer,
+                    )
+                },
+            )?);
+        }
         Ok(())
     }
 }
@@ -445,12 +452,12 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        if let Ok(mut receiver) = self.render_data_receiver.clone().lock() {
-            self.get_or_create_vertex_buffers(ctx, &mut receiver)?;
-            self.get_or_create_command_buffers(ctx)?;
-            self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
-            self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
-        }
+        let render_data_receiver = self.render_data_receiver.clone();
+        let mut receiver = render_data_receiver.lock().unwrap();
+        self.get_or_create_vertex_buffers(ctx, &mut receiver)?;
+        self.maybe_create_command_buffers(ctx)?;
+        self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
+        self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
         Ok(self.command_buffers.clone().unwrap())
     }
 

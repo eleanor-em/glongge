@@ -64,14 +64,12 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<Object
                 scene_instruction_tx,
                 inner.scene_instruction_rx,
             );
-            update_handler.consume();
+            update_handler.unwrap().consume().unwrap();
         });
     }
 
     pub fn stop(&self) {
         check!(self.inner.is_none());
-        self.scene_instruction_tx
-            .send(SceneInstruction::Stop)
-            .unwrap();
+        self.scene_instruction_tx.send(SceneInstruction::Stop).unwrap();
     }
 }

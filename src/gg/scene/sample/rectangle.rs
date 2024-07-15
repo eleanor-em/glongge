@@ -8,6 +8,8 @@ use std::{
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
 
+use anyhow::Result;
+
 use crate::{
     core::{
         collision::{BoxCollider, Collider},
@@ -74,8 +76,9 @@ impl SceneObject<ObjectType> for Player {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {
-        self.texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string()).unwrap();
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+        self.texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
+        Ok(())
     }
     fn on_ready(&mut self) {}
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
@@ -191,8 +194,9 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) {
-        self.texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string()).unwrap();
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+        self.texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
+        Ok(())
     }
     fn on_ready(&mut self) {}
     fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {

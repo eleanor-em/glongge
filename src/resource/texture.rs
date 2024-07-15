@@ -8,8 +8,9 @@ use std::{
         Mutex
     }
 };
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract},
@@ -150,6 +151,18 @@ impl TextureHandler {
     }
 
     fn load_file_inner(&self, filename: &str) -> Result<Texture> {
+        let path = Path::new(filename);
+        let ext = path.extension()
+            .ok_or(anyhow!("no file extension: {}", filename))?
+            .to_str()
+            .ok_or(anyhow!("failed conversion from OsStr: {}", filename))?;
+        match ext {
+            "png" => self.load_file_inner_png(filename),
+            "aseprite" => unimplemented!("TODO: use asefile crate"),
+            ext => bail!("unknown file extension: {} (while loading {})", ext, filename),
+        }
+    }
+    fn load_file_inner_png(&self, filename: &str) -> Result<Texture> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
