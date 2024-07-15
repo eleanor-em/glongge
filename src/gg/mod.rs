@@ -14,7 +14,10 @@ use std::{
     },
     default::Default,
     fmt::Debug,
-    ops::Range,
+    ops::{
+        Add,
+        Range,
+    },
     rc::Rc,
     sync::{
         mpsc::{Receiver, Sender},
@@ -22,7 +25,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use std::ops::Add;
 use itertools::Itertools;
 use num_traits::Zero;
 

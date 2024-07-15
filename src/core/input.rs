@@ -1,7 +1,7 @@
 use std::{
-    sync::{Arc, Mutex}
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
 };
-use std::collections::BTreeMap;
 use winit::event::ElementState;
 
 pub use winit::event::VirtualKeyCode as KeyCode;

@@ -5,7 +5,6 @@ use std::{
 use num_traits::Zero;
 
 use anyhow::{Context, Result};
-use tracing::info;
 
 use vulkano::{
     Validated,
@@ -470,7 +469,6 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         _ctx: &VulkanoContext,
         window: Arc<Window>,
     ) -> Result<()> {
-        info!("on_resize()");
         self.viewport.update_from_window(window.clone());
         self.vertex_buffers = None;
         self.command_buffers = None;

@@ -1,6 +1,9 @@
 use num_traits::Zero;
-use crate::core::linalg::Vec2;
-use crate::gg::VertexWithUV;
+
+use crate::{
+    core::linalg::Vec2,
+    gg::VertexWithUV
+};
 
 pub fn rectangle(centre: Vec2, extents: Vec2) -> Vec<Vec2> {
     let half_widths = extents / 2.0;

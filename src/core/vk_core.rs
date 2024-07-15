@@ -10,10 +10,19 @@ use vulkano::{
         PrimaryAutoCommandBuffer,
         PrimaryCommandBufferAbstract
     },
-    descriptor_set::allocator::StandardDescriptorSetAllocator,
+    descriptor_set::allocator::{
+        StandardDescriptorSetAllocator,
+        StandardDescriptorSetAllocatorCreateInfo
+    },
     device::{
         physical::{PhysicalDevice, PhysicalDeviceType},
-        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
+        Device,
+        DeviceCreateInfo,
+        DeviceExtensions,
+        Queue,
+        QueueCreateInfo,
+        QueueFlags,
+        Features
     },
     image::{view::ImageView, Image, ImageUsage},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
@@ -30,10 +39,8 @@ use vulkano::{
     },
     Validated,
     VulkanError,
-    VulkanLibrary
+    VulkanLibrary,
 };
-use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocatorCreateInfo;
-use vulkano::device::Features;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -49,8 +56,8 @@ use crate::{
         util::TimeIt,
     },
     gg::RenderDataReceiver,
+    resource::ResourceHandler
 };
-use crate::resource::ResourceHandler;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -665,7 +672,6 @@ where
             Some(fence) => fence.boxed(),
             _ => {
                 // synchronise only if there is no previous future (swapchain was just created)
-                info!("synchronised via vulkano::sync::now()");
                 let mut now = vulkano::sync::now(self.ctx.device());
                 now.cleanup_finished();
                 now.boxed()
@@ -706,14 +712,7 @@ where
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) {
-        let expected_image_idx = (per_image_ctx.last + 1) % self.ctx.images.len();
         let image_idx = per_image_ctx.current.expect("no current image?");
-        if image_idx != expected_image_idx && per_image_ctx.last != image_idx {
-            info!(
-                "out-of-order framebuffer: {} -> {}",
-                per_image_ctx.last, image_idx
-            );
-        }
         per_image_ctx.last = image_idx;
     }
 

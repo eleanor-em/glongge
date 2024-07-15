@@ -3,12 +3,12 @@ use std::{
     default::Default,
     fs,
     io::Cursor,
+    path::Path,
     sync::{
         Arc,
         Mutex
-    }
+    },
 };
-use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 use vulkano::{

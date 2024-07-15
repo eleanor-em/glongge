@@ -3,7 +3,8 @@ use std::{
     sync::{Arc, Mutex},
     time::{
         Duration,
-    },
+        Instant
+    }
 };
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
@@ -53,12 +54,46 @@ pub fn create_scene(
 
 #[register_object_type]
 pub enum ObjectType {
-    Player,
     Spawner,
+    Player,
     SpinningRectangle,
 }
 
 const RECTANGLE_COLL_TAG: &str = "RECTANGLE_COLL_TAG";
+
+struct Spawner {}
+
+impl SceneObject<ObjectType> for Spawner {
+    fn get_type(&self) -> ObjectType { ObjectType::Spawner }
+    fn as_any(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn on_ready(&mut self) {}
+    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+        const N: usize = 1;
+        let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
+            .sample_iter(rand::thread_rng())
+            .zip(Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
+                .sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0)
+                .sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0)
+                .sample_iter(rand::thread_rng()))
+            .take(N)
+            .map(|(((x, y), vx), vy)|  {
+                let pos = Vec2 { x, y };
+                let vel = Vec2 { x: vx, y: vy };
+                Box::new(SpinningRectangle::new(pos, vel.normed())).into()
+            })
+            .collect();
+        update_ctx.add_object_vec(objects);
+        update_ctx.remove_this_object();
+    }
+
+    fn transform(&self) -> Transform {
+        Transform::default()
+    }
+}
 
 struct Player {
     pos: Vec2,
@@ -118,48 +153,13 @@ impl RenderableObject<ObjectType> for Player {
     }
 }
 
-#[derive(Default)]
-struct Spawner {}
-
-impl SceneObject<ObjectType> for Spawner {
-    fn get_type(&self) -> ObjectType { ObjectType::Spawner }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
-    fn on_ready(&mut self) {}
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
-        const N: usize = 1;
-        let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
-            .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
-                .sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0)
-                .sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0)
-                .sample_iter(rand::thread_rng()))
-            .take(N)
-            .map(|(((x, y), vx), vy)|  {
-                let pos = Vec2 { x, y };
-                let vel = Vec2 { x: vx, y: vy };
-                Box::new(SpinningRectangle::new(pos, vel.normed())).into()
-            })
-            .collect();
-        update_ctx.add_object_vec(objects);
-        update_ctx.remove_this_object();
-    }
-
-    fn transform(&self) -> Transform {
-        Transform::default()
-    }
-}
-
-#[derive(Default)]
 struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,
     col: Colour,
     texture_id: TextureId,
+    alive_since: Instant,
 }
 
 impl SpinningRectangle {
@@ -184,6 +184,7 @@ impl SpinningRectangle {
             t: 0.0,
             col,
             texture_id: TextureId::default(),
+            alive_since: Instant::now(),
         }
     }
 
@@ -214,22 +215,24 @@ impl SceneObject<ObjectType> for SpinningRectangle {
 
         if update_ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
-            let vel = Vec2 {
-                x: rng.gen_range(-1.0..1.0),
-                y: rng.gen_range(-1.0..1.0),
-            };
+            let angle = rng.gen_range(0.0..(2.0 * f64::PI()));
             update_ctx.add_object(Box::new(SpinningRectangle::new(
                 self.pos,
-                (self.velocity + vel).normed(),
+                Vec2::one().rotated(angle)
             )));
-            self.velocity -= vel;
+            self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
     fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) {
-        self.velocity = self.velocity.reflect(mtv.normed());
         self.pos += mtv;
+
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {
-            rect.col = self.col;
+            if self.alive_since.elapsed().as_secs_f64() > 0.5 && rect.alive_since.elapsed().as_secs_f64() > 0.5 {
+                self.velocity = self.velocity.reflect(mtv.normed());
+                rect.col = self.col;
+            }
+        } else {
+            self.velocity = self.velocity.reflect(mtv.normed());
         }
     }
 
