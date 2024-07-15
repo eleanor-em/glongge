@@ -169,20 +169,18 @@ impl BasicRenderHandler {
         })
     }
 
-    fn get_or_create_vertex_buffers(&mut self,
-                                    ctx: &VulkanoContext,
-                                    receiver: &mut MutexGuard<BasicRenderDataReceiver>
-    ) -> Result<&DataPerImage<Subbuffer<[BasicVertex]>>> {
+    fn maybe_create_vertex_buffers(&mut self,
+                                   ctx: &VulkanoContext,
+                                   receiver: &mut MutexGuard<BasicRenderDataReceiver>
+    ) -> Result<()> {
         if self.vertex_buffers.is_none() {
             self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
                 Self::create_single_vertex_buffer(ctx, &receiver.vertices)
             })?);
             self.command_buffers = None;
-            receiver
-                .vertices_up_to_date
-                .clone_from_value(true);
+            receiver.vertices_up_to_date.clone_from_value(true);
         }
-        Ok(self.vertex_buffers.as_ref().unwrap())
+        Ok(())
     }
     fn create_single_vertex_buffer(
         ctx: &VulkanoContext,
@@ -220,8 +218,10 @@ impl BasicRenderHandler {
             per_image_ctx.replace_current_value(
                 &mut self.vertex_buffers,
                 Self::create_single_vertex_buffer(ctx, &receiver.vertices)?);
+            let pipeline = self.get_or_create_pipeline(ctx)?;
             let command_buffer = self.create_single_command_buffer(
                 ctx,
+                pipeline,
                 per_image_ctx.current_value_cloned(&ctx.framebuffers()),
                 per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets).clone(),
                 per_image_ctx.current_value_as_ref(&self.vertex_buffers),
@@ -253,60 +253,68 @@ impl BasicRenderHandler {
         Ok(())
     }
 
-    fn create_pipeline(&self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
-        let vs = self
-            .vs
-            .entry_point("main")
-            .context("vertex shader: entry point missing")?;
-        let fs = self
-            .fs
-            .entry_point("main")
-            .context("fragment shader: entry point missing")?;
-        let vertex_input_state =
-            BasicVertex::per_vertex().definition(&vs.info().input_interface)?;
-        let stages = [
-            PipelineShaderStageCreateInfo::new(vs),
-            PipelineShaderStageCreateInfo::new(fs),
-        ];
-        let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-        for layout in create_info.set_layouts.iter_mut() {
-            layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-        }
-        let layout = PipelineLayout::new(
-            ctx.device(),
-            create_info.into_pipeline_layout_create_info(ctx.device())?,
-        ).map_err(Validated::unwrap)?;
-        let subpass = Subpass::from(ctx.render_pass(), 0).context("failed to create subpass")?;
+    fn get_or_create_pipeline(&mut self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
+        match self.pipeline.clone() {
+            None => {
+                let vs = self
+                    .vs
+                    .entry_point("main")
+                    .context("vertex shader: entry point missing")?;
+                let fs = self
+                    .fs
+                    .entry_point("main")
+                    .context("fragment shader: entry point missing")?;
+                let vertex_input_state =
+                    BasicVertex::per_vertex().definition(&vs.info().input_interface)?;
+                let stages = [
+                    PipelineShaderStageCreateInfo::new(vs),
+                    PipelineShaderStageCreateInfo::new(fs),
+                ];
+                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+                for layout in create_info.set_layouts.iter_mut() {
+                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+                }
+                let layout = PipelineLayout::new(
+                    ctx.device(),
+                    create_info.into_pipeline_layout_create_info(ctx.device())?,
+                ).map_err(Validated::unwrap)?;
+                let subpass = Subpass::from(ctx.render_pass(), 0).context("failed to create subpass")?;
 
-        Ok(GraphicsPipeline::new(
-            ctx.device(),
-            /* cache= */ None,
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                input_assembly_state: Some(InputAssemblyState::default()),
-                viewport_state: Some(ViewportState {
+                let pipeline = GraphicsPipeline::new(
+                    ctx.device(),
+                    /* cache= */ None,
+                    GraphicsPipelineCreateInfo {
+                    stages: stages.into_iter().collect(),
+                    vertex_input_state: Some(vertex_input_state),
+                    input_assembly_state: Some(InputAssemblyState::default()),
+                    viewport_state: Some(ViewportState {
                     viewports: [self.viewport.inner()].into_iter().collect(),
                     ..Default::default()
-                }),
-                rasterization_state: Some(RasterizationState::default()),
-                multisample_state: Some(MultisampleState::default()),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
+                    }),
+                    rasterization_state: Some(RasterizationState::default()),
+                    multisample_state: Some(MultisampleState::default()),
+                    color_blend_state: Some(ColorBlendState::with_attachment_states(
                     subpass.num_color_attachments(),
                     ColorBlendAttachmentState {
-                        blend: Some(AttachmentBlend::alpha()),
-                        ..Default::default()
+                    blend: Some(AttachmentBlend::alpha()),
+                    ..Default::default()
                     },
                 )),
-                subpass: Some(subpass.into()),
-                ..GraphicsPipelineCreateInfo::layout(layout)
+                    subpass: Some(subpass.into()),
+                    ..GraphicsPipelineCreateInfo::layout(layout)
+                    },
+                )?;
+                self.pipeline = Some(pipeline.clone());
+                Ok(pipeline)
             },
-        )?)
+            Some(pipeline) => Ok(pipeline)
+        }
     }
 
     fn create_single_command_buffer(
         &self,
         ctx: &VulkanoContext,
+        pipeline: Arc<GraphicsPipeline>,
         framebuffer: Arc<Framebuffer>,
         uniform_buffer_set: Arc<PersistentDescriptorSet>,
         vertex_buffer: &Subbuffer<[BasicVertex]>,
@@ -317,6 +325,7 @@ impl BasicRenderHandler {
             CommandBufferUsage::MultipleSubmit,
         )?;
 
+        let layout = pipeline.layout().clone();
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -328,12 +337,10 @@ impl BasicRenderHandler {
                     ..Default::default()
                 },
             )?
-            // TODO: eliminate unwrap here
-            .bind_pipeline_graphics(self.pipeline.clone().unwrap())?
+            .bind_pipeline_graphics(pipeline)?
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                // TODO: eliminate unwrap here
-                self.pipeline.clone().unwrap().layout().clone(),
+                layout,
                 0,
                 uniform_buffer_set.clone(),
             )?
@@ -343,88 +350,115 @@ impl BasicRenderHandler {
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
 
+    fn get_or_create_command_buffers(
+        &mut self,
+        ctx: &VulkanoContext)
+    -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
+        match self.command_buffers.clone() {
+            None => {
+                let pipeline = self.get_or_create_pipeline(ctx)?;
+                let uniform_buffers = self.get_or_create_uniform_buffers(ctx)?;
+                let uniform_buffer_sets = self.get_or_create_uniform_buffer_sets(
+                    ctx,
+                    pipeline.clone(),
+                    uniform_buffers)?;
+                let command_buffers = ctx.framebuffers().try_map_with_3(
+                    &uniform_buffer_sets,
+                    self.vertex_buffers.as_ref().unwrap(),
+                    |((framebuffer, uniform_buffer_set), vertex_buffer)| {
+                        self.create_single_command_buffer(
+                            ctx,
+                            pipeline.clone(),
+                            framebuffer.clone(),
+                            uniform_buffer_set.clone(),
+                            vertex_buffer,
+                        )
+                    },
+                )?;
+                self.command_buffers = Some(command_buffers.clone());
+                Ok(command_buffers)
+            },
+            Some(command_buffers) => Ok(command_buffers),
+        }
+    }
 
-    fn maybe_create_command_buffers(&mut self, ctx: &VulkanoContext) -> Result<()> {
-        if self.pipeline.is_none() {
-            self.pipeline = Some(self.create_pipeline(ctx)?);
-        }
-        if self.uniform_buffers.is_none() {
-            self.uniform_buffers = Some(DataPerImage::try_new_with_generator(
-                ctx,
-                || {
-                    let buf = Buffer::new_sized(
-                        ctx.memory_allocator(),
-                        BufferCreateInfo {
-                            usage: BufferUsage::UNIFORM_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                            ..Default::default()
-                        },
-                    ).map_err(Validated::unwrap)?;
-                    *buf.write()? = UniformData {
-                        window_width: self.viewport.physical_width(),
-                        window_height: self.viewport.physical_height(),
-                        scale_factor: self.viewport.scale_factor(),
-                    };
-                    Ok(buf)
-                })?
-            );
-        }
-        if self.uniform_buffer_sets.is_none() {
-            let sampler = Sampler::new(
-                ctx.device(),
-                SamplerCreateInfo {
-                    mag_filter: Filter::Nearest,
-                    min_filter: Filter::Nearest,
-                    address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                    border_color: BorderColor::FloatTransparentBlack,
-                    ..Default::default()
-                }).map_err(Validated::unwrap)?;
-            let mut textures = self.resource_handler.texture.wait_values()
-                .into_iter()
-                // TODO: method ref?
-                .filter_map(|tex| tex.image_view())
-                .collect::<Vec<_>>();
-            check_le!(textures.len(), MAX_TEXTURE_COUNT);
-            let blank = textures.first()
-                .expect("textures.first() should always contain a blank texture")
-                .clone();
-            textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
-            self.uniform_buffer_sets = Some(self.uniform_buffers.as_mut().unwrap().try_map(|buffer| {
-                Ok(PersistentDescriptorSet::new(
-                    &ctx.descriptor_set_allocator(),
-                    // TODO: eliminate unwrap() here
-                    self.pipeline.clone().unwrap().layout().set_layouts()[0].clone(),
-                    [
-                        WriteDescriptorSet::buffer(0, buffer.clone()),
-                        WriteDescriptorSet::image_view_sampler_array(
-                            1,
-                            0,
-                            textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
-                        ),
-                    ],
-                    [],
-                ).map_err(Validated::unwrap)?)
-            })?);
-        }
-        if self.command_buffers.is_none() {
-            self.command_buffers = Some(ctx.framebuffers().try_map_with_3(
-                self.uniform_buffer_sets.as_ref().unwrap(),
-                self.vertex_buffers.as_ref().unwrap(),
-                |((framebuffer, uniform_buffer_set), vertex_buffer)| {
-                    self.create_single_command_buffer(
-                        ctx,
-                        framebuffer.clone(),
-                        uniform_buffer_set.clone(),
-                        vertex_buffer,
-                    )
-                },
-            )?);
-        }
-        Ok(())
+    fn get_or_create_uniform_buffer_sets(&mut self,
+                                         ctx: &VulkanoContext,
+                                         pipeline: Arc<GraphicsPipeline>,
+                                         uniform_buffers: DataPerImage<Subbuffer<UniformData>>
+    ) -> Result<DataPerImage<Arc<PersistentDescriptorSet>>> {
+        Ok(match self.uniform_buffer_sets.clone() {
+            None => {
+                let sampler = Sampler::new(
+                    ctx.device(),
+                    SamplerCreateInfo {
+                        mag_filter: Filter::Nearest,
+                        min_filter: Filter::Nearest,
+                        address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                        border_color: BorderColor::FloatTransparentBlack,
+                        ..Default::default()
+                    }).map_err(Validated::unwrap)?;
+                let mut textures = self.resource_handler.texture.wait_values()
+                    .into_iter()
+                    .filter_map(|tex| tex.image_view())
+                    .collect::<Vec<_>>();
+                check_le!(textures.len(), MAX_TEXTURE_COUNT);
+                let blank = textures.first()
+                    .expect("textures.first() should always contain a blank texture")
+                    .clone();
+                textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
+                let uniform_buffer_sets = uniform_buffers.try_map(|buffer| {
+                    Ok(PersistentDescriptorSet::new(
+                        &ctx.descriptor_set_allocator(),
+                        pipeline.layout().set_layouts()[0].clone(),
+                        [
+                            WriteDescriptorSet::buffer(0, buffer.clone()),
+                            WriteDescriptorSet::image_view_sampler_array(
+                                1,
+                                0,
+                                textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
+                            ),
+                        ],
+                        [],
+                    ).map_err(Validated::unwrap)?)
+                })?;
+                self.uniform_buffer_sets = Some(uniform_buffer_sets.clone());
+                uniform_buffer_sets
+            },
+            Some(uniform_buffer_sets) => uniform_buffer_sets,
+        })
+    }
+
+    fn get_or_create_uniform_buffers(&mut self, ctx: &VulkanoContext) -> Result<DataPerImage<Subbuffer<UniformData>>> {
+        Ok(match self.uniform_buffers.clone() {
+            None => {
+                let uniform_buffers = DataPerImage::try_new_with_generator(
+                    ctx,
+                    || {
+                        let buf = Buffer::new_sized(
+                            ctx.memory_allocator(),
+                            BufferCreateInfo {
+                                usage: BufferUsage::UNIFORM_BUFFER,
+                                ..Default::default()
+                            },
+                            AllocationCreateInfo {
+                                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                ..Default::default()
+                            },
+                        ).map_err(Validated::unwrap)?;
+                        *buf.write()? = UniformData {
+                            window_width: self.viewport.physical_width(),
+                            window_height: self.viewport.physical_height(),
+                            scale_factor: self.viewport.scale_factor(),
+                        };
+                        Ok(buf)
+                    })?;
+                self.uniform_buffers = Some(uniform_buffers.clone());
+                uniform_buffers
+            },
+            Some(uniform_buffers) => uniform_buffers,
+        })
     }
 }
 
@@ -454,11 +488,11 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         let render_data_receiver = self.render_data_receiver.clone();
         let mut receiver = render_data_receiver.lock().unwrap();
-        self.get_or_create_vertex_buffers(ctx, &mut receiver)?;
-        self.maybe_create_command_buffers(ctx)?;
+        self.maybe_create_vertex_buffers(ctx, &mut receiver)?;
+        let command_buffers = self.get_or_create_command_buffers(ctx)?;
         self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
         self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
-        Ok(self.command_buffers.clone().unwrap())
+        Ok(command_buffers)
     }
 
     fn get_receiver(&self) -> Arc<Mutex<BasicRenderDataReceiver>> {
