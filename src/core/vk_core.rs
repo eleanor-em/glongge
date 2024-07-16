@@ -41,6 +41,8 @@ use vulkano::{
     VulkanError,
     VulkanLibrary,
 };
+use vulkano::format::Format;
+use vulkano::swapchain::ColorSpace;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -458,17 +460,18 @@ fn create_swapchain(
         .into_iter()
         .next()
         .context("vulkano: no composite alpha modes supported")?;
-    let image_format = physical_device
-        .surface_formats(&surface, Default::default())?
-        .first()
-        .context("vulkano: no surface formats found")?
-        .0;
+    let supported_formats = physical_device
+        .surface_formats(&surface, Default::default())?;
+    if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
+        error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
+    }
     Ok(Swapchain::new(
         device.clone(),
         surface.clone(),
         SwapchainCreateInfo {
             min_image_count: caps.min_image_count + 1,
-            image_format,
+            image_format: Format::B8G8R8A8_SRGB,
+            image_color_space: ColorSpace::SrgbNonLinear,
             image_extent: dimensions.into(),
             image_usage: ImageUsage::COLOR_ATTACHMENT,
             composite_alpha,

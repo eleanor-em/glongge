@@ -70,8 +70,7 @@ pub mod basic_fragment_shader {
 
             void main() {
                 vec4 tex_col = texture(tex[f_texture_id], f_uv);
-                f_col.rgb = mix(tex_col.rgb, f_blend_col.rgb, 0.5);
-                f_col.a = tex_col.a * f_blend_col.a;
+                f_col = tex_col * f_blend_col;
             }
         ",
     }

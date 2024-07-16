@@ -49,6 +49,9 @@ use crate::{
         texture::TextureId
     }
 };
+use crate::core::linalg;
+use crate::core::linalg::Rect;
+use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
     fn as_typeid(self) -> TypeId;
@@ -633,15 +636,40 @@ impl CollisionHandler {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct TextureSubArea {
+    rect: Option<Rect>,
+}
+
+impl TextureSubArea {
+    pub fn from_rect(rect: Rect) -> Self {
+        Self { rect: Some(rect) }
+    }
+    pub fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
+        match self.rect {
+            None => raw_uv,
+            Some(rect) => {
+                let extent = texture.extent();
+                let u0 = rect.top_left().x / extent.x;
+                let v0 = rect.top_left().y / extent.y;
+                let u1 = rect.bottom_right().x / extent.x;
+                let v1 = rect.bottom_right().y / extent.y;
+                Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct RenderInfo {
     pub col: Colour,
     pub texture_id: Option<TextureId>,
+    pub texture_sub_area: TextureSubArea,
 }
 
 impl Default for RenderInfo {
     fn default() -> Self {
-        Self { col: Colour::white(), texture_id: None }
+        Self { col: Colour::white(), texture_id: None, texture_sub_area: TextureSubArea::default() }
     }
 }
 

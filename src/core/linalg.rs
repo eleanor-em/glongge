@@ -444,5 +444,9 @@ impl Rect {
     pub fn top_right(&self) -> Vec2 { self.centre + self.half_widths.x * Vec2::right() }
     pub fn bottom_left(&self) -> Vec2 { self.centre + self.half_widths.y * Vec2::down() }
     pub fn bottom_right(&self) -> Vec2 { self.centre + self.half_widths }
-    pub fn extents(&self) -> Vec2 { self.half_widths * 2.0 }
+    pub fn extent(&self) -> Vec2 { self.half_widths * 2.0 }
+}
+
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    a + t * (b - a)
 }

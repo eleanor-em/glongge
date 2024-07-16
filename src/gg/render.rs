@@ -76,6 +76,7 @@ use crate::{
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
+use crate::core::colour::Colour;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -191,7 +192,7 @@ impl BasicRenderHandler {
             rotation: 0.0,
             uv: v.uv.into(),
             texture_id: TextureId::default().into(),
-            blend_col: [0.0, 0.0, 0.0, 0.0],
+            blend_col: Colour::white().into(),
         });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),
@@ -238,10 +239,15 @@ impl BasicRenderHandler {
         let mut out_vertices = Vec::new();
         for render_info in receiver.render_info.iter() {
             for vertex_index in render_info.vertex_indices.clone() {
+                let texture_id = render_info.inner.texture_id.unwrap_or_default();
+                let uv = receiver.vertices[vertex_index].uv;
+                let tex = self.resource_handler.texture.get(texture_id)
+                    .unwrap_or_else(|| panic!("missing texture id: {:?}", texture_id));
+                let uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                 out_vertices.push(BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
-                    uv: receiver.vertices[vertex_index].uv.into(),
-                    texture_id: render_info.inner.texture_id.unwrap_or_default().into(),
+                    uv: uv.into(),
+                    texture_id: texture_id.into(),
                     translation: render_info.transform.position.into(),
                     rotation: render_info.transform.rotation as f32,
                     blend_col: render_info.inner.col.into(),

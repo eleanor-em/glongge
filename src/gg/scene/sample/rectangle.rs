@@ -37,6 +37,8 @@ use crate::{
     shader,
 };
 use glongge_derive::register_object_type;
+use crate::core::linalg::Rect;
+use crate::gg::TextureSubArea;
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
@@ -48,6 +50,7 @@ pub fn create_scene(
                     pos: Vec2 { x: 500.0, y: 500.0 },
                     vel: Vec2::zero(),
                     texture_id: TextureId::default(),
+                    alive_since: Instant::now(),
                 })],
                input_handler, resource_handler, render_handler)
 }
@@ -99,6 +102,7 @@ struct Player {
     pos: Vec2,
     vel: Vec2,
     texture_id: TextureId,
+    alive_since: Instant,
 }
 
 impl Player {
@@ -129,7 +133,7 @@ impl SceneObject<ObjectType> for Player {
     fn transform(&self) -> Transform {
         Transform {
             position: self.pos,
-            rotation: f64::FRAC_PI_4(),
+            rotation: 0.0,
         }
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
@@ -149,7 +153,21 @@ impl RenderableObject<ObjectType> for Player {
     }
 
     fn render_info(&self) -> RenderInfo {
-        RenderInfo { col: Colour::green(), texture_id: Some(self.texture_id) }
+        let frame = (self.alive_since.elapsed().as_millis() / 200) % 3;
+        let centre = match frame {
+            0 => 8.0 * Vec2::one(),
+            1 => 8.0 * Vec2::one() + 18.0 * Vec2::right(),
+            2 => 8.0 * Vec2::one() + 36.0 * Vec2::right(),
+            _ => panic!("unknown frame: {}", frame),
+        };
+        RenderInfo {
+            texture_id: Some(self.texture_id),
+            texture_sub_area: TextureSubArea::from_rect(Rect::new(
+                centre,
+                8.0 * Vec2::one(),
+            )),
+            ..Default::default()
+        }
     }
 }
 
@@ -265,6 +283,7 @@ impl RenderableObject<ObjectType> for SpinningRectangle {
         RenderInfo {
             col: self.col,
             texture_id: Some(self.texture_id),
+            ..Default::default()
         }
     }
 }

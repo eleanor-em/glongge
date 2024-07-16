@@ -12,6 +12,7 @@ use std::{
 use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use anyhow::{anyhow, bail, Result};
+use tracing::error;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract},
@@ -30,7 +31,10 @@ use vulkano::{
 };
 use crate::{
     assert::check_lt,
-    core::vk_core::VulkanoContext
+    core::{
+        linalg::Vec2,
+        vk_core::VulkanoContext,
+    }
 };
 
 pub const MAX_TEXTURE_COUNT: usize = 1023;
@@ -61,6 +65,7 @@ pub struct Texture {
 
 impl Texture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> { self.cached_image_view.clone() }
+    pub fn extent(&self) -> Vec2 { Vec2 { x: self.info.extent[0] as f64, y: self.info.extent[1] as f64 } }
 
     fn create_image_view(&mut self,
                        ctx: &VulkanoContext,
@@ -176,6 +181,11 @@ impl TextureHandler {
         let decoder = png::Decoder::new(cursor);
         let mut reader = decoder.read_info()?;
         let info = reader.info();
+
+        if info.srgb.is_none() {
+            error!("PNG file loaded without SRGB enabled, may display incorrectly: {}", filename);
+        }
+
         let image_create_info = ImageCreateInfo {
             image_type: ImageType::Dim2d,
             format: Format::R8G8B8A8_SRGB,
@@ -202,7 +212,7 @@ impl TextureHandler {
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            (info.width * info.height * 4) as DeviceSize
+            (info.width * info.height * depth) as DeviceSize
         ).map_err(Validated::unwrap)?;
         reader.next_frame(&mut buf.write()?)?;
 
