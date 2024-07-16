@@ -3,6 +3,7 @@ use crate::{
     resource::texture::TextureHandler
 };
 
+pub mod sprite;
 pub mod texture;
 
 #[derive(Clone)]

@@ -50,7 +50,7 @@ use crate::{
     }
 };
 use crate::core::linalg;
-use crate::core::linalg::Rect;
+use crate::core::linalg::{Rect, Vec2Int};
 use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
@@ -91,6 +91,8 @@ pub trait SceneObject<ObjectType>: Send {
     fn get_type(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn new() -> Self where Self: Sized;
 
     #[allow(unused_variables)]
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
@@ -636,12 +638,15 @@ impl CollisionHandler {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TextureSubArea {
     rect: Option<Rect>,
 }
 
 impl TextureSubArea {
+    pub fn new(centre: Vec2Int, half_widths: Vec2Int) -> Self {
+        Self::from_rect(Rect::new(centre.into(), half_widths.into()))
+    }
     pub fn from_rect(rect: Rect) -> Self {
         Self { rect: Some(rect) }
     }

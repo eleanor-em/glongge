@@ -11,7 +11,9 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 
 use anyhow::Result;
 
+use glongge_derive::register_object_type;
 use crate::{
+    core::linalg::Vec2Int,
     core::{
         collision::{BoxCollider, Collider},
         colour::Colour,
@@ -32,13 +34,10 @@ use crate::{
     },
     resource::{
         ResourceHandler,
-        texture::TextureId
+        sprite::Sprite
     },
     shader,
 };
-use glongge_derive::register_object_type;
-use crate::core::linalg::Rect;
-use crate::gg::TextureSubArea;
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
@@ -46,12 +45,7 @@ pub fn create_scene(
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
     Scene::new(vec![Box::new(Spawner {}),
-                Box::new(Player {
-                    pos: Vec2 { x: 500.0, y: 500.0 },
-                    vel: Vec2::zero(),
-                    texture_id: TextureId::default(),
-                    alive_since: Instant::now(),
-                })],
+                Box::new(Player::new())],
                input_handler, resource_handler, render_handler)
 }
 
@@ -70,6 +64,13 @@ impl SceneObject<ObjectType> for Spawner {
     fn get_type(&self) -> ObjectType { ObjectType::Spawner }
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        Self {}
+    }
 
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
@@ -101,8 +102,7 @@ impl SceneObject<ObjectType> for Spawner {
 struct Player {
     pos: Vec2,
     vel: Vec2,
-    texture_id: TextureId,
-    alive_since: Instant,
+    sprite: Sprite,
 }
 
 impl Player {
@@ -115,8 +115,27 @@ impl SceneObject<ObjectType> for Player {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        Self {
+            pos: Vec2 { x: 512.0, y: 384.0 },
+            vel: Default::default(),
+            sprite: Default::default(),
+        }
+    }
+
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
-        self.texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
+        let texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
+        self.sprite = Sprite::from_tileset(
+            texture_id,
+            Vec2Int { x: 3, y: 1 },
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 0, y: 0 },
+            Vec2Int { x: 2, y: 0 },
+            100
+        );
         Ok(())
     }
     fn on_ready(&mut self) {}
@@ -153,21 +172,7 @@ impl RenderableObject<ObjectType> for Player {
     }
 
     fn render_info(&self) -> RenderInfo {
-        let frame = (self.alive_since.elapsed().as_millis() / 200) % 3;
-        let centre = match frame {
-            0 => 8.0 * Vec2::one(),
-            1 => 8.0 * Vec2::one() + 18.0 * Vec2::right(),
-            2 => 8.0 * Vec2::one() + 36.0 * Vec2::right(),
-            _ => panic!("unknown frame: {}", frame),
-        };
-        RenderInfo {
-            texture_id: Some(self.texture_id),
-            texture_sub_area: TextureSubArea::from_rect(Rect::new(
-                centre,
-                8.0 * Vec2::one(),
-            )),
-            ..Default::default()
-        }
+        self.sprite.render_info_default()
     }
 }
 
@@ -176,7 +181,7 @@ struct SpinningRectangle {
     velocity: Vec2,
     t: f64,
     col: Colour,
-    texture_id: TextureId,
+    sprite: Sprite,
     alive_since: Instant,
 }
 
@@ -201,7 +206,7 @@ impl SpinningRectangle {
             velocity: vel_normed * Self::VELOCITY,
             t: 0.0,
             col,
-            texture_id: TextureId::default(),
+            sprite: Default::default(),
             alive_since: Instant::now(),
         }
     }
@@ -213,8 +218,29 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        Self {
+            pos: Default::default(),
+            velocity: Default::default(),
+            t: 0.0,
+            col: Default::default(),
+            sprite: Default::default(),
+            alive_since: Instant::now(),
+        }
+    }
+
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
-        self.texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
+        let texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
+        self.sprite = Sprite::from_tileset(texture_id,
+            Vec2Int{ x: 2, y: 1 },
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 0, y: 0 },
+            Vec2Int { x: 2, y: 0 },
+           500
+        );
         Ok(())
     }
     fn on_ready(&mut self) {}
@@ -280,10 +306,9 @@ impl RenderableObject<ObjectType> for SpinningRectangle {
     }
 
     fn render_info(&self) -> RenderInfo {
-        RenderInfo {
+        self.sprite.render_info_from(RenderInfo {
             col: self.col,
-            texture_id: Some(self.texture_id),
             ..Default::default()
-        }
+        })
     }
 }

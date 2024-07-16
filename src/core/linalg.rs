@@ -5,6 +5,168 @@ use std::{
 };
 use num_traits::{float::Float, One, Zero};
 
+#[derive(Default, Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub struct Vec2Int {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Vec2Int {
+    pub fn right() -> Vec2Int { Vec2Int { x: 1, y: 0 } }
+    pub fn up() -> Vec2Int { Vec2Int { x: 0, y: -1 } }
+    pub fn left() -> Vec2Int { Vec2Int { x: -1, y: 0 } }
+    pub fn down() -> Vec2Int { Vec2Int { x: 0, y: 1 } }
+    pub fn one() -> Vec2Int { Vec2Int { x: 1, y: 1 } }
+
+    pub fn len(&self) -> f64 { (self.dot(*self) as f64).sqrt() }
+    pub fn dot(&self, other: Vec2Int) -> i32 { self.x * other.x + self.y * other.y }
+
+    pub fn as_vec2(&self) -> Vec2 { Into::<Vec2>::into(*self) }
+}
+
+impl From<Vec2Int> for Vec2 {
+    fn from(value: Vec2Int) -> Self {
+        Self { x: value.x as f64, y: value.y as f64 }
+    }
+}
+
+impl Zero for Vec2Int {
+    fn zero() -> Self {
+        Vec2Int { x: 0, y: 0 }
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::zero()
+    }
+}
+
+impl From<[i32; 2]> for Vec2Int {
+    fn from(value: [i32; 2]) -> Self {
+        Vec2Int {
+            x: value[0],
+            y: value[1],
+        }
+    }
+}
+
+impl From<Vec2Int> for [i32; 2] {
+    fn from(value: Vec2Int) -> Self {
+        [value.x, value.y]
+    }
+}
+
+impl fmt::Display for Vec2Int {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "vec({}, {})", self.x, self.y)
+    }
+}
+
+impl Add<Vec2Int> for Vec2Int {
+    type Output = Vec2Int;
+
+    fn add(self, rhs: Vec2Int) -> Self::Output {
+        Vec2Int {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+impl AddAssign<Vec2Int> for Vec2Int {
+    fn add_assign(&mut self, rhs: Vec2Int) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl Sub<Vec2Int> for Vec2Int {
+    type Output = Vec2Int;
+
+    fn sub(self, rhs: Vec2Int) -> Self::Output {
+        Vec2Int {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+impl SubAssign<Vec2Int> for Vec2Int {
+    fn sub_assign(&mut self, rhs: Vec2Int) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+    }
+}
+
+impl Mul<i32> for Vec2Int {
+    type Output = Vec2Int;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        rhs * self
+    }
+}
+impl Mul<Vec2Int> for i32 {
+    type Output = Vec2Int;
+
+    fn mul(self, rhs: Vec2Int) -> Self::Output {
+        Vec2Int {
+            x: self * rhs.x,
+            y: self * rhs.y,
+        }
+    }
+}
+impl Mul<&Vec2Int> for i32 {
+    type Output = Vec2Int;
+
+    fn mul(self, rhs: &Vec2Int) -> Self::Output {
+        Vec2Int {
+            x: self * rhs.x,
+            y: self * rhs.y,
+        }
+    }
+}
+impl MulAssign<i32> for Vec2Int {
+    fn mul_assign(&mut self, rhs: i32) {
+        self.x *= rhs;
+        self.y *= rhs;
+    }
+}
+
+impl Div<i32> for Vec2Int {
+    type Output = Vec2Int;
+
+    fn div(self, rhs: i32) -> Self::Output {
+        Vec2Int {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+impl DivAssign<i32> for Vec2Int {
+    fn div_assign(&mut self, rhs: i32) {
+        self.x /= rhs;
+        self.y /= rhs;
+    }
+}
+
+impl Neg for Vec2Int {
+    type Output = Vec2Int;
+
+    fn neg(self) -> Self::Output {
+        Vec2Int {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+impl Neg for &Vec2Int {
+    type Output = Vec2Int;
+
+    fn neg(self) -> Self::Output {
+        Vec2Int {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Vec2 {
     pub x: f64,

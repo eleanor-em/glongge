@@ -50,6 +50,13 @@ impl gg::SceneObject<ObjectType> for Spawner {
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        Self {}
+    }
+
     fn on_ready(&mut self) {}
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
@@ -123,6 +130,16 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
     fn get_type(&self) -> ObjectType { ObjectType::SpinningTriangle }
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        Self {
+            alive_since: Instant::now(),
+            ..Default::default()
+        }
+    }
 
     fn on_ready(&mut self) {}
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
