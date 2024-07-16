@@ -650,6 +650,7 @@ impl TextureSubArea {
     pub fn from_rect(rect: Rect) -> Self {
         Self { rect: Some(rect) }
     }
+
     pub fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
         match self.rect {
             None => raw_uv,
@@ -661,6 +662,13 @@ impl TextureSubArea {
                 let v1 = rect.bottom_right().y / extent.y;
                 Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
             }
+        }
+    }
+
+    pub fn half_widths(&self) -> Vec2 {
+        match self.rect {
+            None => Vec2::zero(),
+            Some(rect) => rect.half_widths(),
         }
     }
 }

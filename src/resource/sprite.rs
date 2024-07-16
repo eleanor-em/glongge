@@ -1,10 +1,8 @@
 use std::time::Instant;
-use crate::{
-    assert::*,
-    core::linalg::Vec2Int,
-    gg::{RenderInfo, TextureSubArea},
-    resource::texture::TextureId
-};
+use num_traits::Zero;
+use crate::{assert::*, core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
+use crate::core::linalg::Vec2;
+use crate::gg::VertexWithUV;
 
 pub struct Sprite {
     texture_id: TextureId,
@@ -81,5 +79,10 @@ impl Sprite {
             render_info.texture_sub_area = self.current_frame();
         }
         render_info
+    }
+
+    pub fn half_widths(&self) -> Vec2 { self.current_frame().half_widths() }
+    pub fn create_vertices(&self) -> Vec<VertexWithUV> {
+        shader::vertex::rectangle_with_uv(Vec2::zero(), self.half_widths())
     }
 }

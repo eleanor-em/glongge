@@ -19,6 +19,7 @@ use crate::{
     },
     resource::ResourceHandler
 };
+use crate::gg::scene::sample::mario;
 
 mod assert;
 mod core;
@@ -42,15 +43,18 @@ fn main() -> Result<()> {
     let resource_handler = ResourceHandler::new(ctx.clone());
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?;
     let input_handler = InputHandler::new();
-    let mut scene = rectangle::create_scene(
+    let mut _scene = rectangle::create_scene(
         resource_handler.clone(),
         render_handler.clone(),
         input_handler.clone());
     let mut _scene = triangle::create_scene(
         resource_handler.clone(),
         render_handler.clone(),
-        input_handler.clone()
-    );
+        input_handler.clone());
+    let mut scene = mario::create_scene(
+        resource_handler.clone(),
+        render_handler.clone(),
+        input_handler.clone());
     scene.run();
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
