@@ -133,7 +133,7 @@ impl VertexWithUV {
 
 pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
     fn create_vertices(&self) -> Vec<VertexWithUV>;
-    fn render_data(&self) -> RenderInfo;
+    fn render_info(&self) -> RenderInfo;
 }
 
 impl<ObjectType, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
@@ -233,7 +233,7 @@ struct UpdatePerfStats {
     on_collision: TimeIt,
     remove_objects: TimeIt,
     add_objects: TimeIt,
-    render_data: TimeIt,
+    render_info: TimeIt,
     last_report: Instant,
 }
 
@@ -248,7 +248,7 @@ impl UpdatePerfStats {
             on_collision: TimeIt::new("on_collision"),
             remove_objects: TimeIt::new("remove objects"),
             add_objects: TimeIt::new("add objects"),
-            render_data: TimeIt::new("render_data"),
+            render_info: TimeIt::new("render_info"),
             last_report: Instant::now(),
         }
     }
@@ -263,33 +263,33 @@ impl UpdatePerfStats {
             self.on_collision.report_ms_if_at_least(1.0);
             self.remove_objects.report_ms_if_at_least(1.0);
             self.add_objects.report_ms_if_at_least(1.0);
-            self.render_data.report_ms_if_at_least(1.0);
+            self.render_info.report_ms_if_at_least(1.0);
             self.total_stats.report_ms();
             self.last_report = Instant::now();
         }
     }
 }
 
-pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> {
+pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
-    render_data: BTreeMap<ObjectId, RenderInfoFull>,
+    render_info: BTreeMap<ObjectId, RenderInfoFull>,
     viewport: AdjustedViewport,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_data_receiver: Arc<Mutex<RenderReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderReceiver>>,
     collision_handler: CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     perf_stats: UpdatePerfStats,
 }
 
-impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandler<ObjectType, RenderReceiver> {
+impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandler<ObjectType, RenderReceiver> {
     pub(crate) fn new(
         objects: Vec<AnySceneObject<ObjectType>>,
         input_handler: Arc<Mutex<InputHandler>>,
         mut resource_handler: ResourceHandler,
-        render_data_receiver: Arc<Mutex<RenderReceiver>>,
+        render_info_receiver: Arc<Mutex<RenderReceiver>>,
         scene_instruction_tx: Sender<SceneInstruction>,
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Result<Self> {
@@ -299,7 +299,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             .collect::<BTreeMap<_, _>>();
         let collision_handler = CollisionHandler::new(&objects);
         let mut vertices = BTreeMap::new();
-        let mut render_data = BTreeMap::new();
+        let mut render_info = BTreeMap::new();
         let mut vertex_index = 0;
         for (&i, obj) in objects.iter() {
             if let Some(obj) = obj.as_renderable_object() {
@@ -307,15 +307,15 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
                 vertex_index += new_vertices.len();
                 vertices.insert(i, (vertex_index_range.clone(), new_vertices));
-                render_data.insert(i, RenderInfoFull {
-                    inner: obj.render_data(),
+                render_info.insert(i, RenderInfoFull {
+                    inner: obj.render_info(),
                     transform: obj.transform(),
                     vertex_indices: vertex_index_range,
                 });
             }
         }
 
-        let viewport = render_data_receiver.lock().unwrap().current_viewport().clone();
+        let viewport = render_info_receiver.lock().unwrap().current_viewport().clone();
 
         for object in objects.values_mut() {
             object.on_load(&mut resource_handler)?;
@@ -328,17 +328,17 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         let mut rv = Self {
             objects,
             vertices,
-            render_data,
+            render_info,
             viewport,
             input_handler,
             resource_handler,
-            render_data_receiver,
+            render_info_receiver,
             collision_handler,
             scene_instruction_tx,
             scene_instruction_rx,
             perf_stats: UpdatePerfStats::new(),
         };
-        rv.update_render_data(true)?;
+        rv.update_render_info(true)?;
         Ok(rv)
     }
 
@@ -357,7 +357,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
 
                 self.update_with_remove_objects(pending_remove_objects);
                 self.update_with_added_objects(pending_add_objects)?;
-                self.update_render_data(did_update_vertices)?;
+                self.update_render_info(did_update_vertices)?;
                 self.input_handler.lock().unwrap().update_step();
 
                 self.perf_stats.total_stats.stop();
@@ -378,7 +378,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
         self.perf_stats.remove_objects.start();
         self.collision_handler.update_with_remove_objects(&pending_remove_objects);
         for remove_index in pending_remove_objects.into_iter().rev() {
-            match self.render_data.remove(&remove_index) {
+            match self.render_info.remove(&remove_index) {
                 Some(_) => {
                     // This is technically quadratic, but is fast enough.
                     check!(self.vertices.contains_key(&remove_index));
@@ -421,8 +421,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
                     next_vertex_index += new_vertices.len();
                     self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
-                    self.render_data.insert(new_id, RenderInfoFull {
-                        inner: obj.render_data(),
+                    self.render_info.insert(new_id, RenderInfoFull {
+                        inner: obj.render_info(),
                         transform: obj.transform(),
                         vertex_indices,
                     });
@@ -508,26 +508,26 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderDataReceiver> UpdateHandl
             );
         }
     }
-    fn update_render_data(&mut self, did_update_vertices: bool) -> Result<()> {
-        self.perf_stats.render_data.start();
+    fn update_render_info(&mut self, did_update_vertices: bool) -> Result<()> {
+        self.perf_stats.render_info.start();
         for object_id in self.objects.keys() {
             if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
-                let render_data = self.render_data.get_mut(object_id)
-                    .ok_or(anyhow!("missing object_id in render_data: {:?}", object_id))?;
-                render_data.inner = obj.render_data();
-                render_data.transform = obj.transform();
+                let render_info = self.render_info.get_mut(object_id)
+                    .ok_or(anyhow!("missing object_id in render_info: {:?}", object_id))?;
+                render_info.inner = obj.render_info();
+                render_info.transform = obj.transform();
             }
         }
-        let mut render_data_receiver = self.render_data_receiver.lock().unwrap();
+        let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
         if did_update_vertices {
-            render_data_receiver.update_vertices(self.vertices.values()
+            render_info_receiver.update_vertices(self.vertices.values()
                 .cloned()
                 .flat_map(|(_, values)| values)
                 .collect());
         }
-        render_data_receiver.update_render_data(self.render_data.values().cloned().collect());
-        self.viewport = render_data_receiver.current_viewport();
-        self.perf_stats.render_data.stop();
+        render_info_receiver.update_render_info(self.render_info.values().cloned().collect());
+        self.viewport = render_info_receiver.current_viewport();
+        self.perf_stats.render_info.stop();
         Ok(())
     }
 }
@@ -652,8 +652,8 @@ pub struct RenderInfoFull {
     vertex_indices: Range<usize>,
 }
 
-pub trait RenderDataReceiver: Send {
+pub trait RenderInfoReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<VertexWithUV>);
-    fn update_render_data(&mut self, render_data: Vec<RenderInfoFull>);
+    fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>);
     fn current_viewport(&self) -> AdjustedViewport;
 }

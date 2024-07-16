@@ -426,3 +426,23 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
         ]
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Rect {
+    centre: Vec2,
+    half_widths: Vec2,
+}
+
+impl Rect {
+    pub fn new(centre: Vec2, half_widths: Vec2) -> Self {
+        Self { centre, half_widths }
+    }
+
+    pub fn half_widths(&self) -> Vec2 { self.half_widths }
+    pub fn centre(&self) -> Vec2 { self.centre }
+    pub fn top_left(&self) -> Vec2 { self.centre - self.half_widths }
+    pub fn top_right(&self) -> Vec2 { self.centre + self.half_widths.x * Vec2::right() }
+    pub fn bottom_left(&self) -> Vec2 { self.centre + self.half_widths.y * Vec2::down() }
+    pub fn bottom_right(&self) -> Vec2 { self.centre + self.half_widths }
+    pub fn extents(&self) -> Vec2 { self.half_widths * 2.0 }
+}

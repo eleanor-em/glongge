@@ -64,7 +64,7 @@ use crate::{
     },
     gg::{
         RenderInfoFull,
-        RenderDataReceiver,
+        RenderInfoReceiver,
         VertexWithUV,
     },
     resource::{
@@ -101,30 +101,30 @@ struct BasicVertex {
     blend_col: [f32; 4],
 }
 
-pub struct BasicRenderDataReceiver {
+pub struct BasicRenderInfoReceiver {
     vertices: Vec<VertexWithUV>,
     vertices_up_to_date: DataPerImage<bool>,
-    render_data: Vec<RenderInfoFull>,
+    render_info: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
 }
-impl BasicRenderDataReceiver {
+impl BasicRenderInfoReceiver {
     fn new(ctx: &VulkanoContext, viewport: AdjustedViewport) -> Self {
         Self {
             vertices: Vec::new(),
             vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
-            render_data: Vec::new(),
+            render_info: Vec::new(),
             viewport,
         }
     }
 }
-impl RenderDataReceiver for BasicRenderDataReceiver {
+impl RenderInfoReceiver for BasicRenderInfoReceiver {
     fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
         self.vertices_up_to_date.clone_from_value(false);
         self.vertices = vertices;
     }
 
-    fn update_render_data(&mut self, render_data: Vec<RenderInfoFull>) {
-        self.render_data = render_data;
+    fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>) {
+        self.render_info = render_info;
     }
 
     fn current_viewport(&self) -> AdjustedViewport {
@@ -143,7 +143,7 @@ pub struct BasicRenderHandler {
     uniform_buffers: Option<DataPerImage<Subbuffer<UniformData>>>,
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
-    render_data_receiver: Arc<Mutex<BasicRenderDataReceiver>>,
+    render_info_receiver: Arc<Mutex<BasicRenderInfoReceiver>>,
 }
 
 impl BasicRenderHandler {
@@ -151,7 +151,7 @@ impl BasicRenderHandler {
         let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
         let fs = basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         let viewport = window_ctx.create_default_viewport();
-        let render_data_receiver = Arc::new(Mutex::new(BasicRenderDataReceiver::new(
+        let render_info_receiver = Arc::new(Mutex::new(BasicRenderInfoReceiver::new(
             ctx, viewport.clone()
         )));
         Ok(Self {
@@ -164,13 +164,13 @@ impl BasicRenderHandler {
             uniform_buffers: None,
             uniform_buffer_sets: None,
             command_buffers: None,
-            render_data_receiver,
+            render_info_receiver,
         })
     }
 
     fn maybe_create_vertex_buffers(&mut self,
                                    ctx: &VulkanoContext,
-                                   receiver: &mut MutexGuard<BasicRenderDataReceiver>
+                                   receiver: &mut MutexGuard<BasicRenderInfoReceiver>
     ) -> Result<()> {
         if self.vertex_buffers.is_none() {
             self.vertex_buffers = Some(DataPerImage::try_new_with_generator(ctx, || {
@@ -210,7 +210,7 @@ impl BasicRenderHandler {
 
     fn maybe_update_with_new_vertices(&mut self,
                                       ctx: &VulkanoContext,
-                                      receiver: &mut MutexGuard<BasicRenderDataReceiver>,
+                                      receiver: &mut MutexGuard<BasicRenderInfoReceiver>,
                                       per_image_ctx: &mut MutexGuard<PerImageContext>
     ) -> Result<()> {
         if !per_image_ctx.get_current_value(&receiver.vertices_up_to_date) {
@@ -232,19 +232,19 @@ impl BasicRenderHandler {
     }
 
     fn write_vertex_buffer(&mut self,
-                           receiver: &mut MutexGuard<BasicRenderDataReceiver>,
+                           receiver: &mut MutexGuard<BasicRenderInfoReceiver>,
                            per_image_ctx: &mut MutexGuard<PerImageContext>) -> Result<()> {
         let vertex_buffer = per_image_ctx.current_value_as_mut(&mut self.vertex_buffers);
         let mut out_vertices = Vec::new();
-        for render_data in receiver.render_data.iter() {
-            for vertex_index in render_data.vertex_indices.clone() {
+        for render_info in receiver.render_info.iter() {
+            for vertex_index in render_info.vertex_indices.clone() {
                 out_vertices.push(BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: receiver.vertices[vertex_index].uv.into(),
-                    texture_id: render_data.inner.texture_id.unwrap_or_default().into(),
-                    translation: render_data.transform.position.into(),
-                    rotation: render_data.transform.rotation as f32,
-                    blend_col: render_data.inner.col.into(),
+                    texture_id: render_info.inner.texture_id.unwrap_or_default().into(),
+                    translation: render_info.transform.position.into(),
+                    rotation: render_info.transform.rotation as f32,
+                    blend_col: render_info.inner.col.into(),
                 });
             }
         }
@@ -397,7 +397,8 @@ impl BasicRenderHandler {
                         border_color: BorderColor::FloatTransparentBlack,
                         ..Default::default()
                     }).map_err(Validated::unwrap)?;
-                let mut textures = self.resource_handler.texture.wait_values()
+                // TODO: should now invalidate uniform buffer sets whenever we load a new texture.
+                let mut textures = self.resource_handler.texture.values()
                     .into_iter()
                     .filter_map(|tex| tex.image_view())
                     .collect::<Vec<_>>();
@@ -462,7 +463,7 @@ impl BasicRenderHandler {
 }
 
 impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
-    type DataReceiver = BasicRenderDataReceiver;
+    type InfoReceiver = BasicRenderInfoReceiver;
 
     fn on_resize(
         &mut self,
@@ -475,7 +476,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         self.pipeline = None;
         self.uniform_buffers = None;
         self.uniform_buffer_sets = None;
-        self.render_data_receiver.lock().unwrap().viewport = self.viewport.clone();
+        self.render_info_receiver.lock().unwrap().viewport = self.viewport.clone();
         Ok(())
     }
 
@@ -484,8 +485,8 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
-        let render_data_receiver = self.render_data_receiver.clone();
-        let mut receiver = render_data_receiver.lock().unwrap();
+        let render_info_receiver = self.render_info_receiver.clone();
+        let mut receiver = render_info_receiver.lock().unwrap();
         self.maybe_create_vertex_buffers(ctx, &mut receiver)?;
         let command_buffers = self.get_or_create_command_buffers(ctx)?;
         self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
@@ -493,7 +494,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         Ok(command_buffers)
     }
 
-    fn get_receiver(&self) -> Arc<Mutex<BasicRenderDataReceiver>> {
-        self.render_data_receiver.clone()
+    fn get_receiver(&self) -> Arc<Mutex<BasicRenderInfoReceiver>> {
+        self.render_info_receiver.clone()
     }
 }

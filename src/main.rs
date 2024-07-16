@@ -1,5 +1,6 @@
 #![feature(iterator_try_collect)]
 #![feature(arbitrary_self_types)]
+#![feature(mapped_lock_guards)]
 
 use num_traits::{Float, One};
 

@@ -17,33 +17,31 @@ pub trait Collider {
 pub struct BoxCollider {
     pub centre: Vec2,
     pub rotation: f64,
-    pub extents: Vec2,
+    pub half_widths: Vec2,
 }
 impl BoxCollider {
-    pub fn new(transform: Transform, extents: Vec2) -> Self {
+    pub fn new(transform: Transform, half_widths: Vec2) -> Self {
         Self {
             centre: transform.position,
             rotation: transform.rotation,
-            extents,
+            half_widths,
         }
     }
-    pub fn square(transform: Transform, size: f64) -> Self {
-        Self::new(transform, size * Vec2::one())
+    pub fn square(transform: Transform, half_width: f64) -> Self {
+        Self::new(transform, half_width * Vec2::one())
     }
-
-    pub fn half_widths(&self) -> Vec2 { self.extents / 2.0 }
 
     pub fn top_left(&self) -> Vec2 {
-        self.centre + (-self.half_widths()).rotated(self.rotation)
+        self.centre + (-self.half_widths).rotated(self.rotation)
     }
     pub fn top_right(&self) -> Vec2 {
-        self.centre + Vec2 { x: self.half_widths().x, y: -self.half_widths().y }.rotated(self.rotation)
+        self.centre + Vec2 { x: self.half_widths.x, y: -self.half_widths.y }.rotated(self.rotation)
     }
     pub fn bottom_left(&self) -> Vec2 {
-        self.centre + Vec2 { x: -self.half_widths().x, y: self.half_widths().y }.rotated(self.rotation)
+        self.centre + Vec2 { x: -self.half_widths.x, y: self.half_widths.y }.rotated(self.rotation)
     }
     pub fn bottom_right(&self) -> Vec2 {
-        self.centre + self.half_widths().rotated(self.rotation)
+        self.centre + self.half_widths.rotated(self.rotation)
     }
 
     fn vertices(&self) -> [Vec2; 4] {

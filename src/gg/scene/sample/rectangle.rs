@@ -102,7 +102,7 @@ struct Player {
 }
 
 impl Player {
-    const SIZE: f64 = 200.0;
+    const SIZE: f64 = 100.0;
     const SPEED: f64 = 300.0;
 }
 
@@ -148,7 +148,7 @@ impl RenderableObject<ObjectType> for Player {
         shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> RenderInfo {
+    fn render_info(&self) -> RenderInfo {
         RenderInfo { col: Colour::green(), texture_id: Some(self.texture_id) }
     }
 }
@@ -163,7 +163,7 @@ struct SpinningRectangle {
 }
 
 impl SpinningRectangle {
-    const SIZE: f64 = 16.0;
+    const SIZE: f64 = 8.0;
     const VELOCITY: f64 = 220.0;
     const ANGULAR_VELOCITY: f64 = 2.0;
 
@@ -261,7 +261,7 @@ impl RenderableObject<ObjectType> for SpinningRectangle {
         shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
     }
 
-    fn render_data(&self) -> RenderInfo {
+    fn render_info(&self) -> RenderInfo {
         RenderInfo {
             col: self.col,
             texture_id: Some(self.texture_id),

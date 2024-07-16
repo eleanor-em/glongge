@@ -9,6 +9,7 @@ use std::{
         Mutex
     },
 };
+use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use anyhow::{anyhow, bail, Result};
 use vulkano::{
@@ -65,19 +66,23 @@ impl Texture {
                        ctx: &VulkanoContext,
                        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>)
     -> Result<Arc<ImageView>> {
-        if self.cached_image_view.is_none() {
-            let image = Image::new(
-                ctx.memory_allocator().clone(),
-                self.info.clone(),
-                AllocationCreateInfo::default()
-            ).map_err(Validated::unwrap)?;
-            builder.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
-                self.buf.clone(),
-                image.clone()
-            ))?;
-            self.cached_image_view = Some(ImageView::new_default(image)?);
+        match self.cached_image_view.clone() {
+            None => {
+                let image = Image::new(
+                    ctx.memory_allocator().clone(),
+                    self.info.clone(),
+                    AllocationCreateInfo::default()
+                ).map_err(Validated::unwrap)?;
+                builder.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+                    self.buf.clone(),
+                    image.clone()
+                ))?;
+                let image_view = ImageView::new_default(image)?;
+                self.cached_image_view = Some(image_view.clone());
+                Ok(image_view)
+            },
+            Some(image_view) => Ok(image_view),
         }
-        Ok(self.cached_image_view.clone().unwrap())
     }
 }
 
@@ -90,6 +95,8 @@ struct TextureHandlerInner {
 pub struct TextureHandler {
     ctx: VulkanoContext,
     inner: Arc<Mutex<TextureHandlerInner>>,
+    // TODO: consider using Option<Arc<Texture>> to indicate "texture file loaded but image not ready"
+    cached_textures: Arc<RwLock<BTreeMap<TextureId, Arc<Texture>>>>,
 }
 
 impl TextureHandler {
@@ -97,13 +104,13 @@ impl TextureHandler {
         let mut textures = BTreeMap::new();
         textures.insert(TextureId(0), Self::blank_texture(&ctx)
             .expect("could not create blank texture"));
-        Self {
-            ctx,
-            inner: Arc::new(Mutex::new(TextureHandlerInner {
-                loaded_files: BTreeMap::new(),
-                textures,
-            })),
-        }
+
+        let inner = Arc::new(Mutex::new(TextureHandlerInner {
+            loaded_files: BTreeMap::new(),
+            textures: textures.clone(),
+        }));
+        let cached_textures = Arc::new(RwLock::new(BTreeMap::new()));
+        Self { ctx, inner, cached_textures }
     }
 
     fn blank_texture(ctx: &VulkanoContext) -> Result<Texture> {
@@ -134,20 +141,21 @@ impl TextureHandler {
     }
 
     pub fn wait_load_file(&mut self, filename: String) -> Result<TextureId> {
+        // Beware: do not lock `inner` longer than necessary.
         if let Some(id) = self.inner.lock().unwrap().loaded_files.get(&filename) {
             return Ok(*id);
         }
+
         let texture = self.load_file_inner(&filename)?;
-        Ok({
-            let mut inner = self.inner.lock().unwrap();
-            let texture_id = match inner.textures.last_key_value() {
-                Some((id, _)) => id.next(),
-                None => TextureId(0),
-            };
-            inner.loaded_files.insert(filename, texture_id);
-            inner.textures.insert(texture_id, texture);
-            texture_id
-        })
+
+        let mut inner = self.inner.lock().unwrap();
+        let texture_id = match inner.textures.last_key_value() {
+            Some((id, _)) => id.next(),
+            None => TextureId(0),
+        };
+        inner.loaded_files.insert(filename, texture_id);
+        inner.textures.insert(texture_id, texture);
+        Ok(texture_id)
     }
 
     fn load_file_inner(&self, filename: &str) -> Result<Texture> {
@@ -212,17 +220,19 @@ impl TextureHandler {
             CommandBufferUsage::OneTimeSubmit,
         ).map_err(Validated::unwrap)?;
 
+        // Beware: do not lock `inner` longer than necessary.
         {
             let mut inner = self.inner.lock().unwrap();
-            let textures_to_upload = inner.textures.values_mut()
-                .filter(|tex| tex.cached_image_view.is_none())
+            let textures_to_upload = inner.textures.iter_mut()
+                .filter(|(_, tex)| tex.cached_image_view.is_none())
                 .collect::<Vec<_>>();
             if textures_to_upload.is_empty() {
                 return Ok(None);
             }
 
-            for tex in textures_to_upload {
+            for (id, tex) in textures_to_upload {
                 tex.create_image_view(ctx, &mut uploads)?;
+                self.cached_textures.write().unwrap().insert(*id, Arc::new(tex.clone()));
             }
         }
 
@@ -232,7 +242,15 @@ impl TextureHandler {
             .boxed()))
     }
 
-    pub fn wait_values(&self) -> Vec<Texture> {
-        self.inner.lock().unwrap().textures.values().cloned().collect()
+    // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
+    pub fn values(&self) -> Vec<Arc<Texture>> {
+        self.cached_textures.read().unwrap().values().cloned().collect()
+    }
+
+    // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
+    pub fn get(&self, texture_id: TextureId) -> Option<MappedRwLockReadGuard<Arc<Texture>>> {
+        RwLockReadGuard::try_map(self.cached_textures.read().unwrap(), |textures| {
+            textures.get(&texture_id)
+        }).ok()
     }
 }

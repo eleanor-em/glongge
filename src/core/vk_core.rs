@@ -55,7 +55,7 @@ use crate::{
         linalg::Vec2,
         util::TimeIt,
     },
-    gg::RenderDataReceiver,
+    gg::RenderInfoReceiver,
     resource::ResourceHandler
 };
 
@@ -554,7 +554,7 @@ impl PerImageContext {
 
 pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
 {
-    type DataReceiver: RenderDataReceiver + 'static;
+    type InfoReceiver: RenderInfoReceiver + 'static;
 
     fn on_resize(
         &mut self,
@@ -567,7 +567,7 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = Prima
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<CommandBuffer>>>;
 
-    fn get_receiver(&self) -> Arc<Mutex<Self::DataReceiver>>;
+    fn get_receiver(&self) -> Arc<Mutex<Self::InfoReceiver>>;
 }
 
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;

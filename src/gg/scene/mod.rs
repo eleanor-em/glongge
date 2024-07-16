@@ -25,7 +25,7 @@ struct SceneInnerData<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHand
     initial_objects: Vec<Box<dyn SceneObject<ObjectType>>>,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_data_receiver: Arc<Mutex<RenderHandler::DataReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderHandler::InfoReceiver>>,
     scene_instruction_rx: Receiver<SceneInstruction>,
 }
 
@@ -46,7 +46,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<Object
                 initial_objects,
                 input_handler,
                 resource_handler,
-                render_data_receiver: render_handler.get_receiver(),
+                render_info_receiver: render_handler.get_receiver(),
                 scene_instruction_rx,
             }),
         }
@@ -60,7 +60,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> Scene<Object
                 inner.initial_objects,
                 inner.input_handler,
                 inner.resource_handler,
-                inner.render_data_receiver,
+                inner.render_info_receiver,
                 scene_instruction_tx,
                 inner.scene_instruction_rx,
             );

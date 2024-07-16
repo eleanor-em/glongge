@@ -201,7 +201,7 @@ impl gg::RenderableObject<ObjectType> for SpinningTriangle {
         VertexWithUV::from_iter(vec![vertex1, vertex2, vertex3])
     }
 
-    fn render_data(&self) -> gg::RenderInfo {
+    fn render_info(&self) -> gg::RenderInfo {
         gg::RenderInfo {
             col: Colour::red(),
             ..Default::default()
