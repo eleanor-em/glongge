@@ -3,6 +3,8 @@ use std::{
     fmt::Formatter,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign}
 };
+use std::ops::Range;
+use itertools::{Itertools, Product};
 use num_traits::{float::Float, One, Zero};
 
 #[derive(Default, Debug, Eq, PartialEq, Copy, Clone, Hash)]
@@ -22,6 +24,13 @@ impl Vec2Int {
     pub fn dot(&self, other: Vec2Int) -> i32 { self.x * other.x + self.y * other.y }
 
     pub fn as_vec2(&self) -> Vec2 { Into::<Vec2>::into(*self) }
+
+    pub fn range(start: Vec2Int, end: Vec2Int) -> Product<Range<i32>, Range<i32>> {
+        (start.x..end.x).cartesian_product(start.y..end.y)
+    }
+    pub fn range_from_zero(end: Vec2Int) -> Product<Range<i32>, Range<i32>> {
+        Self::range(Vec2Int::zero(), end)
+    }
 }
 
 impl From<Vec2Int> for Vec2 {

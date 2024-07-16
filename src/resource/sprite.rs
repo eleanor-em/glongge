@@ -1,5 +1,4 @@
 use std::time::Instant;
-use itertools::Itertools;
 use crate::{
     assert::*,
     core::linalg::Vec2Int,
@@ -36,7 +35,7 @@ impl Sprite {
         margin: Vec2Int,
         ms_per_frame: u32
     ) -> Self {
-        let areas = (0..tile_count.x).cartesian_product(0..tile_count.y)
+        let areas = Vec2Int::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
                 let top_left = border
                     + tile_x * (tile_size + margin).x * Vec2Int::right()
