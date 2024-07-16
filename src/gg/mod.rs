@@ -306,7 +306,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut vertices = BTreeMap::new();
         let mut render_info = BTreeMap::new();
         let mut vertex_index = 0;
-        for (&i, obj) in objects.iter() {
+        for (&i, obj) in objects.iter_mut() {
+            obj.on_load(&mut resource_handler)?;
             if let Some(obj) = obj.as_renderable_object() {
                 let new_vertices = obj.create_vertices();
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
@@ -323,7 +324,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let viewport = render_info_receiver.lock().unwrap().current_viewport().clone();
 
         for object in objects.values_mut() {
-            object.on_load(&mut resource_handler)?;
+            object.on_ready();
         }
 
         let objects = objects.into_iter()
@@ -420,7 +421,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             let mut next_vertex_index = self.vertices.last_key_value()
                 .map(|(_, (indices, _))| indices.end)
                 .unwrap_or(0);
-            for (new_id, new_obj) in pending_add_objects {
+            for (new_id, mut new_obj) in pending_add_objects {
+                new_obj.on_load(&mut self.resource_handler)?;
                 if let Some(obj) = new_obj.as_renderable_object() {
                     let new_vertices = obj.create_vertices();
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
@@ -436,9 +438,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             }
 
             for i in first_new_id.0..=last_new_id.0 {
-                let mut obj = self.objects[&ObjectId(i)].borrow_mut();
-                obj.on_load(&mut self.resource_handler)?;
-                obj.on_ready();
+                self.objects[&ObjectId(i)].borrow_mut().on_ready();
             }
         }
         self.perf_stats.add_objects.stop();

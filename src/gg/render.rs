@@ -2,7 +2,6 @@ use std::{
     default::Default,
     sync::{Arc, Mutex, MutexGuard}
 };
-use num_traits::Zero;
 
 use anyhow::{Context, Result};
 
@@ -52,7 +51,6 @@ use winit::window::Window;
 use crate::{
     assert::check_le,
     core::{
-        linalg::Vec2,
         vk_core::{
             AdjustedViewport,
             DataPerImage,
@@ -69,10 +67,7 @@ use crate::{
     },
     resource::{
         ResourceHandler,
-        texture::{
-            MAX_TEXTURE_COUNT,
-            TextureId,
-        }
+        texture::MAX_TEXTURE_COUNT,
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
@@ -85,7 +80,7 @@ struct UniformData {
     window_height: f32,
     scale_factor: f32,
 }
-#[derive(BufferContents, Vertex, Debug, Clone, Copy)]
+#[derive(BufferContents, Vertex, Debug, Default, Clone, Copy)]
 #[repr(C)]
 struct BasicVertex {
     #[format(R32G32_SFLOAT)]
@@ -186,13 +181,9 @@ impl BasicRenderHandler {
         ctx: &VulkanoContext,
         vertices: &[VertexWithUV],
     ) -> Result<Subbuffer<[BasicVertex]>> {
-        let vertices = vertices.iter().map(|&v| BasicVertex {
-            position: v.vertex.into(),
-            translation: Vec2::zero().into(),
-            rotation: 0.0,
-            uv: v.uv.into(),
-            texture_id: TextureId::default().into(),
-            blend_col: Colour::white().into(),
+        let vertices = vertices.iter().map(|_| BasicVertex {
+            blend_col: Colour::magenta().into(),
+            ..Default::default()
         });
         Ok(Buffer::from_iter(
             ctx.memory_allocator(),

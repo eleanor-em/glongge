@@ -11,7 +11,7 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 
 use anyhow::Result;
 
-use glongge_derive::{partially_derive_scene_object, register_object_type, register_scene_object};
+use glongge_derive::*;
 use crate::{
     core::linalg::Vec2Int,
     core::{
@@ -44,9 +44,15 @@ pub fn create_scene(
     render_handler: BasicRenderHandler,
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
-    Scene::new(vec![Box::new(Spawner {}),
-                Box::new(Player::new())],
-               input_handler, resource_handler, render_handler)
+    Scene::new(
+        vec![
+            Box::new(Spawner {}),
+            Box::new(Player::new()),
+        ],
+        input_handler,
+        resource_handler,
+        render_handler
+    )
 }
 
 #[register_object_type]
@@ -180,7 +186,7 @@ impl SpinningRectangle {
             3 => Colour::cyan(),
             4 => Colour::magenta(),
             5 => Colour::yellow(),
-            _ => panic!(),
+            _ => unreachable!(),
         };
         Self {
             pos,
@@ -196,20 +202,6 @@ impl SpinningRectangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
-    fn new() -> Self
-    where
-        Self: Sized
-    {
-        Self {
-            pos: Default::default(),
-            velocity: Default::default(),
-            t: 0.0,
-            col: Default::default(),
-            sprite: Default::default(),
-            alive_since: Instant::now(),
-        }
-    }
-
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
         self.sprite = Sprite::from_tileset(texture_id,

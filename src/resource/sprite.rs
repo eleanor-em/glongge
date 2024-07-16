@@ -61,6 +61,7 @@ impl Sprite {
     }
 
     pub fn current_frame(&self) -> TextureSubArea {
+        check!(self.ready());
         let instant = match self.paused {
             None => self.started,
             Some(_) => Instant::now(),

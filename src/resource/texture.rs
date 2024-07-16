@@ -138,7 +138,7 @@ impl TextureHandler {
             },
             4 as DeviceSize
         ).map_err(Validated::unwrap)?;
-        buf.write()?.swap_with_slice(&mut [255, 0, 255, 255]);
+        buf.write()?.swap_with_slice(&mut [255, 255, 255, 255]);
         Ok(Texture {
             buf, info: image_create_info,
             cached_image_view: None,
