@@ -697,4 +697,5 @@ pub trait RenderInfoReceiver: Send {
     fn update_vertices(&mut self, vertices: Vec<VertexWithUV>);
     fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>);
     fn current_viewport(&self) -> AdjustedViewport;
+    fn is_ready(&self) -> bool;
 }

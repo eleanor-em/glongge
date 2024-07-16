@@ -83,6 +83,6 @@ impl Sprite {
 
     pub fn half_widths(&self) -> Vec2 { self.current_frame().half_widths() }
     pub fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), self.half_widths())
+        shader::vertex::rectangle_with_uv(Vec2::zero(), 10.0 * self.half_widths())
     }
 }

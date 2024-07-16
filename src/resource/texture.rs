@@ -12,6 +12,7 @@ use std::{
 use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use anyhow::{anyhow, bail, Result};
+use png::ColorType;
 use tracing::error;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -183,12 +184,25 @@ impl TextureHandler {
         let info = reader.info();
 
         if info.srgb.is_none() {
-            error!("PNG file loaded without SRGB enabled, may display incorrectly: {}", filename);
+            error!("loading {}: SRGB not enabled, may display incorrectly", filename);
         }
+        if info.color_type != ColorType::Rgba {
+            error!("loading {}: no alpha channel, *will* display incorrectly (re-encode as RGBA)", filename);
+        }
+        if let Some(animation_control) = info.animation_control {
+            if animation_control.num_frames != 1 {
+                error!("loading {}: unexpected num_frames {} (animated PNG not supported)",
+                    filename, animation_control.num_frames);
+            }
+        }
+        let format = match info.srgb {
+            Some(_) => Format::R8G8B8A8_SRGB,
+            None => Format::R8G8B8A8_UNORM,
+        };
 
         let image_create_info = ImageCreateInfo {
             image_type: ImageType::Dim2d,
-            format: Format::R8G8B8A8_SRGB,
+            format,
             extent: [info.width, info.height, 1],
             usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
             ..Default::default()
@@ -212,7 +226,7 @@ impl TextureHandler {
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            (info.width * info.height * depth) as DeviceSize
+            (info.width * info.height * 4) as DeviceSize
         ).map_err(Validated::unwrap)?;
         reader.next_frame(&mut buf.write()?)?;
 

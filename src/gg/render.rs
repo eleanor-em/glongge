@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use tracing::warn;
 
 use vulkano::{
     Validated,
@@ -126,6 +127,10 @@ impl RenderInfoReceiver for BasicRenderInfoReceiver {
     fn current_viewport(&self) -> AdjustedViewport {
         self.viewport.clone()
     }
+
+    fn is_ready(&self) -> bool {
+        !self.vertices.is_empty() && !self.render_info.is_empty()
+    }
 }
 
 #[derive(Clone)]
@@ -230,18 +235,23 @@ impl BasicRenderHandler {
         let mut out_vertices = Vec::new();
         for render_info in receiver.render_info.iter() {
             for vertex_index in render_info.vertex_indices.clone() {
+                // Calculate transformed UVs.
                 let texture_id = render_info.inner.texture_id.unwrap_or_default();
-                let uv = receiver.vertices[vertex_index].uv;
-                let tex = self.resource_handler.texture.get(texture_id)
-                    .unwrap_or_else(|| panic!("missing texture id: {:?}", texture_id));
-                let uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                let mut blend_col = render_info.inner.col;
+                let mut uv = receiver.vertices[vertex_index].uv;
+                if let Some(tex) = self.resource_handler.texture.get(texture_id) {
+                    uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                } else {
+                    warn!("missing texture id: {:?}", texture_id);
+                    blend_col = Colour::magenta();
+                }
                 out_vertices.push(BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
                     texture_id: texture_id.into(),
                     translation: render_info.transform.position.into(),
                     rotation: render_info.transform.rotation as f32,
-                    blend_col: render_info.inner.col.into(),
+                    blend_col: blend_col.into(),
                 });
             }
         }

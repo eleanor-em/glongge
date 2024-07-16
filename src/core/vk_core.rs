@@ -591,6 +591,9 @@ where
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
     command_buffer_type: PhantomData<CommandBuffer>,
+
+    is_ready: bool,
+    last_ready_poll: Instant,
 }
 
 impl<CommandBuffer, RenderHandler> WindowEventHandler<CommandBuffer, RenderHandler>
@@ -617,6 +620,8 @@ where
             fences,
             render_stats: RenderPerfStats::new(),
             command_buffer_type: PhantomData,
+            is_ready: false,
+            last_ready_poll: Instant::now(),
         }
     }
 
@@ -719,6 +724,14 @@ where
         per_image_ctx.last = image_idx;
     }
 
+    fn poll_ready(&mut self) -> bool {
+        if !self.is_ready && self.last_ready_poll.elapsed().as_millis() >= 10 {
+            self.is_ready = self.render_handler.get_receiver().lock().unwrap().is_ready();
+            self.last_ready_poll = Instant::now();
+        }
+        self.is_ready
+    }
+
     fn run_inner(&mut self, event: Event<()>, control_flow: &mut ControlFlow, report_stats: bool) -> Result<()> {
         match event {
             Event::WindowEvent {
@@ -749,6 +762,7 @@ where
                 self.recreate_swapchain()
             }
             Event::MainEventsCleared => {
+                if !self.poll_ready() { return Ok(()); }
                 self.render_stats.begin_handle_swapchain();
                 let per_image_ctx = self.ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();

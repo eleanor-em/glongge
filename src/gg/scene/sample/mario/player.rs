@@ -37,12 +37,12 @@ impl Player {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> anyhow::Result<()> {
-        let texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
+        let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 0 },
+            Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 },
             100
         );
