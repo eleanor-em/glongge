@@ -191,6 +191,7 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
         Transform {
             position: self.pos,
             rotation: self.rotation(),
+            ..Default::default()
         }
     }
 

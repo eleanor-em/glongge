@@ -25,6 +25,20 @@ impl Default for Sprite {
 }
 
 impl Sprite {
+    pub fn from_single(
+        texture_id: TextureId,
+        extent: Vec2Int,
+        top_left: Vec2Int
+    ) -> Self {
+        Self::from_tileset(
+            texture_id,
+            Vec2Int::one(),
+            extent,
+            top_left,
+            Vec2Int::zero(),
+            1
+        )
+    }
     pub fn from_tileset(
         texture_id: TextureId,
         tile_count: Vec2Int,
@@ -83,6 +97,6 @@ impl Sprite {
 
     pub fn half_widths(&self) -> Vec2 { self.current_frame().half_widths() }
     pub fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), 10.0 * self.half_widths())
+        shader::vertex::rectangle_with_uv(Vec2::zero(), 2.0 * self.half_widths())
     }
 }

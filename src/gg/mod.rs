@@ -1,30 +1,20 @@
 pub mod render;
 pub mod scene;
 
-use std::{
-    any::{Any, TypeId},
-    cell::{
-        Ref,
-        RefCell,
-        RefMut
-    },
-    collections::{
-        BTreeMap,
-        BTreeSet,
-    },
-    default::Default,
-    fmt::Debug,
-    ops::{
-        Add,
-        Range,
-    },
-    rc::Rc,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
-    time::{Duration, Instant},
-};
+use std::{any::{Any, TypeId}, cell::{
+    Ref,
+    RefCell,
+    RefMut
+}, collections::{
+    BTreeMap,
+    BTreeSet,
+}, default::Default, fmt::Debug, ops::{
+    Add,
+    Range,
+}, rc::Rc, sync::{
+    mpsc::{Receiver, Sender},
+    Arc, Mutex,
+}, time::{Duration, Instant}};
 use itertools::Itertools;
 use num_traits::Zero;
 
@@ -64,11 +54,12 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
 pub struct Transform {
     pub position: Vec2,
     pub rotation: f64,
+    pub scale: Vec2,
 }
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { position: Vec2::zero(), rotation: 0.0 }
+        Self { position: Vec2::zero(), rotation: 0.0, scale: Vec2::one() }
     }
 }
 
@@ -103,6 +94,8 @@ pub trait SceneObject<ObjectType>: Send {
     // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_fixed_update(&mut self, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_collision(&mut self, other: SceneObjectWithId<ObjectType>, mtv: Vec2) {}
 
@@ -351,14 +344,22 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     pub fn consume(mut self) -> Result<()> {
         let mut delta = Duration::from_secs(0);
         let mut is_running = true;
+        let mut last_fixed_update: Option<Instant> = None;
 
         loop {
             if is_running {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
+                let fixed_update = last_fixed_update
+                    .map(|t| t.elapsed().as_micros() >= 10000)
+                    .unwrap_or(true);
+                if fixed_update {
+                    last_fixed_update = Some(Instant::now());
+                }
 
                 let input_handler = self.input_handler.lock().unwrap().clone();
-                let (pending_add_objects, pending_remove_objects) = self.call_on_update(delta, input_handler);
+                let (pending_add_objects, pending_remove_objects) =
+                    self.call_on_update(delta, input_handler, fixed_update);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_remove_objects(pending_remove_objects);
@@ -445,7 +446,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         Ok(())
     }
 
-    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
+    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler, fixed_update: bool) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
         self.perf_stats.on_update_begin.start();
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = BTreeSet::new();
@@ -469,14 +470,20 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                  });
         self.perf_stats.on_update.stop();
 
-        self.perf_stats.detect_collision.start();
-        let collisions = self.collision_handler.get_collisions(&self.objects);
-        self.perf_stats.detect_collision.stop();
-        self.perf_stats.on_collision.start();
-        for Collision { this, other, mtv } in collisions {
-            this.borrow_mut().on_collision(other, mtv)
+        if fixed_update {
+            self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+                                     |mut obj, _delta, update_ctx| {
+                                         obj.on_fixed_update(update_ctx)
+                                     });
+            self.perf_stats.detect_collision.start();
+            let collisions = self.collision_handler.get_collisions(&self.objects);
+            self.perf_stats.detect_collision.stop();
+            self.perf_stats.on_collision.start();
+            for Collision { this, other, mtv } in collisions {
+                this.borrow_mut().on_collision(other, mtv)
+            }
+            self.perf_stats.on_collision.stop();
         }
-        self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,

@@ -1,6 +1,7 @@
 #![feature(iterator_try_collect)]
 #![feature(arbitrary_self_types)]
 #![feature(mapped_lock_guards)]
+#![feature(const_fn_floating_point_arithmetic)]
 
 use num_traits::{Float, One};
 
@@ -65,8 +66,8 @@ fn main() -> Result<()> {
 fn run_test_cases() {
     // TODO: proper test cases...
     let a = Vec2 { x: 1.0, y: 1.0 };
-    check!((a * 2.0).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
-    check!((2.0 * a).almost_eq(Vec2 { x: 2.0, y: 2.0 }));
+    check!(a * 2.0 == Vec2 { x: 2.0, y: 2.0 });
+    check!(2.0 * a == Vec2 { x: 2.0, y: 2.0 });
     check_lt!(f64::abs((a * 2.0 - a).x - 1.0), f64::epsilon());
     check_lt!(f64::abs((a * 2.0 - a).y - 1.0), f64::epsilon());
     check!(

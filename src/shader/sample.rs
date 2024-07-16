@@ -7,9 +7,10 @@ pub mod basic_vertex_shader {
             layout(location = 0) in vec2 position;
             layout(location = 1) in vec2 translation;
             layout(location = 2) in float rotation;
-            layout(location = 3) in vec2 uv;
-            layout(location = 4) in uint texture_id;
-            layout(location = 5) in vec4 blend_col;
+            layout(location = 3) in vec2 scale;
+            layout(location = 4) in vec2 uv;
+            layout(location = 5) in uint texture_id;
+            layout(location = 6) in vec4 blend_col;
 
             layout(location = 0) out vec2 f_uv;
             layout(location = 1) out uint f_texture_id;
@@ -36,6 +37,11 @@ pub mod basic_vertex_shader {
                     vec4(-1, -1, 0, 1));
                 mat4 projection =  window_translation * window_pixel_scale;
 
+                mat4 scale_mat = mat4(
+                    vec4(scale.x, 0, 0, 0),
+                    vec4(0, scale.y, 0, 0),
+                    vec4(0, 0, 1, 0),
+                    vec4(0, 0, 0, 1));
                 mat4 rotation_mat = mat4(
                     vec4(cos(rotation), sin(rotation), 0, 0),
                     vec4(-sin(rotation), cos(rotation), 0, 0),
@@ -46,7 +52,7 @@ pub mod basic_vertex_shader {
                     vec4(0, 1, 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(translation, 0, 1));
-                gl_Position = projection * translation_mat * rotation_mat * vec4(position, 0, 1);
+                gl_Position = projection * translation_mat * rotation_mat * scale_mat * vec4(position, 0, 1);
                 f_uv = uv;
                 f_texture_id = texture_id;
                 f_blend_col = blend_col;

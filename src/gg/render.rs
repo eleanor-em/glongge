@@ -91,6 +91,8 @@ struct BasicVertex {
     #[format(R32_SFLOAT)]
     rotation: f32,
     #[format(R32G32_SFLOAT)]
+    scale: [f32; 2],
+    #[format(R32G32_SFLOAT)]
     uv: [f32; 2],
     #[format(R32_UINT)]
     texture_id: u32,
@@ -251,6 +253,7 @@ impl BasicRenderHandler {
                     texture_id: texture_id.into(),
                     translation: render_info.transform.position.into(),
                     rotation: render_info.transform.rotation as f32,
+                    scale: render_info.transform.scale.into(),
                     blend_col: blend_col.into(),
                 });
             }

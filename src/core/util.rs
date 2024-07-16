@@ -90,7 +90,7 @@ impl TimeIt {
     }
 }
 
-pub mod range {
+pub mod gg_range {
     use std::ops::Range;
 
     pub fn contains_f64(r1: &Range<f64>, r2: &Range<f64>) -> bool {
@@ -116,6 +116,15 @@ pub mod range {
 
     pub fn overlap_len_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<f64> {
         overlap_f64(r1, r2).map(|r| r.end - r.start)
+    }
+}
+
+pub mod gg_time {
+    use std::time::Duration;
+
+    pub fn as_frames(duration: Duration) -> u128 {
+        // 100 frames per second
+        duration.as_micros() / 10000
     }
 }
 

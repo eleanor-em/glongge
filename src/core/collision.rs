@@ -3,7 +3,7 @@ use num_traits::{Float, Zero};
 use crate::{
     core::{
         linalg::Vec2,
-        util::range
+        util::gg_range
     },
     gg::Transform
 };
@@ -69,11 +69,11 @@ impl Collider for BoxCollider {
         for &axis in [self.normals(), other.normals()].as_flattened() {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
-            match range::overlap_len_f64(&self_proj, &other_proj) {
+            match gg_range::overlap_len_f64(&self_proj, &other_proj) {
                 Some(0.0) => return None,
                 Some(mut dist) => {
-                    if range::contains_f64(&self_proj, &other_proj) ||
-                            range::contains_f64(&other_proj, &self_proj) {
+                    if gg_range::contains_f64(&self_proj, &other_proj) ||
+                            gg_range::contains_f64(&other_proj, &self_proj) {
                         let starts = (self_proj.start - other_proj.start).abs();
                         let ends = (self_proj.end - other_proj.end).abs();
                         dist += f64::min(starts, ends);

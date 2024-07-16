@@ -176,7 +176,7 @@ impl Neg for &Vec2Int {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -362,7 +362,7 @@ impl Neg for &Vec2 {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Mat3x3 {
     pub xx: f64,
     pub xy: f64,

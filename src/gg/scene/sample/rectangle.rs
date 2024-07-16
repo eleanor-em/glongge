@@ -138,7 +138,7 @@ impl SceneObject<ObjectType> for Player {
     fn transform(&self) -> Transform {
         Transform {
             position: self.pos,
-            rotation: 0.0,
+            ..Default::default()
         }
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
@@ -254,6 +254,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         Transform {
             position: self.pos,
             rotation: self.rotation(),
+            ..Default::default()
         }
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {

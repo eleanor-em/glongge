@@ -2,17 +2,17 @@ use std::sync::{Arc, Mutex};
 use glongge_derive::register_object_type;
 use crate::{
     core::input::InputHandler,
-    gg,
     gg::{
         render::BasicRenderHandler,
-        scene::Scene
+        scene::Scene,
+        SceneObject,
+        self,
     },
-    resource::ResourceHandler
+    resource::ResourceHandler,
 };
 
 mod player;
 use player::*;
-use crate::gg::SceneObject;
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
