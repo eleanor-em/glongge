@@ -11,7 +11,7 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 
 use anyhow::Result;
 
-use glongge_derive::register_object_type;
+use glongge_derive::{partially_derive_scene_object, register_object_type, register_scene_object};
 use crate::{
     core::linalg::Vec2Int,
     core::{
@@ -58,20 +58,11 @@ pub enum ObjectType {
 
 const RECTANGLE_COLL_TAG: &str = "RECTANGLE_COLL_TAG";
 
+#[register_scene_object]
 struct Spawner {}
 
+#[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Spawner {
-    fn get_type(&self) -> ObjectType { ObjectType::Spawner }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
-    fn new() -> Self
-    where
-        Self: Sized
-    {
-        Self {}
-    }
-
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         const N: usize = 1;
@@ -99,6 +90,7 @@ impl SceneObject<ObjectType> for Spawner {
     }
 }
 
+#[register_scene_object]
 struct Player {
     pos: Vec2,
     vel: Vec2,
@@ -110,22 +102,8 @@ impl Player {
     const SPEED: f64 = 300.0;
 }
 
+#[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn get_type(&self) -> ObjectType { ObjectType::Player }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
-    fn new() -> Self
-    where
-        Self: Sized
-    {
-        Self {
-            pos: Vec2 { x: 512.0, y: 384.0 },
-            vel: Default::default(),
-            sprite: Default::default(),
-        }
-    }
-
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
         self.sprite = Sprite::from_tileset(
@@ -138,7 +116,9 @@ impl SceneObject<ObjectType> for Player {
         );
         Ok(())
     }
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self) {
+        self.pos = Vec2 { x: 512.0, y: 384.0 };
+    }
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
         if update_ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
@@ -176,6 +156,7 @@ impl RenderableObject<ObjectType> for Player {
     }
 }
 
+#[register_scene_object]
 struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
@@ -213,11 +194,8 @@ impl SpinningRectangle {
 
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
+#[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
-    fn get_type(&self) -> ObjectType { ObjectType::SpinningRectangle }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
     fn new() -> Self
     where
         Self: Sized

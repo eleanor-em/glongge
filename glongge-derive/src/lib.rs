@@ -1,8 +1,6 @@
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{
-    parse_macro_input, Data, DeriveInput
-};
+use syn::{parse_macro_input, Data, DeriveInput, ItemImpl, ImplItemFn, ImplItem, Fields, Type};
 
 #[proc_macro_attribute]
 pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -12,6 +10,127 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
         #input
     };
     proc_macro::TokenStream::from(expanded)
+}
+
+fn get_initialiser_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2::TokenStream {
+    if let Type::Path(type_path) = ty {
+        match type_path.path.segments.last().unwrap().ident.to_string().as_str() {
+            "Instant" => return quote! {
+                #field_name: Instant::now()
+            },
+            _ => {},
+        }
+    }
+    quote! {
+        #field_name: Default::default()
+    }
+}
+
+#[proc_macro_attribute]
+pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let struct_name = input.ident.clone();
+
+    let mut default_initialisers = Vec::new();
+    if let syn::Data::Struct(data_struct) = input.data.clone() {
+        if let Fields::Named(fields_named) = data_struct.fields {
+            for field in fields_named.named {
+                let field_name = field.ident.unwrap();
+                default_initialisers.push(get_initialiser_for(field_name, field.ty));
+            }
+        } else {
+            panic!("no named fields");
+        }
+    } else {
+        panic!("not a struct");
+    }
+
+    let expanded = quote! {
+        #input
+
+        impl Default for #struct_name {
+            fn default() -> Self {
+                Self {
+                    #(#default_initialisers),*
+                }
+            }
+        }
+    };
+    proc_macro::TokenStream::from(expanded)
+}
+
+#[proc_macro_attribute]
+pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let mut item_impl = parse_macro_input!(item as ItemImpl);
+    let struct_name = if let syn::Type::Path(type_path) = &*item_impl.self_ty {
+        type_path.path.segments.last().unwrap().ident.clone()
+    } else {
+        panic!("Unsupported type for impl block");
+    };
+
+    let has_as_any = item_impl.items.iter().any(|item| {
+        if let ImplItem::Fn(ImplItemFn { sig, .. }) = item {
+            if sig.ident == "as_any" {
+                return true;
+            }
+        }
+        return false;
+    });
+    if !has_as_any {
+        item_impl.items.push(syn::parse_quote! {
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+        });
+    }
+    let has_as_any_mut = item_impl.items.iter().any(|item| {
+        if let ImplItem::Fn(ImplItemFn { sig, .. }) = item {
+            if sig.ident == "as_any_mut" {
+                return true;
+            }
+        }
+        return false;
+    });
+    if !has_as_any_mut {
+        item_impl.items.push(syn::parse_quote! {
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+        });
+    }
+    let has_get_type = item_impl.items.iter().any(|item| {
+        if let ImplItem::Fn(ImplItemFn { sig, .. }) = item {
+            if sig.ident == "get_type" {
+                return true;
+            }
+        }
+        return false;
+    });
+    if !has_get_type {
+        item_impl.items.push(syn::parse_quote! {
+            fn get_type(&self) -> ObjectType {
+                ObjectType::#struct_name
+            }
+        });
+    }
+
+    let has_new = item_impl.items.iter().any(|item| {
+        if let ImplItem::Fn(ImplItemFn { sig, .. }) = item {
+            if sig.ident == "new" {
+                return true;
+            }
+        }
+        return false;
+    });
+    if !has_new {
+        item_impl.items.push(syn::parse_quote! {
+            fn new() -> Self where Self: Sized {
+                Self::default()
+            }
+        });
+    }
+
+    proc_macro::TokenStream::from(quote! { #item_impl })
 }
 
 #[proc_macro_derive(ObjectTypeEnum)]
