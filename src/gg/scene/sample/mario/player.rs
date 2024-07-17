@@ -26,7 +26,7 @@ use crate::{
 };
 use crate::core::linalg::SquareExtent;
 use crate::gg::coroutine::{CoroutineId, CoroutineResponse};
-use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, PLAYER_COLLISION_TAG};
+use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG};
 use crate::gg::{CollisionResponse, SceneObjectWithId};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -76,18 +76,6 @@ pub struct Player {
     fall_sprite: Sprite,
 }
 
-const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
-    // fixed update at 100 fps
-    (pixels as f64
-        + subpixels as f64 / 16.
-        + subsubpixels as f64 / 256.
-        + subsubsubpixels as f64 / 4096.) * 60. / 100.
-}
-const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
-    // fixed update at 100 fps
-    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 100.)
-}
-
 impl Player {
     const MIN_WALK_SPEED: f64 = from_nes(0, 1, 3, 0);
     const MAX_WALK_SPEED: f64 = from_nes(1, 9, 0, 0);
@@ -108,7 +96,7 @@ impl Player {
     }
     fn gravity(&self) -> f64 {
         match self.speed_regime {
-            SpeedRegime::Slow => from_nes_accel(0, 7, 0, 0),
+            SpeedRegime::Slow => BASE_GRAVITY,
             SpeedRegime::Medium => from_nes_accel(0, 6, 0, 0),
             SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
         }

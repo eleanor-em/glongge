@@ -15,15 +15,30 @@ mod player;
 mod floor;
 mod question_block;
 mod brick;
+mod goomba;
 
 use player::*;
 use floor::*;
 use question_block::*;
 use brick::*;
+use goomba::*;
 use crate::core::linalg::Vec2Int;
 
+const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
+    // fixed update at 100 fps
+    (pixels as f64
+        + subpixels as f64 / 16.
+        + subsubpixels as f64 / 256.
+        + subsubsubpixels as f64 / 4096.) * 60. / 100.
+}
+const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
+    // fixed update at 100 fps
+    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 100.)
+}
+const BASE_GRAVITY: f64 = from_nes_accel(0, 7, 0, 0);
 const BRICK_COLLISION_TAG: &str = "BRICK";
 const PLAYER_COLLISION_TAG: &str = "PLAYER";
+const ENEMY_COLLISION_TAG: &str = "ENEMY";
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
@@ -54,6 +69,7 @@ pub fn create_scene(
     initial_objects.push(Brick::new(Vec2Int { x: 28 * 16, y: 384 - 6 * 16 }));
 
     initial_objects.push(QuestionBlock::new(Vec2Int { x: 26 * 16, y: 384 - 10 * 16 }));
+    initial_objects.push(Goomba::new(Vec2Int { x: 26 * 16, y: 384 - 3 * 16 }));
 
     initial_objects.push(Player::new());
 
@@ -71,4 +87,5 @@ pub enum ObjectType {
     Floor,
     QuestionBlock,
     Brick,
+    Goomba,
 }
