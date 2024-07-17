@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 pub fn assert_ord<T: PartialOrd>(_: &T) {}
 pub fn assert_partial_eq<T: PartialEq>(_: &T) {}
 pub fn assert_same_type<T, U>(_: &T, _: &U) {}

@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     collections::BTreeMap,
     default::Default,
@@ -12,9 +15,7 @@ use std::{
 use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::{anyhow, bail, Result};
 use png::ColorType;
-use tracing::error;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract},
@@ -32,7 +33,6 @@ use vulkano::{
     Validated,
 };
 use crate::{
-    assert::check_lt,
     core::{
         linalg::Vec2,
         vk_core::VulkanoContext,
@@ -248,7 +248,7 @@ impl TextureHandler {
             let mut inner = self.inner.lock().unwrap();
             let textures_to_upload = inner.textures.iter_mut()
                 .filter(|(_, tex)| tex.cached_image_view.is_none())
-                .collect::<Vec<_>>();
+                .collect_vec();
             if textures_to_upload.is_empty() {
                 return Ok(None);
             }

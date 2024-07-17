@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 #[derive(Copy, Clone)]
 pub struct Colour {
     pub r: f64,

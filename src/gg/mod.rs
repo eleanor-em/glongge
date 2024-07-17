@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 pub mod coroutine;
 pub mod render;
 pub mod scene;
@@ -18,14 +21,9 @@ use std::{any::{Any, TypeId}, cell::{
 }, time::{Duration, Instant}};
 use std::fmt::Formatter;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use itertools::Itertools;
 use num_traits::Zero;
 
-use anyhow::{anyhow, Result};
-use tracing::info;
-
 use crate::{
-    assert::*,
     core::{
         collision::Collider,
         colour::Colour,
@@ -119,7 +117,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
         None
     }
     fn collider(&self) -> Box<dyn Collider> { Box::new(NullCollider) }
-    fn collision_tags(&self) -> Vec<&'static str> { [].into() }
+    fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }
 
@@ -183,6 +181,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
     pub fn collider(&self) -> Box<dyn Collider> { self.inner.borrow().collider() }
+    pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
+    pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }
 
 pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
@@ -223,7 +223,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 
     pub fn add_coroutine<F>(&mut self, func: F) -> CoroutineId
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
     {
         let id = CoroutineId::next();
         self.coroutines.insert(id, Coroutine::new(func));
@@ -231,12 +231,12 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     }
     pub fn add_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
     {
-        self.add_coroutine(move |this, action| {
+        self.add_coroutine(move |this, update_ctx, action| {
             match action {
                 CoroutineAction::Starting => CoroutineResponse::Wait(duration),
-                _ => func(this, action)
+                _ => func(this, update_ctx, action)
             }
         })
     }
@@ -246,12 +246,12 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 
     pub fn test_collision(&self,
                           collider: &dyn Collider,
-                          tags: Vec<&'static str>
+                          listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
-        for tag in tags.into_iter().filter(|tag| self.collision_handler.object_ids_by_tag.keys().contains(tag)) {
-            for id in self.collision_handler.object_ids_by_tag.get(tag).unwrap() {
-                if let Some(other) = self.other_map.get(id) {
+        for tag in listening_tags {
+            for other_id in self.collision_handler.object_ids_by_emitting_tag.get(tag).unwrap() {
+                if let Some(other) = self.other_map.get(other_id) {
                     if let Some(mtv) = collider.collides_with(other.collider().as_ref()) {
                         rv.push(Collision {
                             other: other.clone(),
@@ -346,13 +346,13 @@ impl UpdatePerfStats {
 pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
-    render_info: BTreeMap<ObjectId, RenderInfoFull>,
+    render_infos: BTreeMap<ObjectId, RenderInfoFull>,
+    coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
     viewport: AdjustedViewport,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_info_receiver: Arc<Mutex<RenderReceiver>>,
     collision_handler: CollisionHandler,
-    coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     perf_stats: UpdatePerfStats,
@@ -368,8 +368,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         scene_instruction_rx: Receiver<SceneInstruction>,
     ) -> Result<Self> {
         let mut objects = objects.into_iter()
-            .enumerate()
-            .map(|(i, obj)| (ObjectId(i), obj))
+            .map(|obj| (ObjectId::next(), obj))
             .collect::<BTreeMap<_, _>>();
         let collision_handler = CollisionHandler::new(&objects);
         let mut vertices = BTreeMap::new();
@@ -403,7 +402,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut rv = Self {
             objects,
             vertices,
-            render_info,
+            render_infos: render_info,
             viewport,
             input_handler,
             resource_handler,
@@ -438,7 +437,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     self.call_on_update(delta, input_handler, should_do_fixed_update);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
-                self.update_with_remove_objects(pending_remove_objects);
+                self.update_with_removed_objects(pending_remove_objects);
                 self.update_with_added_objects(pending_add_objects)?;
                 self.update_render_info(did_update_vertices)?;
                 self.input_handler.lock().unwrap().update_step();
@@ -457,25 +456,37 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         }
     }
 
-    fn update_with_remove_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
+    fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.perf_stats.remove_objects.start();
-        self.collision_handler.update_with_remove_objects(&pending_remove_objects);
+        self.collision_handler.update_with_removed_objects(&pending_remove_objects);
         for remove_index in pending_remove_objects.into_iter().rev() {
-            match self.render_info.remove(&remove_index) {
+            match self.render_infos.remove(&remove_index) {
                 Some(_) => {
                     // This is technically quadratic, but is fast enough.
                     check!(self.vertices.contains_key(&remove_index));
                     let vertices_removed = self.vertices[&remove_index].1.len();
-                    for (_, (count, _)) in self.vertices.iter_mut().filter(|(&i, _)| i >= remove_index) {
+                    self.vertices.remove(&remove_index);
+                    let indices = self.vertices.keys()
+                        .copied()
+                        .filter(|&i| i > remove_index)
+                        .collect_vec();
+                    for i in indices {
+                        let count = &mut self.vertices.get_mut(&i)
+                            .unwrap_or_else(|| panic!("missing ObjectId in self.vertices: {:?}", i))
+                            .0;
+                        *count = (count.start - vertices_removed)..(count.end - vertices_removed);
+                        let count = &mut self.render_infos.get_mut(&i)
+                            .unwrap_or_else(|| panic!("missing ObjectId in self.render_infos: {:?}", i))
+                            .vertex_indices;
                         *count = (count.start - vertices_removed)..(count.end - vertices_removed);
                     }
-                    self.vertices.remove(&remove_index);
                 }
                 None => {
                     check_false!(self.vertices.contains_key(&remove_index));
                 }
             }
             self.objects.remove(&remove_index);
+            self.coroutines.remove(&remove_index);
         }
         self.perf_stats.remove_objects.stop();
     }
@@ -483,15 +494,16 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.add_objects.start();
         if !pending_add_objects.is_empty() {
             // TODO: leak new_id as 'static?
-            let first_new_id = ObjectId::next();
             let pending_add_objects = pending_add_objects.into_iter()
-                .enumerate()
-                .map(|(i, obj)| (first_new_id + i, obj))
+                .map(|obj| (ObjectId::next(), obj))
                 .collect::<BTreeMap<ObjectId, _>>();
+            let first_new_id = *pending_add_objects.first_key_value()
+                .expect("pending_add_objects empty?")
+                .0;
             let last_new_id = *pending_add_objects.last_key_value()
                 .expect("pending_add_objects empty?")
                 .0;
-            self.collision_handler.update_with_add_objects(&pending_add_objects);
+            self.collision_handler.update_with_added_objects(&pending_add_objects);
 
             let mut next_vertex_index = self.vertices.last_key_value()
                 .map(|(_, (indices, _))| indices.end)
@@ -503,7 +515,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
                     next_vertex_index += new_vertices.len();
                     self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
-                    self.render_info.insert(new_id, RenderInfoFull {
+                    self.render_infos.insert(new_id, RenderInfoFull {
                         inner: obj.render_info(),
                         transform: obj.transform(),
                         vertex_indices,
@@ -545,11 +557,31 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             };
             let coroutines = self.coroutines.remove(id).unwrap_or_default();
             let new_coroutines = self.coroutines.entry(*id).or_default();
-            for (id, coroutine) in coroutines {
-                if let Some(coroutine) = coroutine.resume(this.clone()) {
-                    new_coroutines.insert(id, coroutine);
+            other_map.remove(id);
+            {
+                let mut update_ctx = UpdateContext {
+                    input_handler: &input_handler,
+                    collision_handler: &self.collision_handler,
+                    scene_instruction_tx: self.scene_instruction_tx.clone(),
+                    coroutines: &mut BTreeMap::new(),
+                    this: this.clone(),
+                    other_map: &mut other_map,
+                    pending_add_objects: &mut pending_add_objects,
+                    pending_remove_objects: &mut pending_remove_objects,
+                    viewport: self.viewport.clone(),
+                };
+                for (id, coroutine) in coroutines {
+                    if let Some(coroutine) = coroutine.resume(this.clone(), &mut update_ctx) {
+                        new_coroutines.insert(id, coroutine);
+                    }
                 }
+                // Cannot start coroutine within coroutine.
+                check!(update_ctx.coroutines.is_empty());
             }
+            other_map.insert(
+                *id,
+                this,
+            );
         }
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
@@ -625,7 +657,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.render_info.start();
         for object_id in self.objects.keys() {
             if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
-                let render_info = self.render_info.get_mut(object_id)
+                let render_info = self.render_infos.get_mut(object_id)
                     .ok_or(anyhow!("missing object_id in render_info: {:?}", object_id))?;
                 render_info.inner = obj.render_info();
                 render_info.transform = obj.transform();
@@ -638,7 +670,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 .flat_map(|(_, values)| values)
                 .collect());
         }
-        render_info_receiver.update_render_info(self.render_info.values().cloned().collect());
+        render_info_receiver.update_render_info(self.render_infos.values().cloned().collect());
         self.viewport = render_info_receiver.current_viewport();
         self.perf_stats.render_info.stop();
         Ok(())
@@ -664,7 +696,7 @@ struct CollisionNotification<ObjectType: ObjectTypeEnum> {
 }
 
 struct CollisionHandler {
-    object_ids_by_tag: BTreeMap<&'static str, BTreeSet<ObjectId>>,
+    object_ids_by_emitting_tag: BTreeMap<&'static str, BTreeSet<ObjectId>>,
     object_ids_by_listening_tag: BTreeMap<&'static str, BTreeSet<ObjectId>>,
     possible_collisions: BTreeSet<UnorderedPair<ObjectId>>,
 }
@@ -674,32 +706,37 @@ impl CollisionHandler {
         objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>)
     -> Self {
         let mut rv = Self {
-            object_ids_by_tag: BTreeMap::new(),
+            object_ids_by_emitting_tag: BTreeMap::new(),
             object_ids_by_listening_tag: BTreeMap::new(),
             possible_collisions: BTreeSet::new()
         };
-        rv.update_with_add_objects(objects);
+        rv.update_with_added_objects(objects);
         rv
     }
-    pub fn update_with_add_objects<ObjectType: ObjectTypeEnum>(&mut self, objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>) {
-        let mut new_object_ids_by_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
+    pub fn update_with_added_objects<ObjectType: ObjectTypeEnum>(&mut self, added_objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>) {
+        let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
-        for (id, obj) in objects.iter() {
-            for tag in obj.collision_tags() {
-                new_object_ids_by_tag.entry(tag).or_default().push(*id);
+
+        for (id, obj) in added_objects.iter() {
+            for tag in obj.emitting_tags() {
+                new_object_ids_by_emitting_tag.entry(tag).or_default().push(*id);
+                new_object_ids_by_listening_tag.entry(tag).or_default();
             }
             for tag in obj.listening_tags() {
+                new_object_ids_by_emitting_tag.entry(tag).or_default();
                 new_object_ids_by_listening_tag.entry(tag).or_default().push(*id);
             }
         }
-        let all_tags = new_object_ids_by_tag.keys().chain(new_object_ids_by_listening_tag.keys());
-        for tag in all_tags {
-            self.object_ids_by_tag.entry(tag).or_default().extend(
-                new_object_ids_by_tag.get(tag).unwrap_or(&Vec::new()));
-            self.object_ids_by_listening_tag.entry(tag).or_default().extend(
-                new_object_ids_by_listening_tag.get(tag).unwrap_or(&Vec::new()));
+        for tag in new_object_ids_by_emitting_tag.keys() {
+            self.object_ids_by_emitting_tag.entry(tag).or_default().extend(
+                new_object_ids_by_emitting_tag.get(tag).unwrap());
         }
-        for (tag, emitters) in new_object_ids_by_tag {
+        for tag in new_object_ids_by_listening_tag.keys() {
+            self.object_ids_by_listening_tag.entry(tag).or_default().extend(
+                new_object_ids_by_listening_tag.get(tag).unwrap());
+        }
+
+        for (tag, emitters) in new_object_ids_by_emitting_tag {
             let listeners = self.object_ids_by_listening_tag.get(tag)
                 .unwrap_or_else(|| panic!("object_ids_by_listening tag missing tag: {}", tag));
             let new_possible_collisions = emitters.into_iter().cartesian_product(listeners.iter())
@@ -707,15 +744,15 @@ impl CollisionHandler {
             self.possible_collisions.extend(new_possible_collisions);
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
-            let emitters = self.object_ids_by_tag.get(tag)
+            let emitters = self.object_ids_by_emitting_tag.get(tag)
                 .unwrap_or_else(|| panic!("object_ids_by_tag tag missing tag: {}", tag));
             let new_possible_collisions = emitters.iter().cartesian_product(listeners.into_iter())
                 .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(*emitter, listener));
             self.possible_collisions.extend(new_possible_collisions);
         }
     }
-    pub fn update_with_remove_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
-        for (_, ids) in self.object_ids_by_tag.iter_mut() {
+    pub fn update_with_removed_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
+        for (_, ids) in self.object_ids_by_emitting_tag.iter_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
         for (_, ids) in self.object_ids_by_listening_tag.iter_mut() {
@@ -742,15 +779,26 @@ impl CollisionHandler {
                     object_id: ids.snd(),
                     inner: objects[&ids.snd()].clone(),
                 };
-                vec![CollisionNotification {
-                    this: this.clone(),
-                    other: other.clone(),
-                    mtv,
-                }, CollisionNotification {
-                    this: other,
-                    other: this,
-                    mtv: -mtv,
-                }]
+                let mut rv = Vec::new();
+                if this.listening_tags().into_iter().collect::<BTreeSet<_>>()
+                        .intersection(&other.emitting_tags().into_iter().collect::<BTreeSet<_>>())
+                        .next().is_some() {
+                    rv.push(CollisionNotification {
+                        this: this.clone(),
+                        other: other.clone(),
+                        mtv,
+                    });
+                };
+                if other.listening_tags().into_iter().collect::<BTreeSet<_>>()
+                        .intersection(&this.emitting_tags().into_iter().collect::<BTreeSet<_>>())
+                        .next().is_some() {
+                    rv.push(CollisionNotification {
+                        this: other,
+                        other: this,
+                        mtv: -mtv,
+                    });
+                }
+                rv
             })
             .collect()
     }

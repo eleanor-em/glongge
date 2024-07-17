@@ -1,10 +1,11 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     cmp,
     hash::Hash,
     time::Instant,
 };
-
-use tracing::info;
 
 pub struct TimeIt {
     tag: String,
@@ -184,7 +185,7 @@ impl<T: Clone> NonemptyVec<T> {
     where
         I: Iterator<Item=T>
     {
-        Self::try_from_vec(iter.collect::<Vec<_>>())
+        Self::try_from_vec(iter.collect_vec())
     }
 }
 

@@ -1,10 +1,10 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     default::Default,
     sync::{Arc, Mutex, MutexGuard}
 };
-
-use anyhow::{Context, Result};
-use tracing::warn;
 
 use vulkano::{
     Validated,
@@ -50,7 +50,6 @@ use vulkano::{
 use winit::window::Window;
 
 use crate::{
-    assert::check_le,
     core::{
         vk_core::{
             AdjustedViewport,
@@ -418,7 +417,7 @@ impl BasicRenderHandler {
                 let mut textures = self.resource_handler.texture.values()
                     .into_iter()
                     .filter_map(|tex| tex.image_view())
-                    .collect::<Vec<_>>();
+                    .collect_vec();
                 check_le!(textures.len(), MAX_TEXTURE_COUNT);
                 let blank = textures.first()
                     .expect("textures.first() should always contain a blank texture")

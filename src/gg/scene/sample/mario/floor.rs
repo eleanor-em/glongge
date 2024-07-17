@@ -1,6 +1,8 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::any::Any;
 use std::time::Duration;
-use anyhow::Result;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::collision::{BoxCollider, Collider};
 use crate::core::linalg::{SquareExtent, Vec2, Vec2Int};
@@ -46,7 +48,7 @@ impl SceneObject<ObjectType> for Floor {
     fn collider(&self) -> Box<dyn Collider> {
         Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
+    fn emitting_tags(&self) -> Vec<&'static str> {
         [BRICK_COLLISION_TAG].into()
     }
 }

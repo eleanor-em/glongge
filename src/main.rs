@@ -2,12 +2,13 @@
 #![feature(arbitrary_self_types)]
 #![feature(mapped_lock_guards)]
 #![feature(const_fn_floating_point_arithmetic)]
+
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use num_traits::{Float, One};
 
-use anyhow::Result;
-
 use crate::{
-    assert::*,
     core::{
         input::InputHandler,
         linalg::{Mat3x3, Vec2},

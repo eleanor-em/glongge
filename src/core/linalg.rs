@@ -1,10 +1,13 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     fmt,
     fmt::Formatter,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign}
 };
 use std::ops::Range;
-use itertools::{Itertools, Product};
+use itertools::Product;
 use num_traits::{float::Float, One, Zero};
 
 #[derive(Default, Debug, Eq, PartialEq, Copy, Clone, Hash)]

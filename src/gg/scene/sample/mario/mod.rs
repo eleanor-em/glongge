@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::sync::{Arc, Mutex};
 use glongge_derive::register_object_type;
 use crate::{

@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     any::Any,
     time::{
@@ -26,8 +29,9 @@ use crate::{
 };
 use crate::core::linalg::SquareExtent;
 use crate::gg::coroutine::{CoroutineId, CoroutineResponse};
-use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG};
+use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG};
 use crate::gg::{CollisionResponse, SceneObjectWithId};
+use crate::gg::scene::sample::mario::goomba::Goomba;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -36,6 +40,7 @@ enum PlayerState {
     Running,
     Skidding,
     Falling,
+    Dying,
 }
 
 impl Default for PlayerState {
@@ -62,6 +67,8 @@ pub struct Player {
     v_speed: f64,
     v_accel: f64,
 
+    hold_jump: bool,
+
     speed_regime: SpeedRegime,
     state: PlayerState,
     last_ground_state: PlayerState,
@@ -74,6 +81,7 @@ pub struct Player {
     idle_sprite: Sprite,
     skid_sprite: Sprite,
     fall_sprite: Sprite,
+    die_sprite: Sprite,
 }
 
 impl Player {
@@ -116,6 +124,7 @@ impl Player {
             PlayerState::Running => &self.run_sprite,
             PlayerState::Skidding => &self.skid_sprite,
             PlayerState::Falling => &self.fall_sprite,
+            PlayerState::Dying => &self.die_sprite,
         }
     }
 
@@ -151,7 +160,7 @@ impl Player {
                 .map(|id| update_ctx.cancel_coroutine(id));
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                update_ctx.add_coroutine_after(|mut this, _action| {
+                update_ctx.add_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if this.state == PlayerState::Running {
                         this.state = PlayerState::Walking;
@@ -180,7 +189,7 @@ impl Player {
         }
     }
 
-    fn update_as_falling(&mut self, new_dir: Vec2, hold_jump: bool) {
+    fn update_as_falling(&mut self, new_dir: Vec2) {
         self.speed = self.speed.min(match self.last_ground_state {
             PlayerState::Running => Self::MAX_RUN_SPEED,
             _ => Self::MAX_WALK_SPEED,
@@ -199,7 +208,7 @@ impl Player {
                 self.accel = -from_nes(0, 0, 13, 0);
             }
         }
-        if hold_jump && self.v_speed < 0. {
+        if self.hold_jump && self.v_speed < 0. {
             self.v_accel = self.hold_gravity();
         } else {
             self.v_accel = self.gravity();
@@ -224,7 +233,7 @@ impl Player {
         let ray = self.collider().translated(2 * Vec2::down());
         if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                update_ctx.add_coroutine_after(|mut this, _action| {
+                update_ctx.add_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     this.state = PlayerState::Falling;
                     this.coyote_crt = None;
@@ -239,7 +248,7 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> anyhow::Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single(
             texture_id,
@@ -270,6 +279,11 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
         );
+        self.die_sprite = Sprite::from_single(
+            texture_id,
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 116, y: 8 },
+        );
         Ok(())
     }
     fn on_ready(&mut self) {
@@ -282,6 +296,11 @@ impl SceneObject<ObjectType> for Player {
         self.v_accel = 0.;
     }
     fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+        if self.state == PlayerState::Dying {
+            self.speed = 0.;
+            self.v_accel = BASE_GRAVITY;
+            return;
+        }
         let new_dir = if update_ctx.input().down(KeyCode::Left) && !update_ctx.input().down(KeyCode::Right) {
             Vec2::left()
         } else if !update_ctx.input().down(KeyCode::Left) && update_ctx.input().down(KeyCode::Right) {
@@ -290,7 +309,7 @@ impl SceneObject<ObjectType> for Player {
             Vec2::zero()
         };
         let hold_run = update_ctx.input().down(KeyCode::X);
-        let hold_jump = update_ctx.input().down(KeyCode::Z);
+        self.hold_jump = update_ctx.input().down(KeyCode::Z);
 
         if self.state != PlayerState::Falling {
             self.last_ground_state = self.state;
@@ -301,7 +320,8 @@ impl SceneObject<ObjectType> for Player {
             PlayerState::Walking => self.update_as_walking(&mut update_ctx, new_dir, hold_run),
             PlayerState::Running => self.update_as_running(&mut update_ctx, new_dir, hold_run),
             PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
-            PlayerState::Falling => self.update_as_falling(new_dir, hold_jump),
+            PlayerState::Falling => self.update_as_falling(new_dir),
+            PlayerState::Dying => unreachable!(),
         }
 
         if !self.dir.is_zero() {
@@ -312,6 +332,11 @@ impl SceneObject<ObjectType> for Player {
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
+
+        if self.state == PlayerState::Dying {
+            self.centre += self.v_speed * Vec2::down();
+            return;
+        }
 
         let v_ray = self.collider().translated(self.v_speed * Vec2::down());
         match update_ctx.test_collision_along(v_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::down()) {
@@ -348,8 +373,22 @@ impl SceneObject<ObjectType> for Player {
         }
     }
 
-    fn on_collision(&mut self, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
-        self.centre += mtv;
+    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+        if self.state == PlayerState::Dying {
+            return CollisionResponse::Done;
+        }
+        if let Some(mut other) = other.downcast_mut::<Goomba>() {
+            if self.centre.y + self.current_sprite().half_widths().y <= other.transform().centre.y {
+                other.die();
+                self.v_speed = self.initial_vspeed();
+                self.state = PlayerState::Falling;
+            } else if !other.dead() {
+                self.state = PlayerState::Dying;
+                self.v_speed = -from_nes(13, 0, 0, 0);
+            }
+        } else {
+            self.centre += mtv;
+        }
         CollisionResponse::Done
     }
 
@@ -369,11 +408,11 @@ impl SceneObject<ObjectType> for Player {
     fn collider(&self) -> Box<dyn Collider> {
         Box::new(BoxCollider::from_centre(self.centre, self.current_sprite().half_widths()))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
+    fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
-        [BRICK_COLLISION_TAG].into()
+        [BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG].into()
     }
 }
 

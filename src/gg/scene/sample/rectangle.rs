@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::{
     any::Any,
     sync::{Arc, Mutex},
@@ -8,8 +11,6 @@ use std::{
 };
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
-
-use anyhow::Result;
 
 use glongge_derive::*;
 use crate::{
@@ -147,7 +148,7 @@ impl SceneObject<ObjectType> for Player {
     fn collider(&self) -> Box<dyn Collider> {
         Box::new(BoxCollider::square(self.transform(), Self::SIZE))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
+    fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
 }
@@ -263,7 +264,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn collider(&self) -> Box<dyn Collider> {
         Box::new(BoxCollider::square(self.transform(), Self::SIZE))
     }
-    fn collision_tags(&self) -> Vec<&'static str> {
+    fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {

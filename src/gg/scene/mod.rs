@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 pub mod sample;
 
 use std::sync::{
@@ -6,7 +9,6 @@ use std::sync::{
     Arc, Mutex,
 };
 use crate::{
-    assert::*,
     core::{
         input::InputHandler,
         vk_core::RenderEventHandler,

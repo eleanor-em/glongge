@@ -1,6 +1,9 @@
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
 use std::time::Instant;
 use num_traits::Zero;
-use crate::{assert::*, core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
+use crate::{core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
 use crate::core::linalg::{SquareExtent, Vec2};
 use crate::gg::VertexWithUV;
 
@@ -52,7 +55,7 @@ impl Sprite {
                     + tile_y * (tile_size + margin).y * Vec2Int::down();
                 TextureSubArea::new(top_left + tile_size / 2, tile_size / 2)
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
         let frame_time_ms = vec![1000; areas.len()];
         Self {
             texture_id, areas, frame_time_ms,

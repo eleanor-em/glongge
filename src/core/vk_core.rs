@@ -1,7 +1,7 @@
-use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+#[allow(unused_imports)]
+use crate::core::prelude::*;
 
-use anyhow::{Context, Result};
-use tracing::{error, info, warn};
+use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
 
 use vulkano::{
     command_buffer::{
@@ -51,7 +51,6 @@ use winit::{
 };
 
 use crate::{
-    assert::*,
     core::{
         input::InputHandler,
         linalg::Vec2,
@@ -426,8 +425,7 @@ fn any_graphical_queue_family(
     let queue_family_index = physical_device
         .queue_family_properties()
         .iter()
-        .enumerate()
-        .position(|(_queue_family_index, queue_family_properties)| {
+        .position(|queue_family_properties| {
             queue_family_properties
                 .queue_flags
                 .contains(QueueFlags::GRAPHICS)
