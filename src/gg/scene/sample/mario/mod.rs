@@ -27,15 +27,25 @@ pub fn create_scene(
     input_handler: Arc<Mutex<InputHandler>>
 ) -> Scene<ObjectType, BasicRenderHandler> {
     let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = Vec::new();
-    for (tile_x, tile_y) in Vec2Int::range_from_zero([64, 2].into()) {
+    // left wall
+    for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {
         initial_objects.push(Brick::new(Vec2Int {
             x: tile_x * 16,
+            y: tile_y * 16,
+        }));
+    }
+    // floor
+    for (tile_x, tile_y) in Vec2Int::range_from_zero([31, 2].into()) {
+        initial_objects.push(Brick::new(Vec2Int {
+            x: (tile_x + 1) * 16,
             y: 384 - (tile_y + 1) * 16
         }));
     }
     initial_objects.push(Player::new());
-    initial_objects.push(Brick::new(Vec2Int { x: 3 * 16, y: 384 - 5 * 16 }));
+    initial_objects.push(Brick::new(Vec2Int { x: 3 * 16, y: 384 - 6 * 16 }));
     initial_objects.push(Brick::new(Vec2Int { x: 4 * 16, y: 384 - 5 * 16 }));
+    initial_objects.push(Brick::new(Vec2Int { x: 5 * 16, y: 384 - 5 * 16 }));
+    initial_objects.push(Brick::new(Vec2Int { x: 6 * 16, y: 384 - 5 * 16 }));
 
     Scene::new(
         initial_objects,

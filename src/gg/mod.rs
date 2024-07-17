@@ -216,7 +216,10 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         self.pending_remove_objects.insert(self.object_id);
     }
 
-    pub fn test_collision(&self, collider: &dyn Collider, tags: Vec<&'static str>) -> Option<NonemptyVec<Collision<ObjectType>>> {
+    pub fn test_collision(&self,
+                          collider: &dyn Collider,
+                          tags: Vec<&'static str>
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
         for tag in tags.into_iter().filter(|tag| self.collision_handler.object_ids_by_tag.keys().contains(tag)) {
             for id in self.collision_handler.object_ids_by_tag.get(tag).unwrap() {
@@ -230,7 +233,19 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 }
             }
         }
-        NonemptyVec::from_vec(rv)
+        NonemptyVec::try_from_vec(rv)
+    }
+    pub fn test_collision_along(&self,
+                                collider: &dyn Collider,
+                                tags: Vec<&'static str>,
+                                axis: Vec2
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.test_collision(collider, tags)
+            .and_then(|vec| {
+                NonemptyVec::try_from_iter(vec
+                    .into_iter()
+                    .filter(|coll| !coll.mtv.dot(axis).is_zero()))
+            })
     }
 
     pub fn scene_stop(&self) {

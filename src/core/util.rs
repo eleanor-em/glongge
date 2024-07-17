@@ -168,11 +168,26 @@ impl<T: Clone> NonemptyVec<T> {
     pub fn first(&self) -> &T { unsafe { self.inner.first().unwrap_unchecked() } }
     pub fn into_inner(self) -> Vec<T> { self.inner }
 
-    pub fn from_vec(vec: Vec<T>) -> Option<Self> {
+    pub fn try_from_vec(vec: Vec<T>) -> Option<Self> {
         if vec.is_empty() {
             None
         } else {
             Some(Self { inner: vec })
         }
+    }
+    pub fn try_from_iter<I>(iter: I) -> Option<Self>
+    where
+        I: Iterator<Item=T>
+    {
+        Self::try_from_vec(iter.collect::<Vec<_>>())
+    }
+}
+
+impl<T: Clone> IntoIterator for NonemptyVec<T> {
+    type Item = T;
+    type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_inner().into_iter()
     }
 }

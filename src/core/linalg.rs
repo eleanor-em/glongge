@@ -678,6 +678,7 @@ impl Rect {
     pub fn new(centre: Vec2, half_widths: Vec2) -> Self {
         Self { centre, half_widths }
     }
+    pub fn empty() -> Self { Self { centre: Vec2::zero(), half_widths: Vec2::zero() } }
 }
 
 impl SquareExtent for Rect {

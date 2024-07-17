@@ -213,11 +213,10 @@ impl Player {
                     ..from_nes(2, 5, 0, 0)).contains(&x) => SpeedRegime::Medium,
                 _ => SpeedRegime::Fast,
             };
-        }
-
-        if self.state != PlayerState::Falling && update_ctx.input().pressed(KeyCode::Z) {
-            self.state = PlayerState::Falling;
-            self.v_speed = self.initial_vspeed();
+            if update_ctx.input().pressed(KeyCode::Z) {
+                self.state = PlayerState::Falling;
+                self.v_speed = self.initial_vspeed();
+            }
         }
 
         let ray = self.collider().translated(Vec2::down());
@@ -299,10 +298,9 @@ impl SceneObject<ObjectType> for Player {
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
 
         let v_ray = self.collider().translated(self.v_speed * Vec2::down());
-        match update_ctx.test_collision(v_ray.as_ref(), vec![BRICK_COLLISION_TAG]) {
+        match update_ctx.test_collision_along(v_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::down()) {
             Some(collisions) => {
-                let coll = collisions.first();
-                self.centre += self.v_speed * Vec2::down() + coll.mtv;
+                self.centre += self.v_speed * Vec2::down() + collisions.first().mtv;
                 self.v_speed = 0.;
                 self.state = self.last_ground_state;
             }
@@ -310,11 +308,10 @@ impl SceneObject<ObjectType> for Player {
         }
 
         let h_ray = self.collider().translated(self.speed * self.dir);
-        match update_ctx.test_collision(h_ray.as_ref(), vec![BRICK_COLLISION_TAG]) {
+        match update_ctx.test_collision_along(h_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::right()) {
             Some(collisions) => {
-                let coll = collisions.first();
-                self.centre += self.speed * self.dir + coll.mtv;
-                self.speed = 0.;
+                self.centre += self.speed * self.dir + collisions.first().mtv;
+                self.speed *= 0.9;
             }
             None => self.centre += self.speed * self.dir,
         }
