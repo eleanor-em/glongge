@@ -124,8 +124,8 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
     });
     if !has_new {
         item_impl.items.push(syn::parse_quote! {
-            fn new() -> Self where Self: Sized {
-                Self::default()
+            fn new() -> Box<Self> where Self: Sized {
+                Box::new(Self::default())
             }
         });
     }

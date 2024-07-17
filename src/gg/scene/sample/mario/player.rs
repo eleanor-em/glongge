@@ -257,7 +257,7 @@ impl SceneObject<ObjectType> for Player {
         Ok(())
     }
     fn on_ready(&mut self) {
-        self.centre = Vec2 { x: 512., y: 650. };
+        self.centre = Vec2 { x: 200., y: 300. };
         self.last_nonzero_dir = Vec2::right();
     }
 

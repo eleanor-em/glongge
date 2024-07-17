@@ -96,6 +96,7 @@ impl WindowContext {
                 depth_range: 0.0..=1.,
             },
             scale_factor: self.window.scale_factor(),
+            global_scale_factor: 1.,
         }
     }
 }
@@ -104,12 +105,16 @@ impl WindowContext {
 pub struct AdjustedViewport {
     inner: Viewport,
     scale_factor: f64,
+    global_scale_factor: f64,
 }
 
 impl AdjustedViewport {
+    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+        self.global_scale_factor = global_scale_factor;
+    }
     pub fn update_from_window(&mut self, window: Arc<Window>) {
         self.inner.extent = window.inner_size().into();
-        self.scale_factor = window.scale_factor();
+        self.scale_factor = window.scale_factor() * self.global_scale_factor;
     }
 
     pub fn physical_width(&self) -> f32 { self.inner.extent[0] }

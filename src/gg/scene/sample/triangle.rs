@@ -8,7 +8,7 @@ use rand::{
     distributions::{Distribution, Uniform},
     Rng
 };
-use glongge_derive::register_object_type;
+use glongge_derive::{partially_derive_scene_object, register_object_type};
 
 use crate::{
     core::{
@@ -45,18 +45,8 @@ pub enum ObjectType {
 #[derive(Default)]
 struct Spawner {}
 
+#[partially_derive_scene_object]
 impl gg::SceneObject<ObjectType> for Spawner {
-    fn get_type(&self) -> ObjectType { ObjectType::Spawner }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
-    fn new() -> Self
-    where
-        Self: Sized
-    {
-        Self {}
-    }
-
     fn on_ready(&mut self) {}
 
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
@@ -126,21 +116,8 @@ impl SpinningTriangle {
 
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
+#[partially_derive_scene_object]
 impl gg::SceneObject<ObjectType> for SpinningTriangle {
-    fn get_type(&self) -> ObjectType { ObjectType::SpinningTriangle }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-
-    fn new() -> Self
-    where
-        Self: Sized
-    {
-        Self {
-            alive_since: Instant::now(),
-            ..Default::default()
-        }
-    }
-
     fn on_ready(&mut self) {}
     fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();

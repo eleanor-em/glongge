@@ -92,7 +92,7 @@ pub trait SceneObject<ObjectType>: Send {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn new() -> Self where Self: Sized;
+    fn new() -> Box<Self> where Self: Sized;
 
     #[allow(unused_variables)]
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }

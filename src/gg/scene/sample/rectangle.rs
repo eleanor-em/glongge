@@ -47,8 +47,8 @@ pub fn create_scene(
 ) -> Scene<ObjectType, BasicRenderHandler> {
     Scene::new(
         vec![
-            Box::new(Spawner {}),
-            Box::new(Player::new()),
+            Spawner::new(),
+            Player::new(),
         ],
         input_handler,
         resource_handler,

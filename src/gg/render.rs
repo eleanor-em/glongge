@@ -147,6 +147,7 @@ pub struct BasicRenderHandler {
     uniform_buffer_sets: Option<DataPerImage<Arc<PersistentDescriptorSet>>>,
     command_buffers: Option<DataPerImage<Arc<PrimaryAutoCommandBuffer>>>,
     render_info_receiver: Arc<Mutex<BasicRenderInfoReceiver>>,
+    global_scale_factor: f64,
 }
 
 impl BasicRenderHandler {
@@ -168,7 +169,13 @@ impl BasicRenderHandler {
             uniform_buffer_sets: None,
             command_buffers: None,
             render_info_receiver,
+            global_scale_factor: 1.,
         })
+    }
+
+    pub fn with_global_scale_factor(mut self, global_scale_factor: f64) -> Self {
+        self.viewport.set_global_scale_factor(global_scale_factor);
+        self
     }
 
     fn maybe_create_vertex_buffers(&mut self,
@@ -251,7 +258,7 @@ impl BasicRenderHandler {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
                     texture_id: texture_id.into(),
-                    translation: render_info.transform.centre.into(),
+                    translation: (render_info.transform.centre * self.global_scale_factor).into(),
                     rotation: render_info.transform.rotation as f32,
                     scale: render_info.transform.scale.into(),
                     blend_col: blend_col.into(),

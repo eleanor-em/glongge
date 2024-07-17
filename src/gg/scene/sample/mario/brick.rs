@@ -11,12 +11,14 @@ use crate::resource::sprite::Sprite;
 
 #[register_scene_object]
 pub struct Brick {
-    centre: Vec2,
+    top_left: Vec2,
     sprite: Sprite,
 }
 
 impl Brick {
-    pub fn new(centre: Vec2) -> Self { Self { centre, sprite: Sprite::default() } }
+    pub fn new(top_left: Vec2Int) -> Box<Self> {
+        Box::new(Self { top_left: top_left.into(), sprite: Sprite::default() })
+    }
 }
 
 #[partially_derive_scene_object]
@@ -34,7 +36,7 @@ impl SceneObject<ObjectType> for Brick {
     fn on_update(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {}
     fn transform(&self) -> Transform {
         Transform {
-            centre: self.centre,
+            centre: self.top_left + self.sprite.half_widths(),
             ..Default::default()
         }
     }
