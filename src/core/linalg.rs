@@ -215,6 +215,7 @@ impl Vec2 {
     pub fn reflect(&self, normal: Vec2) -> Vec2 {
         *self - 2. * self.dot(normal) * normal
     }
+    pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
         (*self - rhs).len() < f32::epsilon() as f64

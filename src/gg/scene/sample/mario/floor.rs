@@ -10,19 +10,19 @@ use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 
 #[register_scene_object]
-pub struct Brick {
+pub struct Floor {
     top_left: Vec2,
     sprite: Sprite,
 }
 
-impl Brick {
+impl Floor {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self { top_left: top_left.into(), sprite: Sprite::default() })
     }
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Brick {
+impl SceneObject<ObjectType> for Floor {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single(
@@ -51,7 +51,7 @@ impl SceneObject<ObjectType> for Brick {
     }
 }
 
-impl RenderableObject<ObjectType> for Brick {
+impl RenderableObject<ObjectType> for Floor {
     fn create_vertices(&self) -> Vec<VertexWithUV> {
         self.sprite.create_vertices()
     }

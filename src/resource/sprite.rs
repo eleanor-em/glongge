@@ -9,7 +9,7 @@ pub struct Sprite {
     areas: Vec<TextureSubArea>,
     started: Instant,
     paused: Option<Instant>,
-    ms_per_frame: u32,
+    frame_time_ms: Vec<u32>,
 }
 
 impl Default for Sprite {
@@ -19,7 +19,7 @@ impl Default for Sprite {
             areas: vec![],
             started: Instant::now(),
             paused: None,
-            ms_per_frame: 0,
+            frame_time_ms: vec![],
         }
     }
 }
@@ -35,31 +35,43 @@ impl Sprite {
             Vec2Int::one(),
             extent,
             top_left,
-            Vec2Int::zero(),
-            1
+            Vec2Int::zero()
         )
     }
     pub fn from_tileset(
         texture_id: TextureId,
         tile_count: Vec2Int,
         tile_size: Vec2Int,
-        border: Vec2Int,
-        margin: Vec2Int,
-        ms_per_frame: u32
+        offset: Vec2Int,
+        margin: Vec2Int
     ) -> Self {
         let areas = Vec2Int::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
-                let top_left = border
+                let top_left = offset
                     + tile_x * (tile_size + margin).x * Vec2Int::right()
                     + tile_y * (tile_size + margin).y * Vec2Int::down();
                 TextureSubArea::new(top_left + tile_size / 2, tile_size / 2)
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let frame_time_ms = vec![1000; areas.len()];
         Self {
-            texture_id, areas, ms_per_frame,
+            texture_id, areas, frame_time_ms,
             started: Instant::now(),
             paused: None,
         }
+    }
+    pub fn with_fixed_ms_per_frame(mut self, ms: u32) -> Self {
+        self.frame_time_ms = vec![ms; self.areas.len()];
+        self
+    }
+    pub fn with_frame_time_ms(mut self, times: Vec<u32>) -> Self {
+        check_eq!(times.len(), self.areas.len());
+        self.frame_time_ms = times;
+        self
+    }
+    pub fn with_frame_orders(mut self, frames: Vec<usize>) -> Self {
+        self.areas = frames.into_iter().map(|i| self.areas[i]).collect();
+        self
     }
 
     pub fn ready(&self) -> bool { !self.areas.is_empty() }
@@ -78,8 +90,15 @@ impl Sprite {
             None => self.started,
             Some(_) => Instant::now(),
         };
-        let frames_elapsed = instant.elapsed().as_millis() / self.ms_per_frame as u128;
-        let frame_index = (frames_elapsed as usize) % self.areas.len();
+        let total_animation_time = self.frame_time_ms.iter().sum::<u32>() as u128;
+        let cycle_elapsed = instant.elapsed().as_millis() % total_animation_time;
+        let mut cum_sum = 0;
+        let frame_index = self.frame_time_ms.iter()
+            .filter(|&&t| {
+                cum_sum += t as u128;
+                cycle_elapsed >= cum_sum
+            })
+            .count();
         check_lt!(frame_index, self.areas.len());
         self.areas[frame_index]
     }

@@ -118,9 +118,8 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 0 },
-            Vec2Int { x: 2, y: 0 },
-            100
-        );
+            Vec2Int { x: 2, y: 0 }
+        ).with_fixed_ms_per_frame(100);
         Ok(())
     }
     fn on_ready(&mut self) {
@@ -209,9 +208,8 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             Vec2Int{ x: 2, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 0 },
-            Vec2Int { x: 2, y: 0 },
-           500
-        );
+            Vec2Int { x: 2, y: 0 }
+        ).with_fixed_ms_per_frame(500);
         Ok(())
     }
     fn on_ready(&mut self) {}
