@@ -1,3 +1,5 @@
+use std::any::Any;
+use std::fmt::Debug;
 use std::ops::{Neg, Range};
 use num_traits::{Float, Zero};
 use crate::{
@@ -8,27 +10,56 @@ use crate::{
     gg::Transform
 };
 
-pub trait Collider {
+pub trait Collider: Debug {
+    fn as_any(&self) -> &dyn Any;
+
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2>;
     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2>;
+
+    fn translated(&self, by: Vec2) -> Box<dyn Collider>;
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
+pub struct NullCollider;
+impl Collider for NullCollider {
+    fn as_any(&self) -> &dyn Any { self }
+
+    fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> { None }
+    fn collides_with(&self, _other: &dyn Collider) -> Option<Vec2> { None }
+
+    fn translated(&self, _by: Vec2) -> Box<dyn Collider> { Box::new(Self) }
+}
+
+#[derive(Debug, Clone)]
 pub struct BoxCollider {
     pub centre: Vec2,
     pub rotation: f64,
     pub half_widths: Vec2,
 }
 impl BoxCollider {
-    pub fn new(transform: Transform, half_widths: Vec2) -> Self {
+    pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
         Self {
-            centre: transform.position,
-            rotation: transform.rotation,
+            centre,
+            rotation: 0.,
             half_widths,
         }
     }
-    pub fn square(transform: Transform, half_width: f64) -> Self {
-        Self::new(transform, half_width * Vec2::one())
+    pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
+        Self {
+            centre: top_left + extent.abs() / 2,
+            rotation: 0.,
+            half_widths: extent.abs() / 2,
+        }
+    }
+    pub fn from_transform(transform: Transform, half_widths: Vec2) -> Self {
+        Self {
+            centre: transform.centre,
+            rotation: transform.rotation,
+            half_widths: transform.scale.component_wise(half_widths).abs(),
+        }
+    }
+    pub fn square(transform: Transform, width: f64) -> Self {
+        Self::from_transform(transform, width.abs() * Vec2::one())
     }
 
     pub fn top_left(&self) -> Vec2 {
@@ -62,6 +93,8 @@ impl BoxCollider {
 }
 
 impl Collider for BoxCollider {
+    fn as_any(&self) -> &dyn Any { self }
+
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
         let mut min_axis = Vec2::zero();
         let mut min_dist = f64::max_value();
@@ -70,7 +103,7 @@ impl Collider for BoxCollider {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
             match gg_range::overlap_len_f64(&self_proj, &other_proj) {
-                Some(0.0) => return None,
+                Some(0.) => return None,
                 Some(mut dist) => {
                     if gg_range::contains_f64(&self_proj, &other_proj) ||
                             gg_range::contains_f64(&other_proj, &self_proj) {
@@ -96,6 +129,18 @@ impl Collider for BoxCollider {
     }
 
     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
-        other.collides_with_box(self).map(Vec2::neg)
+        if let Some(other) = other.as_any().downcast_ref::<BoxCollider>() {
+            other.collides_with_box(self).map(Vec2::neg)
+        } else if other.as_any().downcast_ref::<NullCollider>().is_some() {
+            None
+        } else {
+            unreachable!();
+        }
+    }
+
+    fn translated(&self, by: Vec2) -> Box<dyn Collider> {
+        let mut rv = self.clone();
+        rv.centre += by.rotated(self.rotation);
+        Box::new(rv)
     }
 }

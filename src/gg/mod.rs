@@ -15,6 +15,7 @@ use std::{any::{Any, TypeId}, cell::{
     mpsc::{Receiver, Sender},
     Arc, Mutex,
 }, time::{Duration, Instant}};
+use std::fmt::Formatter;
 use itertools::Itertools;
 use num_traits::Zero;
 
@@ -39,8 +40,10 @@ use crate::{
         texture::TextureId
     }
 };
+use crate::core::collision::NullCollider;
 use crate::core::linalg;
-use crate::core::linalg::{Rect, Vec2Int};
+use crate::core::linalg::{Rect, SquareExtent, Vec2Int};
+use crate::core::util::NonemptyVec;
 use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
@@ -52,14 +55,14 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
 
 #[derive(Copy, Clone)]
 pub struct Transform {
-    pub position: Vec2,
+    pub centre: Vec2,
     pub rotation: f64,
     pub scale: Vec2,
 }
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { position: Vec2::zero(), rotation: 0.0, scale: Vec2::one() }
+        Self { centre: Vec2::zero(), rotation: 0., scale: Vec2::one() }
     }
 }
 
@@ -76,6 +79,12 @@ impl Add<usize> for ObjectId {
     fn add(self, rhs: usize) -> Self::Output {
         Self(self.0 + rhs)
     }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum CollisionResponse {
+    Continue,
+    Done,
 }
 
 pub trait SceneObject<ObjectType>: Send {
@@ -97,13 +106,15 @@ pub trait SceneObject<ObjectType>: Send {
     #[allow(unused_variables)]
     fn on_fixed_update(&mut self, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_collision(&mut self, other: SceneObjectWithId<ObjectType>, mtv: Vec2) {}
+    fn on_collision(&mut self, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+        CollisionResponse::Done
+    }
 
     fn transform(&self) -> Transform;
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }
-    fn collider(&self) -> Option<Box<dyn Collider>> { None }
+    fn collider(&self) -> Box<dyn Collider> { Box::new(NullCollider) }
     fn collision_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }
@@ -167,11 +178,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
-    pub fn collider(&self) -> Option<Box<dyn Collider>> { self.inner.borrow().collider() }
+    pub fn collider(&self) -> Box<dyn Collider> { self.inner.borrow().collider() }
 }
 
 pub struct UpdateContext<'a, ObjectType> {
     input_handler: &'a InputHandler,
+    collision_handler: &'a CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     object_id: ObjectId,
     other_map: &'a BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
@@ -180,7 +192,7 @@ pub struct UpdateContext<'a, ObjectType> {
     viewport: AdjustedViewport,
 }
 
-impl<'a, ObjectType: Clone> UpdateContext<'a, ObjectType> {
+impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn input(&self) -> &InputHandler { self.input_handler }
 
     pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
@@ -191,7 +203,7 @@ impl<'a, ObjectType: Clone> UpdateContext<'a, ObjectType> {
             .collect()
     }
 
-    pub fn add_object_vec(&mut self, mut objects: Vec<Box<dyn SceneObject<ObjectType>>>) {
+    pub fn add_object_vec(&mut self, mut objects: Vec<AnySceneObject<ObjectType>>) {
         self.pending_add_objects.append(&mut objects);
     }
     pub fn add_object(&mut self, object: AnySceneObject<ObjectType>) {
@@ -202,6 +214,23 @@ impl<'a, ObjectType: Clone> UpdateContext<'a, ObjectType> {
     }
     pub fn remove_this_object(&mut self) {
         self.pending_remove_objects.insert(self.object_id);
+    }
+
+    pub fn test_collision(&self, collider: &dyn Collider, tags: Vec<&'static str>) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        let mut rv = Vec::new();
+        for tag in tags.into_iter().filter(|tag| self.collision_handler.object_ids_by_tag.keys().contains(tag)) {
+            for id in self.collision_handler.object_ids_by_tag.get(tag).unwrap() {
+                if let Some(other) = self.other_map.get(id) {
+                    if let Some(mtv) = collider.collides_with(other.collider().as_ref()) {
+                        rv.push(Collision {
+                            other: other.clone(),
+                            mtv,
+                        });
+                    }
+                }
+            }
+        }
+        NonemptyVec::from_vec(rv)
     }
 
     pub fn scene_stop(&self) {
@@ -254,14 +283,14 @@ impl UpdatePerfStats {
     fn report(&mut self) {
         if self.last_report.elapsed().as_secs() >= 5 {
             info!("update stats:");
-            self.on_update_begin.report_ms_if_at_least(1.0);
-            self.on_update.report_ms_if_at_least(1.0);
-            self.on_update_end.report_ms_if_at_least(1.0);
-            self.detect_collision.report_ms_if_at_least(1.0);
-            self.on_collision.report_ms_if_at_least(1.0);
-            self.remove_objects.report_ms_if_at_least(1.0);
-            self.add_objects.report_ms_if_at_least(1.0);
-            self.render_info.report_ms_if_at_least(1.0);
+            self.on_update_begin.report_ms_if_at_least(1.);
+            self.on_update.report_ms_if_at_least(1.);
+            self.on_update_end.report_ms_if_at_least(1.);
+            self.detect_collision.report_ms_if_at_least(1.);
+            self.on_collision.report_ms_if_at_least(1.);
+            self.remove_objects.report_ms_if_at_least(1.);
+            self.add_objects.report_ms_if_at_least(1.);
+            self.render_info.report_ms_if_at_least(1.);
             self.total_stats.report_ms();
             self.last_report = Instant::now();
         }
@@ -344,22 +373,21 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     pub fn consume(mut self) -> Result<()> {
         let mut delta = Duration::from_secs(0);
         let mut is_running = true;
-        let mut last_fixed_update: Option<Instant> = None;
+        let mut fixed_update_us = 0;
 
         loop {
             if is_running {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
-                let fixed_update = last_fixed_update
-                    .map(|t| t.elapsed().as_micros() >= 10000)
-                    .unwrap_or(true);
-                if fixed_update {
-                    last_fixed_update = Some(Instant::now());
+                fixed_update_us += delta.as_micros();
+                let should_do_fixed_update = fixed_update_us >= 10000;
+                if should_do_fixed_update {
+                    fixed_update_us -= 10000;
                 }
 
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) =
-                    self.call_on_update(delta, input_handler, fixed_update);
+                    self.call_on_update(delta, input_handler, should_do_fixed_update);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_remove_objects(pending_remove_objects);
@@ -479,8 +507,14 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             let collisions = self.collision_handler.get_collisions(&self.objects);
             self.perf_stats.detect_collision.stop();
             self.perf_stats.on_collision.start();
-            for Collision { this, other, mtv } in collisions {
-                this.borrow_mut().on_collision(other, mtv)
+            let mut done_with_collisions = BTreeSet::new();
+            for CollisionNotification { this, other, mtv } in collisions {
+                if !done_with_collisions.contains(&this.object_id) {
+                    match this.inner.borrow_mut().on_collision(other, mtv) {
+                        CollisionResponse::Continue => {},
+                        CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
+                    }
+                }
             }
             self.perf_stats.on_collision.stop();
         }
@@ -505,6 +539,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             other_map.remove(&object_id);
             let update_ctx = UpdateContext {
                 input_handler,
+                collision_handler: &self.collision_handler,
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
                 object_id, other_map, pending_add_objects, pending_remove_objects,
                 viewport: self.viewport.clone(),
@@ -544,8 +579,20 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     }
 }
 
-struct Collision<ObjectType: ObjectTypeEnum> {
-    this: Rc<RefCell<AnySceneObject<ObjectType>>>,
+#[derive(Clone)]
+pub struct Collision<ObjectType: ObjectTypeEnum> {
+    pub other: SceneObjectWithId<ObjectType>,
+    pub mtv: Vec2,
+}
+
+impl<ObjectType: ObjectTypeEnum> Debug for Collision<ObjectType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:?} at {}, mtv={})", self.other.object_id, self.other.transform().centre, self.mtv)
+    }
+}
+
+struct CollisionNotification<ObjectType: ObjectTypeEnum> {
+    this: SceneObjectWithId<ObjectType>,
     other: SceneObjectWithId<ObjectType>,
     mtv: Vec2,
 }
@@ -613,31 +660,29 @@ impl CollisionHandler {
     pub fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
         objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>)
-    -> Vec<Collision<ObjectType>> {
+    -> Vec<CollisionNotification<ObjectType>> {
         self.possible_collisions.iter().copied()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].borrow().collider()
-                    .unwrap_or_else(|| panic!("object id {:?} missing collider, but in possible_collisions", ids.fst()));
-                let other = objects[&ids.snd()].borrow().collider()
-                    .unwrap_or_else(|| panic!("object id {:?} missing collider, but in possible_collisions", ids.snd()));
+                let this = objects[&ids.fst()].borrow().collider();
+                let other = objects[&ids.snd()].borrow().collider();
                 this.collides_with(other.as_ref()).map(|mtv| (ids, mtv))
             })
             .flat_map(|(ids, mtv)| {
-                let this = objects[&ids.fst()].clone();
-                let other = objects[&ids.snd()].clone();
-                vec![Collision {
+                let this = SceneObjectWithId {
+                    object_id: ids.fst(),
+                    inner: objects[&ids.fst()].clone(),
+                };
+                let other = SceneObjectWithId {
+                    object_id: ids.snd(),
+                    inner: objects[&ids.snd()].clone(),
+                };
+                vec![CollisionNotification {
                     this: this.clone(),
-                    other: SceneObjectWithId {
-                        object_id: ids.snd(),
-                        inner: other.clone(),
-                    },
+                    other: other.clone(),
                     mtv,
-                }, Collision {
+                }, CollisionNotification {
                     this: other,
-                    other: SceneObjectWithId {
-                        object_id: ids.fst(),
-                        inner: this,
-                    },
+                    other: this,
                     mtv: -mtv,
                 }]
             })
@@ -671,11 +716,20 @@ impl TextureSubArea {
             }
         }
     }
+}
 
-    pub fn half_widths(&self) -> Vec2 {
+impl SquareExtent for TextureSubArea {
+    fn extent(&self) -> Vec2 {
         match self.rect {
             None => Vec2::zero(),
-            Some(rect) => rect.half_widths(),
+            Some(rect) => rect.extent(),
+        }
+    }
+
+    fn centre(&self) -> Vec2 {
+        match self.rect {
+            None => Vec2::zero(),
+            Some(rect) => rect.centre(),
         }
     }
 }

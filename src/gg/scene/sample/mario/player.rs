@@ -1,8 +1,10 @@
 use std::{
     any::Any,
-    time::Duration
+    time::{
+        Duration,
+        Instant
+    }
 };
-use std::time::Instant;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -17,13 +19,15 @@ use crate::{
         scene::sample::mario::ObjectType
     },
     core::{
+        collision::{BoxCollider, Collider},
         linalg::{Vec2, Vec2Int},
         input::KeyCode,
-        collision::{BoxCollider, Collider}
+        util::gg_time
     },
     resource::sprite::Sprite,
 };
-use crate::core::util::gg_time;
+use crate::core::linalg::SquareExtent;
+use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, PLAYER_COLLISION_TAG};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -31,50 +35,96 @@ enum PlayerState {
     Walking,
     Running,
     Skidding,
+    Falling,
 }
 
 impl Default for PlayerState {
     fn default() -> Self { Self::Idle }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum SpeedRegime {
+    Slow,
+    Medium,
+    Fast,
+}
+
+impl Default for SpeedRegime {
+    fn default() -> Self { Self::Slow }
+}
+
 #[register_scene_object]
 pub struct Player {
-    pos: Vec2,
+    centre: Vec2,
     dir: Vec2,
     speed: f64,
     accel: f64,
+    v_speed: f64,
+    v_accel: f64,
+
+    speed_regime: SpeedRegime,
+    state: PlayerState,
+    last_ground_state: PlayerState,
+    last_should_run: Instant,
+    last_nonzero_dir: Vec2,
+
     run_sprite: Sprite,
     idle_sprite: Sprite,
     skid_sprite: Sprite,
-    state: PlayerState,
-
-    last_should_run: Instant,
-    last_nonzero_dir: Vec2,
+    fall_sprite: Sprite,
 }
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
     // fixed update at 100 fps
     (pixels as f64
-        + subpixels as f64 / 16.0
-        + subsubpixels as f64 / 256.0
-        + subsubsubpixels as f64 / 4096.0) * 100.0 / 60.0
+        + subpixels as f64 / 16.
+        + subsubpixels as f64 / 256.
+        + subsubsubpixels as f64 / 4096.) * 60. / 100.
+}
+const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
+    // fixed update at 100 fps
+    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 100.)
 }
 
 impl Player {
     const MIN_WALK_SPEED: f64 = from_nes(0, 1, 3, 0);
     const MAX_WALK_SPEED: f64 = from_nes(1, 9, 0, 0);
     const MAX_RUN_SPEED: f64 = from_nes(2, 9, 0, 0);
-    const WALK_ACCEL: f64 = from_nes(0, 0, 9, 8);
-    const RUN_ACCEL: f64 = from_nes(0, 0, 15, 4);
-    const RELEASE_DECEL: f64 = -from_nes(0, 0, 14, 0);
-    const SKID_DECEL: f64 = -from_nes(0, 1, 10, 0);
+    const WALK_ACCEL: f64 = from_nes_accel(0, 0, 9, 8);
+    const RUN_ACCEL: f64 = from_nes_accel(0, 0, 15, 4);
+    const RELEASE_DECEL: f64 = -from_nes_accel(0, 0, 14, 0);
+    const SKID_DECEL: f64 = -from_nes_accel(0, 1, 10, 0);
     const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
+    const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
+
+    fn initial_vspeed(&self) -> f64 {
+        match self.speed_regime {
+            SpeedRegime::Slow => -from_nes(4, 0, 0, 0),
+            SpeedRegime::Medium => -from_nes(4, 0, 0, 0),
+            SpeedRegime::Fast => -from_nes(5, 0, 0, 0),
+        }
+    }
+    fn gravity(&self) -> f64 {
+        match self.speed_regime {
+            SpeedRegime::Slow => from_nes_accel(0, 7, 0, 0),
+            SpeedRegime::Medium => from_nes_accel(0, 6, 0, 0),
+            SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
+        }
+    }
+    fn hold_gravity(&self) -> f64 {
+        match self.speed_regime {
+            SpeedRegime::Slow => from_nes_accel(0, 2, 0, 0),
+            SpeedRegime::Medium => from_nes_accel(0, 1, 14, 0),
+            SpeedRegime::Fast => from_nes_accel(0, 2, 8, 0)
+        }
+    }
 
     fn current_sprite(&self) -> &Sprite {
         match self.state {
             PlayerState::Idle => &self.idle_sprite,
             PlayerState::Walking | PlayerState::Running => &self.run_sprite,
             PlayerState::Skidding => &self.skid_sprite,
+            PlayerState::Falling => &self.fall_sprite,
         }
     }
 
@@ -126,6 +176,55 @@ impl Player {
             self.dir = new_dir;
         }
     }
+
+    fn update_as_falling(&mut self, new_dir: Vec2, hold_jump: bool) {
+        if self.dir.is_zero() {
+            self.dir = new_dir;
+        }
+        self.speed = self.speed.min(match self.last_ground_state {
+            PlayerState::Running => Self::MAX_RUN_SPEED,
+            _ => Self::MAX_WALK_SPEED,
+        });
+        if new_dir == self.dir {
+            self.speed = Self::MIN_WALK_SPEED.max(self.speed);
+            if self.speed < from_nes(1, 9, 0, 0) {
+                self.accel = from_nes(0, 0, 9, 8);
+            } else {
+                self.accel = from_nes(0, 0, 14, 4);
+            }
+        } else if self.speed < from_nes(1, 9, 0, 0) {
+            self.accel = -from_nes(0, 0, 14, 4);
+        } else {
+            self.accel = -from_nes(0, 0, 13, 0);
+        }
+        if hold_jump && self.v_speed < 0. {
+            self.v_accel = self.hold_gravity();
+        } else {
+            self.v_accel = self.gravity();
+        }
+    }
+
+    fn maybe_start_falling(&mut self, update_ctx: UpdateContext<ObjectType>) {
+        if self.state != PlayerState::Falling {
+            self.speed_regime = match self.speed {
+                x if (0.0
+                    ..from_nes(1, 0, 0, 0)).contains(&x) => SpeedRegime::Slow,
+                x if (from_nes(1, 0, 0, 0)
+                    ..from_nes(2, 5, 0, 0)).contains(&x) => SpeedRegime::Medium,
+                _ => SpeedRegime::Fast,
+            };
+        }
+
+        if self.state != PlayerState::Falling && update_ctx.input().pressed(KeyCode::Z) {
+            self.state = PlayerState::Falling;
+            self.v_speed = self.initial_vspeed();
+        }
+
+        let ray = self.collider().translated(Vec2::down());
+        if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
+            self.state = PlayerState::Falling;
+        }
+    }
 }
 
 #[partially_derive_scene_object]
@@ -150,11 +249,21 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
         );
+        self.fall_sprite = Sprite::from_single(
+            texture_id,
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 96, y: 8 },
+        );
         Ok(())
     }
     fn on_ready(&mut self) {
-        self.pos = Vec2 { x: 512.0, y: 384.0 };
+        self.centre = Vec2 { x: 512., y: 650. };
         self.last_nonzero_dir = Vec2::right();
+    }
+
+    fn on_update_begin(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {
+        self.accel = 0.;
+        self.v_accel = 0.;
     }
     fn on_update(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let new_dir = if update_ctx.input().down(KeyCode::Left) && !update_ctx.input().down(KeyCode::Right) {
@@ -166,47 +275,80 @@ impl SceneObject<ObjectType> for Player {
         };
         let should_run = update_ctx.input().down(KeyCode::X);
         if should_run { self.last_should_run = Instant::now(); }
+        let hold_jump = update_ctx.input().down(KeyCode::Z);
 
-        self.accel = 0.0;
+        if self.state != PlayerState::Falling {
+            self.last_ground_state = self.state;
+        }
+        self.maybe_start_falling(update_ctx);
         match self.state {
             PlayerState::Idle => self.update_as_idle(new_dir, should_run),
             PlayerState::Walking => self.update_as_walking(new_dir, should_run),
             PlayerState::Running => self.update_as_running(new_dir),
             PlayerState::Skidding => self.update_as_skidding(new_dir, should_run),
+            PlayerState::Falling => self.update_as_falling(new_dir, hold_jump),
         }
 
         if !self.dir.is_zero() {
             self.last_nonzero_dir = self.dir;
         }
     }
-    fn on_fixed_update(&mut self, _update_ctx: UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, update_ctx: UpdateContext<ObjectType>) {
         self.speed += self.accel;
-        self.pos += self.speed * self.dir;
-        if self.speed < 0.0 {
-            self.speed = 0.0;
-            self.dir = Vec2::zero();
-            self.state = PlayerState::Idle;
+        self.v_speed += self.v_accel;
+        self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
+
+        let v_ray = self.collider().translated(self.v_speed * Vec2::down());
+        match update_ctx.test_collision(v_ray.as_ref(), vec![BRICK_COLLISION_TAG]) {
+            Some(collisions) => {
+                let coll = collisions.first();
+                self.centre += self.v_speed * Vec2::down() + coll.mtv;
+                self.v_speed = 0.;
+                self.state = self.last_ground_state;
+            }
+            None => self.centre += self.v_speed * Vec2::down(),
+        }
+
+        let h_ray = self.collider().translated(self.speed * self.dir);
+        match update_ctx.test_collision(h_ray.as_ref(), vec![BRICK_COLLISION_TAG]) {
+            Some(collisions) => {
+                let coll = collisions.first();
+                self.centre += self.speed * self.dir + coll.mtv;
+                self.speed = 0.;
+            }
+            None => self.centre += self.speed * self.dir,
+        }
+
+        if self.speed < 0. {
+            if self.state == PlayerState::Falling {
+                self.speed = -self.speed;
+                self.dir = -self.dir;
+            } else {
+                self.speed = 0.;
+                self.dir = Vec2::zero();
+                self.state = PlayerState::Idle;
+            }
         }
     }
 
     fn transform(&self) -> Transform {
         Transform {
-            position: self.pos,
-            rotation: 0.0,
+            centre: self.centre,
+            rotation: 0.,
             scale: Vec2 {
-                x: 2.0 * self.last_nonzero_dir.x,
-                y: 2.0
+                x: self.last_nonzero_dir.x,
+                y: 1.,
             }
         }
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Option<Box<dyn Collider>> {
-        Some(Box::new(BoxCollider::new(self.transform(), self.current_sprite().half_widths())))
+    fn collider(&self) -> Box<dyn Collider> {
+        Box::new(BoxCollider::from_centre(self.centre, self.current_sprite().half_widths()))
     }
     fn collision_tags(&self) -> Vec<&'static str> {
-        [].into()
+        [PLAYER_COLLISION_TAG].into()
     }
 }
 

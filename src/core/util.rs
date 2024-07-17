@@ -60,12 +60,12 @@ impl TimeIt {
             self.tag,
             self.n,
             self.mean_ms(),
-            self.max_ns as f64 / 1_000_000.0
+            self.max_ns as f64 / 1_000_000.
         );
         self.reset();
     }
     pub fn report_ms_if_at_least(&mut self, milliseconds: f64) {
-        if self.mean_ms() > milliseconds || self.max_ns as f64 / 1_000_000.0 > milliseconds {
+        if self.mean_ms() > milliseconds || self.max_ns as f64 / 1_000_000. > milliseconds {
             self.report_ms();
         } else {
             self.reset();
@@ -78,15 +78,15 @@ impl TimeIt {
     }
     fn mean_us(&self) -> f64 {
         if self.n == 0 {
-            return 0.0;
+            return 0.;
         }
-        (self.total_ns / self.n) as f64 / 1_000.0
+        (self.total_ns / self.n) as f64 / 1_000.
     }
     fn mean_ms(&self) -> f64 {
-        self.mean_us() / 1_000.0
+        self.mean_us() / 1_000.
     }
     pub fn last_ms(&self) -> f64 {
-        self.last_ns as f64 / 1_000_000.0
+        self.last_ns as f64 / 1_000_000.
     }
 }
 
@@ -156,5 +156,23 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(T, T)> fo
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)> for UnorderedPair<T> {
     fn from(value: (&T, &T)) -> Self {
         Self::new(*value.0, *value.1)
+    }
+}
+
+#[derive(Clone)]
+pub struct NonemptyVec<T: Clone> {
+    inner: Vec<T>,
+}
+
+impl<T: Clone> NonemptyVec<T> {
+    pub fn first(&self) -> &T { unsafe { self.inner.first().unwrap_unchecked() } }
+    pub fn into_inner(self) -> Vec<T> { self.inner }
+
+    pub fn from_vec(vec: Vec<T>) -> Option<Self> {
+        if vec.is_empty() {
+            None
+        } else {
+            Some(Self { inner: vec })
+        }
     }
 }

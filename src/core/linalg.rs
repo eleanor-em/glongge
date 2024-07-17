@@ -189,22 +189,31 @@ impl Vec2 {
     pub fn down() -> Vec2 { Vec2 { x: 0., y: 1. } }
     pub fn one() -> Vec2 { Vec2 { x: 1., y: 1. } }
 
-    pub fn len(&self) -> f64 { self.dot(*self).sqrt() }
+    pub fn len_squared(&self) -> f64 { self.dot(*self) }
+    pub fn len(&self) -> f64 { self.len_squared().sqrt() }
     pub fn normed(&self) -> Vec2 {
         match self.len() {
-            0.0 => Vec2::zero(),
+            0. => Vec2::zero(),
             len => *self / len
+        }
+    }
+
+    pub fn component_wise(&self, other: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x * other.x,
+            y: self.y * other.y,
         }
     }
 
     pub fn dot(&self, other: Vec2) -> f64 { self.x * other.x + self.y * other.y }
     pub fn angle_radians(&self, other: Vec2) -> f64 { self.normed().dot(other.normed()).acos() }
 
+    pub fn abs(&self) -> Vec2 { Vec2 { x: self.x.abs(), y: self.y.abs() }}
     pub fn rotated(&self, radians: f64) -> Vec2 {
         Mat3x3::rotation(radians) * *self
     }
     pub fn reflect(&self, normal: Vec2) -> Vec2 {
-        *self - 2.0 * self.dot(normal) * normal
+        *self - 2. * self.dot(normal) * normal
     }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
@@ -214,7 +223,7 @@ impl Vec2 {
 
 impl Zero for Vec2 {
     fn zero() -> Self {
-        Vec2 { x: 0.0, y: 0.0 }
+        Vec2 { x: 0., y: 0. }
     }
 
     fn is_zero(&self) -> bool {
@@ -323,6 +332,39 @@ impl MulAssign<f64> for Vec2 {
         self.y *= rhs;
     }
 }
+impl Mul<i32> for Vec2 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        rhs as f64 * self
+    }
+}
+impl Mul<Vec2> for i32 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        Vec2 {
+            x: self as f64 * rhs.x,
+            y: self as f64 * rhs.y,
+        }
+    }
+}
+impl Mul<&Vec2> for i32 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: &Vec2) -> Self::Output {
+        Vec2 {
+            x: self as f64 * rhs.x,
+            y: self as f64 * rhs.y,
+        }
+    }
+}
+impl MulAssign<i32> for Vec2 {
+    fn mul_assign(&mut self, rhs: i32) {
+        self.x *= rhs as f64;
+        self.y *= rhs as f64;
+    }
+}
 
 impl Div<f64> for Vec2 {
     type Output = Vec2;
@@ -338,6 +380,22 @@ impl DivAssign<f64> for Vec2 {
     fn div_assign(&mut self, rhs: f64) {
         self.x /= rhs;
         self.y /= rhs;
+    }
+}
+impl Div<i32> for Vec2 {
+    type Output = Vec2;
+
+    fn div(self, rhs: i32) -> Self::Output {
+        Vec2 {
+            x: self.x / rhs as f64,
+            y: self.y / rhs as f64,
+        }
+    }
+}
+impl DivAssign<i32> for Vec2 {
+    fn div_assign(&mut self, rhs: i32) {
+        self.x /= rhs as f64;
+        self.y /= rhs as f64;
     }
 }
 
@@ -378,15 +436,15 @@ pub struct Mat3x3 {
 impl Mat3x3 {
     pub fn translation(dx: f64, dy: f64) -> Mat3x3 {
         Mat3x3 {
-            xx: 1.0,
-            xy: 0.0,
+            xx: 1.,
+            xy: 0.,
             xw: dx,
-            yx: 0.0,
-            yy: 1.0,
+            yx: 0.,
+            yy: 1.,
             yw: dy,
-            wx: 0.0,
-            wy: 0.0,
-            ww: 1.0,
+            wx: 0.,
+            wy: 0.,
+            ww: 1.,
         }
     }
     pub fn translation_vec2(vec2: Vec2) -> Mat3x3 {
@@ -396,13 +454,13 @@ impl Mat3x3 {
         Mat3x3 {
             xx: f64::cos(radians),
             xy: -f64::sin(radians),
-            xw: 0.0,
+            xw: 0.,
             yx: f64::sin(radians),
             yy: f64::cos(radians),
-            yw: 0.0,
-            wx: 0.0,
-            wy: 0.0,
-            ww: 1.0,
+            yw: 0.,
+            wx: 0.,
+            wy: 0.,
+            ww: 1.,
         }
     }
     pub fn det(&self) -> f64 {
@@ -440,15 +498,15 @@ impl Mat3x3 {
 impl One for Mat3x3 {
     fn one() -> Self {
         Mat3x3 {
-            xx: 1.0,
-            xy: 0.0,
-            xw: 0.0,
-            yx: 0.0,
-            yy: 1.0,
-            yw: 0.0,
-            wx: 0.0,
-            wy: 0.0,
-            ww: 1.0,
+            xx: 1.,
+            xy: 0.,
+            xw: 0.,
+            yx: 0.,
+            yy: 1.,
+            yw: 0.,
+            wx: 0.,
+            wy: 0.,
+            ww: 1.,
         }
     }
 }
@@ -555,16 +613,16 @@ impl Mul<Vec2> for Mat3x3 {
 
     fn mul(self, rhs: Vec2) -> Self::Output {
         Vec2 {
-            x: self.xx * rhs.x + self.xy * rhs.y + self.xw * 1.0,
-            y: self.yx * rhs.x + self.yy * rhs.y + self.yw * 1.0,
+            x: self.xx * rhs.x + self.xy * rhs.y + self.xw * 1.,
+            y: self.yx * rhs.x + self.yy * rhs.y + self.yw * 1.,
         }
     }
 }
 impl MulAssign<Mat3x3> for Vec2 {
     fn mul_assign(&mut self, rhs: Mat3x3) {
         (self.x, self.y) = (
-            rhs.xx * self.x + rhs.xy * self.y + rhs.xw * 1.0,
-            rhs.yx * self.x + rhs.yy * self.y + rhs.yw * 1.0,
+            rhs.xx * self.x + rhs.xy * self.y + rhs.xw * 1.,
+            rhs.yx * self.x + rhs.yy * self.y + rhs.yw * 1.,
         );
     }
 }
@@ -590,12 +648,24 @@ impl Mul<Mat3x3> for Mat3x3 {
 impl From<Mat3x3> for [[f32; 4]; 4] {
     fn from(value: Mat3x3) -> Self {
         [
-            [value.xx as f32, value.xy as f32, 0.0, value.xw as f32],
-            [value.yx as f32, value.yy as f32, 0.0, value.yw as f32],
-            [0.0, 0.0, 1.0, value.ww as f32],
-            [value.wx as f32, value.wy as f32, 0.0, 1.0],
+            [value.xx as f32, value.xy as f32, 0., value.xw as f32],
+            [value.yx as f32, value.yy as f32, 0., value.yw as f32],
+            [0., 0., 1., value.ww as f32],
+            [value.wx as f32, value.wy as f32, 0., 1.],
         ]
     }
+}
+
+#[allow(dead_code)]
+pub trait SquareExtent {
+    fn extent(&self) -> Vec2;
+    fn centre(&self) -> Vec2;
+
+    fn half_widths(&self) -> Vec2 { self.extent() / 2 }
+    fn top_left(&self) -> Vec2 { self.centre() - self.half_widths() }
+    fn top_right(&self) -> Vec2 { self.centre() + self.half_widths().x * Vec2::right() / 2 }
+    fn bottom_left(&self) -> Vec2 { self.centre() + self.half_widths().y * Vec2::down() / 2 }
+    fn bottom_right(&self) -> Vec2 { self.centre() + self.half_widths() }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -608,14 +678,11 @@ impl Rect {
     pub fn new(centre: Vec2, half_widths: Vec2) -> Self {
         Self { centre, half_widths }
     }
+}
 
-    pub fn half_widths(&self) -> Vec2 { self.half_widths }
-    pub fn centre(&self) -> Vec2 { self.centre }
-    pub fn top_left(&self) -> Vec2 { self.centre - self.half_widths }
-    pub fn top_right(&self) -> Vec2 { self.centre + self.half_widths.x * Vec2::right() }
-    pub fn bottom_left(&self) -> Vec2 { self.centre + self.half_widths.y * Vec2::down() }
-    pub fn bottom_right(&self) -> Vec2 { self.centre + self.half_widths }
-    pub fn extent(&self) -> Vec2 { self.half_widths * 2.0 }
+impl SquareExtent for Rect {
+    fn extent(&self) -> Vec2 { self.half_widths * 2. }
+    fn centre(&self) -> Vec2 { self.centre }
 }
 
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {

@@ -38,6 +38,7 @@ use crate::{
     },
     shader,
 };
+use crate::gg::CollisionResponse;
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
@@ -72,13 +73,13 @@ impl SceneObject<ObjectType> for Spawner {
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         const N: usize = 1;
-        let objects = Uniform::new(0.0, update_ctx.viewport.logical_width() as f64)
+        let objects = Uniform::new(0., update_ctx.viewport.logical_width() as f64)
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0.0, update_ctx.viewport.logical_height() as f64)
+            .zip(Uniform::new(0., update_ctx.viewport.logical_height() as f64)
                 .sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0)
+            .zip(Uniform::new(-1., 1.)
                 .sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0)
+            .zip(Uniform::new(-1., 1.)
                 .sample_iter(rand::thread_rng()))
             .take(N)
             .map(|(((x, y), vx), vy)|  {
@@ -104,8 +105,8 @@ struct Player {
 }
 
 impl Player {
-    const SIZE: f64 = 100.0;
-    const SPEED: f64 = 300.0;
+    const SIZE: f64 = 100.;
+    const SPEED: f64 = 300.;
 }
 
 #[partially_derive_scene_object]
@@ -123,7 +124,7 @@ impl SceneObject<ObjectType> for Player {
         Ok(())
     }
     fn on_ready(&mut self) {
-        self.pos = Vec2 { x: 512.0, y: 384.0 };
+        self.pos = Vec2 { x: 512., y: 384. };
     }
     fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
@@ -137,15 +138,15 @@ impl SceneObject<ObjectType> for Player {
 
     fn transform(&self) -> Transform {
         Transform {
-            position: self.pos,
+            centre: self.pos,
             ..Default::default()
         }
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Option<Box<dyn Collider>> {
-        Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
+    fn collider(&self) -> Box<dyn Collider> {
+        Box::new(BoxCollider::square(self.transform(), Self::SIZE))
     }
     fn collision_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
@@ -173,9 +174,9 @@ struct SpinningRectangle {
 }
 
 impl SpinningRectangle {
-    const SIZE: f64 = 8.0;
-    const VELOCITY: f64 = 220.0;
-    const ANGULAR_VELOCITY: f64 = 2.0;
+    const SIZE: f64 = 8.;
+    const VELOCITY: f64 = 220.;
+    const ANGULAR_VELOCITY: f64 = 2.;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         let mut rng = rand::thread_rng();
@@ -191,7 +192,7 @@ impl SpinningRectangle {
         Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
-            t: 0.0,
+            t: 0.,
             col,
             sprite: Default::default(),
             alive_since: Instant::now(),
@@ -229,7 +230,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
 
         if update_ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
-            let angle = rng.gen_range(0.0..(2.0 * f64::PI()));
+            let angle = rng.gen_range(0.0..(2. * f64::PI()));
             update_ctx.add_object(Box::new(SpinningRectangle::new(
                 self.pos,
                 Vec2::one().rotated(angle)
@@ -237,7 +238,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
-    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) {
+    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         self.pos += mtv;
 
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {
@@ -248,11 +249,12 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         } else {
             self.velocity = self.velocity.reflect(mtv.normed());
         }
+        CollisionResponse::Continue
     }
 
     fn transform(&self) -> Transform {
         Transform {
-            position: self.pos,
+            centre: self.pos,
             rotation: self.rotation(),
             ..Default::default()
         }
@@ -260,8 +262,8 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Option<Box<dyn Collider>> {
-        Some(Box::new(BoxCollider::square(self.transform(), Self::SIZE)))
+    fn collider(&self) -> Box<dyn Collider> {
+        Box::new(BoxCollider::square(self.transform(), Self::SIZE))
     }
     fn collision_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()

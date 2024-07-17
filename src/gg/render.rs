@@ -251,7 +251,7 @@ impl BasicRenderHandler {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
                     texture_id: texture_id.into(),
-                    translation: render_info.transform.position.into(),
+                    translation: render_info.transform.centre.into(),
                     rotation: render_info.transform.rotation as f32,
                     scale: render_info.transform.scale.into(),
                     blend_col: blend_col.into(),

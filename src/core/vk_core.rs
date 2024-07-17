@@ -91,9 +91,9 @@ impl WindowContext {
     pub fn create_default_viewport(&self) -> AdjustedViewport {
         AdjustedViewport {
             inner: Viewport {
-                offset: [0.0, 0.0],
+                offset: [0., 0.],
                 extent: self.window.inner_size().into(),
-                depth_range: 0.0..=1.0,
+                depth_range: 0.0..=1.,
             },
             scale_factor: self.window.scale_factor(),
         }
@@ -313,7 +313,7 @@ impl VulkanoContext {
 
         info!(
             "created vulkano context in: {:.2} ms",
-            start.elapsed().as_micros() as f64 / 1_000.0
+            start.elapsed().as_micros() as f64 / 1_000.
         );
         Ok(Self {
             // Appears to not be necessary:
@@ -887,7 +887,7 @@ impl RenderPerfStats {
 
         // track how many frames are late
         let active_ms = self.render_active.last_ms() + self.between_renders.last_ms();
-        if active_ms < 1000.0 / 60.0 {
+        if active_ms < 1000. / 60. {
             self.on_time += 1;
         } else {
             warn!("late frame: {active_ms:.2} ms");
@@ -898,7 +898,7 @@ impl RenderPerfStats {
         if report_stats && self.last_report.elapsed().as_secs() >= 5 {
             info!(
                 "frames on time: {:.1}%",
-                self.on_time as f64 / self.count as f64 * 100.0
+                self.on_time as f64 / self.count as f64 * 100.
             );
             let min_report_ms = 0.1;
             self.render_wait.report_ms_if_at_least(min_report_ms);

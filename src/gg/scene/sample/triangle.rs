@@ -62,19 +62,19 @@ impl gg::SceneObject<ObjectType> for Spawner {
     fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
         const N: usize = 10;
         let mut rng = rand::thread_rng();
-        let xs: Vec<f64> = Uniform::new(0.0, 1024.0)
+        let xs: Vec<f64> = Uniform::new(0., 1024.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let ys: Vec<f64> = Uniform::new(0.0, 768.0)
+        let ys: Vec<f64> = Uniform::new(0., 768.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vxs: Vec<f64> = Uniform::new(-1.0, 1.0)
+        let vxs: Vec<f64> = Uniform::new(-1., 1.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vys: Vec<f64> = Uniform::new(-1.0, 1.0)
+        let vys: Vec<f64> = Uniform::new(-1., 1.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
@@ -85,7 +85,7 @@ impl gg::SceneObject<ObjectType> for Spawner {
                     x: vxs[i],
                     y: vys[i],
                 };
-                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0.0, alive_since: Instant::now() }) as Box<dyn gg::SceneObject<ObjectType>>
+                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() }) as Box<dyn gg::SceneObject<ObjectType>>
             })
             .collect();
         update_ctx.add_object_vec(objects);
@@ -106,20 +106,20 @@ struct SpinningTriangle {
 
 impl Default for SpinningTriangle {
     fn default() -> Self {
-        Self { pos: Vec2::zero(), velocity: Vec2::zero(), t: 0.0, alive_since: Instant::now() }
+        Self { pos: Vec2::zero(), velocity: Vec2::zero(), t: 0., alive_since: Instant::now() }
     }
 }
 
 impl SpinningTriangle {
-    const TRI_WIDTH: f64 = 5.0;
-    const VELOCITY: f64 = 200.0;
-    const ANGULAR_VELOCITY: f64 = 1.0;
+    const TRI_WIDTH: f64 = 5.;
+    const VELOCITY: f64 = 200.;
+    const ANGULAR_VELOCITY: f64 = 1.;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
-            t: 0.0,
+            t: 0.,
             alive_since: Instant::now(),
         }
     }
@@ -180,8 +180,8 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
                 update_ctx.viewport().contains(self.pos) {
             for other in update_ctx.others() {
-                if (other.transform().position -  self.pos).len() < Self::TRI_WIDTH {
-                    self.velocity = (self.pos - other.transform().position).normed() * Self::VELOCITY;
+                if (other.transform().centre -  self.pos).len() < Self::TRI_WIDTH {
+                    self.velocity = (self.pos - other.transform().centre).normed() * Self::VELOCITY;
                 }
             }
         }
@@ -189,7 +189,7 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
 
     fn transform(&self) -> Transform {
         Transform {
-            position: self.pos,
+            centre: self.pos,
             rotation: self.rotation(),
             ..Default::default()
         }
@@ -203,18 +203,18 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
 impl gg::RenderableObject<ObjectType> for SpinningTriangle {
     fn create_vertices(&self) -> Vec<VertexWithUV> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
-        let centre_correction = -tri_height / 6.0;
+        let centre_correction = -tri_height / 6.;
         let vertex1 = Vec2 {
             x: -Self::TRI_WIDTH,
-            y: -tri_height / 2.0 - centre_correction,
+            y: -tri_height / 2. - centre_correction,
         };
         let vertex2 = Vec2 {
             x: Self::TRI_WIDTH,
-            y: -tri_height / 2.0 - centre_correction,
+            y: -tri_height / 2. - centre_correction,
         };
         let vertex3 = Vec2 {
-            x: 0.0,
-            y: tri_height / 2.0 - centre_correction,
+            x: 0.,
+            y: tri_height / 2. - centre_correction,
         };
         VertexWithUV::from_iter(vec![vertex1, vertex2, vertex3])
     }

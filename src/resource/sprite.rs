@@ -1,7 +1,7 @@
 use std::time::Instant;
 use num_traits::Zero;
 use crate::{assert::*, core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
-use crate::core::linalg::Vec2;
+use crate::core::linalg::{SquareExtent, Vec2};
 use crate::gg::VertexWithUV;
 
 pub struct Sprite {
@@ -95,8 +95,17 @@ impl Sprite {
         render_info
     }
 
-    pub fn half_widths(&self) -> Vec2 { self.current_frame().half_widths() }
     pub fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), 2.0 * self.half_widths())
+        shader::vertex::rectangle_with_uv(Vec2::zero(), self.half_widths())
+    }
+}
+
+impl SquareExtent for Sprite {
+    fn extent(&self) -> Vec2 {
+        self.current_frame().extent()
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.current_frame().centre()
     }
 }
