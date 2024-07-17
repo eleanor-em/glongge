@@ -2,7 +2,6 @@
 #![feature(arbitrary_self_types)]
 #![feature(mapped_lock_guards)]
 #![feature(const_fn_floating_point_arithmetic)]
-
 use num_traits::{Float, One};
 
 use anyhow::Result;

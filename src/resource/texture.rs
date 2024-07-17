@@ -10,6 +10,7 @@ use std::{
     },
 };
 use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{anyhow, bail, Result};
 use png::ColorType;
@@ -40,12 +41,13 @@ use crate::{
 
 pub const MAX_TEXTURE_COUNT: usize = 1023;
 
+static NEXT_TEXTURE_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct TextureId(usize);
 
 impl TextureId {
-    fn next(&self) -> Self {
-        Self(self.0 + 1)
+    fn next() -> Self {
+        Self(NEXT_TEXTURE_ID.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -155,10 +157,7 @@ impl TextureHandler {
         let texture = self.load_file_inner(&filename)?;
 
         let mut inner = self.inner.lock().unwrap();
-        let texture_id = match inner.textures.last_key_value() {
-            Some((id, _)) => id.next(),
-            None => TextureId(0),
-        };
+        let texture_id = TextureId::next();
         inner.loaded_files.insert(filename, texture_id);
         inner.textures.insert(texture_id, texture);
         Ok(texture_id)

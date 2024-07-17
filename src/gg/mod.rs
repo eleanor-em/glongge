@@ -1,3 +1,4 @@
+pub mod coroutine;
 pub mod render;
 pub mod scene;
 
@@ -16,6 +17,7 @@ use std::{any::{Any, TypeId}, cell::{
     Arc, Mutex,
 }, time::{Duration, Instant}};
 use std::fmt::Formatter;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use itertools::Itertools;
 use num_traits::Zero;
 
@@ -44,6 +46,7 @@ use crate::core::collision::NullCollider;
 use crate::core::linalg;
 use crate::core::linalg::{Rect, SquareExtent, Vec2Int};
 use crate::core::util::NonemptyVec;
+use crate::gg::coroutine::{Coroutine, CoroutineAction, CoroutineId, CoroutineResponse};
 use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
@@ -66,11 +69,12 @@ impl Default for Transform {
     }
 }
 
+static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId(usize);
 
 impl ObjectId {
-    fn next(&self) -> Self { ObjectId(self.0 + 1) }
+    fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
 }
 
 impl Add<usize> for ObjectId {
@@ -87,7 +91,7 @@ pub enum CollisionResponse {
     Done,
 }
 
-pub trait SceneObject<ObjectType>: Send {
+pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn get_type(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -140,12 +144,12 @@ impl VertexWithUV {
     }
 }
 
-pub trait RenderableObject<ObjectType>: SceneObject<ObjectType> {
+pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     fn create_vertices(&self) -> Vec<VertexWithUV>;
     fn render_info(&self) -> RenderInfo;
 }
 
-impl<ObjectType, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
+impl<ObjectType: ObjectTypeEnum, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
     fn from(value: Box<T>) -> Self { value }
 }
 
@@ -181,11 +185,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn collider(&self) -> Box<dyn Collider> { self.inner.borrow().collider() }
 }
 
-pub struct UpdateContext<'a, ObjectType> {
+pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     input_handler: &'a InputHandler,
     collision_handler: &'a CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
-    object_id: ObjectId,
+    coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
+    this: SceneObjectWithId<ObjectType>,
     other_map: &'a BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject<ObjectType>>>,
     pending_remove_objects: &'a mut BTreeSet<ObjectId>,
@@ -213,7 +218,30 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         self.pending_remove_objects.insert(obj.object_id);
     }
     pub fn remove_this_object(&mut self) {
-        self.pending_remove_objects.insert(self.object_id);
+        self.pending_remove_objects.insert(self.this.object_id);
+    }
+
+    pub fn add_coroutine<F>(&mut self, func: F) -> CoroutineId
+    where
+        F: FnMut(SceneObjectWithId<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+    {
+        let id = CoroutineId::next();
+        self.coroutines.insert(id, Coroutine::new(func));
+        id
+    }
+    pub fn add_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
+    where
+        F: FnMut(SceneObjectWithId<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+    {
+        self.add_coroutine(move |this, action| {
+            match action {
+                CoroutineAction::Starting => CoroutineResponse::Wait(duration),
+                _ => func(this, action)
+            }
+        })
+    }
+    pub fn cancel_coroutine(&mut self, id: CoroutineId) -> bool {
+        self.coroutines.remove(&id).is_some()
     }
 
     pub fn test_collision(&self,
@@ -269,6 +297,7 @@ pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
 struct UpdatePerfStats {
     total_stats: TimeIt,
     on_update_begin: TimeIt,
+    coroutines: TimeIt,
     on_update: TimeIt,
     on_update_end: TimeIt,
     detect_collision: TimeIt,
@@ -284,6 +313,7 @@ impl UpdatePerfStats {
         Self {
             total_stats: TimeIt::new("total"),
             on_update_begin: TimeIt::new("on_update_begin"),
+            coroutines: TimeIt::new("coroutines"),
             on_update: TimeIt::new("on_update"),
             on_update_end: TimeIt::new("on_update_end"),
             detect_collision: TimeIt::new("detect collisions"),
@@ -299,6 +329,7 @@ impl UpdatePerfStats {
         if self.last_report.elapsed().as_secs() >= 5 {
             info!("update stats:");
             self.on_update_begin.report_ms_if_at_least(1.);
+            self.coroutines.report_ms_if_at_least(1.);
             self.on_update.report_ms_if_at_least(1.);
             self.on_update_end.report_ms_if_at_least(1.);
             self.detect_collision.report_ms_if_at_least(1.);
@@ -321,6 +352,7 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoR
     resource_handler: ResourceHandler,
     render_info_receiver: Arc<Mutex<RenderReceiver>>,
     collision_handler: CollisionHandler,
+    coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     perf_stats: UpdatePerfStats,
@@ -377,6 +409,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             resource_handler,
             render_info_receiver,
             collision_handler,
+            coroutines: BTreeMap::new(),
             scene_instruction_tx,
             scene_instruction_rx,
             perf_stats: UpdatePerfStats::new(),
@@ -450,9 +483,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.add_objects.start();
         if !pending_add_objects.is_empty() {
             // TODO: leak new_id as 'static?
-            let first_new_id = self.objects.last_key_value()
-                .map(|(id, _)| id.next())
-                .unwrap_or(ObjectId(0));
+            let first_new_id = ObjectId::next();
             let pending_add_objects = pending_add_objects.into_iter()
                 .enumerate()
                 .map(|(i, obj)| (first_new_id + i, obj))
@@ -506,6 +537,21 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                      obj.on_update_begin(delta, update_ctx)
                                  });
         self.perf_stats.on_update_begin.stop();
+        self.perf_stats.coroutines.start();
+        for (id, this) in self.objects.iter() {
+            let this = SceneObjectWithId {
+                object_id: *id,
+                inner: this.clone()
+            };
+            let coroutines = self.coroutines.remove(id).unwrap_or_default();
+            let new_coroutines = self.coroutines.entry(*id).or_default();
+            for (id, coroutine) in coroutines {
+                if let Some(coroutine) = coroutine.resume(this.clone()) {
+                    new_coroutines.insert(id, coroutine);
+                }
+            }
+        }
+        self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                  |mut obj, delta, update_ctx| {
@@ -542,7 +588,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.on_update_end.stop();
         (pending_add_objects, pending_remove_objects)
     }
-    fn iter_with_other_map<F>(&self,
+    fn iter_with_other_map<F>(&mut self,
                               delta: Duration,
                               input_handler: &InputHandler,
                               pending_add_objects: &mut Vec<AnySceneObject<ObjectType>>,
@@ -550,13 +596,18 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                               other_map: &mut BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
                               call_obj_event: F)
     where F: Fn(RefMut<AnySceneObject<ObjectType>>, Duration, UpdateContext<ObjectType>) {
-        for &object_id in self.objects.keys() {
+        for (&object_id, this) in self.objects.iter() {
             other_map.remove(&object_id);
+            let this = SceneObjectWithId {
+                object_id,
+                inner: this.clone(),
+            };
             let update_ctx = UpdateContext {
                 input_handler,
                 collision_handler: &self.collision_handler,
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
-                object_id, other_map, pending_add_objects, pending_remove_objects,
+                coroutines: self.coroutines.entry(object_id).or_default(),
+                this, other_map, pending_add_objects, pending_remove_objects,
                 viewport: self.viewport.clone(),
             };
             let obj = &self.objects[&object_id];

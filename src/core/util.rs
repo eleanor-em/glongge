@@ -119,8 +119,13 @@ pub mod gg_range {
     }
 }
 
+#[allow(dead_code)]
 pub mod gg_time {
     use std::time::Duration;
+
+    pub fn frames(n: u64) -> Duration {
+        Duration::from_millis(10 * n)
+    }
 
     pub fn as_frames(duration: Duration) -> u128 {
         // 100 frames per second

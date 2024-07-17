@@ -2,7 +2,6 @@ use std::{
     any::Any,
     time::{
         Duration,
-        Instant
     }
 };
 use num_traits::Zero;
@@ -22,11 +21,11 @@ use crate::{
         collision::{BoxCollider, Collider},
         linalg::{Vec2, Vec2Int},
         input::KeyCode,
-        util::gg_time
     },
     resource::sprite::Sprite,
 };
 use crate::core::linalg::SquareExtent;
+use crate::gg::coroutine::{CoroutineId, CoroutineResponse};
 use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, PLAYER_COLLISION_TAG};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -65,8 +64,9 @@ pub struct Player {
     speed_regime: SpeedRegime,
     state: PlayerState,
     last_ground_state: PlayerState,
-    last_should_run: Instant,
     last_nonzero_dir: Vec2,
+    cancel_run_crt: Option<CoroutineId>,
+    coyote_crt: Option<CoroutineId>,
 
     run_sprite: Sprite,
     idle_sprite: Sprite,
@@ -128,25 +128,25 @@ impl Player {
         }
     }
 
-    fn update_as_idle(&mut self, new_dir: Vec2, should_run: bool) {
+    fn update_as_idle(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         if !new_dir.is_zero() {
             self.dir = new_dir;
             self.speed = Self::MIN_WALK_SPEED;
-            if should_run {
+            if hold_run {
                 self.state = PlayerState::Running;
-                self.update_as_running(new_dir);
+                self.update_as_running(update_ctx, new_dir, hold_run);
             } else {
                 self.state = PlayerState::Walking;
-                self.update_as_walking(new_dir, false);
+                self.update_as_walking(update_ctx, new_dir, hold_run);
             };
         }
     }
 
-    fn update_as_walking(&mut self, new_dir: Vec2, should_run: bool) {
+    fn update_as_walking(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         self.speed = self.speed.min(Self::MAX_WALK_SPEED);
-        if should_run {
+        if hold_run {
             self.state = PlayerState::Running;
-            self.update_as_running(new_dir);
+            self.update_as_running(update_ctx, new_dir, hold_run);
         } else if self.dir == new_dir {
             self.accel = Self::WALK_ACCEL;
         } else {
@@ -154,12 +154,23 @@ impl Player {
         }
     }
 
-    fn update_as_running(&mut self, new_dir: Vec2) {
+    fn update_as_running(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
+        if hold_run {
+            self.cancel_run_crt.take()
+                .map(|id| update_ctx.cancel_coroutine(id));
+        } else {
+            self.cancel_run_crt.get_or_insert_with(|| {
+                update_ctx.add_coroutine_after(|mut this, _action| {
+                    let mut this = this.downcast_mut::<Self>().unwrap();
+                    if this.state == PlayerState::Running {
+                        this.state = PlayerState::Walking;
+                    }
+                    CoroutineResponse::Complete
+                }, Duration::from_secs_f64(1./6.))
+            });
+        }
         self.speed = self.speed.min(Self::MAX_RUN_SPEED);
-        if gg_time::as_frames(self.last_should_run.elapsed()) >= 10 {
-            self.state = PlayerState::Walking;
-            self.update_as_walking(new_dir, false);
-        } else if self.dir == new_dir {
+        if self.dir == new_dir {
             self.accel = Self::RUN_ACCEL;
         } else if new_dir.is_zero() {
             self.accel = Self::RELEASE_DECEL;
@@ -169,10 +180,10 @@ impl Player {
         }
     }
 
-    fn update_as_skidding(&mut self, new_dir: Vec2, should_run: bool) {
+    fn update_as_skidding(&mut self, new_dir: Vec2, hold_run: bool) {
         self.accel = Self::SKID_DECEL;
         if self.speed < Self::SKID_TURNAROUND && !new_dir.is_zero() {
-            self.state = if should_run { PlayerState::Running } else { PlayerState::Walking };
+            self.state = if hold_run { PlayerState::Running } else { PlayerState::Walking };
             self.dir = new_dir;
         }
     }
@@ -204,7 +215,7 @@ impl Player {
         }
     }
 
-    fn maybe_start_falling(&mut self, update_ctx: UpdateContext<ObjectType>) {
+    fn maybe_start_falling(&mut self, update_ctx: &mut UpdateContext<ObjectType>) {
         if self.state != PlayerState::Falling {
             self.speed_regime = match self.speed {
                 x if (0.0
@@ -221,7 +232,15 @@ impl Player {
 
         let ray = self.collider().translated(Vec2::down());
         if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
-            self.state = PlayerState::Falling;
+            self.coyote_crt.get_or_insert_with(|| {
+                update_ctx.add_coroutine_after(|mut this, _action| {
+                    let mut this = this.downcast_mut::<Self>().unwrap();
+                    this.state = PlayerState::Falling;
+                    CoroutineResponse::Complete
+                }, Duration::from_secs_f64(0.1))
+            });
+        } else {
+            self.coyote_crt.take().map(|id| update_ctx.cancel_coroutine(id));
         }
     }
 }
@@ -264,7 +283,7 @@ impl SceneObject<ObjectType> for Player {
         self.accel = 0.;
         self.v_accel = 0.;
     }
-    fn on_update(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         let new_dir = if update_ctx.input().down(KeyCode::Left) && !update_ctx.input().down(KeyCode::Right) {
             Vec2::left()
         } else if !update_ctx.input().down(KeyCode::Left) && update_ctx.input().down(KeyCode::Right) {
@@ -272,19 +291,18 @@ impl SceneObject<ObjectType> for Player {
         } else {
             Vec2::zero()
         };
-        let should_run = update_ctx.input().down(KeyCode::X);
-        if should_run { self.last_should_run = Instant::now(); }
+        let hold_run = update_ctx.input().down(KeyCode::X);
         let hold_jump = update_ctx.input().down(KeyCode::Z);
 
         if self.state != PlayerState::Falling {
             self.last_ground_state = self.state;
         }
-        self.maybe_start_falling(update_ctx);
+        self.maybe_start_falling(&mut update_ctx);
         match self.state {
-            PlayerState::Idle => self.update_as_idle(new_dir, should_run),
-            PlayerState::Walking => self.update_as_walking(new_dir, should_run),
-            PlayerState::Running => self.update_as_running(new_dir),
-            PlayerState::Skidding => self.update_as_skidding(new_dir, should_run),
+            PlayerState::Idle => self.update_as_idle(&mut update_ctx, new_dir, hold_run),
+            PlayerState::Walking => self.update_as_walking(&mut update_ctx, new_dir, hold_run),
+            PlayerState::Running => self.update_as_running(&mut update_ctx, new_dir, hold_run),
+            PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
             PlayerState::Falling => self.update_as_falling(new_dir, hold_jump),
         }
 
