@@ -5,21 +5,46 @@ use std::any::Any;
 use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::collision::{BoxCollider, Collider};
-use crate::core::linalg::{SquareExtent, Vec2, Vec2Int};
-use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, ObjectType};
+use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
+use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, from_nes, from_nes_accel, ObjectType};
 use crate::gg::{RenderableObject, RenderInfo, SceneObject, Transform, UpdateContext, VertexWithUV};
+use crate::gg::scene::sample::mario::block::Bumpable;
+use crate::gg::scene::sample::mario::player::Player;
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
+
 
 #[register_scene_object]
 pub struct QuestionBlock {
     top_left: Vec2,
     sprite: Sprite,
+    empty_sprite: Sprite,
+    is_empty: bool,
+
+    initial_y: f64,
+    v_speed: f64,
+    v_accel: f64,
 }
 
 impl QuestionBlock {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self { top_left: top_left.into(), sprite: Sprite::default() })
+        Box::new(Self {
+            top_left: top_left.into(),
+            sprite: Sprite::default(),
+            empty_sprite: Sprite::default(),
+            is_empty: false,
+            initial_y: top_left.y as f64,
+            v_speed: 0.,
+            v_accel: 0.,
+        })
+    }
+
+    fn current_sprite(&self) -> &Sprite {
+        if self.is_empty {
+            &self.empty_sprite
+        } else {
+            &self.sprite
+        }
     }
 }
 
@@ -35,13 +60,26 @@ impl SceneObject<ObjectType> for QuestionBlock {
             Vec2Int { x: 1, y: 0 })
             .with_frame_orders(vec![0, 1, 2, 1])
             .with_frame_time_ms(vec![600, 100, 100, 100]);
+        self.empty_sprite = Sprite::from_single_extent(
+            texture_id,
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 349, y: 78 });
         Ok(())
     }
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {}
+    fn on_fixed_update(&mut self, _update_ctx: UpdateContext<ObjectType>) {
+        self.v_speed += self.v_accel;
+        self.top_left.y += self.v_speed;
+        if self.top_left.y > self.initial_y {
+            self.top_left.y = self.initial_y;
+            self.v_speed = 0.;
+            self.v_accel = 0.;
+        }
+    }
     fn transform(&self) -> Transform {
         Transform {
-            centre: self.top_left + self.sprite.half_widths(),
+            centre: self.top_left + self.current_sprite().half_widths(),
             ..Default::default()
         }
     }
@@ -49,7 +87,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
+        Box::new(BoxCollider::from_transform(self.transform(), self.current_sprite().half_widths()))
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BRICK_COLLISION_TAG].into()
@@ -58,10 +96,19 @@ impl SceneObject<ObjectType> for QuestionBlock {
 
 impl RenderableObject<ObjectType> for QuestionBlock {
     fn create_vertices(&self) -> Vec<VertexWithUV> {
-        self.sprite.create_vertices()
+        self.current_sprite().create_vertices()
     }
 
     fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
+        self.current_sprite().render_info_default()
+    }
+}
+
+impl Bumpable for QuestionBlock {
+    fn bump(&mut self, _player: &mut Player) {
+        self.v_speed = -from_nes(3, 0, 0, 0);
+        self.v_accel = from_nes_accel(0, 9, 15, 0);
+        self.is_empty = true;
+        // TODO: drop item
     }
 }

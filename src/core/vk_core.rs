@@ -2,6 +2,7 @@
 use crate::core::prelude::*;
 
 use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use num_traits::Zero;
 
 use vulkano::{
     command_buffer::{
@@ -59,6 +60,7 @@ use crate::{
     gg::RenderInfoReceiver,
     resource::ResourceHandler
 };
+use crate::core::linalg::AxisAlignedExtent;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -96,6 +98,7 @@ impl WindowContext {
             },
             scale_factor: self.window.scale_factor(),
             global_scale_factor: 1.,
+            translation: Vec2::zero(),
         }
     }
 }
@@ -105,6 +108,7 @@ pub struct AdjustedViewport {
     inner: Viewport,
     scale_factor: f64,
     global_scale_factor: f64,
+    pub(crate) translation: Vec2,
 }
 
 impl AdjustedViewport {
@@ -123,9 +127,15 @@ impl AdjustedViewport {
     pub fn scale_factor(&self) -> f32 { self.scale_factor as f32 }
 
     pub fn inner(&self) -> Viewport { self.inner.clone() }
-    pub fn contains(&self, pos: Vec2) -> bool {
-        (0.0..self.logical_width() as f64).contains(&pos.x) &&
-            (0.0..self.logical_height() as f64).contains(&pos.y)
+}
+
+impl AxisAlignedExtent for AdjustedViewport {
+    fn extent(&self) -> Vec2 {
+        Vec2 { x: self.logical_width() as f64, y: self.logical_height() as f64 }
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.translation + self.half_widths()
     }
 }
 

@@ -344,7 +344,7 @@ impl BasicRenderHandler {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                    clear_values: vec![Some([92./255., 148./255., 252./255., 1.0].into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                 },
                 SubpassBeginInfo {

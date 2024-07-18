@@ -4,7 +4,7 @@ use crate::core::prelude::*;
 use std::time::Instant;
 use num_traits::Zero;
 use crate::{core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
-use crate::core::linalg::{SquareExtent, Vec2};
+use crate::core::linalg::{AxisAlignedExtent, Vec2};
 use crate::gg::VertexWithUV;
 
 pub struct Sprite {
@@ -28,7 +28,7 @@ impl Default for Sprite {
 }
 
 impl Sprite {
-    pub fn from_single(
+    pub fn from_single_extent(
         texture_id: TextureId,
         extent: Vec2Int,
         top_left: Vec2Int
@@ -41,6 +41,18 @@ impl Sprite {
             Vec2Int::zero()
         )
     }
+    pub fn from_single_coords(
+        texture_id: TextureId,
+        top_left: Vec2Int,
+        bottom_right: Vec2Int,
+    ) -> Self {
+        Self::from_single_extent(
+            texture_id,
+            bottom_right - top_left,
+            top_left
+        )
+    }
+
     pub fn from_tileset(
         texture_id: TextureId,
         tile_count: Vec2Int,
@@ -122,7 +134,7 @@ impl Sprite {
     }
 }
 
-impl SquareExtent for Sprite {
+impl AxisAlignedExtent for Sprite {
     fn extent(&self) -> Vec2 {
         self.current_frame().extent()
     }

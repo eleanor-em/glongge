@@ -1,15 +1,16 @@
-use std::any::Any;
 #[allow(unused_imports)]
 use crate::core::prelude::*;
 
+use std::any::Any;
 use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::collision::{BoxCollider, Collider};
-use crate::core::linalg::{SquareExtent, Vec2, Vec2Int};
+use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
 use crate::gg::{CollisionResponse, RenderableObject, RenderInfo, SceneObject, SceneObjectWithId, Transform, UpdateContext, VertexWithUV};
 use crate::gg::coroutine::CoroutineResponse;
 use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType};
+use crate::gg::scene::sample::mario::enemy::Enemy;
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 
@@ -37,9 +38,11 @@ impl Goomba {
         })
     }
 
-    pub fn die(&mut self) { self.dead = true; }
+}
 
-    pub fn dead(&self) -> bool { self.dead }
+impl Enemy for Goomba {
+    fn die(&mut self) { self.dead = true; }
+    fn dead(&self) -> bool { self.dead }
 }
 
 #[partially_derive_scene_object]
@@ -53,7 +56,7 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2Int { x: 0, y: 16 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(200);
-        self.die_sprite = Sprite::from_single(
+        self.die_sprite = Sprite::from_single_extent(
             texture_id,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }

@@ -29,6 +29,7 @@ use crate::{
     },
     resource::ResourceHandler
 };
+use crate::core::linalg::AxisAlignedExtent;
 
 pub fn create_scene(
     resource_handler: ResourceHandler,
@@ -136,7 +137,7 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
 
         if update_ctx.input().pressed(KeyCode::Space) &&
                 update_ctx.others().len() < 2500 &&
-                update_ctx.viewport().contains(self.pos) {
+                update_ctx.viewport().contains_point(self.pos) {
             let mut rng = rand::thread_rng();
             if rng.gen_bool(0.2) {
                 let vel = Vec2 {
@@ -158,7 +159,7 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
 
     fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
-                update_ctx.viewport().contains(self.pos) {
+                update_ctx.viewport().contains_point(self.pos) {
             for other in update_ctx.others() {
                 if (other.transform().centre -  self.pos).len() < Self::TRI_WIDTH {
                     self.velocity = (self.pos - other.transform().centre).normed() * Self::VELOCITY;

@@ -42,7 +42,7 @@ use crate::{
 };
 use crate::core::collision::NullCollider;
 use crate::core::linalg;
-use crate::core::linalg::{Rect, SquareExtent, Vec2Int};
+use crate::core::linalg::{Rect, AxisAlignedExtent, Vec2Int};
 use crate::core::util::NonemptyVec;
 use crate::gg::coroutine::{Coroutine, CoroutineAction, CoroutineId, CoroutineResponse};
 use crate::resource::texture::Texture;
@@ -194,7 +194,7 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     other_map: &'a BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
     pending_add_objects: &'a mut Vec<Box<dyn SceneObject<ObjectType>>>,
     pending_remove_objects: &'a mut BTreeSet<ObjectId>,
-    viewport: AdjustedViewport,
+    viewport: &'a mut AdjustedViewport,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
@@ -282,6 +282,36 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 
     pub fn viewport(&self) -> AdjustedViewport {
         self.viewport.clone()
+    }
+    pub fn clamp_view_to_left(&mut self, min: Option<f64>, max: Option<f64>) {
+        if let Some(min) = min {
+            if self.viewport.left() < min {
+                self.translate_view((min - self.viewport.left()) * Vec2::right());
+            }
+        }
+        if let Some(max) = max {
+            if self.viewport.left() > max {
+                self.translate_view((self.viewport.left() - max) * Vec2::left());
+            }
+        }
+    }
+    pub fn clamp_view_to_right(&mut self, min: Option<f64>, max: Option<f64>) {
+        if let Some(min) = min {
+            if self.viewport.right() < min {
+                self.translate_view((min - self.viewport.right()) * Vec2::right());
+            }
+        }
+        if let Some(max) = max {
+            if self.viewport.right() > max {
+                self.translate_view((self.viewport.right() - max) * Vec2::left());
+            }
+        }
+    }
+    pub fn centre_view_at(&mut self, centre: Vec2) {
+        self.translate_view(centre - self.viewport.centre())
+    }
+    pub fn translate_view(&mut self, delta: Vec2) {
+        self.viewport.translation += delta;
     }
 }
 
@@ -568,7 +598,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     other_map: &mut other_map,
                     pending_add_objects: &mut pending_add_objects,
                     pending_remove_objects: &mut pending_remove_objects,
-                    viewport: self.viewport.clone(),
+                    viewport: &mut self.viewport,
                 };
                 for (id, coroutine) in coroutines {
                     if let Some(coroutine) = coroutine.resume(this.clone(), &mut update_ctx) {
@@ -640,7 +670,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
                 coroutines: self.coroutines.entry(object_id).or_default(),
                 this, other_map, pending_add_objects, pending_remove_objects,
-                viewport: self.viewport.clone(),
+                viewport: &mut self.viewport,
             };
             let obj = &self.objects[&object_id];
             call_obj_event(obj.borrow_mut(), delta, update_ctx);
@@ -661,6 +691,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     .ok_or(anyhow!("missing object_id in render_info: {:?}", object_id))?;
                 render_info.inner = obj.render_info();
                 render_info.transform = obj.transform();
+                render_info.transform.centre -= self.viewport.translation;
             }
         }
         let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
@@ -671,7 +702,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 .collect());
         }
         render_info_receiver.update_render_info(self.render_infos.values().cloned().collect());
+        let translation = self.viewport.translation;
         self.viewport = render_info_receiver.current_viewport();
+        self.viewport.translation = translation;
         self.perf_stats.render_info.stop();
         Ok(())
     }
@@ -832,7 +865,7 @@ impl TextureSubArea {
     }
 }
 
-impl SquareExtent for TextureSubArea {
+impl AxisAlignedExtent for TextureSubArea {
     fn extent(&self) -> Vec2 {
         match self.rect {
             None => Vec2::zero(),

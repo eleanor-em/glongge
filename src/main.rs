@@ -41,7 +41,7 @@ fn main() -> Result<()> {
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    let resource_handler = ResourceHandler::new(ctx.clone());
+    let resource_handler = ResourceHandler::new(ctx.clone())?;
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();

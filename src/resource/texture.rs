@@ -9,11 +9,13 @@ use std::{
     path::Path,
     sync::{
         Arc,
-        Mutex
-    },
+        Mutex,
+        MappedRwLockReadGuard,
+        RwLock,
+        RwLockReadGuard,
+        atomic::{AtomicUsize, Ordering}
+    }
 };
-use std::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use png::ColorType;
 use vulkano::{

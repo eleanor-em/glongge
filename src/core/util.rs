@@ -165,12 +165,14 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)> 
     }
 }
 
+// TODO: implement max()
 #[derive(Clone)]
 pub struct NonemptyVec<T: Clone> {
     inner: Vec<T>,
 }
 
 impl<T: Clone> NonemptyVec<T> {
+    pub fn len(&self) -> usize { self.inner.len() }
     pub fn first(&self) -> &T { unsafe { self.inner.first().unwrap_unchecked() } }
     pub fn into_inner(self) -> Vec<T> { self.inner }
 

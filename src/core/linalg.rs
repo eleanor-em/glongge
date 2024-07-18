@@ -661,15 +661,28 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
 }
 
 #[allow(dead_code)]
-pub trait SquareExtent {
+pub trait AxisAlignedExtent {
     fn extent(&self) -> Vec2;
     fn centre(&self) -> Vec2;
 
     fn half_widths(&self) -> Vec2 { self.extent() / 2 }
     fn top_left(&self) -> Vec2 { self.centre() - self.half_widths() }
-    fn top_right(&self) -> Vec2 { self.centre() + self.half_widths().x * Vec2::right() / 2 }
-    fn bottom_left(&self) -> Vec2 { self.centre() + self.half_widths().y * Vec2::down() / 2 }
-    fn bottom_right(&self) -> Vec2 { self.centre() + self.half_widths() }
+    fn top_right(&self) -> Vec2 { self.top_left() + self.extent().x * Vec2::right() }
+    fn bottom_left(&self) -> Vec2 { self.top_left() + self.extent().y * Vec2::down() }
+    fn bottom_right(&self) -> Vec2 { self.top_left() + self.extent() }
+
+    fn left(&self) -> f64 { self.top_left().x }
+    fn right(&self) -> f64 { self.top_right().x }
+    fn top(&self) -> f64 { self.top_left().y }
+    fn bottom(&self) -> f64 { self.bottom_left().y }
+
+    fn as_rect(&self) -> Rect {
+        Rect::new(self.centre(), self.half_widths())
+    }
+    fn contains_point(&self, pos: Vec2) -> bool {
+        (self.left()..self.right()).contains(&pos.x) &&
+            (self.top()..self.bottom()).contains(&pos.y)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -685,7 +698,7 @@ impl Rect {
     pub fn empty() -> Self { Self { centre: Vec2::zero(), half_widths: Vec2::zero() } }
 }
 
-impl SquareExtent for Rect {
+impl AxisAlignedExtent for Rect {
     fn extent(&self) -> Vec2 { self.half_widths * 2. }
     fn centre(&self) -> Vec2 { self.centre }
 }

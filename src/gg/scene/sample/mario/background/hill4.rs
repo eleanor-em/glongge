@@ -1,49 +1,35 @@
-use std::{
-    any::Any,
-    time::Duration
-};
+#[allow(unused_imports)]
+use crate::core::prelude::*;
+
+use std::any::Any;
+use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use crate::{
-    gg::{
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        UpdateContext,
-        VertexWithUV,
-        scene::sample::mario::{BRICK_COLLISION_TAG, ObjectType}
-    },
-    core::{
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::{BoxCollider, Collider},
-        prelude::*
-    },
-    resource::{
-        ResourceHandler,
-        sprite::Sprite
-    }
-};
+use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
+use crate::gg::scene::sample::mario::ObjectType;
+use crate::gg::{RenderableObject, RenderInfo, SceneObject, Transform, UpdateContext, VertexWithUV};
+use crate::resource::ResourceHandler;
+use crate::resource::sprite::Sprite;
 
 #[register_scene_object]
-pub struct Floor {
+pub struct Hill4 {
     top_left: Vec2,
     sprite: Sprite,
 }
 
-impl Floor {
+impl Hill4 {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self { top_left: top_left.into(), sprite: Sprite::default() })
     }
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Floor {
+impl SceneObject<ObjectType> for Hill4 {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = Sprite::from_single_extent(
+        self.sprite = Sprite::from_single_coords(
             texture_id,
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 16 }
+            Vec2Int { x: 200, y: 692 },
+            Vec2Int { x: 248, y: 708 }
         );
         Ok(())
     }
@@ -58,15 +44,9 @@ impl SceneObject<ObjectType> for Floor {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
-    }
-    fn emitting_tags(&self) -> Vec<&'static str> {
-        [BRICK_COLLISION_TAG].into()
-    }
 }
 
-impl RenderableObject<ObjectType> for Floor {
+impl RenderableObject<ObjectType> for Hill4 {
     fn create_vertices(&self) -> Vec<VertexWithUV> {
         self.sprite.create_vertices()
     }

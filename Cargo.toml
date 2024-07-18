@@ -20,6 +20,8 @@ vulkano-shaders = "0.34.0"
 winit = "0.28.7"
 # media
 asefile = "0.3.8"
+fyrox-resource = "0.12.0"
+fyrox-sound = "0.35.0"
 png = "0.17.13"
 
 [profile.dev.package.vulkano]
