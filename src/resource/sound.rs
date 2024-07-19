@@ -28,7 +28,7 @@ impl Sound {
             let source = state.source_mut(inner.handle);
             source.stop()
                 .expect("should only be fallible for streaming buffers (see source)");
-            source.play();
+            // source.play();
         } else {
             warn!("tried to play non-loaded sound");
         }

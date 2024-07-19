@@ -152,7 +152,7 @@ impl Scene<ObjectType> for MarioScene {
         initial_objects.push(Brick::new(Vec2Int { x: 78 * 16, y: 384 - 6 * 16 }));
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 79 * 16, y: 384 - 6 * 16 }));
         initial_objects.push(Brick::new(Vec2Int { x: 80 * 16, y: 384 - 6 * 16 }));
-        for (tile_x, _tile_y) in Vec2Int::range_from_zero([7, 1].into()) {
+        for (tile_x, _tile_y) in Vec2Int::range_from_zero([8, 1].into()) {
             initial_objects.push(Brick::new(Vec2Int {
                 x: (tile_x + 81) * 16,
                 y: 384 - 10 * 16
@@ -160,6 +160,12 @@ impl Scene<ObjectType> for MarioScene {
         }
         initial_objects.push(Goomba::new(Vec2Int { x: 81 * 16, y: 384 - 11 * 16 }));
         initial_objects.push(Goomba::new(Vec2Int { x: 83 * 16, y: 384 - 11 * 16 }));
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([50, 2].into()) {
+            initial_objects.push(Floor::new(Vec2Int {
+                x: (tile_x + 90) * 16,
+                y: 384 - (tile_y + 1) * 16
+            }));
+        }
         initial_objects
     }
 }

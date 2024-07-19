@@ -24,6 +24,9 @@ fyrox-resource = "0.12.0"
 fyrox-sound = "0.35.0"
 png = "0.17.13"
 
+[profile.dev]
+opt-level = 1
+
 [profile.dev.package.vulkano]
 opt-level = 3
 
