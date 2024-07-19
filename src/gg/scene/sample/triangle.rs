@@ -3,7 +3,6 @@ use crate::core::prelude::*;
 
 use std::{
     any::Any,
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use num_traits::{Float, FloatConst, Zero};
@@ -17,27 +16,30 @@ use crate::{
     core::{
         colour::Colour,
         linalg::Vec2,
-        input::{InputHandler, KeyCode}
+        input::KeyCode
     },
     gg::{
         self,
-        render::BasicRenderHandler,
-        scene::Scene,
         Transform,
         UpdateContext,
         VertexWithUV
     },
-    resource::ResourceHandler
 };
 use crate::core::linalg::AxisAlignedExtent;
+use crate::gg::AnySceneObject;
+use crate::gg::scene::{Scene, SceneName};
 
-pub fn create_scene(
-    resource_handler: ResourceHandler,
-    render_handler: BasicRenderHandler,
-    input_handler: Arc<Mutex<InputHandler>>
-) -> Scene<ObjectType, BasicRenderHandler> {
-    Scene::new(vec![Box::new(Spawner {})],
-               input_handler, resource_handler, render_handler)
+#[allow(dead_code)]
+#[derive(Copy, Clone)]
+struct TriangleScene {}
+impl Scene<ObjectType> for TriangleScene {
+    fn name(&self) -> SceneName { "triangle".into() }
+
+    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+        vec![
+            Box::new(Spawner{}),
+        ]
+    }
 }
 
 #[register_object_type]

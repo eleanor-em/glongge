@@ -569,6 +569,7 @@ impl PerImageContext {
 }
 
 pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
+    : Clone + Send + Sync
 {
     type InfoReceiver: RenderInfoReceiver + 'static;
 
@@ -638,7 +639,7 @@ where
         }
     }
 
-    pub fn run(mut self, event_loop: EventLoop<()>, report_stats: bool) {
+    pub fn consume(mut self, event_loop: EventLoop<()>, report_stats: bool) {
         event_loop.run(move |event, _, control_flow| {
             self.run_inner(event, control_flow, report_stats).expect("error running event loop");
         });

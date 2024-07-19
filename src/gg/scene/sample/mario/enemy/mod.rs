@@ -5,14 +5,14 @@ use crate::gg::{SceneObject, SceneObjectWithId};
 
 pub mod goomba;
 
-pub trait Enemy: SceneObject<ObjectType> {
-    fn die(&mut self);
+pub trait Stompable: SceneObject<ObjectType> {
+    fn stomp(&mut self);
     fn dead(&self) -> bool;
 }
 
-pub fn downcast_enemy_mut(obj: &mut SceneObjectWithId<ObjectType>) -> Option<RefMut<dyn Enemy>> {
+pub fn downcast_stompable_mut(obj: &mut SceneObjectWithId<ObjectType>) -> Option<RefMut<dyn Stompable>> {
     match obj.get_type() {
-        ObjectType::Goomba => Some(obj.downcast_mut::<Goomba>().unwrap() as RefMut<dyn Enemy>),
+        ObjectType::Goomba => Some(obj.downcast_mut::<Goomba>().unwrap() as RefMut<dyn Stompable>),
         _ => None
     }
 }

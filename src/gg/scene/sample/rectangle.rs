@@ -3,7 +3,6 @@ use crate::core::prelude::*;
 
 use std::{
     any::Any,
-    sync::{Arc, Mutex},
     time::{
         Duration,
         Instant
@@ -18,13 +17,11 @@ use crate::{
     core::{
         collision::{BoxCollider, Collider},
         colour::Colour,
-        input::{InputHandler, KeyCode},
+        input::KeyCode,
         linalg::Vec2,
     },
     gg::{
         self,
-        render::BasicRenderHandler,
-        scene::Scene,
         UpdateContext,
         RenderableObject,
         RenderInfo,
@@ -39,22 +36,21 @@ use crate::{
     },
     shader,
 };
-use crate::gg::CollisionResponse;
+use crate::gg::{AnySceneObject, CollisionResponse};
+use crate::gg::scene::{Scene, SceneName};
 
-pub fn create_scene(
-    resource_handler: ResourceHandler,
-    render_handler: BasicRenderHandler,
-    input_handler: Arc<Mutex<InputHandler>>
-) -> Scene<ObjectType, BasicRenderHandler> {
-    Scene::new(
+#[allow(dead_code)]
+#[derive(Copy, Clone)]
+struct RectangleScene {}
+impl Scene<ObjectType> for RectangleScene {
+    fn name(&self) -> SceneName { "rectangle".into() }
+
+    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![
             Spawner::new(),
             Player::new(),
-        ],
-        input_handler,
-        resource_handler,
-        render_handler
-    )
+        ]
+    }
 }
 
 #[register_object_type]
@@ -237,7 +233,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
-    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _update_ctx: UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         self.pos += mtv;
 
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {

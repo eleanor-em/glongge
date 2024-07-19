@@ -16,11 +16,14 @@ use crate::{
     },
     gg::{
         render::BasicRenderHandler,
-        scene::sample::{rectangle, triangle}
+        scene::SceneHandler
     },
     resource::ResourceHandler
 };
-use crate::gg::scene::sample::mario;
+#[allow(unused_imports)]
+use crate::gg::scene::sample::*;
+use crate::gg::scene::sample::mario::MarioScene;
+use crate::gg::scene::Scene;
 
 mod assert;
 mod core;
@@ -45,22 +48,27 @@ fn main() -> Result<()> {
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();
-    let mut _scene = rectangle::create_scene(
-        resource_handler.clone(),
-        render_handler.clone(),
-        input_handler.clone());
-    let mut _scene = triangle::create_scene(
-        resource_handler.clone(),
-        render_handler.clone(),
-        input_handler.clone());
-    let mut scene = mario::create_scene(
-        resource_handler.clone(),
-        render_handler.clone(),
-        input_handler.clone());
-    scene.run();
+    {
+        let input_handler = input_handler.clone();
+        let resource_handler = resource_handler.clone();
+        let render_handler = render_handler.clone();
+        std::thread::spawn(move || {
+            let mut scene_handler = SceneHandler::new(
+                input_handler,
+                resource_handler,
+                render_handler
+            );
+            // let scene = rectangle::create_scene(&mut scene_handler);
+            // let scene = triangle::create_scene(&mut scene_handler);
+            let scene = MarioScene {};
+            let name = scene.name();
+            scene_handler.create_scene(MarioScene {});
+            scene_handler.consume_with_scene(name, 0);
+        });
+    }
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
-        .run(event_loop, false);
+        .consume(event_loop, false);
     Ok(())
 }
 

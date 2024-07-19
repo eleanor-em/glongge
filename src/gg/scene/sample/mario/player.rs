@@ -28,7 +28,7 @@ use crate::{
                     PLAYER_COLLISION_TAG,
                     ObjectType,
                     block::downcast_bumpable_mut,
-                    enemy::downcast_enemy_mut
+                    enemy::downcast_stompable_mut
                 }
             }
         },
@@ -43,6 +43,9 @@ use crate::{
     },
     resource::sprite::Sprite,
 };
+use crate::gg::coroutine::CoroutineState;
+use crate::gg::scene::sample::mario::MarioScene;
+use crate::gg::scene::Scene;
 use crate::resource::sound::Sound;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -96,6 +99,9 @@ pub struct Player {
     die_sprite: Sprite,
 
     jump_sound: Sound,
+    stomp_sound: Sound,
+    die_sound: Sound,
+    music: Sound,
 }
 
 // For a guide to Super Mario Bros. (NES) physics, see:
@@ -177,7 +183,7 @@ impl Player {
                 .map(|id| update_ctx.cancel_coroutine(id));
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                update_ctx.add_coroutine_after(|mut this, _update_ctx, _action| {
+                update_ctx.start_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if this.state == PlayerState::Dying {
                         return CoroutineResponse::Complete;
@@ -245,16 +251,14 @@ impl Player {
                 _ => SpeedRegime::Fast,
             };
             if update_ctx.input().pressed(KeyCode::Z) {
-                self.jump_sound.play();
-                self.state = PlayerState::Falling;
-                self.v_speed = self.initial_vspeed();
+                self.start_jump();
             }
         }
 
         let ray = self.collider().translated(2 * Vec2::down());
         if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                update_ctx.add_coroutine_after(|mut this, _update_ctx, _action| {
+                update_ctx.start_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if this.state == PlayerState::Dying {
                         return CoroutineResponse::Complete;
@@ -267,6 +271,35 @@ impl Player {
         } else {
             self.coyote_crt.take().map(|id| update_ctx.cancel_coroutine(id));
         }
+    }
+
+    fn start_jump(&mut self) {
+        self.jump_sound.play();
+        self.state = PlayerState::Falling;
+        self.v_speed = self.initial_vspeed();
+    }
+
+    fn start_die(&mut self, update_ctx: &mut UpdateContext<ObjectType>) {
+        // self.music.stop();
+        update_ctx.start_coroutine(|this, update_ctx, last_state| {
+            let this = this.downcast::<Self>().unwrap();
+            match last_state {
+                CoroutineState::Starting | CoroutineState::Yielding => {
+                    if this.die_sound.is_playing() {
+                        CoroutineResponse::Yield
+                    } else {
+                        CoroutineResponse::Wait(Duration::from_secs(1))
+                    }
+                }
+                CoroutineState::Waiting => {
+                    update_ctx.goto_scene(MarioScene{}.name(), 0);
+                    CoroutineResponse::Complete
+                }
+            }
+        });
+        self.die_sound.play();
+        self.v_speed = -from_nes(13, 0, 0, 0);
+        self.state = PlayerState::Dying;
     }
 }
 
@@ -310,6 +343,11 @@ impl SceneObject<ObjectType> for Player {
         );
 
         self.jump_sound = resource_handler.sound.wait_load_file("res/jump-small.wav".to_string())?;
+        self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;
+        self.die_sound = resource_handler.sound.wait_load_file("res/death.wav".to_string())?;
+        // TODO: music is weirdly slow to load.
+        // self.music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
+        // self.music.play_loop();
         Ok(())
     }
     fn on_ready(&mut self) {
@@ -410,19 +448,19 @@ impl SceneObject<ObjectType> for Player {
         }
     }
 
-    fn on_collision(&mut self, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, mut update_ctx: UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if self.state == PlayerState::Dying {
             return CollisionResponse::Done;
         }
-        if let Some(mut other) = downcast_enemy_mut(&mut other) {
+        if let Some(mut other) = downcast_stompable_mut(&mut other) {
             if !other.dead() {
                 if self.centre.y + self.current_sprite().half_widths().y <= other.transform().centre.y {
-                    other.die();
+                    other.stomp();
+                    self.stomp_sound.play();
                     self.v_speed = self.initial_vspeed();
                     self.state = PlayerState::Falling;
                 } else {
-                    self.v_speed = -from_nes(13, 0, 0, 0);
-                    self.state = PlayerState::Dying;
+                    self.start_die(&mut update_ctx);
                     return CollisionResponse::Done;
                 }
             }

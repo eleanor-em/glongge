@@ -15,7 +15,7 @@ impl CoroutineId {
     }
 }
 
-pub enum CoroutineAction {
+pub enum CoroutineState {
     Starting,
     Yielding,
     Waiting,
@@ -29,26 +29,26 @@ pub enum CoroutineResponse {
 pub type CoroutineFunc<ObjectType> = dyn FnMut(
     SceneObjectWithId<ObjectType>,
     &mut UpdateContext<ObjectType>,
-    CoroutineAction
+    CoroutineState
 ) -> CoroutineResponse;
 
 pub(crate) struct Coroutine<ObjectType: ObjectTypeEnum> {
     func: Box<CoroutineFunc<ObjectType>>,
     wait_since: Instant,
     wait_duration: Duration,
-    last_action: CoroutineAction,
+    last_action: CoroutineState,
 }
 
 impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
     pub(crate) fn new<F>(func: F) -> Self
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineState) -> CoroutineResponse + 'static
     {
         Self {
             func: Box::new(func),
             wait_since: Instant::now(),
             wait_duration: Duration::from_secs(0),
-            last_action: CoroutineAction::Starting,
+            last_action: CoroutineState::Starting,
         }
     }
 
@@ -59,13 +59,13 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
         let result = (self.func)(this, update_ctx, self.last_action);
         match result {
             CoroutineResponse::Yield => {
-                self.last_action = CoroutineAction::Yielding;
+                self.last_action = CoroutineState::Yielding;
                 Some(self)
             }
             CoroutineResponse::Wait(time) => {
                 self.wait_since = Instant::now();
                 self.wait_duration = time;
-                self.last_action = CoroutineAction::Waiting;
+                self.last_action = CoroutineState::Waiting;
                 Some(self)
             }
             CoroutineResponse::Complete => None

@@ -99,6 +99,7 @@ struct BasicVertex {
     blend_col: [f32; 4],
 }
 
+#[derive(Clone)]
 pub struct BasicRenderInfoReceiver {
     vertices: Vec<VertexWithUV>,
     vertices_up_to_date: DataPerImage<bool>,
@@ -136,7 +137,7 @@ impl RenderInfoReceiver for BasicRenderInfoReceiver {
 
 #[derive(Clone)]
 pub struct BasicRenderHandler {
-    resource_handler: ResourceHandler,
+    pub(crate) resource_handler: ResourceHandler,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: AdjustedViewport,

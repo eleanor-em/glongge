@@ -10,7 +10,7 @@ use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
 use crate::gg::{CollisionResponse, RenderableObject, RenderInfo, SceneObject, SceneObjectWithId, Transform, UpdateContext, VertexWithUV};
 use crate::gg::coroutine::CoroutineResponse;
 use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType};
-use crate::gg::scene::sample::mario::enemy::Enemy;
+use crate::gg::scene::sample::mario::enemy::Stompable;
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 
@@ -40,8 +40,8 @@ impl Goomba {
 
 }
 
-impl Enemy for Goomba {
-    fn die(&mut self) { self.dead = true; }
+impl Stompable for Goomba {
+    fn stomp(&mut self) { self.dead = true; }
     fn dead(&self) -> bool { self.dead }
 }
 
@@ -77,7 +77,7 @@ impl SceneObject<ObjectType> for Goomba {
             self.top_left += self.vel;
         }
     }
-    fn on_collision(&mut self, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _update_ctx: UpdateContext<ObjectType>, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
             self.top_left += mtv;
@@ -86,11 +86,11 @@ impl SceneObject<ObjectType> for Goomba {
             self.vel.y = 0.;
             self.top_left += mtv;
         }
-        CollisionResponse::Done
+        CollisionResponse::Continue
     }
     fn on_update_end(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {
-            update_ctx.add_coroutine_after(|_this, update_ctx, _action| {
+            update_ctx.start_coroutine_after(|_this, update_ctx, _action| {
                 update_ctx.remove_this_object();
                 CoroutineResponse::Complete
             }, Duration::from_millis(300));
@@ -114,7 +114,7 @@ impl SceneObject<ObjectType> for Goomba {
         [ENEMY_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
-        [BRICK_COLLISION_TAG].into()
+        [ENEMY_COLLISION_TAG, BRICK_COLLISION_TAG].into()
     }
 }
 

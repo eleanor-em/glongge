@@ -21,6 +21,7 @@ use std::{any::{Any, TypeId}, cell::{
 }, time::{Duration, Instant}};
 use std::fmt::Formatter;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use num_traits::Zero;
 
 use crate::{
@@ -44,7 +45,8 @@ use crate::core::collision::NullCollider;
 use crate::core::linalg;
 use crate::core::linalg::{Rect, AxisAlignedExtent, Vec2Int};
 use crate::core::util::NonemptyVec;
-use crate::gg::coroutine::{Coroutine, CoroutineAction, CoroutineId, CoroutineResponse};
+use crate::gg::coroutine::{Coroutine, CoroutineState, CoroutineId, CoroutineResponse};
+use crate::gg::scene::{SceneHandlerInstruction, SceneName};
 use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
@@ -108,7 +110,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     #[allow(unused_variables)]
     fn on_fixed_update(&mut self, update_ctx: UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_collision(&mut self, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, update_ctx: UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         CollisionResponse::Done
     }
 
@@ -189,6 +191,7 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     input_handler: &'a InputHandler,
     collision_handler: &'a CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
+    scene_data: &'a mut Vec<u8>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
     this: SceneObjectWithId<ObjectType>,
     other_map: &'a BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
@@ -221,21 +224,21 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         self.pending_remove_objects.insert(self.this.object_id);
     }
 
-    pub fn add_coroutine<F>(&mut self, func: F) -> CoroutineId
+    pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineState) -> CoroutineResponse + 'static
     {
         let id = CoroutineId::next();
         self.coroutines.insert(id, Coroutine::new(func));
         id
     }
-    pub fn add_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
+    pub fn start_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineAction) -> CoroutineResponse + 'static
+        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineState) -> CoroutineResponse + 'static
     {
-        self.add_coroutine(move |this, update_ctx, action| {
+        self.start_coroutine(move |this, update_ctx, action| {
             match action {
-                CoroutineAction::Starting => CoroutineResponse::Wait(duration),
+                CoroutineState::Starting => CoroutineResponse::Wait(duration),
                 _ => func(this, update_ctx, action)
             }
         })
@@ -276,8 +279,11 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
             })
     }
 
-    pub fn scene_stop(&self) {
-        self.scene_instruction_tx.send(SceneInstruction::Stop).unwrap();
+    pub fn stop_scene(&self) {
+        self.scene_instruction_tx.send(SceneInstruction::Stop(self.scene_data.clone())).unwrap();
+    }
+    pub fn goto_scene(&self, name: SceneName, entrance_id: usize) {
+        self.scene_instruction_tx.send(SceneInstruction::Goto(name, entrance_id, self.scene_data.clone())).unwrap();
     }
 
     pub fn viewport(&self) -> AdjustedViewport {
@@ -319,7 +325,8 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 pub enum SceneInstruction {
     Pause,
     Resume,
-    Stop,
+    Stop(Vec<u8>),
+    Goto(SceneName, usize, Vec<u8>),
 }
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
@@ -385,6 +392,7 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoR
     collision_handler: CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
+    scene_data: Vec<u8>,
     perf_stats: UpdatePerfStats,
 }
 
@@ -394,8 +402,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         input_handler: Arc<Mutex<InputHandler>>,
         mut resource_handler: ResourceHandler,
         render_info_receiver: Arc<Mutex<RenderReceiver>>,
-        scene_instruction_tx: Sender<SceneInstruction>,
-        scene_instruction_rx: Receiver<SceneInstruction>,
+        scene_data: Vec<u8>
     ) -> Result<Self> {
         let mut objects = objects.into_iter()
             .map(|obj| (ObjectId::next(), obj))
@@ -429,6 +436,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             .map(|(id, obj)| (id, Rc::new(RefCell::new(obj))))
             .collect();
 
+        let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         let mut rv = Self {
             objects,
             vertices,
@@ -441,13 +449,14 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
             scene_instruction_rx,
+            scene_data,
             perf_stats: UpdatePerfStats::new(),
         };
         rv.update_render_info(true)?;
         Ok(rv)
     }
 
-    pub fn consume(mut self) -> Result<()> {
+    pub fn consume(mut self) -> Result<SceneHandlerInstruction> {
         let mut delta = Duration::from_secs(0);
         let mut is_running = true;
         let mut fixed_update_us = 0;
@@ -478,10 +487,19 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             }
 
             match self.scene_instruction_rx.try_iter().next() {
-                Some(SceneInstruction::Stop) => {},
-                Some(SceneInstruction::Pause) => is_running = false,
-                Some(SceneInstruction::Resume) => is_running = true,
-                None => {}
+                Some(SceneInstruction::Stop(scene_data)) => {
+                    return Ok(SceneHandlerInstruction::SaveAndExit(scene_data))
+                },
+                Some(SceneInstruction::Goto(name, entrance_id, scene_data)) => {
+                    return Ok(SceneHandlerInstruction::SaveAndGoto(name, entrance_id, scene_data))
+                }
+                Some(SceneInstruction::Pause) => {
+                    is_running = false
+                },
+                Some(SceneInstruction::Resume) => {
+                    is_running = true
+                },
+                None => {},
             }
         }
     }
@@ -593,6 +611,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     input_handler: &input_handler,
                     collision_handler: &self.collision_handler,
                     scene_instruction_tx: self.scene_instruction_tx.clone(),
+                    scene_data: &mut self.scene_data,
                     coroutines: &mut BTreeMap::new(),
                     this: this.clone(),
                     other_map: &mut other_map,
@@ -633,7 +652,19 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             let mut done_with_collisions = BTreeSet::new();
             for CollisionNotification { this, other, mtv } in collisions {
                 if !done_with_collisions.contains(&this.object_id) {
-                    match this.inner.borrow_mut().on_collision(other, mtv) {
+                    let update_ctx = UpdateContext {
+                        input_handler: &input_handler,
+                        collision_handler: &self.collision_handler,
+                        scene_instruction_tx: self.scene_instruction_tx.clone(),
+                        scene_data: &mut self.scene_data,
+                        coroutines: self.coroutines.entry(this.object_id).or_default(),
+                        this: this.clone(),
+                        other_map: &mut BTreeMap::new(),
+                        pending_add_objects: &mut pending_add_objects,
+                        pending_remove_objects: &mut pending_remove_objects,
+                        viewport: &mut self.viewport,
+                    };
+                    match this.inner.borrow_mut().on_collision(update_ctx, other, mtv) {
                         CollisionResponse::Continue => {},
                         CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
                     }
@@ -668,6 +699,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 input_handler,
                 collision_handler: &self.collision_handler,
                 scene_instruction_tx: self.scene_instruction_tx.clone(),
+                scene_data: &mut self.scene_data,
                 coroutines: self.coroutines.entry(object_id).or_default(),
                 this, other_map, pending_add_objects, pending_remove_objects,
                 viewport: &mut self.viewport,
@@ -901,7 +933,7 @@ pub struct RenderInfoFull {
     vertex_indices: Range<usize>,
 }
 
-pub trait RenderInfoReceiver: Send {
+pub trait RenderInfoReceiver: Clone + Send {
     fn update_vertices(&mut self, vertices: Vec<VertexWithUV>);
     fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>);
     fn current_viewport(&self) -> AdjustedViewport;

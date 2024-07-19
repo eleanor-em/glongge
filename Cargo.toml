@@ -25,7 +25,13 @@ fyrox-sound = "0.35.0"
 png = "0.17.13"
 
 [profile.dev.package.vulkano]
-opt-level = 1
+opt-level = 3
 
 [profile.dev.package.asefile]
-opt-level = 2
+opt-level = 3
+
+[profile.dev.package.fyrox-resource]
+opt-level = 3
+
+[profile.dev.package.fyrox-sound]
+opt-level = 3

@@ -23,12 +23,40 @@ pub struct Sound {
 impl Sound {
     pub fn play(&mut self) {
         let inner = self.inner.clone().unwrap();
-        inner.ctx.state().source_mut(inner.handle).play();
+        let mut state = inner.ctx.state();
+        let source = state.source_mut(inner.handle);
+        source.stop()
+            .expect("should only be fallible for streaming buffers (see source)");
+        source.play();
+    }
+
+    pub fn play_loop(&mut self) {
+        let inner = self.inner.clone().unwrap();
+        let mut state = inner.ctx.state();
+        let source = state.source_mut(inner.handle);
+        source.set_looping(true);
+        source.stop()
+            .expect("should only be fallible for streaming buffers (see source)");
+        source.play();
+    }
+
+    pub fn stop(&mut self) {
+        let inner = self.inner.clone().unwrap();
+        let mut state = inner.ctx.state();
+        let source = state.source_mut(inner.handle);
+        source.stop()
+            .expect("should only be fallible for streaming buffers (see source)");
+    }
+
+    pub fn is_playing(&self) -> bool {
+        let inner = self.inner.clone().unwrap();
+        let mut state = inner.ctx.state();
+        let source = state.source_mut(inner.handle);
+        source.status() == Status::Playing
     }
 }
 
 struct SoundHandlerInner {
-    // TODO: should store sound buffers, so we create multiple different sources as needed.
     loaded_files: BTreeMap<String, SoundBufferResource>,
 }
 
