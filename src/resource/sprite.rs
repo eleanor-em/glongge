@@ -99,7 +99,7 @@ impl Sprite {
         }
     }
 
-    pub fn current_frame(&self) -> TextureSubArea {
+    fn current_frame(&self) -> TextureSubArea {
         check!(self.ready());
         let instant = match self.paused {
             None => self.started,

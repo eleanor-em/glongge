@@ -3,7 +3,7 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Formatter},
-    ops::{Add, Range},
+    ops::Range,
     rc::Rc,
     sync::{
         Arc,
@@ -76,14 +76,6 @@ impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
 }
 
-impl Add<usize> for ObjectId {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {
     Continue,
@@ -138,7 +130,7 @@ impl VertexWithUV {
     pub fn from_vec2s<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
         vertices.into_iter().map(Self::from_vertex).collect()
     }
-    pub fn zip_from_iter<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
+    pub fn zip_from_vec2s<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
         vertices.into_iter().zip(uvs)
             .map(|(vertex, uv)| Self { vertex, uv })
             .collect()
@@ -150,7 +142,11 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
     fn render_info(&self) -> RenderInfo;
 }
 
-impl<ObjectType: ObjectTypeEnum, T: SceneObject<ObjectType> + 'static> From<Box<T>> for Box<dyn SceneObject<ObjectType>> {
+impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>
+where
+    ObjectType: ObjectTypeEnum,
+    T: SceneObject<ObjectType> + 'static
+{
     fn from(value: Box<T>) -> Self { value }
 }
 
@@ -441,7 +437,7 @@ impl UpdatePerfStats {
     }
 }
 
-pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
+pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
     render_infos: BTreeMap<ObjectId, RenderInfoFull>,
@@ -932,7 +928,7 @@ struct CollisionHandler {
 }
 
 impl CollisionHandler {
-    pub fn new<ObjectType: ObjectTypeEnum>(
+    fn new<ObjectType: ObjectTypeEnum>(
         objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>)
         -> Self {
         let mut rv = Self {
@@ -943,7 +939,7 @@ impl CollisionHandler {
         rv.update_with_added_objects(objects);
         rv
     }
-    pub fn update_with_added_objects<ObjectType: ObjectTypeEnum>(&mut self, added_objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>) {
+    fn update_with_added_objects<ObjectType: ObjectTypeEnum>(&mut self, added_objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>) {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
 
@@ -981,7 +977,7 @@ impl CollisionHandler {
             self.possible_collisions.extend(new_possible_collisions);
         }
     }
-    pub fn update_with_removed_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
+    fn update_with_removed_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
         for (_, ids) in self.object_ids_by_emitting_tag.iter_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
@@ -990,7 +986,7 @@ impl CollisionHandler {
         }
         self.possible_collisions.retain(|pair| !removed_ids.contains(&pair.fst()) && !removed_ids.contains(&pair.snd()));
     }
-    pub fn get_collisions<ObjectType: ObjectTypeEnum>(
+    fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
         objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>)
         -> Vec<CollisionNotification<ObjectType>> {
@@ -1047,7 +1043,7 @@ impl TextureSubArea {
         Self { rect: Some(rect) }
     }
 
-    pub fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
+    pub(crate) fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
         match self.rect {
             None => raw_uv,
             Some(rect) => {

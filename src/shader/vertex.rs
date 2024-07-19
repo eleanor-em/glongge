@@ -15,5 +15,5 @@ pub fn rectangle(centre: Vec2, half_widths: Vec2) -> Vec<Vec2> {
 
 pub fn rectangle_with_uv(centre: Vec2, half_widths: Vec2) -> Vec<VertexWithUV> {
     let uvs = vec![Vec2::zero(), Vec2::right(), Vec2::down(), Vec2::right(), Vec2::one(), Vec2::down()];
-    VertexWithUV::zip_from_iter(rectangle(centre, half_widths), uvs)
+    VertexWithUV::zip_from_vec2s(rectangle(centre, half_widths), uvs)
 }
