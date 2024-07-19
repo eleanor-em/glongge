@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[allow(unused_imports)]
 use crate::core::prelude::*;
 
@@ -11,17 +13,20 @@ pub mod sprite;
 pub mod texture;
 pub mod sound;
 
+static CREATED_RESOURCE_HANDLER: AtomicBool = AtomicBool::new(false);
 #[derive(Clone)]
 pub struct ResourceHandler {
-    pub texture: TextureHandler,
-    pub sound: SoundHandler,
+    pub texture: Arc<TextureHandler>,
+    pub sound: Arc<SoundHandler>,
 }
 
 impl ResourceHandler {
     pub fn new(ctx: VulkanoContext) -> Result<Self> {
+        let resource_handler_already_exists = CREATED_RESOURCE_HANDLER.swap(true, Ordering::Relaxed);
+        check_false!(resource_handler_already_exists);
         Ok(Self {
-            texture: TextureHandler::new(ctx.clone()),
-            sound: SoundHandler::new()?,
+            texture: Arc::new(TextureHandler::new(ctx.clone())),
+            sound: Arc::new(SoundHandler::new()?),
         })
     }
 }

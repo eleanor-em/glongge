@@ -583,6 +583,10 @@ pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = Prima
         ctx: &VulkanoContext,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
     ) -> Result<DataPerImage<Arc<CommandBuffer>>>;
+    fn on_reload_textures(
+        &mut self,
+        ctx: &VulkanoContext
+    ) -> Result<()>;
 
     fn get_receiver(&self) -> Arc<Mutex<Self::InfoReceiver>>;
 }
@@ -681,6 +685,7 @@ where
         if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.ctx)? {
             uploads.flush()?;
             info!("loaded textures");
+            self.render_handler.on_reload_textures(&self.ctx)?;
         }
         if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
             if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {

@@ -249,10 +249,13 @@ impl BasicRenderHandler {
                 let mut blend_col = render_info.inner.col;
                 let mut uv = receiver.vertices[vertex_index].uv;
                 if let Some(tex) = self.resource_handler.texture.get(texture_id) {
-                    uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                    if let Some(tex) = tex.ready() {
+                        uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                    } else {
+                        blend_col = Colour::new(0., 0., 0., 0.);
+                    }
                 } else {
-                    warn!("missing texture id: {:?}", texture_id);
-                    blend_col = Colour::magenta();
+                    error!("missing texture id: {:?}", texture_id);
                 }
                 out_vertices.push(BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
@@ -370,6 +373,12 @@ impl BasicRenderHandler {
         &mut self,
         ctx: &VulkanoContext)
     -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
+        if self.pipeline.is_none() ||
+                self.uniform_buffers.is_none() ||
+                self.uniform_buffer_sets.is_none() ||
+                self.vertex_buffers.is_none() {
+            self.command_buffers = None;
+        }
         match self.command_buffers.clone() {
             None => {
                 let pipeline = self.get_or_create_pipeline(ctx)?;
@@ -414,8 +423,7 @@ impl BasicRenderHandler {
                         border_color: BorderColor::FloatTransparentBlack,
                         ..Default::default()
                     }).map_err(Validated::unwrap)?;
-                // TODO: should now invalidate uniform buffer sets whenever we load a new texture.
-                let mut textures = self.resource_handler.texture.values()
+                let mut textures = self.resource_handler.texture.ready_values()
                     .into_iter()
                     .filter_map(|tex| tex.image_view())
                     .collect_vec();
@@ -509,6 +517,11 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
         self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
         Ok(command_buffers)
+    }
+
+    fn on_reload_textures(&mut self, _ctx: &VulkanoContext) -> Result<()> {
+        self.uniform_buffer_sets = None;
+        Ok(())
     }
 
     fn get_receiver(&self) -> Arc<Mutex<BasicRenderInfoReceiver>> {

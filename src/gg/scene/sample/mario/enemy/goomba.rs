@@ -9,8 +9,9 @@ use crate::core::collision::{BoxCollider, Collider};
 use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
 use crate::gg::{CollisionResponse, RenderableObject, RenderInfo, SceneObject, SceneObjectWithId, Transform, UpdateContext, VertexWithUV};
 use crate::gg::coroutine::CoroutineResponse;
-use crate::gg::scene::sample::mario::{BASE_GRAVITY, BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType};
+use crate::gg::scene::sample::mario::{BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType};
 use crate::gg::scene::sample::mario::enemy::Stompable;
+use crate::gg::scene::SceneName;
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 
@@ -47,7 +48,7 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, _scene_name: SceneName, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,
@@ -66,8 +67,7 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
-        let ray = self.collider().translated(2 * Vec2::down());
-        if ctx.object().test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision_along(&self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {
             self.v_accel = BASE_GRAVITY;
         }
     }
@@ -114,7 +114,7 @@ impl SceneObject<ObjectType> for Goomba {
         [ENEMY_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
-        [ENEMY_COLLISION_TAG, BRICK_COLLISION_TAG].into()
+        [ENEMY_COLLISION_TAG, BLOCK_COLLISION_TAG].into()
     }
 }
 

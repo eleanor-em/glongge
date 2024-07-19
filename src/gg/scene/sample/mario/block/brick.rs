@@ -6,10 +6,11 @@ use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::collision::{BoxCollider, Collider};
 use crate::core::linalg::{AxisAlignedExtent, Vec2, Vec2Int};
-use crate::gg::scene::sample::mario::{BRICK_COLLISION_TAG, from_nes, from_nes_accel, ObjectType};
+use crate::gg::scene::sample::mario::{BLOCK_COLLISION_TAG, from_nes, from_nes_accel, ObjectType};
 use crate::gg::{RenderableObject, RenderInfo, SceneObject, Transform, UpdateContext, VertexWithUV};
 use crate::gg::scene::sample::mario::block::Bumpable;
 use crate::gg::scene::sample::mario::player::Player;
+use crate::gg::scene::SceneName;
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 
@@ -37,7 +38,7 @@ impl Brick {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Brick {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, _scene_name: SceneName, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,
@@ -69,7 +70,7 @@ impl SceneObject<ObjectType> for Brick {
         Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
-        [BRICK_COLLISION_TAG].into()
+        [BLOCK_COLLISION_TAG].into()
     }
 }
 

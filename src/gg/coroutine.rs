@@ -15,6 +15,7 @@ impl CoroutineId {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub enum CoroutineState {
     Starting,
     Yielding,

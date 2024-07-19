@@ -25,26 +25,27 @@ use crate::{
 };
 use crate::gg::scene::SceneName;
 
+
 #[register_scene_object]
-pub struct Floor {
+pub struct UndergroundFloor {
     top_left: Vec2,
     sprite: Sprite,
 }
 
-impl Floor {
+impl UndergroundFloor {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self { top_left: top_left.into(), sprite: Sprite::default() })
     }
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Floor {
+impl SceneObject<ObjectType> for UndergroundFloor {
     fn on_load(&mut self, _scene_name: SceneName, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,
             Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 16 }
+            Vec2Int { x: 147, y: 16 }
         );
         Ok(())
     }
@@ -67,7 +68,7 @@ impl SceneObject<ObjectType> for Floor {
     }
 }
 
-impl RenderableObject<ObjectType> for Floor {
+impl RenderableObject<ObjectType> for UndergroundFloor {
     fn create_vertices(&self) -> Vec<VertexWithUV> {
         self.sprite.create_vertices()
     }

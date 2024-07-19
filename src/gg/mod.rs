@@ -46,7 +46,7 @@ use crate::core::linalg;
 use crate::core::linalg::{Rect, AxisAlignedExtent, Vec2Int};
 use crate::core::util::NonemptyVec;
 use crate::gg::coroutine::{Coroutine, CoroutineState, CoroutineId, CoroutineResponse};
-use crate::gg::scene::{SceneHandlerInstruction, SceneName};
+use crate::gg::scene::{SceneHandlerInstruction, SceneName, SceneStartInstruction};
 use crate::resource::texture::Texture;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
@@ -99,7 +99,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn new() -> Box<Self> where Self: Sized;
 
     #[allow(unused_variables)]
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
+    fn on_load(&mut self, scene_name: SceneName, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
     fn on_ready(&mut self);
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
@@ -189,6 +189,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
 
 pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     scene_instruction_tx: Sender<SceneInstruction>,
+    scene_name: SceneName,
     scene_data: &'a mut Vec<u8>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
 }
@@ -197,9 +198,10 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
     pub fn stop(&self) {
         self.scene_instruction_tx.send(SceneInstruction::Stop(self.scene_data.clone())).unwrap();
     }
-    pub fn goto(&self, name: SceneName, entrance_id: usize) {
-        self.scene_instruction_tx.send(SceneInstruction::Goto(name, entrance_id, self.scene_data.clone())).unwrap();
+    pub fn goto(&self, instruction: SceneStartInstruction) {
+        self.scene_instruction_tx.send(SceneInstruction::Goto(instruction, self.scene_data.clone())).unwrap();
     }
+    pub fn name(&self) -> SceneName { self.scene_name }
     pub fn data(&mut self) -> &mut Vec<u8> { self.scene_data }
 
     pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
@@ -256,7 +258,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         self.pending_remove_objects.insert(self.this.object_id);
     }
     pub fn test_collision(&self,
-                          collider: &dyn Collider,
+                          collider: &Box<dyn Collider>,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
@@ -275,11 +277,12 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         NonemptyVec::try_from_vec(rv)
     }
     pub fn test_collision_along(&self,
-                                collider: &dyn Collider,
+                                collider: &Box<dyn Collider>,
                                 tags: Vec<&'static str>,
-                                axis: Vec2
+                                axis: Vec2,
+                                distance: f64,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.test_collision(collider, tags)
+        self.test_collision(&collider.translated(distance * axis), tags)
             .and_then(|vec| {
                 NonemptyVec::try_from_iter(vec
                     .into_iter()
@@ -350,11 +353,11 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 }
 
 #[allow(dead_code)]
-pub enum SceneInstruction {
+enum SceneInstruction {
     Pause,
     Resume,
     Stop(Vec<u8>),
-    Goto(SceneName, usize, Vec<u8>),
+    Goto(SceneStartInstruction, Vec<u8>),
 }
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
@@ -420,6 +423,7 @@ pub struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoR
     collision_handler: CollisionHandler,
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
+    scene_name: SceneName,
     scene_data: Vec<u8>,
     perf_stats: UpdatePerfStats,
 }
@@ -430,6 +434,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         input_handler: Arc<Mutex<InputHandler>>,
         mut resource_handler: ResourceHandler,
         render_info_receiver: Arc<Mutex<RenderReceiver>>,
+        scene_name: SceneName,
         scene_data: Vec<u8>
     ) -> Result<Self> {
         let mut objects = objects.into_iter()
@@ -440,7 +445,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut render_info = BTreeMap::new();
         let mut vertex_index = 0;
         for (&i, obj) in objects.iter_mut() {
-            obj.on_load(&mut resource_handler)?;
+            obj.on_load(scene_name, &mut resource_handler)?;
             if let Some(obj) = obj.as_renderable_object() {
                 let new_vertices = obj.create_vertices();
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
@@ -477,6 +482,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
             scene_instruction_rx,
+            scene_name,
             scene_data,
             perf_stats: UpdatePerfStats::new(),
         };
@@ -518,8 +524,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 Some(SceneInstruction::Stop(scene_data)) => {
                     return Ok(SceneHandlerInstruction::SaveAndExit(scene_data))
                 },
-                Some(SceneInstruction::Goto(name, entrance_id, scene_data)) => {
-                    return Ok(SceneHandlerInstruction::SaveAndGoto(name, entrance_id, scene_data))
+                Some(SceneInstruction::Goto(instruction, scene_data)) => {
+                    return Ok(SceneHandlerInstruction::SaveAndGoto(instruction, scene_data))
                 }
                 Some(SceneInstruction::Pause) => {
                     is_running = false
@@ -585,7 +591,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 .map(|(_, (indices, _))| indices.end)
                 .unwrap_or(0);
             for (new_id, mut new_obj) in pending_add_objects {
-                new_obj.on_load(&mut self.resource_handler)?;
+                new_obj.on_load(self.scene_name, &mut self.resource_handler)?;
                 if let Some(obj) = new_obj.as_renderable_object() {
                     let new_vertices = obj.create_vertices();
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
@@ -639,6 +645,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     input: &input_handler,
                     scene: SceneContext {
                         scene_instruction_tx: self.scene_instruction_tx.clone(),
+                        scene_name: self.scene_name,
                         scene_data: &mut self.scene_data,
                         coroutines: &mut BTreeMap::new(),
                     },
@@ -690,6 +697,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                         input: &input_handler,
                         scene: SceneContext {
                             scene_instruction_tx: self.scene_instruction_tx.clone(),
+                            scene_name: self.scene_name,
                             scene_data: &mut self.scene_data,
                             coroutines: self.coroutines.entry(this.object_id).or_default(),
                         },
@@ -739,6 +747,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 input: &input_handler,
                 scene: SceneContext {
                     scene_instruction_tx: self.scene_instruction_tx.clone(),
+                    scene_name: self.scene_name,
                     scene_data: &mut self.scene_data,
                     coroutines: self.coroutines.entry(this.object_id).or_default(),
                 },

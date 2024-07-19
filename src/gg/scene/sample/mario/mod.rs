@@ -14,22 +14,27 @@ use crate::{
 
 mod player;
 mod floor;
+mod underground_floor;
 mod enemy;
 mod background;
 mod block;
 
 use player::*;
 use floor::*;
+use underground_floor::*;
 use block::question_block::*;
 use block::brick::*;
+use block::underground_brick::*;
 use enemy::goomba::*;
 use background::hill1::*;
 use background::hill2::*;
 use background::hill3::*;
 use background::hill4::*;
 use block::pipe::*;
+use block::decorative_pipe::*;
+use crate::core::linalg::Vec2;
 use crate::gg::AnySceneObject;
-use crate::gg::scene::{Scene, SceneName};
+use crate::gg::scene::{Scene, SceneName, SceneStartInstruction};
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
     // fixed update at 100 fps
@@ -43,7 +48,8 @@ const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpi
     from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 100.)
 }
 const BASE_GRAVITY: f64 = from_nes_accel(0, 7, 0, 0);
-const BRICK_COLLISION_TAG: &str = "BRICK";
+const BLOCK_COLLISION_TAG: &str = "BLOCK";
+const PIPE_COLLISION_TAG: &str = "PIPE";
 const PLAYER_COLLISION_TAG: &str = "PLAYER";
 const ENEMY_COLLISION_TAG: &str = "ENEMY";
 
@@ -52,7 +58,7 @@ pub struct MarioScene {}
 impl Scene<ObjectType> for MarioScene {
     fn name(&self) -> SceneName { "mario".into() }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
             Hill1::new(Vec2Int {
                 x: 16,
@@ -75,39 +81,6 @@ impl Scene<ObjectType> for MarioScene {
                 y: 384 - 2 * 16 - 48,
             }),
         ];
-        // left wall
-        for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {
-            initial_objects.push(Floor::new(Vec2Int {
-                x: tile_x * 16,
-                y: tile_y * 16,
-            }));
-        }
-        initial_objects.push(Pipe::new(Vec2Int {
-            x: 29 * 16,
-            y: 384 - 4 * 16,
-        }));
-        initial_objects.push(Pipe::new(Vec2Int {
-            x: 39 * 16,
-            y: 384 - 5 * 16,
-        }));
-        initial_objects.push(Goomba::new(Vec2Int { x: 41 * 16, y: 384 - 3 * 16 }));
-        initial_objects.push(Pipe::new(Vec2Int {
-            x: 47 * 16,
-            y: 384 - 6 * 16,
-        }));
-        initial_objects.push(Goomba::new(Vec2Int { x: 51 * 16 + 8, y: 384 - 3 * 16 }));
-        initial_objects.push(Goomba::new(Vec2Int { x: 53 * 16 + 8, y: 384 - 3 * 16 }));
-        initial_objects.push(Pipe::new(Vec2Int {
-            x: 58 * 16,
-            y: 384 - 6 * 16,
-        }));
-        // floor
-        for (tile_x, tile_y) in Vec2Int::range_from_zero([69, 2].into()) {
-            initial_objects.push(Floor::new(Vec2Int {
-                x: (tile_x + 1) * 16,
-                y: 384 - (tile_y + 1) * 16
-            }));
-        }
 
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 17 * 16, y: 384 - 6 * 16 }));
         initial_objects.push(Brick::new(Vec2Int { x: 21 * 16, y: 384 - 6 * 16 }));
@@ -119,21 +92,117 @@ impl Scene<ObjectType> for MarioScene {
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 23 * 16, y: 384 - 10 * 16 }));
         initial_objects.push(Goomba::new(Vec2Int { x: 23 * 16, y: 384 - 3 * 16 }));
 
-        initial_objects.push(Player::new());
+        initial_objects.push(match entrance_id {
+            1 => Player::new(Vec2Int {
+                x: 59 * 16,
+                y: 384 - 4 * 16 - 8,
+            }, true),
+            _ => Player::new(Vec2Int {
+                x: 16 * 3 + 8,
+                y: 384 - 3 * 16 + 8
+            }, false)
+        });
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 29 * 16,
+            y: 384 - 4 * 16,
+        }, Vec2::up(), None));
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 39 * 16,
+            y: 384 - 5 * 16,
+        }, Vec2::up(), None));
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 47 * 16,
+            y: 384 - 6 * 16,
+        }, Vec2::up(), None));
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 58 * 16,
+            y: 384 - 6 * 16,
+        }, Vec2::up(), Some(SceneStartInstruction::new(MarioUndergroundScene{}.name(), 0))));
+        // left wall
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {
+            initial_objects.push(Floor::new(Vec2Int {
+                x: tile_x * 16,
+                y: tile_y * 16,
+            }));
+        }
+        initial_objects.push(Goomba::new(Vec2Int { x: 41 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 51 * 16 + 8, y: 384 - 3 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 53 * 16 + 8, y: 384 - 3 * 16 }));
+        // floor
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([69, 2].into()) {
+            initial_objects.push(Floor::new(Vec2Int {
+                x: (tile_x + 1) * 16,
+                y: 384 - (tile_y + 1) * 16
+            }));
+        }
         initial_objects
     }
+}
+
+#[derive(Copy, Clone)]
+pub struct MarioUndergroundScene {}
+impl Scene<ObjectType> for MarioUndergroundScene {
+    fn name(&self) -> SceneName { "mario-underground".into() }
+
+    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+        let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
+            Player::new(Vec2Int {
+                x: 2*16 + 8,
+                y: 0 + 8,
+            }, false)
+        ];
+        // left wall
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {
+            initial_objects.push(UndergroundFloor::new(Vec2Int {
+                x: tile_x * 16,
+                y: tile_y * 16,
+            }));
+        }
+        // floor
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([17, 2].into()) {
+            initial_objects.push(UndergroundFloor::new(Vec2Int {
+                x: (tile_x + 1) * 16,
+                y: 384 - (tile_y + 1) * 16
+            }));
+        }
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([7, 3].into()) {
+            initial_objects.push(UndergroundBrick::new(Vec2Int {
+                x: (tile_x + 4) * 16,
+                y: 384 - (tile_y + 3) * 16
+            }));
+        }
+        for (tile_x, _tile_y) in Vec2Int::range_from_zero([7, 1].into()) {
+            initial_objects.push(UndergroundBrick::new(Vec2Int {
+                x: (tile_x + 4) * 16,
+                y: 0,
+            }));
+        }
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 14 * 16,
+            y: 384 - 4*16,
+        }, Vec2::left(), Some(SceneStartInstruction::new(MarioScene{}.name(), 1))));
+        initial_objects.push(DecorativePipe::new(Vec2Int {
+            x: 16 * 16,
+            y: 0,
+        }));
+        initial_objects
+    }
+
 }
 
 #[register_object_type]
 pub enum ObjectType {
     Player,
     Floor,
+    UndergroundFloor,
     QuestionBlock,
     Brick,
+    UndergroundBrick,
     Goomba,
     Hill1,
     Hill2,
     Hill3,
     Hill4,
     Pipe,
+    DecorativePipe,
 }

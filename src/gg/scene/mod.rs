@@ -69,6 +69,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> InternalScen
                 this.input_handler,
                 this.resource_handler,
                 this.render_info_receiver,
+                this_name,
                 data
             );
             let instruction = update_handler
@@ -90,6 +91,18 @@ impl From<&'static str> for SceneName {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct SceneStartInstruction {
+    name: SceneName,
+    entrance_id: usize,
+}
+
+impl SceneStartInstruction {
+    pub fn new(name: SceneName, entrance_id: usize) -> Self {
+        Self { name, entrance_id }
+    }
+}
+
 pub trait Scene<ObjectType: ObjectTypeEnum> {
     fn name(&self) -> SceneName;
     fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>>;
@@ -101,9 +114,9 @@ pub trait Scene<ObjectType: ObjectTypeEnum> {
 #[allow(dead_code)]
 pub(crate) enum SceneHandlerInstruction {
     Exit,
-    Goto(SceneName, usize),
+    Goto(SceneStartInstruction),
     SaveAndExit(Vec<u8>),
-    SaveAndGoto(SceneName, usize, Vec<u8>),
+    SaveAndGoto(SceneStartInstruction, Vec<u8>),
 }
 
 pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
@@ -147,14 +160,20 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
             self.run_scene(name, entrance_id);
             match self.rx.recv().expect("failed to receive scene instruction") {
                 SceneHandlerInstruction::Exit => std::process::exit(0),
-                SceneHandlerInstruction::Goto(next_name, next_entrance_id) => {
+                SceneHandlerInstruction::Goto(SceneStartInstruction {
+                    name: next_name,
+                    entrance_id: next_entrance_id
+                }) => {
                     name = next_name;
                     entrance_id = next_entrance_id;
                 }
                 SceneHandlerInstruction::SaveAndExit(data) => {
                     *self.scene_data.entry(name).or_default() = data;
                 }
-                SceneHandlerInstruction::SaveAndGoto(next_name, next_entrance_id, data) => {
+                SceneHandlerInstruction::SaveAndGoto(SceneStartInstruction {
+                    name: next_name,
+                    entrance_id: next_entrance_id
+                }, data) => {
                     *self.scene_data.entry(name).or_default() = data;
                     name = next_name;
                     entrance_id = next_entrance_id;
@@ -164,7 +183,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
     }
     fn run_scene(&self, name: SceneName, entrance_id: usize) {
         if let Some(scene) = self.scenes.get(&name) {
-            info!("start scene: {:?}", name);
+            info!("starting scene: {:?} [entrance {}]", name, entrance_id);
             scene.run(self.scene_data.get(&name).unwrap_or(&Vec::new()).clone(),
                       entrance_id,
                       self.current_scene_name.clone());

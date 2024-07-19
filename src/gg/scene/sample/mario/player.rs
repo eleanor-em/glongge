@@ -21,7 +21,7 @@ use crate::{
             sample::{
                 mario::{
                     BASE_GRAVITY,
-                    BRICK_COLLISION_TAG,
+                    BLOCK_COLLISION_TAG,
                     ENEMY_COLLISION_TAG,
                     from_nes,
                     from_nes_accel,
@@ -44,8 +44,9 @@ use crate::{
     resource::sprite::Sprite,
 };
 use crate::gg::coroutine::CoroutineState;
-use crate::gg::scene::sample::mario::MarioScene;
-use crate::gg::scene::Scene;
+use crate::gg::scene::sample::mario::{MarioScene, PIPE_COLLISION_TAG};
+use crate::gg::scene::sample::mario::block::pipe::Pipe;
+use crate::gg::scene::{Scene, SceneName, SceneStartInstruction};
 use crate::resource::sound::Sound;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -56,6 +57,8 @@ enum PlayerState {
     Skidding,
     Falling,
     Dying,
+    EnteringPipe,
+    ExitingPipe,
 }
 
 impl Default for PlayerState {
@@ -90,6 +93,7 @@ pub struct Player {
     last_nonzero_dir: Vec2,
     cancel_run_crt: Option<CoroutineId>,
     coyote_crt: Option<CoroutineId>,
+    exit_pipe_crt: Option<CoroutineId>,
 
     walk_sprite: Sprite,
     run_sprite: Sprite,
@@ -101,13 +105,13 @@ pub struct Player {
     jump_sound: Sound,
     stomp_sound: Sound,
     die_sound: Sound,
+    pipe_sound: Sound,
     music: Sound,
 }
 
 // For a guide to Super Mario Bros. (NES) physics, see:
 // https://web.archive.org/web/20130807122227/http://i276.photobucket.com/albums/kk21/jdaster64/smb_playerphysics.png
 impl Player {
-    const INITIAL_POS: Vec2 = Vec2 { x: 200., y: 300. };
     const MIN_WALK_SPEED: f64 = from_nes(0, 1, 3, 0);
     const MAX_WALK_SPEED: f64 = from_nes(1, 9, 0, 0);
     const MAX_RUN_SPEED: f64 = from_nes(2, 9, 0, 0);
@@ -117,6 +121,17 @@ impl Player {
     const SKID_DECEL: f64 = -from_nes_accel(0, 1, 10, 0);
     const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
+
+    pub fn new(centre: Vec2Int, exiting_pipe: bool) -> Box<Self> {
+        let mut rv = Self::default();
+        rv.centre = centre.into();
+        // Prevents player getting "stuck" on ground when level starts in air.
+        rv.last_ground_state = PlayerState::Walking;
+        if exiting_pipe {
+            rv.state = PlayerState::ExitingPipe;
+        }
+        Box::new(rv)
+    }
 
     fn initial_vspeed(&self) -> f64 {
         match self.speed_regime {
@@ -148,7 +163,15 @@ impl Player {
             PlayerState::Skidding => &self.skid_sprite,
             PlayerState::Falling => &self.fall_sprite,
             PlayerState::Dying => &self.die_sprite,
+            PlayerState::EnteringPipe => &self.idle_sprite,
+            PlayerState::ExitingPipe => &self.idle_sprite,
         }
+    }
+
+    fn has_control(&self) -> bool {
+        self.state != PlayerState::Dying &&
+            self.state != PlayerState::EnteringPipe &&
+            self.state != PlayerState::ExitingPipe
     }
 
     fn update_as_idle(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
@@ -183,9 +206,9 @@ impl Player {
                 .map(|id| ctx.scene().cancel_coroutine(id));
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|mut this, _update_ctx, _action| {
+                ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
-                    if this.state == PlayerState::Dying {
+                    if !this.has_control() {
                         return CoroutineResponse::Complete;
                     }
                     if this.state == PlayerState::Running {
@@ -221,6 +244,9 @@ impl Player {
             _ => Self::MAX_WALK_SPEED,
         });
         if !new_dir.is_zero() {
+            if self.dir.is_zero() {
+                self.dir = new_dir;
+            }
             if new_dir == self.dir {
                 self.speed = Self::MIN_WALK_SPEED.max(self.speed);
                 if self.speed < from_nes(1, 9, 0, 0) {
@@ -256,12 +282,11 @@ impl Player {
             }
         }
 
-        let ray = self.collider().translated(2 * Vec2::down());
-        if ctx.object().test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision_along(&self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|mut this, _update_ctx, _action| {
+                ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
-                    if this.state == PlayerState::Dying {
+                    if !this.has_control() {
                         return CoroutineResponse::Complete;
                     }
                     this.state = PlayerState::Falling;
@@ -272,8 +297,77 @@ impl Player {
         } else {
             self.coyote_crt.take().map(|id| ctx.scene().cancel_coroutine(id));
         }
-    }
 
+        if self.coyote_crt.is_none() && self.state != PlayerState::Falling {
+            self.last_ground_state = self.state;
+        }
+    }
+    fn start_pipe(&mut self,
+                  ctx: &mut UpdateContext<ObjectType>,
+                  direction: Vec2,
+                  pipe_centre: Vec2,
+                  instruction: SceneStartInstruction) {
+        self.music.stop();
+        self.pipe_sound.play();
+        self.state = PlayerState::EnteringPipe;
+        ctx.scene().start_coroutine(move |mut this, ctx, last_state| {
+            let mut this = this.downcast_mut::<Self>().unwrap();
+            if direction.x.is_zero() {
+                // Vertical travel through pipe.
+                if (pipe_centre.x - this.centre.x).abs() > Self::MAX_WALK_SPEED * 1.1 {
+                    this.speed = (pipe_centre.x - this.centre.x).signum() * Self::MAX_WALK_SPEED;
+                    return CoroutineResponse::Yield
+                } else {
+                    this.centre.x = pipe_centre.x;
+                    this.speed = 0.;
+                    this.v_speed = if pipe_centre.y > this.centre.y {
+                        Self::MAX_VSPEED / 2.
+                    } else {
+                        -Self::MAX_VSPEED / 2.
+                    };
+                }
+            } else {
+                this.speed = Self::MAX_WALK_SPEED;
+                this.v_speed = 0.;
+            }
+
+            match last_state {
+                CoroutineState::Starting | CoroutineState::Yielding => {
+                    CoroutineResponse::Wait(Duration::from_millis(600))
+                }
+                CoroutineState::Waiting => {
+                    ctx.scene().goto(instruction);
+                    CoroutineResponse::Complete
+                }
+            }
+        });
+    }
+    fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        if ctx.input.down(KeyCode::Down) {
+            if let Some(collisions) = ctx.object().test_collision_along(
+                    &self.collider(), vec![PIPE_COLLISION_TAG], Vec2::down(), 1.) {
+                let pipe = collisions.first().other.downcast::<Pipe>()
+                    .expect("non-pipe with pipe collision tag?");
+                if !pipe.orientation().dot(Vec2::down()).is_zero() {
+                    if let Some(instruction) = pipe.destination() {
+                        self.start_pipe(ctx, Vec2::down(), pipe.transform().centre, instruction);
+                    }
+                }
+            }
+        } else if ctx.input.down(KeyCode::Right) {
+            if let Some(collisions) = ctx.object().test_collision_along(
+                    &self.collider(), vec![PIPE_COLLISION_TAG], Vec2::right(), 1.) {
+                let pipe = collisions.first().other.downcast::<Pipe>()
+                    .expect("non-pipe with pipe collision tag?");
+                if let Some(instruction) = pipe.destination() {
+                    if !pipe.orientation().dot(Vec2::right()).is_zero() &&
+                            self.centre.y - self.current_sprite().half_widths().y >= pipe.top() {
+                        self.start_pipe(ctx, Vec2::right(), pipe.transform().centre, instruction);
+                    }
+                }
+            }
+        }
+    }
     fn start_jump(&mut self) {
         self.jump_sound.play();
         self.state = PlayerState::Falling;
@@ -281,8 +375,8 @@ impl Player {
     }
 
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        // self.music.stop();
-        ctx.scene().start_coroutine(|this, update_ctx, last_state| {
+        self.music.stop();
+        ctx.scene().start_coroutine(|this, ctx, last_state| {
             let this = this.downcast::<Self>().unwrap();
             match last_state {
                 CoroutineState::Starting | CoroutineState::Yielding => {
@@ -293,7 +387,7 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
-                    update_ctx.scene().goto(MarioScene{}.name(), 0);
+                    ctx.scene().goto(SceneStartInstruction::new(MarioScene{}.name(), 0));
                     CoroutineResponse::Complete
                 }
             }
@@ -302,11 +396,32 @@ impl Player {
         self.v_speed = -from_nes(13, 0, 0, 0);
         self.state = PlayerState::Dying;
     }
+
+    fn maybe_start_exit_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        if self.state == PlayerState::ExitingPipe && self.exit_pipe_crt.is_none() {
+            self.exit_pipe_crt.replace(ctx.scene().start_coroutine(|mut this, ctx, last_state| {
+                let mut this = this.downcast_mut::<Self>().unwrap();
+                match last_state {
+                    CoroutineState::Starting => return CoroutineResponse::Wait(Duration::from_millis(500)),
+                    CoroutineState::Waiting => { this.pipe_sound.play(); }
+                    CoroutineState::Yielding => {}
+                }
+                if ctx.object().test_collision(&this.collider(), vec![PIPE_COLLISION_TAG]).is_none() {
+                    this.state = PlayerState::Idle;
+                    this.v_speed = 0.;
+                    CoroutineResponse::Complete
+                } else {
+                    this.v_speed = -Self::MAX_VSPEED / 3.;
+                    CoroutineResponse::Yield
+                }
+            }));
+        }
+    }
 }
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, scene_name: SceneName, resource_handler: &mut ResourceHandler) -> Result<()> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single_extent(
             texture_id,
@@ -346,24 +461,32 @@ impl SceneObject<ObjectType> for Player {
         self.jump_sound = resource_handler.sound.wait_load_file("res/jump-small.wav".to_string())?;
         self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;
         self.die_sound = resource_handler.sound.wait_load_file("res/death.wav".to_string())?;
+        self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
         // TODO: music is weirdly slow to load.
-        // self.music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
-        // self.music.play_loop();
+        // self.music = if scene_name == (MarioScene{}).name() {
+        //     resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?
+        // } else {
+        //     resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?
+        // };
+        self.music.play_loop();
         Ok(())
     }
     fn on_ready(&mut self) {
-        self.centre = Self::INITIAL_POS;
         self.last_nonzero_dir = Vec2::right();
     }
 
-    fn on_update_begin(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.accel = 0.;
         self.v_accel = 0.;
+        self.maybe_start_exit_pipe(ctx);
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.state == PlayerState::Dying {
             self.speed = 0.;
             self.v_accel = BASE_GRAVITY;
+            return;
+        }
+        if self.state == PlayerState::EnteringPipe {
             return;
         }
         let new_dir = if ctx.input().down(KeyCode::Left) && !ctx.input().down(KeyCode::Right) {
@@ -376,9 +499,6 @@ impl SceneObject<ObjectType> for Player {
         let hold_run = ctx.input().down(KeyCode::X);
         self.hold_jump = ctx.input().down(KeyCode::Z);
 
-        if self.state != PlayerState::Falling {
-            self.last_ground_state = self.state;
-        }
         self.maybe_start_jump(ctx);
         match self.state {
             PlayerState::Idle => self.update_as_idle(ctx, new_dir, hold_run),
@@ -386,7 +506,9 @@ impl SceneObject<ObjectType> for Player {
             PlayerState::Running => self.update_as_running(ctx, new_dir, hold_run),
             PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
             PlayerState::Falling => self.update_as_falling(new_dir),
-            PlayerState::Dying => unreachable!(),
+            PlayerState::Dying => return,
+            PlayerState::EnteringPipe => return,
+            PlayerState::ExitingPipe => return,
         }
 
         if !self.dir.is_zero() {
@@ -398,13 +520,13 @@ impl SceneObject<ObjectType> for Player {
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
 
-        if self.state == PlayerState::Dying {
-            self.centre += self.v_speed * Vec2::down();
+        if !self.has_control() {
+            self.centre += self.speed * Vec2::right() + self.v_speed * Vec2::down();
             return;
         }
 
-        let h_ray = self.collider().translated(self.speed * self.dir);
-        match ctx.object().test_collision_along(h_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::right()) {
+        self.maybe_start_pipe(ctx);
+        match ctx.object().test_collision_along(&self.collider(), vec![BLOCK_COLLISION_TAG], self.dir, self.speed) {
             Some(collisions) => {
                 self.centre += self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
@@ -412,8 +534,7 @@ impl SceneObject<ObjectType> for Player {
             None => self.centre += self.speed * self.dir,
         }
 
-        let v_ray = self.collider().translated(self.v_speed * Vec2::down());
-        match ctx.object().test_collision_along(v_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::down()) {
+        match ctx.object().test_collision_along(&self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), self.v_speed) {
             Some(collisions) => {
                 let mut coll = collisions.into_iter()
                     .min_by(|a, b| {
@@ -428,6 +549,9 @@ impl SceneObject<ObjectType> for Player {
                 if mtv.y < 0. {
                     // Collision with the ground.
                     self.state = self.last_ground_state;
+                    if self.speed.is_zero() {
+                        self.state = PlayerState::Idle;
+                    }
                 } else if let Some(mut other) = downcast_bumpable_mut(&mut coll.other) {
                     // Collision with a block from below.
                     other.bump(self);
@@ -450,7 +574,7 @@ impl SceneObject<ObjectType> for Player {
     }
 
     fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
-        if self.state == PlayerState::Dying {
+        if !self.has_control() {
             return CollisionResponse::Done;
         }
         if let Some(mut other) = downcast_stompable_mut(&mut other) {
@@ -473,7 +597,7 @@ impl SceneObject<ObjectType> for Player {
         ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
         ctx.viewport().clamp_to_left(Some(0.), None);
-        if self.state != PlayerState::Dying &&
+        if self.has_control() &&
                 self.centre.y > ctx.viewport().bottom() + self.current_sprite().extent().y {
             self.start_die(ctx);
         }
@@ -499,7 +623,7 @@ impl SceneObject<ObjectType> for Player {
         [PLAYER_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
-        [BRICK_COLLISION_TAG, ENEMY_COLLISION_TAG].into()
+        [BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG].into()
     }
 }
 

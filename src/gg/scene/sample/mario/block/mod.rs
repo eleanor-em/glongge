@@ -8,6 +8,8 @@ use crate::gg::scene::sample::mario::player::Player;
 pub mod brick;
 pub mod question_block;
 pub mod pipe;
+pub mod decorative_pipe;
+pub mod underground_brick;
 
 pub trait Bumpable: SceneObject<ObjectType> {
     fn bump(&mut self, player: &mut Player);
