@@ -553,14 +553,18 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
                 fixed_update_us += delta.as_micros();
-                let should_do_fixed_update = fixed_update_us >= 10000;
-                if should_do_fixed_update {
-                    fixed_update_us -= 10000;
+                let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
+                if fixed_updates > 0 {
+                    fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
+                    if fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
+                        warn!("fixed update behind by {:.2} ms",
+                            (fixed_update_us - FIXED_UPDATE_INTERVAL_US) as f64 / 1000.);
+                    }
                 }
 
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) =
-                    self.call_on_update(delta, input_handler, should_do_fixed_update);
+                    self.call_on_update(delta, input_handler, fixed_updates);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_removed_objects(pending_remove_objects);
@@ -695,7 +699,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         Ok(())
     }
 
-    fn call_on_update(&mut self, delta: Duration, input_handler: InputHandler, fixed_update: bool) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
+    fn call_on_update(&mut self,
+                      delta: Duration,
+                      input_handler: InputHandler,
+                      mut fixed_updates: u128
+    ) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
         self.perf_stats.on_update_begin.start();
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = BTreeSet::new();
@@ -722,46 +730,47 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                  });
         self.perf_stats.on_update.stop();
 
-        if fixed_update {
+        for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
             self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
                                      |mut obj, _delta, mut update_ctx| {
                                          obj.on_fixed_update(&mut update_ctx)
                                      });
-            self.perf_stats.detect_collision.start();
-            let collisions = self.collision_handler.get_collisions(&self.objects);
-            self.perf_stats.detect_collision.stop();
-            self.perf_stats.on_collision.start();
-            let mut done_with_collisions = BTreeSet::new();
-            for CollisionNotification { this, other, mtv } in collisions {
-                if !done_with_collisions.contains(&this.object_id) {
-                    let mut update_ctx = UpdateContext {
-                        input: &input_handler,
-                        scene: SceneContext {
-                            scene_instruction_tx: self.scene_instruction_tx.clone(),
-                            scene_name: self.scene_name,
-                            scene_data: &mut self.scene_data,
-                            coroutines: Some(self.coroutines.entry(this.object_id).or_default()),
-                        },
-                        object: ObjectContext {
-                            collision_handler: &self.collision_handler,
-                            this: this.clone(),
-                            other_map: None,
-                            pending_add_objects: None,
-                            pending_remove_objects: None,
-                        },
-                        viewport: ViewportContext {
-                            viewport: &mut self.viewport,
-                            clear_col: &mut self.clear_col,
-                        },
-                    };
-                    match this.inner.borrow_mut().on_collision(&mut update_ctx, other, mtv) {
-                        CollisionResponse::Continue => {},
-                        CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
-                    }
+            fixed_updates -= 1;
+        }
+        self.perf_stats.detect_collision.start();
+        let collisions = self.collision_handler.get_collisions(&self.objects);
+        self.perf_stats.detect_collision.stop();
+        self.perf_stats.on_collision.start();
+        let mut done_with_collisions = BTreeSet::new();
+        for CollisionNotification { this, other, mtv } in collisions {
+            if !done_with_collisions.contains(&this.object_id) {
+                let mut update_ctx = UpdateContext {
+                    input: &input_handler,
+                    scene: SceneContext {
+                        scene_instruction_tx: self.scene_instruction_tx.clone(),
+                        scene_name: self.scene_name,
+                        scene_data: &mut self.scene_data,
+                        coroutines: Some(self.coroutines.entry(this.object_id).or_default()),
+                    },
+                    object: ObjectContext {
+                        collision_handler: &self.collision_handler,
+                        this: this.clone(),
+                        other_map: None,
+                        pending_add_objects: None,
+                        pending_remove_objects: None,
+                    },
+                    viewport: ViewportContext {
+                        viewport: &mut self.viewport,
+                        clear_col: &mut self.clear_col,
+                    },
+                };
+                match this.inner.borrow_mut().on_collision(&mut update_ctx, other, mtv) {
+                    CollisionResponse::Continue => {},
+                    CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
                 }
             }
-            self.perf_stats.on_collision.stop();
         }
+        self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,

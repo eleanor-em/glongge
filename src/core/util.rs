@@ -129,8 +129,7 @@ pub mod gg_time {
     }
 
     pub fn as_frames(duration: Duration) -> u128 {
-        // 100 frames per second
-        duration.as_micros() / 10000
+        duration.as_micros() / crate::FIXED_UPDATE_INTERVAL_US
     }
 }
 

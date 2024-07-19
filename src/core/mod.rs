@@ -8,3 +8,4 @@ pub mod linalg;
 pub mod util;
 pub mod vk_core;
 pub mod prelude;
+pub mod config;

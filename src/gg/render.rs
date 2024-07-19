@@ -67,7 +67,6 @@ use crate::{
     },
     resource::{
         ResourceHandler,
-        texture::MAX_TEXTURE_COUNT,
     },
     shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };

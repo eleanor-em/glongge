@@ -262,6 +262,8 @@ impl Scene<ObjectType> for MarioScene {
         initial_objects.push(Brick::new(Vec2Int { x: 169 * 16, y: 384 - 6 * 16 }));
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 170 * 16, y: 384 - 6 * 16 }));
         initial_objects.push(Brick::new(Vec2Int { x: 171 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 174 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 176 * 16, y: 384 - 3 * 16 }));
         initial_objects.push(Pipe::new(Vec2Int {
             x: 179 * 16,
             y: 384 - 4 * 16,

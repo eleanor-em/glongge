@@ -42,7 +42,6 @@ use crate::{
 };
 use crate::core::colour::Colour;
 
-pub const MAX_TEXTURE_COUNT: usize = 1023;
 
 static NEXT_TEXTURE_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
