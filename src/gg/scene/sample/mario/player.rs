@@ -136,8 +136,8 @@ impl Player {
 
     fn initial_vspeed(&self) -> f64 {
         match self.speed_regime {
-            SpeedRegime::Slow => -from_nes(4, 0, 0, 0),
-            SpeedRegime::Medium => -from_nes(4, 0, 0, 0),
+            SpeedRegime::Slow => -from_nes(4, 1, 0, 0),
+            SpeedRegime::Medium => -from_nes(4, 1, 0, 0),
             SpeedRegime::Fast => -from_nes(5, 0, 0, 0),
         }
     }
@@ -293,7 +293,7 @@ impl Player {
                     this.state = PlayerState::Falling;
                     this.coyote_crt = None;
                     CoroutineResponse::Complete
-                }, Duration::from_secs_f64(0.1))
+                }, Duration::from_millis(60))
             });
         } else {
             self.coyote_crt.take().map(|id| ctx.scene().cancel_coroutine(id));
@@ -316,6 +316,8 @@ impl Player {
                 if ctx.object().test_collision(&this.collider(), vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;
+                    // Snap to top of pipe.
+                    this.centre.y = (this.centre.y / 8.).round() * 8.;
                     CoroutineResponse::Complete
                 } else {
                     this.v_speed = -Self::MAX_VSPEED / 3.;

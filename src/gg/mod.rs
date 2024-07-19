@@ -867,7 +867,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     fn update_render_info(&mut self, did_update_vertices: bool) -> Result<()> {
         self.perf_stats.render_info.start();
         for object_id in self.objects.keys() {
-            if let Some(obj) = self.objects[object_id].borrow().as_renderable_object() {
+            let obj = self.objects[object_id].borrow();
+            if let Some(obj) = obj.as_renderable_object() {
                 let render_info = self.render_infos.get_mut(object_id)
                     .ok_or(anyhow!("missing object_id in render_info: {:?}", object_id))?;
                 render_info.inner = obj.render_info();

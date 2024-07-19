@@ -24,14 +24,17 @@ use floor::*;
 use underground_floor::*;
 use block::question_block::*;
 use block::brick::*;
+use block::block::*;
 use block::underground_brick::*;
+use block::pipe::*;
+use block::flagpole::*;
+use block::decorative_pipe::*;
 use enemy::goomba::*;
 use background::hill1::*;
 use background::hill2::*;
 use background::hill3::*;
 use background::hill4::*;
-use block::pipe::*;
-use block::decorative_pipe::*;
+use background::castle::*;
 use crate::core::linalg::Vec2;
 use crate::gg::AnySceneObject;
 use crate::gg::scene::{Scene, SceneName, SceneStartInstruction};
@@ -49,6 +52,7 @@ const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpi
 }
 const BASE_GRAVITY: f64 = from_nes_accel(0, 7, 0, 0);
 const BLOCK_COLLISION_TAG: &str = "BLOCK";
+const FLAG_COLLISION_TAG: &str = "FLAG";
 const PIPE_COLLISION_TAG: &str = "PIPE";
 const PLAYER_COLLISION_TAG: &str = "PLAYER";
 const ENEMY_COLLISION_TAG: &str = "ENEMY";
@@ -88,6 +92,10 @@ impl Scene<ObjectType> for MarioScene {
                 x: 64 * 16,
                 y: 384 - 2 * 16 - 32,
             }),
+            Castle::new(Vec2Int {
+                x: 202*16,
+                y: 384 - 7*16,
+            })
         ];
 
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 17 * 16, y: 384 - 6 * 16 }));
@@ -102,11 +110,11 @@ impl Scene<ObjectType> for MarioScene {
 
         initial_objects.push(match entrance_id {
             1 => Player::new(Vec2Int {
-                x: 59 * 16,
-                y: 384 - 4 * 16 - 8,
+                x: 164 * 16,
+                y: 384 - 2 * 16 - 8,
             }, true),
             _ => Player::new(Vec2Int {
-                x: 16 * 3 + 8,
+                x: (164*16) + 16 * 3 + 8,
                 y: 384 - 3 * 16 + 8
             }, false)
         });
@@ -160,12 +168,165 @@ impl Scene<ObjectType> for MarioScene {
         }
         initial_objects.push(Goomba::new(Vec2Int { x: 81 * 16, y: 384 - 11 * 16 }));
         initial_objects.push(Goomba::new(Vec2Int { x: 83 * 16, y: 384 - 11 * 16 }));
-        for (tile_x, tile_y) in Vec2Int::range_from_zero([50, 2].into()) {
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([63, 2].into()) {
             initial_objects.push(Floor::new(Vec2Int {
                 x: (tile_x + 90) * 16,
                 y: 384 - (tile_y + 1) * 16
             }));
         }
+        initial_objects.push(Brick::new(Vec2Int { x: 92 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 93 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 94 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 95 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 95 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 97 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 99 * 16 + 8, y: 384 - 3 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 101 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 102 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 107 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 110 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 110 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 113 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 119 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 122 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 123 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 124 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 128 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 129 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 130 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 131 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 129 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 130 * 16, y: 384 - 6 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 134 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 135 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 136 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 137 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 140 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 141 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 142 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 143 * 16, y: 384 - 3 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 135 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 136 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 137 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 140 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 141 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 142 * 16, y: 384 - 4 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 136 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 137 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 140 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 141 * 16, y: 384 - 5 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 137 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 140 * 16, y: 384 - 6 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 148 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 149 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 150 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 151 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 152 * 16, y: 384 - 3 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 149 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 150 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 151 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 152 * 16, y: 384 - 4 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 150 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 151 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 152 * 16, y: 384 - 5 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 151 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 152 * 16, y: 384 - 6 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 155 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 156 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 157 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 158 * 16, y: 384 - 3 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 155 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 156 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 157 * 16, y: 384 - 4 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 155 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 156 * 16, y: 384 - 5 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 155 * 16, y: 384 - 6 * 16 }));
+
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 163 * 16,
+            y: 384 - 4 * 16,
+        }, Vec2::up(), None));
+        initial_objects.push(Brick::new(Vec2Int { x: 168 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 169 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 170 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 171 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Pipe::new(Vec2Int {
+            x: 179 * 16,
+            y: 384 - 4 * 16,
+        }, Vec2::up(), None));
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([80, 2].into()) {
+            initial_objects.push(Floor::new(Vec2Int {
+                x: (tile_x + 155) * 16,
+                y: 384 - (tile_y + 1) * 16
+            }));
+        }
+        initial_objects.push(Block::new(Vec2Int { x: 181 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 182 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 183 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 184 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 185 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 3 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 182 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 183 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 184 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 185 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 4 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 4 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 183 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 184 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 185 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 5 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 5 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 184 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 185 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 6 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 185 * 16, y: 384 - 7 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 7 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 7 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 7 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 7 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 186 * 16, y: 384 - 8 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 8 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 8 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 8 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 187 * 16, y: 384 - 9 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 9 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 9 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 188 * 16, y: 384 - 10 * 16 }));
+        initial_objects.push(Block::new(Vec2Int { x: 189 * 16, y: 384 - 10 * 16 }));
+
+        initial_objects.push(Block::new(Vec2Int { x: 198 * 16, y: 384 - 3 * 16 }));
+        initial_objects.push(Flagpole::new(Vec2Int { x: 198 * 16, y: 384 - 13 * 16 }));
+
         initial_objects
     }
 }
@@ -228,12 +389,15 @@ pub enum ObjectType {
     UndergroundFloor,
     QuestionBlock,
     Brick,
+    Block,
+    Flagpole,
     UndergroundBrick,
     Goomba,
     Hill1,
     Hill2,
     Hill3,
     Hill4,
+    Castle,
     Pipe,
     DecorativePipe,
 }

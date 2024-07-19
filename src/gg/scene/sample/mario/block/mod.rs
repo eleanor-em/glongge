@@ -6,6 +6,8 @@ use crate::gg::scene::sample::mario::block::question_block::QuestionBlock;
 use crate::gg::scene::sample::mario::player::Player;
 
 pub mod brick;
+pub mod block;
+pub mod flagpole;
 pub mod question_block;
 pub mod pipe;
 pub mod decorative_pipe;
