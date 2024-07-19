@@ -42,7 +42,7 @@ use crate::gg::scene::{Scene, SceneName};
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
-struct RectangleScene {}
+pub struct RectangleScene;
 impl Scene<ObjectType> for RectangleScene {
     fn name(&self) -> SceneName { "rectangle".into() }
 
@@ -71,9 +71,9 @@ impl SceneObject<ObjectType> for Spawner {
     fn on_ready(&mut self) {}
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 1;
-        let objects = Uniform::new(0., ctx.viewport().right() as f64)
+        let objects = Uniform::new(0., ctx.viewport().right())
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0., ctx.viewport().bottom() as f64)
+            .zip(Uniform::new(0., ctx.viewport().bottom())
                 .sample_iter(rand::thread_rng()))
             .zip(Uniform::new(-1., 1.)
                 .sample_iter(rand::thread_rng()))
@@ -213,10 +213,10 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn on_ready(&mut self) {}
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
-        if !(0.0..ctx.viewport().right() as f64).contains(&next_pos.x) {
+        if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
-        if !(0.0..ctx.viewport().bottom() as f64).contains(&next_pos.y) {
+        if !(0.0..ctx.viewport().bottom()).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
     }

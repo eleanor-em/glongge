@@ -258,7 +258,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         self.pending_remove_objects.insert(self.this.object_id);
     }
     pub fn test_collision(&self,
-                          collider: &Box<dyn Collider>,
+                          collider: &dyn Collider,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
@@ -277,7 +277,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         NonemptyVec::try_from_vec(rv)
     }
     pub fn test_collision_along(&self,
-                                collider: &Box<dyn Collider>,
+                                collider: &dyn Collider,
                                 tags: Vec<&'static str>,
                                 axis: Vec2,
                                 distance: f64,
@@ -744,7 +744,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 inner: this.clone(),
             };
             let update_ctx = UpdateContext {
-                input: &input_handler,
+                input: input_handler,
                 scene: SceneContext {
                     scene_instruction_tx: self.scene_instruction_tx.clone(),
                     scene_name: self.scene_name,

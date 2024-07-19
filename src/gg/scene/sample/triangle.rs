@@ -31,7 +31,7 @@ use crate::gg::scene::{Scene, SceneName};
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
-struct TriangleScene {}
+pub struct TriangleScene;
 impl Scene<ObjectType> for TriangleScene {
     fn name(&self) -> SceneName { "triangle".into() }
 
@@ -129,10 +129,10 @@ impl gg::SceneObject<ObjectType> for SpinningTriangle {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
-        if !(0.0..ctx.viewport().right() as f64).contains(&next_pos.x) {
+        if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
-        if !(0.0..ctx.viewport().bottom() as f64).contains(&next_pos.y) {
+        if !(0.0..ctx.viewport().bottom()).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
         self.pos += self.velocity * delta_s;

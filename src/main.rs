@@ -22,7 +22,12 @@ use crate::{
 };
 #[allow(unused_imports)]
 use crate::gg::scene::sample::*;
+#[allow(unused_imports)]
 use crate::gg::scene::sample::mario::{MarioScene, MarioUndergroundScene};
+#[allow(unused_imports)]
+use crate::gg::scene::sample::rectangle::RectangleScene;
+#[allow(unused_imports)]
+use crate::gg::scene::sample::triangle::TriangleScene;
 use crate::gg::scene::Scene;
 
 mod assert;
@@ -58,12 +63,12 @@ fn main() -> Result<()> {
                 resource_handler,
                 render_handler
             );
-            // let scene = rectangle::create_scene(&mut scene_handler);
-            // let scene = triangle::create_scene(&mut scene_handler);
-            scene_handler.create_scene(MarioScene{});
-            scene_handler.create_scene(MarioUndergroundScene{});
-            // let name = MarioScene{}.name();
-            let name = MarioUndergroundScene{}.name();
+            // scene_handler.create_scene(TriangleScene); let name = TriangleScene.name();
+            // scene_handler.create_scene(RectangleScene); let name = RectangleScene.name();
+            scene_handler.create_scene(MarioScene);
+            scene_handler.create_scene(MarioUndergroundScene);
+            let name = MarioScene.name();
+            // let name = MarioUndergroundScene{}.name();
             scene_handler.consume_with_scene(name, 0);
         });
     }

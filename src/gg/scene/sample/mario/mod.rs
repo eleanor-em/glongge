@@ -54,7 +54,7 @@ const PLAYER_COLLISION_TAG: &str = "PLAYER";
 const ENEMY_COLLISION_TAG: &str = "ENEMY";
 
 #[derive(Copy, Clone)]
-pub struct MarioScene {}
+pub struct MarioScene;
 impl Scene<ObjectType> for MarioScene {
     fn name(&self) -> SceneName { "mario".into() }
 
@@ -165,7 +165,7 @@ impl Scene<ObjectType> for MarioScene {
 }
 
 #[derive(Copy, Clone)]
-pub struct MarioUndergroundScene {}
+pub struct MarioUndergroundScene;
 impl Scene<ObjectType> for MarioUndergroundScene {
     fn name(&self) -> SceneName { "mario-underground".into() }
 
@@ -173,7 +173,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
             Player::new(Vec2Int {
                 x: 2*16 + 8,
-                y: 0 + 8,
+                y: 8,
             }, false)
         ];
         // left wall
@@ -205,7 +205,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         initial_objects.push(Pipe::new(Vec2Int {
             x: 14 * 16,
             y: 384 - 4*16,
-        }, Vec2::left(), Some(SceneStartInstruction::new(MarioScene{}.name(), 1))));
+        }, Vec2::left(), Some(SceneStartInstruction::new(MarioScene.name(), 1))));
         initial_objects.push(DecorativePipe::new(Vec2Int {
             x: 16 * 16,
             y: 0,

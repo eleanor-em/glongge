@@ -22,6 +22,24 @@ pub trait Collider: Debug {
     fn translated(&self, by: Vec2) -> Box<dyn Collider>;
 }
 
+impl Collider for Box<(dyn Collider + 'static)> {
+    fn as_any(&self) -> &dyn Any {
+        self.as_ref().as_any()
+    }
+
+    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
+        self.as_ref().collides_with_box(other)
+    }
+
+    fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
+        self.as_ref().collides_with(other)
+    }
+
+    fn translated(&self, by: Vec2) -> Box<dyn Collider> {
+        self.as_ref().translated(by)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NullCollider;
 impl Collider for NullCollider {
