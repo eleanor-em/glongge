@@ -4,9 +4,19 @@ use crate::core::prelude::*;
 use std::{
     fmt,
     fmt::Formatter,
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign}
+    ops::{
+        Add,
+        AddAssign,
+        Div,
+        DivAssign,
+        Mul,
+        MulAssign,
+        Neg,
+        Sub,
+        SubAssign,
+        Range
+    }
 };
-use std::ops::Range;
 use itertools::Product;
 use num_traits::{float::Float, One, Zero};
 

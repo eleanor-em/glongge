@@ -129,7 +129,7 @@ pub mod gg_time {
     }
 
     pub fn as_frames(duration: Duration) -> u128 {
-        duration.as_micros() / crate::FIXED_UPDATE_INTERVAL_US
+        duration.as_micros() / crate::core::config::FIXED_UPDATE_INTERVAL_US
     }
 }
 
@@ -171,6 +171,7 @@ pub struct NonemptyVec<T: Clone> {
 }
 
 impl<T: Clone> NonemptyVec<T> {
+    pub fn is_empty(&self) -> bool { false }
     pub fn len(&self) -> usize { self.inner.len() }
     pub fn first(&self) -> &T { unsafe { self.inner.first().unwrap_unchecked() } }
     pub fn into_inner(self) -> Vec<T> { self.inner }

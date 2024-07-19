@@ -1,16 +1,16 @@
 #[allow(unused_imports)]
 use crate::core::prelude::*;
 
-use std::any::Any;
-use std::fmt::Debug;
-use std::ops::{Neg, Range};
+use std::{
+    any::Any,
+    fmt::Debug,
+    ops::{Neg, Range}
+};
 use num_traits::{Float, Zero};
-use crate::{
-    core::{
-        linalg::Vec2,
-        util::gg_range
-    },
-    gg::Transform
+use crate::core::{
+    linalg::Vec2,
+    util::gg_range,
+    Transform
 };
 
 pub trait Collider: Debug {

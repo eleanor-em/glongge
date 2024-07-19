@@ -2,7 +2,7 @@ use num_traits::Zero;
 
 use crate::{
     core::linalg::Vec2,
-    gg::VertexWithUV
+    core::VertexWithUV
 };
 
 pub fn rectangle(centre: Vec2, half_widths: Vec2) -> Vec<Vec2> {

@@ -1,40 +1,31 @@
-#![feature(iterator_try_collect)]
-#![feature(arbitrary_self_types)]
-#![feature(mapped_lock_guards)]
 #![feature(const_fn_floating_point_arithmetic)]
 
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
-use num_traits::{Float, One};
-
-use crate::{
+use glongge::{
     core::{
+        prelude::*,
+        render::BasicRenderHandler,
         input::InputHandler,
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
-    },
-    gg::{
-        render::BasicRenderHandler,
-        scene::SceneHandler
+        scene::SceneHandler,
+        scene::Scene
     },
     resource::ResourceHandler
 };
-#[allow(unused_imports)]
-use crate::gg::scene::sample::*;
-#[allow(unused_imports)]
-use crate::gg::scene::sample::mario::{MarioScene, MarioUndergroundScene};
-#[allow(unused_imports)]
-use crate::gg::scene::sample::rectangle::RectangleScene;
-#[allow(unused_imports)]
-use crate::gg::scene::sample::triangle::TriangleScene;
-use crate::gg::scene::Scene;
 
-mod assert;
-mod core;
-mod gg;
-mod resource;
-mod shader;
+mod mario;
+mod rectangle;
+mod triangle;
+
+use num_traits::{Float, One};
+
+#[allow(unused_imports)]
+use crate::{
+    triangle::TriangleScene,
+    rectangle::RectangleScene,
+    mario::{MarioScene, MarioUndergroundScene},
+};
+
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()

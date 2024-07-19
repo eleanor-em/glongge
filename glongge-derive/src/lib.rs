@@ -78,7 +78,7 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
     });
     if !has_as_any {
         item_impl.items.push(syn::parse_quote! {
-            fn as_any(&self) -> &dyn Any {
+            fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
         });
@@ -93,7 +93,7 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
     });
     if !has_as_any_mut {
         item_impl.items.push(syn::parse_quote! {
-            fn as_any_mut(&mut self) -> &mut dyn Any {
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
             }
         });
@@ -138,14 +138,22 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
+    let as_default_exp = as_default_impl(&input.data);
     let match_exp = as_typeid_impl(&input.data);
     let vec = all_values_impl(&input.data);
 
     let expanded = quote! {
-        impl gg::ObjectTypeEnum for #name {
+        impl glongge::core::ObjectTypeEnum for #name {
+            fn as_default(self) -> Box<dyn glongge::core::SceneObject<Self>> { #as_default_exp }
             fn as_typeid(self) -> std::any::TypeId { #match_exp }
             fn all_values() -> Vec<Self> { #vec }
-            fn checked_downcast<T: gg::SceneObject<Self> + 'static>(obj: &dyn gg::SceneObject<Self>) -> &T {
+            fn preload_all(mut resource_handler: glongge::resource::ResourceHandler) -> anyhow::Result<()> {
+                for value in Self::all_values() {
+                    value.as_default().on_load(&mut resource_handler)?;
+                }
+                Ok(())
+            }
+            fn checked_downcast<T: glongge::core::SceneObject<Self> + 'static>(obj: &dyn glongge::core::SceneObject<Self>) -> &T {
                 let actual = obj.get_type().as_typeid();
                 let expected = obj.as_any().type_id();
                 if actual != expected {
@@ -158,7 +166,7 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
                 }
                 obj.as_any().downcast_ref::<T>().unwrap()
             }
-            fn checked_downcast_mut<T: gg::SceneObject<Self> + 'static>(obj: &mut dyn gg::SceneObject<Self>) -> &mut T {
+            fn checked_downcast_mut<T: glongge::core::SceneObject<Self> + 'static>(obj: &mut dyn glongge::core::SceneObject<Self>) -> &mut T {
                 let actual = obj.get_type().as_typeid();
                 let expected = obj.as_any().type_id();
                 if actual != expected {
@@ -177,6 +185,24 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
     proc_macro::TokenStream::from(expanded)
 }
 
+fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
+    match *data {
+        Data::Enum(ref data) => {
+            let recurse = data.variants.iter().map(|variant| {
+                let name = &variant.ident;
+                quote_spanned! {variant.span()=>
+                    Self::#name => Box::new(#name::default())
+                }
+            });
+            quote! {
+                match self {
+                    #(#recurse,)*
+                }
+            }
+        }
+        _ => unimplemented!(),
+    }
+}
 fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Enum(ref data) => {

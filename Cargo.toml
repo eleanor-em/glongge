@@ -3,6 +3,10 @@ name = "glongge"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "glongge"
+path = "src/lib.rs"
+
 [dependencies]
 glongge-derive = { path = "glongge-derive" }
 # core

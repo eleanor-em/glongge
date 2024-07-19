@@ -1,10 +1,8 @@
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
 use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
 use num_traits::Zero;
 
 use vulkano::{
+    format::Format,
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
         CommandBufferExecFuture,
@@ -31,8 +29,14 @@ use vulkano::{
     pipeline::graphics::viewport::Viewport,
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass},
     swapchain::{
-        self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        self,
+        PresentFuture,
+        Surface,
+        Swapchain,
+        SwapchainAcquireFuture,
+        SwapchainCreateInfo,
         SwapchainPresentInfo,
+        ColorSpace
     },
     sync::{
         future::{FenceSignalFuture, JoinFuture},
@@ -42,8 +46,6 @@ use vulkano::{
     VulkanError,
     VulkanLibrary,
 };
-use vulkano::format::Format;
-use vulkano::swapchain::ColorSpace;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -54,13 +56,16 @@ use winit::{
 use crate::{
     core::{
         input::InputHandler,
-        linalg::Vec2,
+        linalg::{
+            Vec2,
+            AxisAlignedExtent
+        },
         util::TimeIt,
+        RenderInfoReceiver,
+        prelude::*,
     },
-    gg::RenderInfoReceiver,
-    resource::ResourceHandler
+    resource::ResourceHandler,
 };
-use crate::core::linalg::AxisAlignedExtent;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -178,6 +183,7 @@ impl<T: Clone> DataPerImage<T> {
         Self { data }
     }
 
+    pub fn is_empty(&self) -> bool { self.data.is_empty() }
     pub fn len(&self) -> usize {
         self.data.len()
     }

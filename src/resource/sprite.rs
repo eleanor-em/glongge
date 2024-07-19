@@ -3,9 +3,9 @@ use crate::core::prelude::*;
 
 use std::time::Instant;
 use num_traits::Zero;
-use crate::{core::linalg::Vec2Int, gg::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
+use crate::{core::linalg::Vec2Int, core::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
 use crate::core::linalg::{AxisAlignedExtent, Vec2};
-use crate::gg::VertexWithUV;
+use crate::core::VertexWithUV;
 
 pub struct Sprite {
     texture_id: TextureId,

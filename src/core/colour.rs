@@ -1,6 +1,7 @@
-use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 #[allow(unused_imports)]
 use crate::core::prelude::*;
+
+use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 
 #[derive(Copy, Clone)]
 pub struct Colour {
