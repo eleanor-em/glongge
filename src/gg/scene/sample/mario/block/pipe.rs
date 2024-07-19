@@ -55,7 +55,7 @@ impl SceneObject<ObjectType> for Pipe {
         };
         Ok(())
     }
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
     fn transform(&self) -> Transform {
         Transform {

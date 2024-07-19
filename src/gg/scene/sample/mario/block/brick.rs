@@ -46,7 +46,7 @@ impl SceneObject<ObjectType> for Brick {
             Vec2Int { x: 17, y: 16 });
         Ok(())
     }
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;

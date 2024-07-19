@@ -105,6 +105,7 @@ pub struct BasicRenderInfoReceiver {
     vertices_up_to_date: DataPerImage<bool>,
     render_info: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
+    clear_col: Colour,
 }
 impl BasicRenderInfoReceiver {
     fn new(ctx: &VulkanoContext, viewport: AdjustedViewport) -> Self {
@@ -113,6 +114,7 @@ impl BasicRenderInfoReceiver {
             vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
             render_info: Vec::new(),
             viewport,
+            clear_col: Colour::black(),
         }
     }
 }
@@ -133,6 +135,9 @@ impl RenderInfoReceiver for BasicRenderInfoReceiver {
     fn is_ready(&self) -> bool {
         !self.vertices.is_empty() && !self.render_info.is_empty()
     }
+
+    fn get_clear_col(&self) -> Colour { self.clear_col }
+    fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
 }
 
 #[derive(Clone)]
@@ -224,6 +229,7 @@ impl BasicRenderHandler {
             let pipeline = self.get_or_create_pipeline(ctx)?;
             let command_buffer = self.create_single_command_buffer(
                 ctx,
+                receiver,
                 pipeline,
                 per_image_ctx.current_value_cloned(&ctx.framebuffers()),
                 per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets).clone(),
@@ -331,6 +337,7 @@ impl BasicRenderHandler {
     fn create_single_command_buffer(
         &self,
         ctx: &VulkanoContext,
+        receiver: &MutexGuard<BasicRenderInfoReceiver>,
         pipeline: Arc<GraphicsPipeline>,
         framebuffer: Arc<Framebuffer>,
         uniform_buffer_set: Arc<PersistentDescriptorSet>,
@@ -346,7 +353,7 @@ impl BasicRenderHandler {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([92./255., 148./255., 252./255., 1.0].into())],
+                    clear_values: vec![Some(receiver.get_clear_col().as_f32().into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                 },
                 SubpassBeginInfo {
@@ -369,7 +376,8 @@ impl BasicRenderHandler {
 
     fn get_or_create_command_buffers(
         &mut self,
-        ctx: &VulkanoContext)
+        ctx: &VulkanoContext,
+        receiver: &MutexGuard<BasicRenderInfoReceiver>)
     -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         if self.pipeline.is_none() ||
                 self.uniform_buffers.is_none() ||
@@ -391,6 +399,7 @@ impl BasicRenderHandler {
                     |((framebuffer, uniform_buffer_set), vertex_buffer)| {
                         self.create_single_command_buffer(
                             ctx,
+                            receiver,
                             pipeline.clone(),
                             framebuffer.clone(),
                             uniform_buffer_set.clone(),
@@ -511,7 +520,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
         let render_info_receiver = self.render_info_receiver.clone();
         let mut receiver = render_info_receiver.lock().unwrap();
         self.maybe_create_vertex_buffers(ctx, &mut receiver)?;
-        let command_buffers = self.get_or_create_command_buffers(ctx)?;
+        let command_buffers = self.get_or_create_command_buffers(ctx, &receiver)?;
         self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
         self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
         Ok(command_buffers)

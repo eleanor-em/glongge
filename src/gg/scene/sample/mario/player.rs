@@ -43,6 +43,7 @@ use crate::{
     },
     resource::sprite::Sprite,
 };
+use crate::core::colour::Colour;
 use crate::gg::coroutine::CoroutineState;
 use crate::gg::scene::sample::mario::{MarioScene, PIPE_COLLISION_TAG};
 use crate::gg::scene::sample::mario::block::pipe::Pipe;
@@ -465,7 +466,7 @@ impl SceneObject<ObjectType> for Player {
         self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
         self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
         // TODO: music is weirdly slow to load.
-        // self.music = if scene_name == (MarioScene{}).name() {
+        // self.music = if scene_name == MarioScene.name() {
         //     resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?
         // } else {
         //     resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?
@@ -473,7 +474,12 @@ impl SceneObject<ObjectType> for Player {
         self.music.play_loop();
         Ok(())
     }
-    fn on_ready(&mut self) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        if ctx.scene().scene_name == MarioScene.name() {
+            *ctx.viewport().clear_col = Colour::from_bytes(92, 148, 252, 255);
+        } else {
+            *ctx.viewport().clear_col = Colour::black();
+        }
         self.last_nonzero_dir = Vec2::right();
     }
 

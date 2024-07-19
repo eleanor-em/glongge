@@ -68,7 +68,7 @@ struct Spawner {}
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Spawner {
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 1;
         let objects = Uniform::new(0., ctx.viewport().right())
@@ -120,7 +120,7 @@ impl SceneObject<ObjectType> for Player {
         ).with_fixed_ms_per_frame(100);
         Ok(())
     }
-    fn on_ready(&mut self) {
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.pos = Vec2 { x: 512., y: 384. };
     }
     fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
@@ -210,7 +210,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         ).with_fixed_ms_per_frame(500);
         Ok(())
     }
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
         if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {

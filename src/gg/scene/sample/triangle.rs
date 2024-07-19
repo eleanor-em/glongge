@@ -53,7 +53,7 @@ struct Spawner {}
 
 #[partially_derive_scene_object]
 impl gg::SceneObject<ObjectType> for Spawner {
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
 
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 10;
@@ -124,7 +124,7 @@ impl SpinningTriangle {
 }
 #[partially_derive_scene_object]
 impl gg::SceneObject<ObjectType> for SpinningTriangle {
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;

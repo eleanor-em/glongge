@@ -39,6 +39,7 @@ impl Colour {
     pub fn as_bytes(&self) -> [u8; 4] {
         [(self.r * 255.) as u8, (self.g * 255.) as u8, (self.b * 255.) as u8, (self.a * 255.) as u8]
     }
+    pub fn as_f32(&self) -> [f32; 4] { self.into() }
 }
 
 impl Default for Colour {
@@ -50,5 +51,11 @@ impl Default for Colour {
 impl From<Colour> for [f32; 4] {
     fn from(value: Colour) -> Self {
         [value.r as f32, value.g as f32, value.b as f32, value.a as f32]
+    }
+}
+
+impl From<&Colour> for [f32; 4] {
+    fn from(value: &Colour) -> Self {
+        (*value).into()
     }
 }
