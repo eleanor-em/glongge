@@ -151,25 +151,25 @@ impl Player {
         }
     }
 
-    fn update_as_idle(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
+    fn update_as_idle(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         if !new_dir.is_zero() {
             self.dir = new_dir;
             self.speed = Self::MIN_WALK_SPEED;
             if hold_run {
                 self.state = PlayerState::Running;
-                self.update_as_running(update_ctx, new_dir, hold_run);
+                self.update_as_running(ctx, new_dir, hold_run);
             } else {
                 self.state = PlayerState::Walking;
-                self.update_as_walking(update_ctx, new_dir, hold_run);
+                self.update_as_walking(ctx, new_dir, hold_run);
             };
         }
     }
 
-    fn update_as_walking(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
+    fn update_as_walking(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         self.speed = self.speed.min(Self::MAX_WALK_SPEED);
         if hold_run {
             self.state = PlayerState::Running;
-            self.update_as_running(update_ctx, new_dir, hold_run);
+            self.update_as_running(ctx, new_dir, hold_run);
         } else if self.dir == new_dir {
             self.accel = Self::WALK_ACCEL;
         } else {
@@ -177,13 +177,13 @@ impl Player {
         }
     }
 
-    fn update_as_running(&mut self, update_ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
+    fn update_as_running(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         if hold_run {
             self.cancel_run_crt.take()
-                .map(|id| update_ctx.cancel_coroutine(id));
+                .map(|id| ctx.scene().cancel_coroutine(id));
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                update_ctx.start_coroutine_after(|mut this, _update_ctx, _action| {
+                ctx.scene().start_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if this.state == PlayerState::Dying {
                         return CoroutineResponse::Complete;
@@ -241,7 +241,7 @@ impl Player {
         }
     }
 
-    fn maybe_start_falling(&mut self, update_ctx: &mut UpdateContext<ObjectType>) {
+    fn maybe_start_jump(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.state != PlayerState::Falling {
             self.speed_regime = match self.speed {
                 x if (0.0
@@ -250,15 +250,16 @@ impl Player {
                     ..from_nes(2, 5, 0, 0)).contains(&x) => SpeedRegime::Medium,
                 _ => SpeedRegime::Fast,
             };
-            if update_ctx.input().pressed(KeyCode::Z) {
+            if ctx.input().pressed(KeyCode::Z) {
                 self.start_jump();
+                return;
             }
         }
 
         let ray = self.collider().translated(2 * Vec2::down());
-        if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                update_ctx.start_coroutine_after(|mut this, _update_ctx, _action| {
+                ctx.scene().start_coroutine_after(|mut this, _update_ctx, _action| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if this.state == PlayerState::Dying {
                         return CoroutineResponse::Complete;
@@ -269,7 +270,7 @@ impl Player {
                 }, Duration::from_secs_f64(0.1))
             });
         } else {
-            self.coyote_crt.take().map(|id| update_ctx.cancel_coroutine(id));
+            self.coyote_crt.take().map(|id| ctx.scene().cancel_coroutine(id));
         }
     }
 
@@ -279,9 +280,9 @@ impl Player {
         self.v_speed = self.initial_vspeed();
     }
 
-    fn start_die(&mut self, update_ctx: &mut UpdateContext<ObjectType>) {
+    fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         // self.music.stop();
-        update_ctx.start_coroutine(|this, update_ctx, last_state| {
+        ctx.scene().start_coroutine(|this, update_ctx, last_state| {
             let this = this.downcast::<Self>().unwrap();
             match last_state {
                 CoroutineState::Starting | CoroutineState::Yielding => {
@@ -292,7 +293,7 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
-                    update_ctx.goto_scene(MarioScene{}.name(), 0);
+                    update_ctx.scene().goto(MarioScene{}.name(), 0);
                     CoroutineResponse::Complete
                 }
             }
@@ -355,34 +356,34 @@ impl SceneObject<ObjectType> for Player {
         self.last_nonzero_dir = Vec2::right();
     }
 
-    fn on_update_begin(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {
         self.accel = 0.;
         self.v_accel = 0.;
     }
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.state == PlayerState::Dying {
             self.speed = 0.;
             self.v_accel = BASE_GRAVITY;
             return;
         }
-        let new_dir = if update_ctx.input().down(KeyCode::Left) && !update_ctx.input().down(KeyCode::Right) {
+        let new_dir = if ctx.input().down(KeyCode::Left) && !ctx.input().down(KeyCode::Right) {
             Vec2::left()
-        } else if !update_ctx.input().down(KeyCode::Left) && update_ctx.input().down(KeyCode::Right) {
+        } else if !ctx.input().down(KeyCode::Left) && ctx.input().down(KeyCode::Right) {
             Vec2::right()
         } else {
             Vec2::zero()
         };
-        let hold_run = update_ctx.input().down(KeyCode::X);
-        self.hold_jump = update_ctx.input().down(KeyCode::Z);
+        let hold_run = ctx.input().down(KeyCode::X);
+        self.hold_jump = ctx.input().down(KeyCode::Z);
 
         if self.state != PlayerState::Falling {
             self.last_ground_state = self.state;
         }
-        self.maybe_start_falling(&mut update_ctx);
+        self.maybe_start_jump(ctx);
         match self.state {
-            PlayerState::Idle => self.update_as_idle(&mut update_ctx, new_dir, hold_run),
-            PlayerState::Walking => self.update_as_walking(&mut update_ctx, new_dir, hold_run),
-            PlayerState::Running => self.update_as_running(&mut update_ctx, new_dir, hold_run),
+            PlayerState::Idle => self.update_as_idle(ctx, new_dir, hold_run),
+            PlayerState::Walking => self.update_as_walking(ctx, new_dir, hold_run),
+            PlayerState::Running => self.update_as_running(ctx, new_dir, hold_run),
             PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
             PlayerState::Falling => self.update_as_falling(new_dir),
             PlayerState::Dying => unreachable!(),
@@ -392,7 +393,7 @@ impl SceneObject<ObjectType> for Player {
             self.last_nonzero_dir = self.dir;
         }
     }
-    fn on_fixed_update(&mut self, update_ctx: UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
@@ -403,7 +404,7 @@ impl SceneObject<ObjectType> for Player {
         }
 
         let h_ray = self.collider().translated(self.speed * self.dir);
-        match update_ctx.test_collision_along(h_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::right()) {
+        match ctx.object().test_collision_along(h_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::right()) {
             Some(collisions) => {
                 self.centre += self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
@@ -412,7 +413,7 @@ impl SceneObject<ObjectType> for Player {
         }
 
         let v_ray = self.collider().translated(self.v_speed * Vec2::down());
-        match update_ctx.test_collision_along(v_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::down()) {
+        match ctx.object().test_collision_along(v_ray.as_ref(), vec![BRICK_COLLISION_TAG], Vec2::down()) {
             Some(collisions) => {
                 let mut coll = collisions.into_iter()
                     .min_by(|a, b| {
@@ -448,7 +449,7 @@ impl SceneObject<ObjectType> for Player {
         }
     }
 
-    fn on_collision(&mut self, mut update_ctx: UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if self.state == PlayerState::Dying {
             return CollisionResponse::Done;
         }
@@ -460,7 +461,7 @@ impl SceneObject<ObjectType> for Player {
                     self.v_speed = self.initial_vspeed();
                     self.state = PlayerState::Falling;
                 } else {
-                    self.start_die(&mut update_ctx);
+                    self.start_die(ctx);
                     return CollisionResponse::Done;
                 }
             }
@@ -468,10 +469,14 @@ impl SceneObject<ObjectType> for Player {
         self.centre += mtv;
         CollisionResponse::Done
     }
-    fn on_update_end(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
-        update_ctx.clamp_view_to_left(None, Some(self.centre.x - 200.));
-        update_ctx.clamp_view_to_right(Some(self.centre.x + 200.), None);
-        update_ctx.clamp_view_to_left(Some(0.), None);
+    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
+        ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
+        ctx.viewport().clamp_to_left(Some(0.), None);
+        if self.state != PlayerState::Dying &&
+                self.centre.y > ctx.viewport().bottom() + self.current_sprite().extent().y {
+            self.start_die(ctx);
+        }
     }
 
     fn transform(&self) -> Transform {

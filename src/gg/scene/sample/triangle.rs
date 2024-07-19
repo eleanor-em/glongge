@@ -55,7 +55,7 @@ struct Spawner {}
 impl gg::SceneObject<ObjectType> for Spawner {
     fn on_ready(&mut self) {}
 
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 10;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0., 1024.)
@@ -84,8 +84,8 @@ impl gg::SceneObject<ObjectType> for Spawner {
                 Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() }) as Box<dyn gg::SceneObject<ObjectType>>
             })
             .collect();
-        update_ctx.add_object_vec(objects);
-        update_ctx.remove_this_object();
+        ctx.object().add_vec(objects);
+        ctx.object().remove_this();
     }
 
     fn transform(&self) -> Transform {
@@ -125,44 +125,44 @@ impl SpinningTriangle {
 #[partially_derive_scene_object]
 impl gg::SceneObject<ObjectType> for SpinningTriangle {
     fn on_ready(&mut self) {}
-    fn on_update(&mut self, delta: Duration, mut update_ctx: gg::UpdateContext<ObjectType>) {
+    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
         let next_pos = self.pos + self.velocity * delta_s;
-        if !(0.0..update_ctx.viewport().logical_width() as f64).contains(&next_pos.x) {
+        if !(0.0..ctx.viewport().right() as f64).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
-        if !(0.0..update_ctx.viewport().logical_height() as f64).contains(&next_pos.y) {
+        if !(0.0..ctx.viewport().bottom() as f64).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
         self.pos += self.velocity * delta_s;
 
-        if update_ctx.input().pressed(KeyCode::Space) &&
-                update_ctx.others().len() < 2500 &&
-                update_ctx.viewport().contains_point(self.pos) {
+        if ctx.input().pressed(KeyCode::Space) &&
+            ctx.object().others().len() < 2500 &&
+            ctx.viewport().contains_point(self.pos) {
             let mut rng = rand::thread_rng();
             if rng.gen_bool(0.2) {
                 let vel = Vec2 {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
                 };
-                update_ctx.add_object(Box::new(SpinningTriangle::new(
+                ctx.object().add(Box::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity - vel).normed(),
                 )));
-                update_ctx.add_object(Box::new(SpinningTriangle::new(
+                ctx.object().add(Box::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity + vel).normed(),
                 )));
-                update_ctx.remove_this_object();
+                ctx.object().remove_this();
             }
         }
     }
 
-    fn on_update_end(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
-                update_ctx.viewport().contains_point(self.pos) {
-            for other in update_ctx.others() {
+            ctx.viewport().contains_point(self.pos) {
+            for other in ctx.object().others() {
                 if (other.transform().centre -  self.pos).len() < Self::TRI_WIDTH {
                     self.velocity = (self.pos - other.transform().centre).normed() * Self::VELOCITY;
                 }

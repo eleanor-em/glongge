@@ -46,8 +46,8 @@ impl SceneObject<ObjectType> for Brick {
         Ok(())
     }
     fn on_ready(&mut self) {}
-    fn on_update(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {}
-    fn on_fixed_update(&mut self, _update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;
         self.top_left.y += self.v_speed;
         if self.top_left.y > self.initial_y {

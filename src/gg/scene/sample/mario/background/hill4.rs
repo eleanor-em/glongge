@@ -34,7 +34,7 @@ impl SceneObject<ObjectType> for Hill4 {
         Ok(())
     }
     fn on_ready(&mut self) {}
-    fn on_update(&mut self, _delta: Duration, _update_ctx: UpdateContext<ObjectType>) {}
+    fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
     fn transform(&self) -> Transform {
         Transform {
             centre: self.top_left + self.sprite.half_widths(),

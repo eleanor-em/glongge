@@ -36,6 +36,7 @@ use crate::{
     },
     shader,
 };
+use crate::core::linalg::AxisAlignedExtent;
 use crate::gg::{AnySceneObject, CollisionResponse};
 use crate::gg::scene::{Scene, SceneName};
 
@@ -68,11 +69,11 @@ struct Spawner {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Spawner {
     fn on_ready(&mut self) {}
-    fn on_update(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 1;
-        let objects = Uniform::new(0., update_ctx.viewport.logical_width() as f64)
+        let objects = Uniform::new(0., ctx.viewport().right() as f64)
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0., update_ctx.viewport.logical_height() as f64)
+            .zip(Uniform::new(0., ctx.viewport().bottom() as f64)
                 .sample_iter(rand::thread_rng()))
             .zip(Uniform::new(-1., 1.)
                 .sample_iter(rand::thread_rng()))
@@ -85,8 +86,8 @@ impl SceneObject<ObjectType> for Spawner {
                 Box::new(SpinningRectangle::new(pos, vel.normed())).into()
             })
             .collect();
-        update_ctx.add_object_vec(objects);
-        update_ctx.remove_this_object();
+        ctx.object().add_vec(objects);
+        ctx.object().remove_this();
     }
 
     fn transform(&self) -> Transform {
@@ -122,12 +123,12 @@ impl SceneObject<ObjectType> for Player {
     fn on_ready(&mut self) {
         self.pos = Vec2 { x: 512., y: 384. };
     }
-    fn on_update(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
-        if update_ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
-        if update_ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
-        if update_ctx.input().down(KeyCode::Up) { direction += Vec2::up(); }
-        if update_ctx.input().down(KeyCode::Down) { direction += Vec2::down(); }
+        if ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
+        if ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
+        if ctx.input().down(KeyCode::Up) { direction += Vec2::up(); }
+        if ctx.input().down(KeyCode::Down) { direction += Vec2::down(); }
         self.vel = Self::SPEED * direction.normed();
         self.pos += self.vel * delta.as_secs_f64();
     }
@@ -210,30 +211,30 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         Ok(())
     }
     fn on_ready(&mut self) {}
-    fn on_update_begin(&mut self, delta: Duration, update_ctx: UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
-        if !(0.0..update_ctx.viewport().logical_width() as f64).contains(&next_pos.x) {
+        if !(0.0..ctx.viewport().right() as f64).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
-        if !(0.0..update_ctx.viewport().logical_height() as f64).contains(&next_pos.y) {
+        if !(0.0..ctx.viewport().bottom() as f64).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
     }
-    fn on_update(&mut self, delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.t += delta.as_secs_f64();
         self.pos += self.velocity * delta.as_secs_f64();
 
-        if update_ctx.input().pressed(KeyCode::Space) {
+        if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));
-            update_ctx.add_object(Box::new(SpinningRectangle::new(
+            ctx.object().add(Box::new(SpinningRectangle::new(
                 self.pos,
                 Vec2::one().rotated(angle)
             )));
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
-    fn on_collision(&mut self, _update_ctx: UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         self.pos += mtv;
 
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {

@@ -52,11 +52,11 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
         }
     }
 
-    pub(crate) fn resume(mut self, this: SceneObjectWithId<ObjectType>, update_ctx: &mut UpdateContext<ObjectType>) -> Option<Self> {
+    pub(crate) fn resume(mut self, this: SceneObjectWithId<ObjectType>, ctx: &mut UpdateContext<ObjectType>) -> Option<Self> {
         if self.wait_since.elapsed() < self.wait_duration {
             return Some(self);
         }
-        let result = (self.func)(this, update_ctx, self.last_action);
+        let result = (self.func)(this, ctx, self.last_action);
         match result {
             CoroutineResponse::Yield => {
                 self.last_action = CoroutineState::Yielding;

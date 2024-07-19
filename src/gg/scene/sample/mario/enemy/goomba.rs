@@ -64,20 +64,20 @@ impl SceneObject<ObjectType> for Goomba {
         Ok(())
     }
     fn on_ready(&mut self) {}
-    fn on_update(&mut self, _delta: Duration, update_ctx: UpdateContext<ObjectType>) {
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
         let ray = self.collider().translated(2 * Vec2::down());
-        if update_ctx.test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision(ray.as_ref(), vec![BRICK_COLLISION_TAG]).is_none() {
             self.v_accel = BASE_GRAVITY;
         }
     }
-    fn on_fixed_update(&mut self, _update_ctx: UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         if !self.dead {
             self.vel.y += self.v_accel;
             self.top_left += self.vel;
         }
     }
-    fn on_collision(&mut self, _update_ctx: UpdateContext<ObjectType>, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
             self.top_left += mtv;
@@ -88,10 +88,10 @@ impl SceneObject<ObjectType> for Goomba {
         }
         CollisionResponse::Continue
     }
-    fn on_update_end(&mut self, _delta: Duration, mut update_ctx: UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {
-            update_ctx.start_coroutine_after(|_this, update_ctx, _action| {
-                update_ctx.remove_this_object();
+            ctx.scene().start_coroutine_after(|_this, update_ctx, _action| {
+                update_ctx.object().remove_this();
                 CoroutineResponse::Complete
             }, Duration::from_millis(300));
             self.started_death = true;
