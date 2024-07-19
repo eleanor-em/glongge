@@ -395,6 +395,7 @@ struct UpdatePerfStats {
     coroutines: TimeIt,
     on_update: TimeIt,
     on_update_end: TimeIt,
+    fixed_update: TimeIt,
     detect_collision: TimeIt,
     on_collision: TimeIt,
     remove_objects: TimeIt,
@@ -411,6 +412,7 @@ impl UpdatePerfStats {
             coroutines: TimeIt::new("coroutines"),
             on_update: TimeIt::new("on_update"),
             on_update_end: TimeIt::new("on_update_end"),
+            fixed_update: TimeIt::new("fixed_update"),
             detect_collision: TimeIt::new("detect collisions"),
             on_collision: TimeIt::new("on_collision"),
             remove_objects: TimeIt::new("remove objects"),
@@ -427,6 +429,7 @@ impl UpdatePerfStats {
             self.coroutines.report_ms_if_at_least(1.);
             self.on_update.report_ms_if_at_least(1.);
             self.on_update_end.report_ms_if_at_least(1.);
+            self.fixed_update.report_ms_if_at_least(1.);
             self.detect_collision.report_ms_if_at_least(1.);
             self.on_collision.report_ms_if_at_least(1.);
             self.remove_objects.report_ms_if_at_least(1.);
@@ -737,41 +740,42 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                          obj.on_fixed_update(&mut update_ctx)
                                      });
             fixed_updates -= 1;
-        }
-        self.perf_stats.detect_collision.start();
-        let collisions = self.collision_handler.get_collisions(&self.objects);
-        self.perf_stats.detect_collision.stop();
-        self.perf_stats.on_collision.start();
-        let mut done_with_collisions = BTreeSet::new();
-        for CollisionNotification { this, other, mtv } in collisions {
-            if !done_with_collisions.contains(&this.object_id) {
-                let mut update_ctx = UpdateContext {
-                    input: &input_handler,
-                    scene: SceneContext {
-                        scene_instruction_tx: self.scene_instruction_tx.clone(),
-                        scene_name: self.scene_name,
-                        scene_data: &mut self.scene_data,
-                        coroutines: Some(self.coroutines.entry(this.object_id).or_default()),
-                    },
-                    object: ObjectContext {
-                        collision_handler: &self.collision_handler,
-                        this: this.clone(),
-                        other_map: None,
-                        pending_add_objects: None,
-                        pending_remove_objects: None,
-                    },
-                    viewport: ViewportContext {
-                        viewport: &mut self.viewport,
-                        clear_col: &mut self.clear_col,
-                    },
-                };
-                match this.inner.borrow_mut().on_collision(&mut update_ctx, other, mtv) {
-                    CollisionResponse::Continue => {},
-                    CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
+            // Detect collisions after each fixed update: important to prevent glitching through walls etc.
+            self.perf_stats.detect_collision.start();
+            let collisions = self.collision_handler.get_collisions(&self.objects);
+            self.perf_stats.detect_collision.stop();
+            self.perf_stats.on_collision.start();
+            let mut done_with_collisions = BTreeSet::new();
+            for CollisionNotification { this, other, mtv } in collisions {
+                if !done_with_collisions.contains(&this.object_id) {
+                    let mut update_ctx = UpdateContext {
+                        input: &input_handler,
+                        scene: SceneContext {
+                            scene_instruction_tx: self.scene_instruction_tx.clone(),
+                            scene_name: self.scene_name,
+                            scene_data: &mut self.scene_data,
+                            coroutines: Some(self.coroutines.entry(this.object_id).or_default()),
+                        },
+                        object: ObjectContext {
+                            collision_handler: &self.collision_handler,
+                            this: this.clone(),
+                            other_map: None,
+                            pending_add_objects: None,
+                            pending_remove_objects: None,
+                        },
+                        viewport: ViewportContext {
+                            viewport: &mut self.viewport,
+                            clear_col: &mut self.clear_col,
+                        },
+                    };
+                    match this.inner.borrow_mut().on_collision(&mut update_ctx, other, mtv) {
+                        CollisionResponse::Continue => {},
+                        CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
+                    }
                 }
             }
+            self.perf_stats.on_collision.stop();
         }
-        self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
