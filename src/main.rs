@@ -8,7 +8,8 @@ use glongge::{
         linalg::{Mat3x3, Vec2},
         vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
         scene::SceneHandler,
-        scene::Scene
+        scene::Scene,
+        ObjectTypeEnum
     },
     resource::ResourceHandler
 };
@@ -40,7 +41,11 @@ fn main() -> Result<()> {
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    let resource_handler = ResourceHandler::new(ctx.clone())?;
+    let mut resource_handler = ResourceHandler::new(ctx.clone())?;
+    mario::ObjectType::preload_all(&mut resource_handler)?;
+    rectangle::ObjectType::preload_all(&mut resource_handler)?;
+    triangle::ObjectType::preload_all(&mut resource_handler)?;
+
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();

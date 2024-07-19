@@ -1,4 +1,3 @@
-use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
@@ -6,7 +5,6 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        UpdateContext,
         VertexWithUV,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
         collision::{BoxCollider, Collider},
@@ -43,8 +41,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         );
         Ok(())
     }
-    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
-    fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
+
     fn transform(&self) -> Transform {
         Transform {
             centre: self.top_left + self.sprite.half_widths(),

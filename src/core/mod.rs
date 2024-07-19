@@ -50,7 +50,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn as_default(self) -> Box<dyn SceneObject<Self>>;
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
-    fn preload_all(resource_handler: ResourceHandler) -> Result<()>;
+    fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()>;
     fn checked_downcast<T: SceneObject<Self> + 'static>(obj: &dyn SceneObject<Self>) -> &T;
     fn checked_downcast_mut<T: SceneObject<Self> + 'static>(obj: &mut dyn SceneObject<Self>) -> &mut T;
 }
@@ -99,10 +99,12 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
 
     #[allow(unused_variables)]
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>);
+    #[allow(unused_variables)]
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
-    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>);
+    #[allow(unused_variables)]
+    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
     // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}

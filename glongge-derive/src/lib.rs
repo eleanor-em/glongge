@@ -147,9 +147,9 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
             fn as_default(self) -> Box<dyn glongge::core::SceneObject<Self>> { #as_default_exp }
             fn as_typeid(self) -> std::any::TypeId { #match_exp }
             fn all_values() -> Vec<Self> { #vec }
-            fn preload_all(mut resource_handler: glongge::resource::ResourceHandler) -> anyhow::Result<()> {
+            fn preload_all(mut resource_handler: &mut glongge::resource::ResourceHandler) -> anyhow::Result<()> {
                 for value in Self::all_values() {
-                    value.as_default().on_load(&mut resource_handler)?;
+                    value.as_default().on_load(resource_handler)?;
                 }
                 Ok(())
             }

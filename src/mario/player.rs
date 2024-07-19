@@ -462,8 +462,8 @@ impl SceneObject<ObjectType> for Player {
         self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
         self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
         // TODO: music is weirdly slow to load.
-        // self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
-        // self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
+        self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
+        self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
         Ok(())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

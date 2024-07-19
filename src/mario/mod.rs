@@ -108,7 +108,7 @@ impl Scene<ObjectType> for MarioScene {
                 y: 384 - 2 * 16 - 8,
             }, true),
             _ => Player::new(Vec2Int {
-                x: (164*16) + 16 * 3 + 8,
+                x: 8*16 + 8,
                 y: 384 - 3 * 16 + 8
             }, false)
         });

@@ -78,7 +78,6 @@ impl SceneObject<ObjectType> for Goomba {
         );
         Ok(())
     }
-    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
         if ctx.object().test_collision_along(&self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {

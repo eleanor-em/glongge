@@ -1,4 +1,3 @@
-use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
@@ -58,8 +57,7 @@ impl SceneObject<ObjectType> for UndergroundBrick {
             Vec2Int { x: 164, y: 16 });
         Ok(())
     }
-    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {}
-    fn on_update(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {}
+
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;
         self.top_left.y += self.v_speed;
