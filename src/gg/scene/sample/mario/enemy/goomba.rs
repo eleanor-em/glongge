@@ -71,22 +71,27 @@ impl SceneObject<ObjectType> for Goomba {
             self.v_accel = BASE_GRAVITY;
         }
     }
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
-        if !self.dead {
+    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let in_view = ctx.viewport().contains_point(self.top_left) ||
+            ctx.viewport().contains_point(self.top_left + self.sprite.extent());
+        if !self.dead && in_view {
             self.vel.y += self.v_accel;
             self.top_left += self.vel;
         }
     }
-    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, _other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
             self.top_left += mtv;
         }
         if !mtv.dot(Vec2::up()).is_zero() {
-            self.vel.y = 0.;
             self.top_left += mtv;
+            if self.vel.y.is_zero() && mtv.y < 0. && other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
+                self.stomp();
+            }
+            self.vel.y = 0.;
         }
-        CollisionResponse::Continue
+        CollisionResponse::Done
     }
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {

@@ -80,6 +80,14 @@ impl Scene<ObjectType> for MarioScene {
                 x: 49 * 16,
                 y: 384 - 2 * 16 - 48,
             }),
+            Hill2::new(Vec2Int {
+                x: 60 * 16,
+                y: 384 - 2 * 16 - 16,
+            }),
+            Hill1::new(Vec2Int {
+                x: 64 * 16,
+                y: 384 - 2 * 16 - 32,
+            }),
         ];
 
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 17 * 16, y: 384 - 6 * 16 }));
@@ -135,6 +143,23 @@ impl Scene<ObjectType> for MarioScene {
                 y: 384 - (tile_y + 1) * 16
             }));
         }
+        for (tile_x, tile_y) in Vec2Int::range_from_zero([15, 2].into()) {
+            initial_objects.push(Floor::new(Vec2Int {
+                x: (tile_x + 72) * 16,
+                y: 384 - (tile_y + 1) * 16
+            }));
+        }
+        initial_objects.push(Brick::new(Vec2Int { x: 78 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(QuestionBlock::new(Vec2Int { x: 79 * 16, y: 384 - 6 * 16 }));
+        initial_objects.push(Brick::new(Vec2Int { x: 80 * 16, y: 384 - 6 * 16 }));
+        for (tile_x, _tile_y) in Vec2Int::range_from_zero([7, 1].into()) {
+            initial_objects.push(Brick::new(Vec2Int {
+                x: (tile_x + 81) * 16,
+                y: 384 - 10 * 16
+            }));
+        }
+        initial_objects.push(Goomba::new(Vec2Int { x: 81 * 16, y: 384 - 11 * 16 }));
+        initial_objects.push(Goomba::new(Vec2Int { x: 83 * 16, y: 384 - 11 * 16 }));
         initial_objects
     }
 }

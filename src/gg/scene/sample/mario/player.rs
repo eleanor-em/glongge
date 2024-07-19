@@ -106,6 +106,7 @@ pub struct Player {
     stomp_sound: Sound,
     die_sound: Sound,
     pipe_sound: Sound,
+    bump_sound: Sound,
     music: Sound,
 }
 
@@ -462,6 +463,7 @@ impl SceneObject<ObjectType> for Player {
         self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;
         self.die_sound = resource_handler.sound.wait_load_file("res/death.wav".to_string())?;
         self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
+        self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
         // TODO: music is weirdly slow to load.
         // self.music = if scene_name == (MarioScene{}).name() {
         //     resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?
@@ -554,6 +556,7 @@ impl SceneObject<ObjectType> for Player {
                     }
                 } else if let Some(mut other) = downcast_bumpable_mut(&mut coll.other) {
                     // Collision with a block from below.
+                    self.bump_sound.play();
                     other.bump(self);
                 }
             }
