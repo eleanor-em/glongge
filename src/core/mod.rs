@@ -239,7 +239,7 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
 pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     collision_handler: &'a CollisionHandler,
     this: SceneObjectWithId<ObjectType>,
-    other_map: Option<&'a BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>>,
+    other_map: Option<&'a BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>>,
     pending_add_objects: Option<&'a mut Vec<Box<dyn SceneObject<ObjectType>>>>,
     pending_remove_objects: Option<&'a mut BTreeSet<ObjectId>>,
 }
@@ -249,12 +249,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         self.other_map
             .expect("can only use within on_update(), on_update_begin(), on_update_end(), \
                     on_fixed_update(), or coroutines")
-            .values()
-            .filter(|obj| !self.pending_remove_objects.as_ref()
+            .iter()
+            .filter(|(object_id, _)| !self.pending_remove_objects.as_ref()
                 .expect("can only use within on_update(), on_update_begin(), on_update_end(), \
                     on_fixed_update(), or coroutines")
-                .contains(&obj.object_id))
-            .cloned()
+                .contains(object_id))
+            .filter(|(object_id, _)| self.this.object_id != **object_id)
+            .map(|(object_id, obj)| SceneObjectWithId::new_ref(object_id, obj.clone()))
             .collect()
     }
 
@@ -293,9 +294,9 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                     .expect("can only use within on_update(), on_update_begin(), on_update_end(), \
                                 on_fixed_update(), or coroutines")
                     .get(other_id) {
-                    if let Some(mtv) = collider.collides_with(other.collider().as_ref()) {
+                    if let Some(mtv) = collider.collides_with(other.borrow().collider().as_ref()) {
                         rv.push(Collision {
-                            other: other.clone(),
+                            other: SceneObjectWithId::new_ref(other_id, other.clone()),
                             mtv,
                         });
                     }
@@ -712,30 +713,25 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.on_update_begin.start();
         let mut pending_add_objects = Vec::new();
         let mut pending_remove_objects = BTreeSet::new();
-        let mut other_map = self.objects
-            .iter()
-            .map(|(&object_id, obj)| {
-                (object_id, SceneObjectWithId::new(object_id, obj.clone()))
-            })
-            .collect();
+        let other_map = self.objects.clone();
 
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
                                      obj.on_update_begin(delta, &mut update_ctx)
                                  });
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
-        self.update_coroutines(&input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map);
+        self.update_coroutines(&input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map);
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
                                      obj.on_update(delta, &mut update_ctx)
                                  });
         self.perf_stats.on_update.stop();
 
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+            self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                      |mut obj, _delta, mut update_ctx| {
                                          obj.on_fixed_update(&mut update_ctx)
                                      });
@@ -745,7 +741,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         }
 
         self.perf_stats.on_update_end.start();
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &mut other_map,
+        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
                                      obj.on_update_end(delta, &mut update_ctx)
                                  });
@@ -762,7 +758,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         for CollisionNotification { this, other, mtv } in collisions {
             if !done_with_collisions.contains(&this.object_id) {
                 let mut update_ctx = UpdateContext {
-                    input: &input_handler,
+                    input: input_handler,
                     scene: SceneContext {
                         scene_instruction_tx: self.scene_instruction_tx.clone(),
                         scene_name: self.scene_name,
@@ -794,13 +790,12 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                          input_handler: &InputHandler,
                          pending_add_objects: &mut Vec<AnySceneObject<ObjectType>>,
                          pending_remove_objects: &mut BTreeSet<ObjectId>,
-                         other_map: &mut BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>
+                         other_map: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
     ) {
         for (this_id, this) in self.objects.iter() {
             let this = SceneObjectWithId::new_ref(this_id, this.clone());
             let coroutines = self.coroutines.remove(this_id).unwrap_or_default();
             let new_coroutines = self.coroutines.entry(*this_id).or_default();
-            other_map.remove(this_id);
             {
                 let mut update_ctx = UpdateContext {
                     input: input_handler,
@@ -828,7 +823,6 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     }
                 }
             }
-            other_map.insert(*this_id, this);
         }
     }
     fn iter_with_other_map<F>(&mut self,
@@ -836,11 +830,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                               input_handler: &InputHandler,
                               pending_add_objects: &mut Vec<AnySceneObject<ObjectType>>,
                               pending_remove_objects: &mut BTreeSet<ObjectId>,
-                              other_map: &mut BTreeMap<ObjectId, SceneObjectWithId<ObjectType>>,
+                              other_map: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
                               call_obj_event: F)
     where F: Fn(RefMut<AnySceneObject<ObjectType>>, Duration, UpdateContext<ObjectType>) {
         for (this_id, this) in self.objects.iter() {
-            other_map.remove(this_id);
             let this = SceneObjectWithId::new_ref(this_id, this.clone());
             let update_ctx = UpdateContext {
                 input: input_handler,
@@ -863,7 +856,6 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 },
             };
             call_obj_event(this.inner.borrow_mut(), delta, update_ctx);
-            other_map.insert(*this_id, this);
         }
     }
     fn update_and_send_render_infos(&mut self, did_update_vertices: bool) {
