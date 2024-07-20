@@ -319,7 +319,8 @@ impl Player {
                     CoroutineState::Waiting => { this.pipe_sound.play(); }
                     CoroutineState::Yielding => {}
                 }
-                if ctx.object().test_collision(this.collider(), vec![PIPE_COLLISION_TAG]).is_none() {
+                // TODO: replace this with some sort of cached collision feature (from end of last update).
+                if ctx.object().test_collision(this.collider().as_ref(), vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;
                     // Snap to top of pipe.
