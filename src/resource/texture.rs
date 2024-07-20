@@ -56,7 +56,8 @@ impl TextureId {
 impl From<TextureId> for u32 {
     fn from(value: TextureId) -> Self {
         check_lt!(value.0, MAX_TEXTURE_COUNT);
-        value.0 as u32
+        u32::try_from(value.0)
+            .unwrap_or_else(|_| panic!("too large texture id: {value:?}"))
     }
 }
 
@@ -69,7 +70,7 @@ pub struct Texture {
 
 impl Texture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> { self.cached_image_view.clone() }
-    pub fn extent(&self) -> Vec2 { Vec2 { x: self.info.extent[0] as f64, y: self.info.extent[1] as f64 } }
+    pub fn extent(&self) -> Vec2 { Vec2 { x: f64::from(self.info.extent[0]), y: f64::from(self.info.extent[1]) } }
 
     fn create_image_view(&mut self,
                        ctx: &VulkanoContext,
@@ -154,7 +155,7 @@ impl TextureHandler {
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            4 as DeviceSize
+            DeviceSize::from(4 as char)
         ).map_err(Validated::unwrap)?;
         buf.write()?.swap_with_slice(&mut Colour::white().as_bytes());
         Ok(Texture {
@@ -242,7 +243,7 @@ impl TextureHandler {
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            (info.width * info.height * 4) as DeviceSize
+            DeviceSize::from(info.width * info.height * 4)
         ).map_err(Validated::unwrap)?;
         reader.next_frame(&mut buf.write()?)?;
 

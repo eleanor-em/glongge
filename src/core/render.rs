@@ -171,6 +171,7 @@ impl BasicRenderHandler {
         })
     }
 
+    #[must_use]
     pub fn with_global_scale_factor(mut self, global_scale_factor: f64) -> Self {
         self.viewport.set_global_scale_factor(global_scale_factor);
         self
@@ -222,7 +223,7 @@ impl BasicRenderHandler {
                 &mut self.vertex_buffers,
                 Self::create_single_vertex_buffer(ctx, &receiver.vertices)?);
             let pipeline = self.get_or_create_pipeline(ctx)?;
-            let command_buffer = self.create_single_command_buffer(
+            let command_buffer = Self::create_single_command_buffer(
                 ctx,
                 receiver,
                 pipeline,
@@ -241,7 +242,7 @@ impl BasicRenderHandler {
                            per_image_ctx: &mut MutexGuard<PerImageContext>) -> Result<()> {
         let mut vertex_buffer = per_image_ctx.current_value_as_mut(&mut self.vertex_buffers)
             .write()?;
-        for render_info in receiver.render_info.iter() {
+        for render_info in &receiver.render_info {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
                 let texture_id = render_info.inner.texture_id.unwrap_or_default();
@@ -262,6 +263,7 @@ impl BasicRenderHandler {
                     uv: uv.into(),
                     texture_id: texture_id.into(),
                     translation: render_info.transform.centre.into(),
+                    #[allow(clippy::cast_possible_truncation)]
                     rotation: render_info.transform.rotation as f32,
                     scale: render_info.transform.scale.into(),
                     blend_col: blend_col.into(),
@@ -289,7 +291,7 @@ impl BasicRenderHandler {
                     PipelineShaderStageCreateInfo::new(fs),
                 ];
                 let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in create_info.set_layouts.iter_mut() {
+                for layout in &mut create_info.set_layouts {
                     layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
                 }
                 let layout = PipelineLayout::new(
@@ -330,7 +332,6 @@ impl BasicRenderHandler {
     }
 
     fn create_single_command_buffer(
-        &self,
         ctx: &VulkanoContext,
         receiver: &MutexGuard<BasicRenderInfoReceiver>,
         pipeline: Arc<GraphicsPipeline>,
@@ -364,7 +365,9 @@ impl BasicRenderHandler {
                 uniform_buffer_set.clone(),
             )?
             .bind_vertex_buffers(0, vertex_buffer.clone())?
-            .draw(vertex_buffer.len() as u32, 1, 0, 0)?
+            .draw(u32::try_from(vertex_buffer.len())
+                      .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", vertex_buffer.len())),
+                  1, 0, 0)?
             .end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
@@ -387,12 +390,12 @@ impl BasicRenderHandler {
                 let uniform_buffer_sets = self.get_or_create_uniform_buffer_sets(
                     ctx,
                     pipeline.clone(),
-                    uniform_buffers)?;
+                    &uniform_buffers)?;
                 let command_buffers = ctx.framebuffers().try_map_with_3(
                     &uniform_buffer_sets,
                     self.vertex_buffers.as_ref().unwrap(),
                     |((framebuffer, uniform_buffer_set), vertex_buffer)| {
-                        self.create_single_command_buffer(
+                        Self::create_single_command_buffer(
                             ctx,
                             receiver,
                             pipeline.clone(),
@@ -412,7 +415,7 @@ impl BasicRenderHandler {
     fn get_or_create_uniform_buffer_sets(&mut self,
                                          ctx: &VulkanoContext,
                                          pipeline: Arc<GraphicsPipeline>,
-                                         uniform_buffers: DataPerImage<Subbuffer<UniformData>>
+                                         uniform_buffers: &DataPerImage<Subbuffer<UniformData>>
     ) -> Result<DataPerImage<Arc<PersistentDescriptorSet>>> {
         Ok(match self.uniform_buffer_sets.clone() {
             None => {
@@ -475,9 +478,12 @@ impl BasicRenderHandler {
                             },
                         ).map_err(Validated::unwrap)?;
                         *buf.write()? = UniformData {
-                            window_width: self.viewport.physical_width(),
-                            window_height: self.viewport.physical_height(),
-                            scale_factor: self.viewport.scale_factor(),
+                            #[allow(clippy::cast_possible_truncation)]
+                            window_width: self.viewport.physical_width() as f32,
+                            #[allow(clippy::cast_possible_truncation)]
+                            window_height: self.viewport.physical_height() as f32,
+                            #[allow(clippy::cast_possible_truncation)]
+                            scale_factor: self.viewport.scale_factor() as f32,
                         };
                         Ok(buf)
                     })?;

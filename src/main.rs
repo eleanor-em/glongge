@@ -41,7 +41,7 @@ fn main() -> Result<()> {
 
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
-    let mut resource_handler = ResourceHandler::new(ctx.clone())?;
+    let mut resource_handler = ResourceHandler::new(&ctx)?;
     mario::ObjectType::preload_all(&mut resource_handler)?;
     rectangle::ObjectType::preload_all(&mut resource_handler)?;
     triangle::ObjectType::preload_all(&mut resource_handler)?;

@@ -21,7 +21,7 @@ pub struct ResourceHandler {
 }
 
 impl ResourceHandler {
-    pub fn new(ctx: VulkanoContext) -> Result<Self> {
+    pub fn new(ctx: &VulkanoContext) -> Result<Self> {
         let resource_handler_already_exists = CREATED_RESOURCE_HANDLER.swap(true, Ordering::Relaxed);
         check_false!(resource_handler_already_exists);
         Ok(Self {

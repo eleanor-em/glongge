@@ -33,7 +33,7 @@ impl Vec2Int {
     pub fn down() -> Vec2Int { Vec2Int { x: 0, y: 1 } }
     pub fn one() -> Vec2Int { Vec2Int { x: 1, y: 1 } }
 
-    pub fn len(&self) -> f64 { (self.dot(*self) as f64).sqrt() }
+    pub fn len(&self) -> f64 { f64::from(self.dot(*self)).sqrt() }
     pub fn dot(&self, other: Vec2Int) -> i32 { self.x * other.x + self.y * other.y }
 
     pub fn as_vec2(&self) -> Vec2 { Into::<Vec2>::into(*self) }
@@ -48,7 +48,7 @@ impl Vec2Int {
 
 impl From<Vec2Int> for Vec2 {
     fn from(value: Vec2Int) -> Self {
-        Self { x: value.x as f64, y: value.y as f64 }
+        Self { x: f64::from(value.x), y: f64::from(value.y) }
     }
 }
 
@@ -195,6 +195,7 @@ pub struct Vec2 {
     pub y: f64,
 }
 
+#[allow(clippy::return_self_not_must_use)]
 impl Vec2 {
     pub fn right() -> Vec2 { Vec2 { x: 1., y: 0. } }
     pub fn up() -> Vec2 { Vec2 { x: 0., y: -1. } }
@@ -231,7 +232,7 @@ impl Vec2 {
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
-        (*self - rhs).len() < f32::epsilon() as f64
+        (*self - rhs).len() < f64::from(f32::epsilon())
     }
 }
 
@@ -256,8 +257,8 @@ impl From<[f64; 2]> for Vec2 {
 impl From<[f32; 2]> for Vec2 {
     fn from(value: [f32; 2]) -> Self {
         Vec2 {
-            x: value[0] as f64,
-            y: value[1] as f64,
+            x: f64::from(value[0]),
+            y: f64::from(value[1]),
         }
     }
 }
@@ -267,6 +268,7 @@ impl From<Vec2> for [f64; 2] {
         [value.x, value.y]
     }
 }
+#[allow(clippy::cast_possible_truncation)]
 impl From<Vec2> for [f32; 2] {
     fn from(value: Vec2) -> Self {
         [value.x as f32, value.y as f32]
@@ -350,7 +352,7 @@ impl Mul<i32> for Vec2 {
     type Output = Vec2;
 
     fn mul(self, rhs: i32) -> Self::Output {
-        rhs as f64 * self
+        f64::from(rhs) * self
     }
 }
 impl Mul<Vec2> for i32 {
@@ -358,8 +360,8 @@ impl Mul<Vec2> for i32 {
 
     fn mul(self, rhs: Vec2) -> Self::Output {
         Vec2 {
-            x: self as f64 * rhs.x,
-            y: self as f64 * rhs.y,
+            x: f64::from(self) * rhs.x,
+            y: f64::from(self) * rhs.y,
         }
     }
 }
@@ -368,15 +370,15 @@ impl Mul<&Vec2> for i32 {
 
     fn mul(self, rhs: &Vec2) -> Self::Output {
         Vec2 {
-            x: self as f64 * rhs.x,
-            y: self as f64 * rhs.y,
+            x: f64::from(self) * rhs.x,
+            y: f64::from(self) * rhs.y,
         }
     }
 }
 impl MulAssign<i32> for Vec2 {
     fn mul_assign(&mut self, rhs: i32) {
-        self.x *= rhs as f64;
-        self.y *= rhs as f64;
+        self.x *= f64::from(rhs);
+        self.y *= f64::from(rhs);
     }
 }
 
@@ -401,15 +403,15 @@ impl Div<i32> for Vec2 {
 
     fn div(self, rhs: i32) -> Self::Output {
         Vec2 {
-            x: self.x / rhs as f64,
-            y: self.y / rhs as f64,
+            x: self.x / f64::from(rhs),
+            y: self.y / f64::from(rhs),
         }
     }
 }
 impl DivAssign<i32> for Vec2 {
     fn div_assign(&mut self, rhs: i32) {
-        self.x /= rhs as f64;
-        self.y /= rhs as f64;
+        self.x /= f64::from(rhs);
+        self.y /= f64::from(rhs);
     }
 }
 
@@ -435,6 +437,7 @@ impl Neg for &Vec2 {
 }
 
 #[derive(Copy, Clone, PartialEq)]
+#[must_use]
 pub struct Mat3x3 {
     pub xx: f64,
     pub xy: f64,
@@ -660,6 +663,7 @@ impl Mul<Mat3x3> for Mat3x3 {
 }
 
 impl From<Mat3x3> for [[f32; 4]; 4] {
+    #[allow(clippy::cast_possible_truncation)]
     fn from(value: Mat3x3) -> Self {
         [
             [value.xx as f32, value.xy as f32, 0., value.xw as f32],

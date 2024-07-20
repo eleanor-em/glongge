@@ -71,15 +71,18 @@ impl Sprite {
             frame: 0,
         }
     }
+    #[must_use]
     pub fn with_fixed_ms_per_frame(mut self, ms: u32) -> Self {
         self.frame_time_ms = vec![ms; self.areas.len()];
         self
     }
+    #[must_use]
     pub fn with_frame_time_ms(mut self, times: Vec<u32>) -> Self {
         check_eq!(times.len(), self.areas.len());
         self.frame_time_ms = times;
         self
     }
+    #[must_use]
     pub fn with_frame_orders(mut self, frames: Vec<usize>) -> Self {
         self.areas = frames.into_iter().map(|i| self.areas[i]).collect();
         self

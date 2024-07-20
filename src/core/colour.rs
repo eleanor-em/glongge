@@ -16,7 +16,7 @@ impl Colour {
         Self { r, g, b, a }
     }
     pub fn from_bytes(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self { r: r as f64 / 255., g: g as f64 / 255., b: b as f64 / 255., a: a as f64 / 255. }
+        Self { r: f64::from(r) / 255., g: f64::from(g) / 255., b: f64::from(b) / 255., a: f64::from(a) / 255. }
     }
     pub fn from_bytes_clamp<I: PrimInt + FromPrimitive + ToPrimitive>(r: I, g: I, b: I, a: I) -> Self {
         let min = I::from_u8(u8::MIN).expect("weird conversion failure from u8");
@@ -38,6 +38,7 @@ impl Colour {
     pub fn white() -> Self { Self { r: 1., g: 1., b: 1., a: 1. } }
 
     pub fn as_bytes(&self) -> [u8; 4] {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         [(self.r * 255.) as u8, (self.g * 255.) as u8, (self.b * 255.) as u8, (self.a * 255.) as u8]
     }
     pub fn as_f32(&self) -> [f32; 4] { self.into() }
@@ -50,6 +51,7 @@ impl Default for Colour {
 }
 
 impl From<Colour> for [f32; 4] {
+    #[allow(clippy::cast_possible_truncation)]
     fn from(value: Colour) -> Self {
         [value.r as f32, value.g as f32, value.b as f32, value.a as f32]
     }

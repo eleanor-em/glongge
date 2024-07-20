@@ -9,10 +9,10 @@ use std::{
 
 pub struct TimeIt {
     tag: String,
-    n: u64,
-    total_ns: u64,
-    max_ns: u64,
-    last_ns: u64,
+    n: u128,
+    total_ns: u128,
+    max_ns: u128,
+    last_ns: u128,
     last_wall: Instant,
     last_report: Instant,
 }
@@ -35,7 +35,7 @@ impl TimeIt {
         self.last_ns = 0;
     }
     pub fn stop(&mut self) {
-        let delta = self.last_wall.elapsed().as_nanos() as u64;
+        let delta = self.last_wall.elapsed().as_nanos();
         self.n += 1;
         self.total_ns += delta;
         self.last_ns += delta;
@@ -43,7 +43,7 @@ impl TimeIt {
     }
 
     pub fn pause(&mut self) {
-        let delta = self.last_wall.elapsed().as_nanos() as u64;
+        let delta = self.last_wall.elapsed().as_nanos();
         self.total_ns += delta;
         self.last_ns += delta;
     }
@@ -55,18 +55,23 @@ impl TimeIt {
         *self = Self::new(&self.tag);
         self.last_report = Instant::now();
     }
+    fn max_ms(&self) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
+        let max_ns = self.max_ns as f64;
+        max_ns / 1_000_000.
+    }
     pub fn report_ms(&mut self) {
         info!(
             "TimeIt [{:>18}]: {} events, mean={:.2} ms, max={:.2} ms",
             self.tag,
             self.n,
             self.mean_ms(),
-            self.max_ns as f64 / 1_000_000.
+            self.max_ms()
         );
         self.reset();
     }
     pub fn report_ms_if_at_least(&mut self, milliseconds: f64) {
-        if self.mean_ms() > milliseconds || self.max_ns as f64 / 1_000_000. > milliseconds {
+        if self.mean_ms() > milliseconds || self.max_ms() > milliseconds {
             self.report_ms();
         } else {
             self.reset();
@@ -81,13 +86,17 @@ impl TimeIt {
         if self.n == 0 {
             return 0.;
         }
-        (self.total_ns / self.n) as f64 / 1_000.
+        #[allow(clippy::cast_precision_loss)]
+        let mean = (self.total_ns / self.n) as f64;
+        mean / 1_000.
     }
     fn mean_ms(&self) -> f64 {
         self.mean_us() / 1_000.
     }
     pub fn last_ms(&self) -> f64 {
-        self.last_ns as f64 / 1_000_000.
+        #[allow(clippy::cast_precision_loss)]
+        let last_ns = self.last_ns as f64;
+        last_ns / 1_000_000.
     }
 }
 
@@ -108,6 +117,7 @@ pub mod gg_range {
 
         let start = r2.start;
         let end = f64::min(r1.end, r2.end);
+        #[allow(clippy::float_cmp)]
         if start == end {
             None
         } else {
@@ -140,10 +150,10 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T
         if a < b { Self(a, b) } else { Self(b, a) }
     }
     pub fn new_distinct(a: T, b: T) -> Option<Self> {
-        if a != b {
-            Some(Self::new(a, b))
-        } else {
+        if a == b {
             None
+        } else {
+            Some(Self::new(a, b))
         }
     }
 

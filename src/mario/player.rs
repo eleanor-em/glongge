@@ -373,15 +373,15 @@ impl Player {
                 if (pipe_centre.x - this.centre.x).abs() > Self::MAX_WALK_SPEED * 1.1 {
                     this.speed = (pipe_centre.x - this.centre.x).signum() * Self::MAX_WALK_SPEED;
                     return CoroutineResponse::Yield
-                } else {
-                    this.centre.x = pipe_centre.x;
-                    this.speed = 0.;
-                    this.v_speed = if pipe_centre.y > this.centre.y {
-                        Self::MAX_VSPEED / 2.
-                    } else {
-                        -Self::MAX_VSPEED / 2.
-                    };
                 }
+
+                this.centre.x = pipe_centre.x;
+                this.speed = 0.;
+                this.v_speed = if pipe_centre.y > this.centre.y {
+                    Self::MAX_VSPEED / 2.
+                } else {
+                    -Self::MAX_VSPEED / 2.
+                };
             } else {
                 this.speed = Self::MAX_WALK_SPEED;
                 this.v_speed = 0.;

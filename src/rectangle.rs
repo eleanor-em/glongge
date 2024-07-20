@@ -180,7 +180,7 @@ impl SpinningRectangle {
             velocity: vel_normed * Self::VELOCITY,
             t: 0.,
             col,
-            sprite: Default::default(),
+            sprite: Sprite::default(),
             alive_since: Instant::now(),
         }
     }

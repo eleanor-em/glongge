@@ -46,6 +46,7 @@ use vulkano::{
     VulkanError,
     VulkanLibrary,
 };
+use vulkano::swapchain::SurfaceInfo;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -125,13 +126,15 @@ impl AdjustedViewport {
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
     }
 
-    pub fn physical_width(&self) -> f32 { self.inner.extent[0] }
-    pub fn physical_height(&self) -> f32 { self.inner.extent[1] }
-    pub fn logical_width(&self) -> f32 { self.inner.extent[0] / self.scale_factor() }
-    pub fn logical_height(&self) -> f32 { self.inner.extent[1] / self.scale_factor() }
-    pub fn scale_factor(&self) -> f32 { self.scale_factor as f32 }
+    pub fn physical_width(&self) -> f64 { f64::from(self.inner.extent[0]) }
+    pub fn physical_height(&self) -> f64 { f64::from(self.inner.extent[1]) }
+    pub fn logical_width(&self) -> f64 { f64::from(self.inner.extent[0]) / self.scale_factor() }
+    pub fn logical_height(&self) -> f64 { f64::from(self.inner.extent[1]) / self.scale_factor() }
+    pub fn scale_factor(&self) -> f64 { self.scale_factor }
 
     pub fn inner(&self) -> Viewport { self.inner.clone() }
+
+    #[must_use]
     pub fn translated(&self, translation: Vec2) -> AdjustedViewport {
         let mut rv = self.clone();
         rv.translation = translation;
@@ -141,7 +144,7 @@ impl AdjustedViewport {
 
 impl AxisAlignedExtent for AdjustedViewport {
     fn extent(&self) -> Vec2 {
-        Vec2 { x: self.logical_width() as f64, y: self.logical_height() as f64 }
+        Vec2 { x: self.logical_width(), y: self.logical_height() }
     }
 
     fn centre(&self) -> Vec2 {
@@ -264,7 +267,7 @@ impl<T: Clone> DataPerImage<T> {
     {
         let mut rv = 0;
         for value in self.as_slice() {
-            rv += predicate(value) as usize;
+            rv += usize::from(predicate(value));
         }
         rv
     }
@@ -274,7 +277,7 @@ impl<T: Clone> DataPerImage<T> {
     {
         let mut rv = 0;
         for value in self.as_slice() {
-            rv += predicate(value)? as usize;
+            rv += usize::from(predicate(value)?);
         }
         Ok(rv)
     }
@@ -338,7 +341,7 @@ impl VulkanoContext {
 
         info!(
             "created vulkano context in: {:.2} ms",
-            start.elapsed().as_micros() as f64 / 1_000.
+            start.elapsed().as_millis_f64()
         );
         Ok(Self {
             // Appears to not be necessary:
@@ -425,10 +428,15 @@ fn any_physical_device(
                 .iter()
                 .enumerate()
                 .position(|(i, q)| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let i = i as u32;
                     q.queue_flags.contains(QueueFlags::GRAPHICS)
-                        && p.surface_support(i as u32, &surface).unwrap_or(false)
+                        && p.surface_support(i, &surface).unwrap_or(false)
                 })
-                .map(|q| (p, q as u32))
+                .map(|q| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    (p, q as u32)
+                })
         })
         .min_by_key(|(p, _)| match p.properties().device_type {
             PhysicalDeviceType::DiscreteGpu => 0,
@@ -443,6 +451,7 @@ fn any_physical_device(
 fn any_graphical_queue_family(
     physical_device: Arc<PhysicalDevice>,
 ) -> Result<(Arc<Device>, Arc<Queue>)> {
+    #[allow(clippy::cast_possible_truncation)]
     let queue_family_index = physical_device
         .queue_family_properties()
         .iter()
@@ -477,7 +486,7 @@ fn create_swapchain(
     physical_device: Arc<PhysicalDevice>,
     device: Arc<Device>,
 ) -> Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
-    let caps = physical_device.surface_capabilities(&surface, Default::default())?;
+    let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
     let dimensions = window.inner_size();
     let composite_alpha = caps
         .supported_composite_alpha
@@ -485,7 +494,7 @@ fn create_swapchain(
         .next()
         .context("vulkano: no composite alpha modes supported")?;
     let supported_formats = physical_device
-        .surface_formats(&surface, Default::default())?;
+        .surface_formats(&surface, SurfaceInfo::default())?;
     if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
         error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
     }
@@ -682,7 +691,7 @@ where
         self.render_stats.begin_on_render();
         let command_buffers = self.render_handler.on_render(&self.ctx, per_image_ctx)?;
         self.render_stats.begin_submit_command_buffers();
-        self.submit_command_buffers(per_image_ctx, command_buffers, ready_future)?;
+        self.submit_command_buffers(per_image_ctx, &command_buffers, ready_future)?;
         self.render_stats.end_render();
         Ok(())
     }
@@ -706,14 +715,12 @@ where
             }
         }
         self.render_stats.unpause_render_active();
-        let last_fence = match self.fences.current_value(per_image_ctx).take() {
-            Some(fence) => fence.boxed(),
-            _ => {
-                // synchronise only if there is no previous future (swapchain was just created)
-                let mut now = vulkano::sync::now(self.ctx.device());
-                now.cleanup_finished();
-                now.boxed()
-            }
+        let last_fence = if let Some(fence) = self.fences.current_value(per_image_ctx).take() {
+            fence.boxed()
+        } else {
+            let mut now = vulkano::sync::now(self.ctx.device());
+            now.cleanup_finished();
+            now.boxed()
         };
         Ok(last_fence.join(acquire_future))
     }
@@ -721,7 +728,7 @@ where
     fn submit_command_buffers(
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
-        command_buffers: DataPerImage<Arc<CommandBuffer>>,
+        command_buffers: &DataPerImage<Arc<CommandBuffer>>,
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
         let image_idx = per_image_ctx.current.expect("no current image?");
@@ -738,20 +745,13 @@ where
                         self.ctx.queue(),
                         SwapchainPresentInfo::swapchain_image_index(
                             self.ctx.swapchain(),
-                            image_idx as u32,
+                            u32::try_from(image_idx)
+                                .unwrap_or_else(|_| panic!("too large image_idx: {image_idx}"))
                         ),
                     )
                     .then_signal_fence(),
             );
         Ok(())
-    }
-
-    fn update_last_image_idx(
-        &mut self,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
-    ) {
-        let image_idx = per_image_ctx.current.expect("no current image?");
-        per_image_ctx.last = image_idx;
     }
 
     fn poll_ready(&mut self) -> bool {
@@ -803,11 +803,13 @@ where
                     Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
                         per_image_ctx.current.replace(image_idx as usize);
                         self.idle(&mut per_image_ctx, acquire_future)?;
-                        self.update_last_image_idx(&mut per_image_ctx);
+                        let image_idx = per_image_ctx.current.expect("no current image?");
+                        per_image_ctx.last = image_idx;
                         Ok(())
                     },
-                    Ok((_, /* suboptimal= */ true, _)) => self.recreate_swapchain(),
-                    Err(VulkanError::OutOfDate) => self.recreate_swapchain(),
+                    Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
+                        self.recreate_swapchain()
+                    },
                     Err(e) => Err(e.into()),
                 };
                 self.render_stats.report_and_end_step(report_stats);
@@ -926,10 +928,9 @@ impl RenderPerfStats {
 
         // arbitrary; report every 5 seconds
         if report_stats && self.last_report.elapsed().as_secs() >= 5 {
-            info!(
-                "frames on time: {:.1}%",
-                self.on_time as f64 / self.count as f64 * 100.
-            );
+            #[allow(clippy::cast_precision_loss)]
+            let on_time_rate = self.on_time as f64 / self.count as f64 * 100.;
+            info!("frames on time: {on_time_rate:.1}%");
             let min_report_ms = 0.1;
             self.render_wait.report_ms_if_at_least(min_report_ms);
             self.render_active.report_ms_if_at_least(min_report_ms);

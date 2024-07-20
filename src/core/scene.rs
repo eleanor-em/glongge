@@ -20,32 +20,33 @@ use crate::{
     },
     resource::ResourceHandler
 };
+use crate::core::RenderInfoReceiver;
 
 #[derive(Clone)]
-struct InternalScene<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
+struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
     scene: Arc<Mutex<dyn Scene<ObjectType>>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderHandler::InfoReceiver>>,
+    render_info_receiver: Arc<Mutex<InfoReceiver>>,
     tx: Sender<SceneHandlerInstruction>,
 }
 
-impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> InternalScene<ObjectType, RenderHandler> {
+impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> InternalScene<ObjectType, InfoReceiver> {
     fn new(scene: Arc<Mutex<dyn Scene<ObjectType>>>,
            input_handler: Arc<Mutex<InputHandler>>,
            resource_handler: ResourceHandler,
-           render_handler: RenderHandler,
+           render_info_receiver: Arc<Mutex<InfoReceiver>>,
            tx: Sender<SceneHandlerInstruction>) -> Self {
         let name = scene.try_lock()
             .expect("scene locked in InternalScene::new(), could not get scene name")
             .name();
         Self {
-            name,
             scene,
+            name,
             input_handler,
             resource_handler,
-            render_info_receiver: render_handler.get_receiver(),
+            render_info_receiver,
             tx,
         }
     }
@@ -60,9 +61,9 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> InternalScen
         let this_name = self.name;
         let initial_objects = {
             let mut scene = this.scene.try_lock()
-                .unwrap_or_else(|_| panic!("scene locked in InternalScene::run(): {:?}", this_name));
+                .unwrap_or_else(|_| panic!("scene locked in InternalScene::run(): {this_name:?}"));
             scene.load(&data)
-                .unwrap_or_else(|_| panic!("could not load data for {:?}", this_name));
+                .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
             scene.create_objects(entrance_id)
         };
         std::thread::spawn(move || {
@@ -75,9 +76,9 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> InternalScen
                 data
             );
             let instruction = update_handler
-                .unwrap_or_else(|_| panic!("failed to create scene: {:?}", this_name))
+                .unwrap_or_else(|_| panic!("failed to create scene: {this_name:?}"))
                 .consume()
-                .unwrap_or_else(|_| panic!("scene exited with error: {:?}", this_name));
+                .unwrap_or_else(|_| panic!("scene exited with error: {this_name:?}"));
             current_scene_name.lock().unwrap().take();
             this.tx.send(instruction).expect("failed to send scene instruction");
         });
@@ -125,7 +126,7 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHa
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
-    scenes: BTreeMap<SceneName, InternalScene<ObjectType, RenderHandler>>,
+    scenes: BTreeMap<SceneName, InternalScene<ObjectType, RenderHandler::InfoReceiver>>,
     scene_data: BTreeMap<SceneName, Vec<u8>>,
     current_scene_name: Arc<Mutex<Option<SceneName>>>,
     tx: Sender<SceneHandlerInstruction>,
@@ -153,7 +154,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
             Arc::new(Mutex::new(scene)),
             self.input_handler.clone(),
             self.resource_handler.clone(),
-            self.render_handler.clone(),
+            self.render_handler.get_receiver(),
             self.tx.clone()
         ));
     }

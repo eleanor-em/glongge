@@ -14,7 +14,7 @@ use std::{
     },
     time::{Duration, Instant}
 };
-use num_traits::Zero;
+use num_traits::{FromPrimitive, Zero};
 use crate::{
     core::{
         collision::{Collider, NullCollider},
@@ -160,9 +160,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     fn new(object_id: ObjectId, obj: Rc<RefCell<AnySceneObject<ObjectType>>>) -> Self {
         Self { object_id, inner: obj }
     }
-    fn new_ref(object_id: &ObjectId, obj: Rc<RefCell<AnySceneObject<ObjectType>>>) -> Self {
-        Self::new(*object_id, obj)
-    }
 
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
     pub fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>> {
@@ -255,7 +252,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                     on_fixed_update(), or coroutines")
                 .contains(object_id))
             .filter(|(object_id, _)| self.this.object_id != **object_id)
-            .map(|(object_id, obj)| SceneObjectWithId::new_ref(object_id, obj.clone()))
+            .map(|(object_id, obj)| SceneObjectWithId::new(*object_id, obj.clone()))
             .collect()
     }
 
@@ -296,7 +293,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                     .get(other_id) {
                     if let Some(mtv) = collider.collides_with(other.borrow().collider().as_ref()) {
                         rv.push(Collision {
-                            other: SceneObjectWithId::new_ref(other_id, other.clone()),
+                            other: SceneObjectWithId::new(*other_id, other.clone()),
                             mtv,
                         });
                     }
@@ -350,11 +347,13 @@ impl<'a> ViewportContext<'a> {
             }
         }
     }
-    pub fn centre_at(&mut self, centre: Vec2) {
-        self.translate(centre - self.viewport.centre())
+    pub fn centre_at(&mut self, centre: Vec2) -> &mut Self {
+        self.translate(centre - self.viewport.centre());
+        self
     }
-    pub fn translate(&mut self, delta: Vec2) {
+    pub fn translate(&mut self, delta: Vec2) -> &mut Self {
         self.viewport.translation += delta;
+        self
     }
     pub fn clear_col(&mut self) -> &mut Colour { self.clear_col }
 }
@@ -482,7 +481,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut vertices = BTreeMap::new();
         let mut render_infos = BTreeMap::new();
         let mut vertex_index = 0;
-        for (&i, obj) in objects.iter_mut() {
+        for (&i, obj) in &mut objects {
             obj.on_load(&mut resource_handler)?;
             if let Some(obj) = obj.as_renderable_object() {
                 let new_vertices = obj.create_vertices();
@@ -522,7 +521,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         };
 
         // Call on_ready().
-        for (this_id, this) in rv.objects.iter_mut() {
+        for (this_id, this) in &mut rv.objects {
             let mut ctx = UpdateContext {
                 input: &rv.input_handler.lock().unwrap(),
                 scene: SceneContext {
@@ -533,7 +532,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 },
                 object: ObjectContext {
                     collision_handler: &rv.collision_handler,
-                    this: SceneObjectWithId::new_ref(this_id, this.clone()),
+                    this: SceneObjectWithId::new(*this_id, this.clone()),
                     other_map: None,
                     pending_add_objects: None,
                     pending_remove_objects: None,
@@ -563,14 +562,16 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 if fixed_updates > 0 {
                     fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
                     if fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
+
                         warn!("fixed update behind by {:.2} ms",
-                            (fixed_update_us - FIXED_UPDATE_INTERVAL_US) as f64 / 1000.);
+                            f64::from_u128(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                                .unwrap_or(f64::INFINITY) / 1000.);
                     }
                 }
 
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) =
-                    self.call_on_update(delta, input_handler, fixed_updates);
+                    self.call_on_update(delta, &input_handler, fixed_updates);
                 let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_removed_objects(pending_remove_objects);
@@ -585,16 +586,16 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
             match self.scene_instruction_rx.try_iter().next() {
                 Some(SceneInstruction::Stop(scene_data)) => {
-                    return Ok(SceneHandlerInstruction::SaveAndExit(scene_data))
+                    return Ok(SceneHandlerInstruction::SaveAndExit(scene_data));
                 },
                 Some(SceneInstruction::Goto(instruction, scene_data)) => {
-                    return Ok(SceneHandlerInstruction::SaveAndGoto(instruction, scene_data))
+                    return Ok(SceneHandlerInstruction::SaveAndGoto(instruction, scene_data));
                 }
                 Some(SceneInstruction::Pause) => {
-                    is_running = false
+                    is_running = false;
                 },
                 Some(SceneInstruction::Resume) => {
-                    is_running = true
+                    is_running = true;
                 },
                 None => {},
             }
@@ -605,32 +606,29 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.remove_objects.start();
         self.collision_handler.update_with_removed_objects(&pending_remove_objects);
         for remove_index in pending_remove_objects.into_iter().rev() {
-            match self.render_infos.remove(&remove_index) {
-                Some(_) => {
-                    // Update vertex indices.
-                    // This is technically quadratic, but is fast enough.
-                    check!(self.vertices.contains_key(&remove_index));
-                    let vertices_removed = self.vertices[&remove_index].1.len();
-                    self.vertices.remove(&remove_index);
-                    let indices = self.vertices.keys()
-                        .copied()
-                        .filter(|&i| i > remove_index)
-                        .collect_vec();
-                    for i in indices {
-                        let count = &mut self.vertices.get_mut(&i)
-                            .unwrap_or_else(|| panic!("missing ObjectId in self.vertices: {:?}", i))
-                            .0;
-                        *count = (count.start - vertices_removed)..(count.end - vertices_removed);
-                        let count = &mut self.render_infos.get_mut(&i)
-                            .unwrap_or_else(|| panic!("missing ObjectId in self.render_infos: {:?}", i))
-                            .vertex_indices;
-                        *count = (count.start - vertices_removed)..(count.end - vertices_removed);
-                    }
-                    self.vertex_count -= vertices_removed;
+            if self.render_infos.remove(&remove_index).is_some() {
+                // Update vertex indices.
+                // This is technically quadratic, but is fast enough.
+                check!(self.vertices.contains_key(&remove_index));
+                let vertices_removed = self.vertices[&remove_index].1.len();
+                self.vertices.remove(&remove_index);
+                let indices = self.vertices.keys()
+                    .copied()
+                    .filter(|&i| i > remove_index)
+                    .collect_vec();
+                for i in indices {
+                    let count = &mut self.vertices.get_mut(&i)
+                        .unwrap_or_else(|| panic!("missing ObjectId in self.vertices: {i:?}"))
+                        .0;
+                    *count = (count.start - vertices_removed)..(count.end - vertices_removed);
+                    let count = &mut self.render_infos.get_mut(&i)
+                        .unwrap_or_else(|| panic!("missing ObjectId in self.render_infos: {i:?}"))
+                        .vertex_indices;
+                    *count = (count.start - vertices_removed)..(count.end - vertices_removed);
                 }
-                None => {
-                    check_false!(self.vertices.contains_key(&remove_index));
-                }
+                self.vertex_count -= vertices_removed;
+            } else {
+                check_false!(self.vertices.contains_key(&remove_index));
             }
             self.objects.remove(&remove_index);
             self.coroutines.remove(&remove_index);
@@ -653,8 +651,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
             // Call on_load().
             let mut next_vertex_index = self.vertices.last_key_value()
-                .map(|(_, (indices, _))| indices.end)
-                .unwrap_or(0);
+                .map_or(0, |(_, (indices, _))| indices.end);
             for (new_id, mut new_obj) in pending_add_objects {
                 new_obj.on_load(&mut self.resource_handler)?;
                 let mut new_vertex_count = 0;
@@ -705,9 +702,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         Ok(())
     }
 
-    #[inline(never)] fn call_on_update(&mut self,
+    fn call_on_update(&mut self,
                       delta: Duration,
-                      input_handler: InputHandler,
+                      input_handler: &InputHandler,
                       mut fixed_updates: u128
     ) -> (Vec<AnySceneObject<ObjectType>>, BTreeSet<ObjectId>) {
         self.perf_stats.on_update_begin.start();
@@ -715,41 +712,41 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut pending_remove_objects = BTreeSet::new();
         let other_map = self.objects.clone();
 
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
-                                     obj.on_update_begin(delta, &mut update_ctx)
+                                     obj.on_update_begin(delta, &mut update_ctx);
                                  });
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
-        self.update_coroutines(&input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map);
+        self.update_coroutines(input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map);
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
-                                     obj.on_update(delta, &mut update_ctx)
+                                     obj.on_update(delta, &mut update_ctx);
                                  });
         self.perf_stats.on_update.stop();
 
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
+            self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                      |mut obj, _delta, mut update_ctx| {
-                                         obj.on_fixed_update(&mut update_ctx)
+                                         obj.on_fixed_update(&mut update_ctx);
                                      });
             fixed_updates -= 1;
             // Detect collisions after each fixed update: important to prevent glitching through walls etc.
-            self.handle_collisions(&input_handler);
+            self.handle_collisions(input_handler);
         }
 
         self.perf_stats.on_update_end.start();
-        self.iter_with_other_map(delta, &input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
+        self.iter_with_other_map(delta, input_handler, &mut pending_add_objects, &mut pending_remove_objects, &other_map,
                                  |mut obj, delta, mut update_ctx| {
-                                     obj.on_update_end(delta, &mut update_ctx)
+                                     obj.on_update_end(delta, &mut update_ctx);
                                  });
         self.perf_stats.on_update_end.stop();
         (pending_add_objects, pending_remove_objects)
     }
 
-    #[inline(never)] fn handle_collisions(&mut self, input_handler: &InputHandler) {
+    fn handle_collisions(&mut self, input_handler: &InputHandler) {
         self.perf_stats.detect_collision.start();
         let collisions = self.collision_handler.get_collisions(&self.objects);
         self.perf_stats.detect_collision.stop();
@@ -792,8 +789,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                          pending_remove_objects: &mut BTreeSet<ObjectId>,
                          other_map: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
     ) {
-        for (this_id, this) in self.objects.iter() {
-            let this = SceneObjectWithId::new_ref(this_id, this.clone());
+        for (this_id, this) in &self.objects {
+            let this = SceneObjectWithId::new(*this_id, this.clone());
             let coroutines = self.coroutines.remove(this_id).unwrap_or_default();
             let new_coroutines = self.coroutines.entry(*this_id).or_default();
             {
@@ -833,8 +830,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                               other_map: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
                               call_obj_event: F)
     where F: Fn(RefMut<AnySceneObject<ObjectType>>, Duration, UpdateContext<ObjectType>) {
-        for (this_id, this) in self.objects.iter() {
-            let this = SceneObjectWithId::new_ref(this_id, this.clone());
+        for (this_id, this) in &self.objects {
+            let this = SceneObjectWithId::new(*this_id, this.clone());
             let update_ctx = UpdateContext {
                 input: input_handler,
                 scene: SceneContext {
@@ -882,11 +879,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.render_infos.stop();
     }
 
-    #[inline(never)] fn update_render_infos(&mut self) {
-        for (object_id, obj) in self.objects.iter() {
+    fn update_render_infos(&mut self) {
+        for (object_id, obj) in &self.objects {
             if let Some(obj) = obj.borrow().as_renderable_object() {
                 let render_info = self.render_infos.get_mut(object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in render_info: {:?}", object_id));
+                    .unwrap_or_else(|| panic!("missing object_id in render_info: {object_id:?}"));
                 render_info.inner = obj.render_info();
                 render_info.transform = obj.transform();
                 render_info.transform.centre -= self.viewport.translation;
@@ -935,7 +932,7 @@ impl CollisionHandler {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
 
-        for (id, obj) in added_objects.iter() {
+        for (id, obj) in added_objects {
             for tag in obj.emitting_tags() {
                 new_object_ids_by_emitting_tag.entry(tag).or_default().push(*id);
                 new_object_ids_by_listening_tag.entry(tag).or_default();
@@ -956,24 +953,24 @@ impl CollisionHandler {
 
         for (tag, emitters) in new_object_ids_by_emitting_tag {
             let listeners = self.object_ids_by_listening_tag.get(tag)
-                .unwrap_or_else(|| panic!("object_ids_by_listening tag missing tag: {}", tag));
+                .unwrap_or_else(|| panic!("object_ids_by_listening tag missing tag: {tag}"));
             let new_possible_collisions = emitters.into_iter().cartesian_product(listeners.iter())
                 .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(emitter, *listener));
             self.possible_collisions.extend(new_possible_collisions);
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
             let emitters = self.object_ids_by_emitting_tag.get(tag)
-                .unwrap_or_else(|| panic!("object_ids_by_tag tag missing tag: {}", tag));
+                .unwrap_or_else(|| panic!("object_ids_by_tag tag missing tag: {tag}"));
             let new_possible_collisions = emitters.iter().cartesian_product(listeners.into_iter())
                 .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(*emitter, listener));
             self.possible_collisions.extend(new_possible_collisions);
         }
     }
     fn update_with_removed_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
-        for (_, ids) in self.object_ids_by_emitting_tag.iter_mut() {
+        for ids in self.object_ids_by_emitting_tag.values_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
-        for (_, ids) in self.object_ids_by_listening_tag.iter_mut() {
+        for ids in self.object_ids_by_listening_tag.values_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
         self.possible_collisions.retain(|pair| !removed_ids.contains(&pair.fst()) && !removed_ids.contains(&pair.snd()));
@@ -1041,15 +1038,15 @@ impl TextureSubArea {
     }
 
     pub(crate) fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
-        if self.rect != Rect::default() {
-                let extent = texture.extent();
-                let u0 = self.rect.top_left().x / extent.x;
-                let v0 = self.rect.top_left().y / extent.y;
-                let u1 = self.rect.bottom_right().x / extent.x;
-                let v1 = self.rect.bottom_right().y / extent.y;
-                Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
-        } else {
+        if self.rect == Rect::default() {
             raw_uv
+        } else {
+            let extent = texture.extent();
+            let u0 = self.rect.top_left().x / extent.x;
+            let v0 = self.rect.top_left().y / extent.y;
+            let u1 = self.rect.bottom_right().x / extent.x;
+            let v1 = self.rect.bottom_right().y / extent.y;
+            Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
         }
     }
 }

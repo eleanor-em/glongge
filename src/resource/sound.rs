@@ -71,11 +71,11 @@ impl Sound {
 
     pub fn is_playing(&self) -> bool {
         self.inner.as_ref()
-            .map(|inner| {
+            .is_some_and(|inner| {
                 let mut state = inner.ctx.state();
                 let source = state.source_mut(inner.handle);
                 source.status() == Status::Playing
-            }).unwrap_or(false)
+            })
     }
 }
 
@@ -117,16 +117,15 @@ impl SoundHandler {
     pub fn wait_load_file(&self, filename: String) -> Result<Sound> {
         let sound_buffer = {
             let mut inner = self.inner.lock().unwrap();
-            match inner.loaded_files.get(&filename) {
-                Some(buffer) => buffer.clone(),
-                None => {
-                    let buffer = SoundBufferResource::new_generic(fyrox_sound::futures::executor::block_on(
-                        DataSource::from_file(&filename, &FsResourceIo))
-                        .map_err(|err| anyhow!("fyrox-sound error: DataSource::from_file(): {:?}", err))?
-                    ).map_err(|err| anyhow!("fyrox-sound error: SoundBufferResource::new_generic(): {:?}", err))?;
-                    inner.loaded_files.insert(filename, buffer.clone());
-                    buffer
-                }
+            if let Some(buffer) = inner.loaded_files.get(&filename) {
+                buffer.clone()
+            }  else {
+                let buffer = SoundBufferResource::new_generic(fyrox_sound::futures::executor::block_on(
+                    DataSource::from_file(&filename, &FsResourceIo))
+                    .map_err(|err| anyhow!("fyrox-sound error: DataSource::from_file(): {:?}", err))?
+                ).map_err(|err| anyhow!("fyrox-sound error: SoundBufferResource::new_generic(): {:?}", err))?;
+                inner.loaded_files.insert(filename, buffer.clone());
+                buffer
             }
         };
 
