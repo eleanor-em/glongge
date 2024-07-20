@@ -284,7 +284,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .insert(self.this.object_id);
     }
     pub fn test_collision(&self,
-                          collider: &dyn Collider,
+                          collider: Box<dyn Collider>,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
@@ -306,12 +306,12 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         NonemptyVec::try_from_vec(rv)
     }
     pub fn test_collision_along(&self,
-                                collider: &dyn Collider,
+                                collider: Box<dyn Collider>,
                                 tags: Vec<&'static str>,
                                 axis: Vec2,
                                 distance: f64,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.test_collision(&collider.translated(distance * axis), tags)
+        self.test_collision(collider.translate_boxed(distance * axis), tags)
             .and_then(|vec| {
                 NonemptyVec::try_from_iter(vec
                     .into_iter()

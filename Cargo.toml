@@ -36,8 +36,5 @@ opt-level = 3
 [profile.dev.package.asefile]
 opt-level = 3
 
-[profile.dev.package.fyrox-resource]
-opt-level = 3
-
 [profile.dev.package.fyrox-sound]
 opt-level = 3

@@ -19,26 +19,32 @@ pub trait Collider: Debug {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2>;
     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2>;
 
-    fn translated(&self, by: Vec2) -> Box<dyn Collider>;
+    fn translate(&mut self, by: Vec2) -> &mut dyn Collider;
+    // Cannot require Self: Sized, so cannot auto-implement this.
+    fn translate_boxed(self: Box<Self>, by: Vec2) -> Box<dyn Collider>;
 }
 
-impl Collider for Box<(dyn Collider + 'static)> {
-    fn as_any(&self) -> &dyn Any {
-        self.as_ref().as_any()
-    }
-
-    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.as_ref().collides_with_box(other)
-    }
-
-    fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
-        self.as_ref().collides_with(other)
-    }
-
-    fn translated(&self, by: Vec2) -> Box<dyn Collider> {
-        self.as_ref().translated(by)
-    }
-}
+// impl Collider for Box<(dyn Collider + 'static)> {
+//     fn as_any(&self) -> &dyn Any {
+//         self.as_ref().as_any()
+//     }
+//
+//     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
+//         self.as_ref().collides_with_box(other)
+//     }
+//
+//     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
+//         self.as_ref().collides_with(other)
+//     }
+//
+//     fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
+//         self.as_mut().translate(by)
+//     }
+//
+//     fn translate_boxed(self: Box<dyn Collider>, by: Vec2) -> Box<dyn Collider> {
+//         self.
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct NullCollider;
@@ -48,7 +54,8 @@ impl Collider for NullCollider {
     fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> { None }
     fn collides_with(&self, _other: &dyn Collider) -> Option<Vec2> { None }
 
-    fn translated(&self, _by: Vec2) -> Box<dyn Collider> { Box::new(Self) }
+    fn translate(&mut self, _by: Vec2) -> &mut dyn Collider { self }
+    fn translate_boxed(self: Box<Self>, _by: Vec2) -> Box<dyn Collider> { self }
 }
 
 #[derive(Debug, Clone)]
@@ -159,9 +166,13 @@ impl Collider for BoxCollider {
         }
     }
 
-    fn translated(&self, by: Vec2) -> Box<dyn Collider> {
-        let mut rv = self.clone();
-        rv.centre += by.rotated(self.rotation);
-        Box::new(rv)
+    fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
+        self.centre += by.rotated(self.rotation);
+        self
+    }
+
+    fn translate_boxed(mut self: Box<Self>, by: Vec2) -> Box<dyn Collider> {
+        self.translate(by);
+        self
     }
 }
