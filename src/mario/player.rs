@@ -352,7 +352,7 @@ impl Player {
                     .expect("non-pipe with pipe collision tag?");
                 if let Some(instruction) = pipe.destination() {
                     if !pipe.orientation().dot(Vec2::right()).is_zero() &&
-                            self.centre.y - self.current_sprite_mut().half_widths().y >= pipe.top() {
+                            self.collider().top() >= pipe.top() {
                         self.start_pipe(ctx, Vec2::right(), pipe.transform().centre, instruction);
                     }
                 }
@@ -597,7 +597,7 @@ impl SceneObject<ObjectType> for Player {
         }
         if let Some(mut other) = downcast_stompable_mut(&mut other) {
             if !other.dead() {
-                if self.centre.y + self.current_sprite_mut().half_widths().y <= other.transform().centre.y {
+                if self.collider().bottom() <= other.transform().centre.y {
                     other.stomp();
                     self.stomp_sound.play();
                     self.v_speed = self.initial_vspeed();

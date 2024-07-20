@@ -12,6 +12,7 @@ use crate::core::{
     util::gg_range,
     Transform
 };
+use crate::core::linalg::AxisAlignedExtent;
 
 pub enum ColliderType {
     Null,
@@ -19,7 +20,7 @@ pub enum ColliderType {
     Convex,
 }
 
-pub trait Collider: Debug {
+pub trait Collider: AxisAlignedExtent + Debug {
     fn as_any(&self) -> &dyn Any;
     fn get_type(&self) -> ColliderType;
 
@@ -61,12 +62,17 @@ pub trait Collider: Debug {
 
 #[derive(Debug, Clone)]
 pub struct NullCollider;
+impl AxisAlignedExtent for NullCollider {
+    fn extent(&self) -> Vec2 { Vec2::zero() }
+
+    fn centre(&self) -> Vec2 { Vec2::zero() }
+}
 impl Collider for NullCollider {
     fn as_any(&self) -> &dyn Any { self }
     fn get_type(&self) -> ColliderType { ColliderType::Null }
 
-    fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
     fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> { None }
+    fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
 
     fn translate(&mut self, _by: Vec2) -> &mut dyn Collider { self }
 }
@@ -172,6 +178,26 @@ impl BoxCollider {
     }
     fn normals(&self) -> Vec<Vec2> {
         vec![Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
+    }
+}
+
+impl AxisAlignedExtent for BoxCollider {
+    fn extent(&self) -> Vec2 {
+        let mut min_x = f64::MAX;
+        let mut min_y = f64::MAX;
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
+        for vertex in self.vertices() {
+            min_x = vertex.x.min(min_x);
+            min_y = vertex.y.min(min_y);
+            max_x = vertex.x.max(max_x);
+            max_y = vertex.y.max(max_y);
+        }
+        Vec2 { x: max_x - min_x, y: max_y - min_y }
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.centre
     }
 }
 
