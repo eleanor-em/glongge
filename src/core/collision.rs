@@ -93,9 +93,9 @@ fn polygon_collision(
     let mut min_axis = Vec2::zero();
     let mut min_dist = f64::max_value();
 
-    for &axis in this_normals.into_iter().chain(other_normals) {
-        let self_proj = project(&this_vertices, axis);
-        let other_proj = project(&other_vertices, axis);
+    for &axis in this_normals.iter().chain(other_normals) {
+        let self_proj = project(this_vertices, axis);
+        let other_proj = project(other_vertices, axis);
         match gg_range::overlap_len_f64(&self_proj, &other_proj) {
             Some(0.) => return None,
             Some(mut dist) => {
