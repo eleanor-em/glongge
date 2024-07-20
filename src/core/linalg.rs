@@ -189,7 +189,7 @@ impl Neg for &Vec2Int {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialOrd, PartialEq)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -220,6 +220,9 @@ impl Vec2 {
     }
 
     pub fn dot(&self, other: Vec2) -> f64 { self.x * other.x + self.y * other.y }
+    pub fn cross(&self, other: Vec2) -> f64 {
+        self.x * other.y - self.y * other.x
+    }
     pub fn angle_radians(&self, other: Vec2) -> f64 { self.normed().dot(other.normed()).acos() }
 
     pub fn abs(&self) -> Vec2 { Vec2 { x: self.x.abs(), y: self.y.abs() }}

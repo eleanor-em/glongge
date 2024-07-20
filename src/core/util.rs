@@ -143,6 +143,15 @@ pub mod gg_time {
     }
 }
 
+#[allow(dead_code)]
+pub mod gg_iter {
+    use std::ops::Add;
+
+    pub fn sum_tuple3<T: Add<Output=T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
+        (acc.0 + x.0, acc.1 + x.1, acc.2 + x.2)
+    }
+}
+
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash>(T, T);
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T> {

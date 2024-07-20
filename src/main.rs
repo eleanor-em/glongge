@@ -18,7 +18,8 @@ mod mario;
 mod rectangle;
 mod triangle;
 
-use num_traits::{Float, One};
+use num_traits::{Float, One, Zero};
+use glongge::core::collision::ConvexCollider;
 
 #[allow(unused_imports)]
 use crate::{
@@ -104,4 +105,32 @@ fn run_test_cases() {
         check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated(-90_f64.to_radians()));
         check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated(-45_f64.to_radians()));
     }
+
+    let expect_one = "ConvexCollider { vertices: [Vec2 { x: 0.0, y: 0.0 }, Vec2 { x: 1.0, y: 0.0 }, Vec2 { x: 1.0, y: 1.0 }, Vec2 { x: 0.0, y: 1.0 }], normals: [Vec2 { x: 0.0, y: -1.0 }, Vec2 { x: 1.0, y: -0.0 }, Vec2 { x: 0.0, y: 1.0 }, Vec2 { x: -1.0, y: -0.0 }], centre: Vec2 { x: 0.5, y: 0.5 } }";
+    let expect_two = "ConvexCollider { vertices: [Vec2 { x: 0.0, y: 1.0 }, Vec2 { x: 0.5, y: 0.0 }, Vec2 { x: 1.0, y: 1.0 }], normals: [Vec2 { x: -1.0, y: -0.5 }, Vec2 { x: 1.0, y: -0.5 }, Vec2 { x: 0.0, y: 1.0 }], centre: Vec2 { x: 0.5, y: 0.6666666666666666 } }";
+    let expect_three = "ConvexCollider { vertices: [Vec2 { x: 0.0, y: 0.0 }, Vec2 { x: 1.0, y: 0.0 }, Vec2 { x: 1.0, y: 1.0 }, Vec2 { x: 0.0, y: 1.0 }], normals: [Vec2 { x: 0.0, y: -1.0 }, Vec2 { x: 1.0, y: -0.0 }, Vec2 { x: 0.0, y: 1.0 }, Vec2 { x: -1.0, y: -0.0 }], centre: Vec2 { x: 0.5, y: 0.5 } }";
+    check_eq!(format!("{:?}",
+        ConvexCollider::convex_hull_of(vec![
+            Vec2::zero(),
+            Vec2::right(),
+            Vec2::down(),
+            Vec2::one(),
+        ])), expect_one);
+    check_eq!(format!("{:?}",
+        ConvexCollider::convex_hull_of(vec![
+             Vec2 { x: 0.5, y: 0. },
+             Vec2::down(),
+             Vec2::one(),
+         ])), expect_two);
+    check_eq!(format!("{:?}",
+        ConvexCollider::convex_hull_of(vec![
+             Vec2::zero(),
+             Vec2::right(),
+             Vec2::down(),
+             Vec2::one(),
+             Vec2 { x: 0.2, y: 0. },
+             Vec2 { x: 0.2, y: 0.5 },
+             Vec2 { x: 0.7, y: 0.5 },
+             Vec2 { x: 0.7, y: 1. },
+         ])), expect_three);
 }
