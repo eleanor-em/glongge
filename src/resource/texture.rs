@@ -183,9 +183,9 @@ impl TextureHandler {
     fn load_file_inner(&self, filename: &str) -> Result<Texture> {
         let path = Path::new(filename);
         let ext = path.extension()
-            .ok_or(anyhow!("no file extension: {}", filename))?
+            .ok_or_else(|| anyhow!("no file extension: {}", filename))?
             .to_str()
-            .ok_or(anyhow!("failed conversion from OsStr: {}", filename))?;
+            .ok_or_else(|| anyhow!("failed conversion from OsStr: {}", filename))?;
         match ext {
             "png" => self.load_file_inner_png(filename),
             "aseprite" => unimplemented!("TODO: use asefile crate"),

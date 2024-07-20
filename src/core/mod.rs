@@ -880,7 +880,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             let obj = self.objects[object_id].borrow();
             if let Some(obj) = obj.as_renderable_object() {
                 let render_info = self.render_infos.get_mut(object_id)
-                    .ok_or(anyhow!("missing object_id in render_info: {:?}", object_id))?;
+                    .ok_or_else(|| anyhow!("missing object_id in render_info: {:?}", object_id))?;
                 render_info.inner = obj.render_info();
                 render_info.transform = obj.transform();
                 render_info.transform.centre -= self.viewport.translation;
