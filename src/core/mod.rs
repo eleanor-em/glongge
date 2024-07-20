@@ -905,9 +905,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     }
 
     #[inline(never)] fn update_render_infos(&mut self) {
-        for object_id in self.objects.keys() {
-            let obj = self.objects[object_id].borrow();
-            if let Some(obj) = obj.as_renderable_object() {
+        for (object_id, obj) in self.objects.iter() {
+            if let Some(obj) = obj.borrow().as_renderable_object() {
                 let render_info = self.render_infos.get_mut(object_id)
                     .unwrap_or_else(|| panic!("missing object_id in render_info: {:?}", object_id));
                 render_info.inner = obj.render_info();
