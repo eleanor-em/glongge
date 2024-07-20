@@ -85,6 +85,7 @@ impl SceneObject<ObjectType> for Goomba {
         }
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        self.sprite.fixed_update();
         let in_view = ctx.viewport().contains_point(self.top_left) ||
             ctx.viewport().contains_point(self.top_left + self.sprite.extent());
         if !self.dead && in_view {

@@ -80,6 +80,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
     }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+        self.sprite.fixed_update();
         self.v_speed += self.v_accel;
         self.top_left.y += self.v_speed;
         if self.top_left.y > self.initial_y {

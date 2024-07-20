@@ -1,18 +1,24 @@
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
-use std::time::Instant;
 use num_traits::Zero;
-use crate::{core::linalg::Vec2Int, core::{RenderInfo, TextureSubArea}, resource::texture::TextureId, shader};
-use crate::core::linalg::{AxisAlignedExtent, Vec2};
-use crate::core::VertexWithUV;
+use crate::{
+    core::{
+        RenderInfo,
+        TextureSubArea,
+        linalg::Vec2Int,
+        prelude::*,
+        linalg::{AxisAlignedExtent, Vec2},
+        VertexWithUV
+    },
+    resource::texture::TextureId,
+    shader,
+};
 
 pub struct Sprite {
     texture_id: TextureId,
     areas: Vec<TextureSubArea>,
-    started: Instant,
-    paused: Option<Instant>,
+    elapsed_us: u128,
+    paused: bool,
     frame_time_ms: Vec<u32>,
+    frame: usize,
 }
 
 impl Default for Sprite {
@@ -20,9 +26,10 @@ impl Default for Sprite {
         Self {
             texture_id: Default::default(),
             areas: vec![],
-            started: Instant::now(),
-            paused: None,
+            elapsed_us: 0,
+            paused: false,
             frame_time_ms: vec![],
+            frame: 0,
         }
     }
 }
@@ -71,8 +78,9 @@ impl Sprite {
         let frame_time_ms = vec![1000; areas.len()];
         Self {
             texture_id, areas, frame_time_ms,
-            started: Instant::now(),
-            paused: None,
+            paused: false,
+            elapsed_us: 0,
+            frame: 0,
         }
     }
     pub fn with_fixed_ms_per_frame(mut self, ms: u32) -> Self {
@@ -91,31 +99,32 @@ impl Sprite {
 
     pub fn ready(&self) -> bool { !self.areas.is_empty() }
 
-    pub fn reset(&mut self) { self.started = Instant::now(); }
-    pub fn pause(&mut self) { self.paused = Some(Instant::now()); }
+    pub fn reset(&mut self) { self.elapsed_us = 0; }
+    pub fn pause(&mut self) { self.paused = true; }
     pub fn play(&mut self) {
-        if let Some(paused) = self.paused.take() {
-            self.started = paused;
-        }
+        self.paused = false;
     }
 
-    fn current_frame(&self) -> TextureSubArea {
+    pub fn fixed_update(&mut self) {
+        if self.paused {
+            return;
+        }
+        self.elapsed_us += FIXED_UPDATE_INTERVAL_US;
         check!(self.ready());
-        let instant = match self.paused {
-            None => self.started,
-            Some(_) => Instant::now(),
-        };
-        let total_animation_time = self.frame_time_ms.iter().sum::<u32>() as u128;
-        let cycle_elapsed = instant.elapsed().as_millis() % total_animation_time;
-        let mut cum_sum = 0;
-        let frame_index = self.frame_time_ms.iter()
-            .filter(|&&t| {
-                cum_sum += t as u128;
-                cycle_elapsed >= cum_sum
+        let elapsed_ms = self.elapsed_us / 1000;
+        let total_animation_time_ms = self.frame_time_ms.iter().sum::<u32>() as u128;
+        let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
+        let mut cum_sum_ms = 0;
+        self.frame = self.frame_time_ms.iter()
+            .filter(|&&ms| {
+                cum_sum_ms += ms as u128;
+                cycle_elapsed_ms >= cum_sum_ms
             })
             .count();
-        check_lt!(frame_index, self.areas.len());
-        self.areas[frame_index]
+        check_lt!(self.frame, self.areas.len());
+    }
+    pub fn current_frame(&self) -> TextureSubArea {
+        self.areas[self.frame]
     }
 
     pub fn render_info_default(&self) -> RenderInfo {

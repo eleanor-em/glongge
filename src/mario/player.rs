@@ -142,14 +142,6 @@ impl Player {
             SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
         }
     }
-    fn hold_gravity(&self) -> f64 {
-        match self.speed_regime {
-            SpeedRegime::Slow => from_nes_accel(0, 2, 0, 0),
-            SpeedRegime::Medium => from_nes_accel(0, 1, 14, 0),
-            SpeedRegime::Fast => from_nes_accel(0, 2, 8, 0)
-        }
-    }
-
     fn current_sprite(&self) -> &Sprite {
         match self.state {
             PlayerState::Idle => &self.idle_sprite,
@@ -160,6 +152,26 @@ impl Player {
             PlayerState::Dying => &self.die_sprite,
             PlayerState::EnteringPipe => &self.idle_sprite,
             PlayerState::ExitingPipe => &self.idle_sprite,
+        }
+    }
+    fn current_sprite_mut(&mut self) -> &mut Sprite {
+        match self.state {
+            PlayerState::Idle => &mut self.idle_sprite,
+            PlayerState::Walking => &mut self.walk_sprite,
+            PlayerState::Running => &mut self.run_sprite,
+            PlayerState::Skidding => &mut self.skid_sprite,
+            PlayerState::Falling => &mut self.fall_sprite,
+            PlayerState::Dying => &mut self.die_sprite,
+            PlayerState::EnteringPipe => &mut self.idle_sprite,
+            PlayerState::ExitingPipe => &mut self.idle_sprite,
+        }
+    }
+
+    fn hold_gravity(&self) -> f64 {
+        match self.speed_regime {
+            SpeedRegime::Slow => from_nes_accel(0, 2, 0, 0),
+            SpeedRegime::Medium => from_nes_accel(0, 1, 14, 0),
+            SpeedRegime::Fast => from_nes_accel(0, 2, 8, 0)
         }
     }
 
@@ -339,7 +351,7 @@ impl Player {
                     .expect("non-pipe with pipe collision tag?");
                 if let Some(instruction) = pipe.destination() {
                     if !pipe.orientation().dot(Vec2::right()).is_zero() &&
-                            self.centre.y - self.current_sprite().half_widths().y >= pipe.top() {
+                            self.centre.y - self.current_sprite_mut().half_widths().y >= pipe.top() {
                         self.start_pipe(ctx, Vec2::right(), pipe.transform().centre, instruction);
                     }
                 }
@@ -519,6 +531,7 @@ impl SceneObject<ObjectType> for Player {
         }
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        self.current_sprite_mut().fixed_update();
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
@@ -583,7 +596,7 @@ impl SceneObject<ObjectType> for Player {
         }
         if let Some(mut other) = downcast_stompable_mut(&mut other) {
             if !other.dead() {
-                if self.centre.y + self.current_sprite().half_widths().y <= other.transform().centre.y {
+                if self.centre.y + self.current_sprite_mut().half_widths().y <= other.transform().centre.y {
                     other.stomp();
                     self.stomp_sound.play();
                     self.v_speed = self.initial_vspeed();
@@ -601,7 +614,7 @@ impl SceneObject<ObjectType> for Player {
         ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
         ctx.viewport().clamp_to_left(Some(0.), None);
-        let death_y = ctx.viewport().bottom() + self.current_sprite().extent().y;
+        let death_y = ctx.viewport().bottom() + self.current_sprite_mut().extent().y;
         if self.has_control() && self.centre.y > death_y {
             self.start_die(ctx);
         }
