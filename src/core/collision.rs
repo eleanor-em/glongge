@@ -22,6 +22,7 @@ use crate::{
 pub enum ColliderType {
     Null,
     Box,
+    OrientedBox,
     Convex,
 }
 
@@ -30,12 +31,14 @@ pub trait Collider: AxisAlignedExtent + Debug {
     fn get_type(&self) -> ColliderType;
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2>;
+    fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2>;
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2>;
 
     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
         match other.get_type() {
             ColliderType::Null => None,
             ColliderType::Box => self.collides_with_box(other.as_any().downcast_ref().unwrap()),
+            ColliderType::OrientedBox => self.collides_with_oriented_box(other.as_any().downcast_ref().unwrap()),
             ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref().unwrap())
         }
     }
@@ -77,6 +80,7 @@ impl Collider for NullCollider {
     fn get_type(&self) -> ColliderType { ColliderType::Null }
 
     fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> { None }
+    fn collides_with_oriented_box(&self, _other: &OrientedBoxCollider) -> Option<Vec2> { None }
     fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
 
     fn translate(&mut self, _by: Vec2) -> &mut dyn Collider { self }
@@ -97,7 +101,7 @@ trait Polygonal {
         }
         start..end
     }
-    fn collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
+    fn polygon_collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
         let mut min_axis = Vec2::zero();
         let mut min_dist = f64::max_value();
 
@@ -160,6 +164,19 @@ trait Polygonal {
             Vec2::zero()
         }
     }
+    fn extent_of(&self) -> Vec2 {
+        let mut min_x = f64::MAX;
+        let mut min_y = f64::MAX;
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
+        for vertex in self.vertices() {
+            min_x = vertex.x.min(min_x);
+            min_y = vertex.y.min(min_y);
+            max_x = vertex.x.max(max_x);
+            max_y = vertex.y.max(max_y);
+        }
+        Vec2 { x: max_x - min_x, y: max_y - min_y }
+    }
 }
 
 impl<T: Polygonal> Polygonal for &T {
@@ -176,33 +193,13 @@ impl<T: Polygonal> Polygonal for &T {
     }
 }
 
-impl<T: Polygonal> AxisAlignedExtent for T {
-    fn extent(&self) -> Vec2 {
-        let mut min_x = f64::MAX;
-        let mut min_y = f64::MAX;
-        let mut max_x = f64::MIN;
-        let mut max_y = f64::MIN;
-        for vertex in self.vertices() {
-            min_x = vertex.x.min(min_x);
-            min_y = vertex.y.min(min_y);
-            max_x = vertex.x.max(max_x);
-            max_y = vertex.y.max(max_y);
-        }
-        Vec2 { x: max_x - min_x, y: max_y - min_y }
-    }
-
-    fn centre(&self) -> Vec2 {
-        self.polygon_centre()
-    }
-}
-
 #[derive(Debug, Clone)]
-pub struct BoxCollider {
+pub struct OrientedBoxCollider {
     pub centre: Vec2,
     pub rotation: f64,
     pub half_widths: Vec2,
 }
-impl BoxCollider {
+impl OrientedBoxCollider {
     pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
         Self {
             centre,
@@ -228,22 +225,20 @@ impl BoxCollider {
         Self::from_transform(transform, width.abs() * Vec2::one())
     }
 
-    fn top_left_rotated(&self) -> Vec2 {
+    pub fn top_left_rotated(&self) -> Vec2 {
         self.centre + (-self.half_widths).rotated(self.rotation)
     }
-    fn top_right_rotated(&self) -> Vec2 {
+    pub fn top_right_rotated(&self) -> Vec2 {
         self.centre + Vec2 { x: self.half_widths.x, y: -self.half_widths.y }.rotated(self.rotation)
     }
-    fn bottom_left_rotated(&self) -> Vec2 {
+    pub fn bottom_left_rotated(&self) -> Vec2 {
         self.centre + Vec2 { x: -self.half_widths.x, y: self.half_widths.y }.rotated(self.rotation)
     }
-    fn bottom_right_rotated(&self) -> Vec2 {
+    pub fn bottom_right_rotated(&self) -> Vec2 {
         self.centre + self.half_widths.rotated(self.rotation)
     }
-
 }
-
-impl Polygonal for BoxCollider {
+impl Polygonal for OrientedBoxCollider {
     fn vertices(&self) -> Vec<Vec2> {
         vec![
             self.bottom_right_rotated(), self.top_right_rotated(), self.top_left_rotated(), self.bottom_left_rotated()
@@ -258,20 +253,110 @@ impl Polygonal for BoxCollider {
     }
 }
 
+impl AxisAlignedExtent for OrientedBoxCollider {
+    fn extent(&self) -> Vec2 {
+        self.extent_of()
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.centre
+    }
+}
+
+impl Collider for OrientedBoxCollider {
+    fn as_any(&self) -> &dyn Any { self }
+    fn get_type(&self) -> ColliderType { ColliderType::OrientedBox }
+
+    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
+        self.polygon_collision(other)
+    }
+
+    fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
+        self.polygon_collision(other)
+    }
+
+    fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
+        self.polygon_collision(other)
+    }
+
+    fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
+        self.centre += by.rotated(self.rotation);
+        self
+    }
+}
+#[derive(Debug, Clone)]
+pub struct BoxCollider {
+    centre: Vec2,
+    half_widths: Vec2,
+}
+impl BoxCollider {
+    pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
+        Self {
+            centre,
+            half_widths,
+        }
+    }
+    pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
+        Self {
+            centre: top_left + extent.abs() / 2,
+            half_widths: extent.abs() / 2,
+        }
+    }
+    pub fn from_transform(transform: Transform, half_widths: Vec2) -> Self {
+        check_eq!(transform.rotation, 0.);
+        Self {
+            centre: transform.centre,
+            half_widths: transform.scale.component_wise(half_widths).abs(),
+        }
+    }
+    pub fn square(transform: Transform, width: f64) -> Self {
+        Self::from_transform(transform, width.abs() * Vec2::one())
+    }
+}
+
+impl Polygonal for BoxCollider {
+    fn vertices(&self) -> Vec<Vec2> {
+        vec![
+            self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()
+        ]
+    }
+    fn normals(&self) -> Vec<Vec2> {
+        vec![Vec2::right(), Vec2::down()]
+    }
+
+    fn polygon_centre(&self) -> Vec2 {
+        self.centre
+    }
+}
+
+impl AxisAlignedExtent for BoxCollider {
+    fn extent(&self) -> Vec2 {
+        self.half_widths * 2
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.centre
+    }
+}
+
 impl Collider for BoxCollider {
     fn as_any(&self) -> &dyn Any { self }
     fn get_type(&self) -> ColliderType { ColliderType::Box }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.collision(other)
+        self.polygon_collision(other)
+    }
+
+    fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
+        self.polygon_collision(other)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.collision(other)
+        self.polygon_collision(other)
     }
 
     fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
-        self.centre += by.rotated(self.rotation);
+        self.centre += by;
         self
     }
 }
@@ -339,17 +424,27 @@ impl Polygonal for ConvexCollider {
     }
 }
 
+impl AxisAlignedExtent for ConvexCollider {
+    fn extent(&self) -> Vec2 { self.extent_of() }
+
+    fn centre(&self) -> Vec2 { self.centre }
+}
+
 impl Collider for ConvexCollider {
     fn as_any(&self) -> &dyn Any { self }
 
     fn get_type(&self) -> ColliderType { ColliderType::Convex }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.collision(other)
+        self.polygon_collision(other)
+    }
+
+    fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
+        self.polygon_collision(other)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.collision(other)
+        self.polygon_collision(other)
     }
 
     fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
