@@ -239,8 +239,8 @@ impl BasicRenderHandler {
     fn write_vertex_buffer(&mut self,
                            receiver: &mut MutexGuard<BasicRenderInfoReceiver>,
                            per_image_ctx: &mut MutexGuard<PerImageContext>) -> Result<()> {
-        let vertex_buffer = per_image_ctx.current_value_as_mut(&mut self.vertex_buffers);
-        let mut out_vertices = Vec::new();
+        let mut vertex_buffer = per_image_ctx.current_value_as_mut(&mut self.vertex_buffers)
+            .write()?;
         for render_info in receiver.render_info.iter() {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
@@ -255,8 +255,9 @@ impl BasicRenderHandler {
                     }
                 } else {
                     error!("missing texture id: {:?}", texture_id);
+                    blend_col = Colour::magenta();
                 }
-                out_vertices.push(BasicVertex {
+                vertex_buffer[vertex_index] = BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
                     texture_id: texture_id.into(),
@@ -264,10 +265,9 @@ impl BasicRenderHandler {
                     rotation: render_info.transform.rotation as f32,
                     scale: render_info.transform.scale.into(),
                     blend_col: blend_col.into(),
-                });
+                };
             }
         }
-        vertex_buffer.write()?.swap_with_slice(&mut out_vertices);
         Ok(())
     }
 
