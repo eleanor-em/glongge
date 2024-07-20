@@ -15,6 +15,8 @@ use fyrox_sound::{
     pool::Handle,
     source::{SoundSource, SoundSourceBuilder, Status}
 };
+use rand::{Rng, thread_rng};
+use crate::core::linalg;
 
 #[allow(unused_imports)]
 use crate::core::prelude::*;
@@ -31,12 +33,27 @@ pub struct Sound {
 }
 
 impl Sound {
+    pub fn play_shifted(&mut self, mag: f64) {
+        if let Some(inner) = self.inner.as_ref() {
+            let mut state = inner.ctx.state();
+            let source = state.source_mut(inner.handle);
+            source.stop()
+                .expect("should only be fallible for streaming buffers (see source)");
+            let mut rng = thread_rng();
+            source.set_pitch(linalg::eerp(1. - mag, 1. + mag, rng.gen_range(0.0..1.0)));
+            source.play();
+        } else {
+            warn!("tried to play non-loaded sound");
+        }
+    }
     pub fn play(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
             let source = state.source_mut(inner.handle);
             source.stop()
                 .expect("should only be fallible for streaming buffers (see source)");
+            let mut rng = thread_rng();
+            source.set_pitch(linalg::eerp(0.97, 1.03, rng.gen_range(0.0..1.0)));
             source.play();
         } else {
             warn!("tried to play non-loaded sound");

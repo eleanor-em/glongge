@@ -400,7 +400,7 @@ impl Player {
     }
 
     fn start_jump(&mut self) {
-        self.jump_sound.play();
+        self.jump_sound.play_shifted(0.03);
         self.state = PlayerState::Falling;
         self.v_speed = self.initial_vspeed();
     }
