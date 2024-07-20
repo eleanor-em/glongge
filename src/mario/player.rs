@@ -362,7 +362,7 @@ impl Player {
                   ctx: &mut UpdateContext<ObjectType>,
                   direction: Vec2,
                   pipe_centre: Vec2,
-                  instruction: SceneStartInstruction) {
+                  pipe_instruction: SceneStartInstruction) {
         self.music.stop();
         self.pipe_sound.play();
         self.state = PlayerState::EnteringPipe;
@@ -392,7 +392,7 @@ impl Player {
                     CoroutineResponse::Wait(Duration::from_millis(600))
                 }
                 CoroutineState::Waiting => {
-                    ctx.scene().goto(instruction);
+                    ctx.scene().goto(pipe_instruction);
                     CoroutineResponse::Complete
                 }
             }
@@ -407,10 +407,14 @@ impl Player {
 
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.music.stop();
-        ctx.scene().start_coroutine(|this, ctx, last_state| {
-            let this = this.downcast::<Self>().unwrap();
+        ctx.scene().start_coroutine(|mut this, ctx, last_state| {
+            let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
-                CoroutineState::Starting | CoroutineState::Yielding => {
+                CoroutineState::Starting => {
+                    this.die_sound.play();
+                    CoroutineResponse::Yield
+                },
+                CoroutineState::Yielding => {
                     if this.die_sound.is_playing() {
                         CoroutineResponse::Yield
                     } else {
@@ -418,12 +422,11 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
-                    ctx.scene().goto(SceneStartInstruction::new(MarioScene.name(), 0));
+                    ctx.scene().goto(MarioScene.at_entrance(0));
                     CoroutineResponse::Complete
                 }
             }
         });
-        self.die_sound.play();
         self.v_speed = -from_nes(13, 0, 0, 0);
         self.state = PlayerState::Dying;
     }

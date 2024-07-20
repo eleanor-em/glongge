@@ -5,7 +5,7 @@ use glongge::{
         SceneObject,
         linalg::Vec2,
         AnySceneObject,
-        scene::{Scene, SceneName, SceneStartInstruction}
+        scene::{Scene, SceneName}
     }
 };
 
@@ -127,7 +127,7 @@ impl Scene<ObjectType> for MarioScene {
         initial_objects.push(Pipe::new(Vec2Int {
             x: 58 * 16,
             y: 384 - 6 * 16,
-        }, Vec2::up(), Some(SceneStartInstruction::new(MarioUndergroundScene{}.name(), 0))));
+        }, Vec2::up(), Some(MarioUndergroundScene.at_entrance(0))));
         // left wall
         for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {
             initial_objects.push(Floor::new(Vec2Int {
@@ -368,7 +368,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         initial_objects.push(Pipe::new(Vec2Int {
             x: 14 * 16,
             y: 384 - 4*16,
-        }, Vec2::left(), Some(SceneStartInstruction::new(MarioScene.name(), 1))));
+        }, Vec2::left(), Some(MarioScene.at_entrance(1))));
         initial_objects.push(DecorativePipe::new(Vec2Int {
             x: 16 * 16,
             y: 0,

@@ -271,13 +271,17 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .collect()
     }
 
-    pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
-        let tracker = self.unwrap_tracker_mut();
-        tracker.pending_add.extend(objects);
+    pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) -> &mut [AnySceneObject<ObjectType>] {
+        let pending_add = &mut self.unwrap_tracker_mut().pending_add;
+        let begin = pending_add.len();
+        pending_add.extend(objects);
+        let end = pending_add.len();
+        &mut pending_add[begin..end]
     }
-    pub fn add(&mut self, object: AnySceneObject<ObjectType>) {
+    pub fn add(&mut self, object: AnySceneObject<ObjectType>) -> &mut AnySceneObject<ObjectType>{
         let tracker = self.unwrap_tracker_mut();
         tracker.pending_add.push(object);
+        tracker.pending_add.last_mut().unwrap()
     }
     pub fn remove(&mut self, obj: &SceneObjectWithId<ObjectType>) {
         let tracker = self.unwrap_tracker_mut();

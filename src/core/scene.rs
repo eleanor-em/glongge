@@ -112,6 +112,10 @@ pub trait Scene<ObjectType: ObjectTypeEnum> {
 
     #[allow(unused_variables)]
     fn load(&mut self, data: &[u8]) -> Result<()> { Ok(()) }
+    
+    fn at_entrance(&self, entrance_id: usize) -> SceneStartInstruction {
+        SceneStartInstruction::new(self.name(), entrance_id)
+    }
 }
 
 #[allow(dead_code)]
