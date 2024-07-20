@@ -62,7 +62,7 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,
@@ -76,7 +76,7 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }
         );
-        Ok(())
+        Ok(self.sprite.create_vertices())
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
@@ -138,10 +138,6 @@ impl SceneObject<ObjectType> for Goomba {
 }
 
 impl RenderableObject<ObjectType> for Goomba {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        self.sprite.create_vertices()
-    }
-
     fn render_info(&self) -> RenderInfo {
         if self.dead {
             self.die_sprite.render_info_default()

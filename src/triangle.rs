@@ -13,7 +13,8 @@ use glongge::{
     core::{
         colour::Colour,
         linalg::Vec2,
-        input::KeyCode
+        input::KeyCode,
+        SceneObject
     },
     core::{
         self,
@@ -23,8 +24,9 @@ use glongge::{
     },
 };
 use glongge::core::linalg::AxisAlignedExtent;
-use glongge::core::AnySceneObject;
+use glongge::core::{AnySceneObject, RenderableObject};
 use glongge::core::scene::{Scene, SceneName};
+use glongge::resource::ResourceHandler;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
@@ -119,7 +121,24 @@ impl SpinningTriangle {
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
 }
 #[partially_derive_scene_object]
-impl core::SceneObject<ObjectType> for SpinningTriangle {
+impl SceneObject<ObjectType> for SpinningTriangle {
+    fn on_load(&mut self, _resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
+        let centre_correction = -tri_height / 6.;
+        let vertex1 = Vec2 {
+            x: -Self::TRI_WIDTH,
+            y: -tri_height / 2. - centre_correction,
+        };
+        let vertex2 = Vec2 {
+            x: Self::TRI_WIDTH,
+            y: -tri_height / 2. - centre_correction,
+        };
+        let vertex3 = Vec2 {
+            x: 0.,
+            y: tri_height / 2. - centre_correction,
+        };
+        Ok(VertexWithUV::from_vec2s(vec![vertex1, vertex2, vertex3]))
+    }
     fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let delta_s = delta.as_secs_f64();
         self.t += delta_s;
@@ -178,25 +197,7 @@ impl core::SceneObject<ObjectType> for SpinningTriangle {
     }
 }
 
-impl core::RenderableObject<ObjectType> for SpinningTriangle {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
-        let centre_correction = -tri_height / 6.;
-        let vertex1 = Vec2 {
-            x: -Self::TRI_WIDTH,
-            y: -tri_height / 2. - centre_correction,
-        };
-        let vertex2 = Vec2 {
-            x: Self::TRI_WIDTH,
-            y: -tri_height / 2. - centre_correction,
-        };
-        let vertex3 = Vec2 {
-            x: 0.,
-            y: tri_height / 2. - centre_correction,
-        };
-        VertexWithUV::from_vec2s(vec![vertex1, vertex2, vertex3])
-    }
-
+impl RenderableObject<ObjectType> for SpinningTriangle {
     fn render_info(&self) -> core::RenderInfo {
         core::RenderInfo {
             col: Colour::red(),

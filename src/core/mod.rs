@@ -90,7 +90,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn new() -> Box<Self> where Self: Sized;
 
     #[allow(unused_variables)]
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> { Ok(Vec::new()) }
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
@@ -138,7 +138,6 @@ impl VertexWithUV {
 }
 
 pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
-    fn create_vertices(&self) -> Vec<VertexWithUV>;
     fn render_info(&self) -> RenderInfo;
 }
 
@@ -482,9 +481,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut render_infos = BTreeMap::new();
         let mut vertex_index = 0;
         for (&i, obj) in &mut objects {
-            obj.on_load(&mut resource_handler)?;
+            let new_vertices = obj.on_load(&mut resource_handler)?;
             if let Some(obj) = obj.as_renderable_object() {
-                let new_vertices = obj.create_vertices();
                 let vertex_index_range = vertex_index..vertex_index + new_vertices.len();
                 vertex_index += new_vertices.len();
                 vertices.insert(i, (vertex_index_range.clone(), new_vertices));
@@ -653,12 +651,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             let mut next_vertex_index = self.vertices.last_key_value()
                 .map_or(0, |(_, (indices, _))| indices.end);
             for (new_id, mut new_obj) in pending_add_objects {
-                new_obj.on_load(&mut self.resource_handler)?;
-                let mut new_vertex_count = 0;
+                let new_vertices = new_obj.on_load(&mut self.resource_handler)?;
                 if let Some(obj) = new_obj.as_renderable_object() {
-                    let new_vertices = obj.create_vertices();
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
-                    new_vertex_count += new_vertices.len();
+                    self.vertex_count += new_vertices.len();
                     next_vertex_index += new_vertices.len();
                     self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
                     self.render_infos.insert(new_id, RenderInfoFull {
@@ -667,7 +663,6 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                         vertex_indices,
                     });
                 }
-                self.vertex_count += new_vertex_count;
                 self.objects.insert(new_id, Rc::new(RefCell::new(new_obj)));
             }
 

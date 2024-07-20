@@ -432,7 +432,7 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single_extent(
             texture_id,
@@ -477,7 +477,7 @@ impl SceneObject<ObjectType> for Player {
         // TODO: music is weirdly slow to load.
         self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
         self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
-        Ok(())
+        Ok(self.current_sprite().create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.scene().name() == MarioScene.name() {
@@ -646,10 +646,6 @@ impl SceneObject<ObjectType> for Player {
 }
 
 impl RenderableObject<ObjectType> for Player {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        self.current_sprite().create_vertices()
-    }
-
     fn render_info(&self) -> RenderInfo {
         self.current_sprite().render_info_default()
     }

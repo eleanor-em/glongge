@@ -62,7 +62,7 @@ impl QuestionBlock {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for QuestionBlock {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,
@@ -76,7 +76,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
             texture_id,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 349, y: 78 });
-        Ok(())
+        Ok(self.sprite.create_vertices())
     }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
@@ -107,10 +107,6 @@ impl SceneObject<ObjectType> for QuestionBlock {
 }
 
 impl RenderableObject<ObjectType> for QuestionBlock {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        self.current_sprite().create_vertices()
-    }
-
     fn render_info(&self) -> RenderInfo {
         self.current_sprite().render_info_default()
     }

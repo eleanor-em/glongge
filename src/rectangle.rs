@@ -27,7 +27,6 @@ use glongge::{
         ResourceHandler,
         sprite::Sprite
     },
-    shader,
 };
 
 #[allow(dead_code)]
@@ -98,7 +97,7 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,
@@ -107,7 +106,7 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 0, y: 0 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(100);
-        Ok(())
+        Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.pos = Vec2 { x: 512., y: 384. };
@@ -140,10 +139,6 @@ impl SceneObject<ObjectType> for Player {
 }
 
 impl RenderableObject<ObjectType> for Player {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
-    }
-
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
     }
@@ -189,7 +184,7 @@ impl SpinningRectangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
         self.sprite = Sprite::from_tileset(texture_id,
             Vec2Int{ x: 2, y: 1 },
@@ -197,7 +192,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             Vec2Int { x: 0, y: 0 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(500);
-        Ok(())
+        Ok(self.sprite.create_vertices())
     }
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
@@ -258,10 +253,6 @@ impl SceneObject<ObjectType> for SpinningRectangle {
 }
 
 impl RenderableObject<ObjectType> for SpinningRectangle {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), Self::SIZE * Vec2::one())
-    }
-
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_from(RenderInfo {
             col: self.col,

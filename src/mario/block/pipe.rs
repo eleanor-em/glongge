@@ -44,7 +44,7 @@ impl Pipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Pipe {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = if self.orientation.x.is_zero() {
             Sprite::from_single_coords(
@@ -59,7 +59,7 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2Int { x: 256, y: 676}
             )
         };
-        Ok(())
+        Ok(self.sprite.create_vertices())
     }
 
     fn transform(&self) -> Transform {
@@ -80,10 +80,6 @@ impl SceneObject<ObjectType> for Pipe {
 }
 
 impl RenderableObject<ObjectType> for Pipe {
-    fn create_vertices(&self) -> Vec<VertexWithUV> {
-        self.sprite.create_vertices()
-    }
-
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
     }
