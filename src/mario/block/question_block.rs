@@ -99,7 +99,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.current_sprite().half_widths()))
+        Box::new(BoxCollider::from_transform(self.transform(), self.current_sprite().aa_extent()))
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

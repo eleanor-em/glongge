@@ -135,8 +135,8 @@ impl Sprite {
 }
 
 impl AxisAlignedExtent for Sprite {
-    fn extent(&self) -> Vec2 {
-        self.current_frame().extent()
+    fn aa_extent(&self) -> Vec2 {
+        self.current_frame().aa_extent()
     }
 
     fn centre(&self) -> Vec2 {

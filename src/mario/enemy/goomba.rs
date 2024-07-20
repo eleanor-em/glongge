@@ -87,7 +87,7 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.sprite.fixed_update();
         let in_view = ctx.viewport().contains_point(self.top_left) ||
-            ctx.viewport().contains_point(self.top_left + self.sprite.extent());
+            ctx.viewport().contains_point(self.top_left + self.sprite.aa_extent());
         if !self.dead && in_view {
             self.vel.y += self.v_accel;
             self.top_left += self.vel;
@@ -96,14 +96,15 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
-            self.top_left += mtv;
         }
         if !mtv.dot(Vec2::up()).is_zero() {
-            self.top_left += mtv;
             if self.vel.y.is_zero() && mtv.y < 0. && other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
                 self.stomp();
             }
             self.vel.y = 0.;
+        }
+        if other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
+            self.top_left += mtv;
         }
         CollisionResponse::Done
     }
@@ -127,7 +128,7 @@ impl SceneObject<ObjectType> for Goomba {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
+        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG].into()

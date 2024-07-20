@@ -209,8 +209,7 @@ impl Player {
 
     fn update_as_running(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         if hold_run {
-            self.cancel_run_crt.take()
-                .map(|id| ctx.scene().cancel_coroutine(id));
+            ctx.scene().maybe_cancel_coroutine(&mut self.cancel_run_crt);
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
                 ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
@@ -302,7 +301,7 @@ impl Player {
                 }, Duration::from_millis(60))
             });
         } else {
-            self.coyote_crt.take().map(|id| ctx.scene().cancel_coroutine(id));
+            ctx.scene().maybe_cancel_coroutine(&mut self.coyote_crt);
         }
 
         if self.coyote_crt.is_none() && self.state != PlayerState::Falling {
@@ -607,15 +606,16 @@ impl SceneObject<ObjectType> for Player {
                     return CollisionResponse::Done;
                 }
             }
+        } else {
+            self.centre += mtv;
         }
-        self.centre += mtv;
         CollisionResponse::Done
     }
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
         ctx.viewport().clamp_to_left(Some(0.), None);
-        let death_y = ctx.viewport().bottom() + self.current_sprite_mut().extent().y;
+        let death_y = ctx.viewport().bottom() + self.current_sprite_mut().aa_extent().y;
         if self.has_control() && self.centre.y > death_y {
             self.start_die(ctx);
         }

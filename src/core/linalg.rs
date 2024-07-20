@@ -195,6 +195,7 @@ pub struct Vec2 {
     pub y: f64,
 }
 
+// TODO: make const functions
 #[allow(clippy::return_self_not_must_use)]
 impl Vec2 {
     pub fn right() -> Vec2 { Vec2 { x: 1., y: 0. } }
@@ -679,14 +680,14 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
 
 #[allow(dead_code)]
 pub trait AxisAlignedExtent {
-    fn extent(&self) -> Vec2;
+    fn aa_extent(&self) -> Vec2;
     fn centre(&self) -> Vec2;
 
-    fn half_widths(&self) -> Vec2 { self.extent() / 2 }
+    fn half_widths(&self) -> Vec2 { self.aa_extent() / 2 }
     fn top_left(&self) -> Vec2 { self.centre() - self.half_widths() }
-    fn top_right(&self) -> Vec2 { self.top_left() + self.extent().x * Vec2::right() }
-    fn bottom_left(&self) -> Vec2 { self.top_left() + self.extent().y * Vec2::down() }
-    fn bottom_right(&self) -> Vec2 { self.top_left() + self.extent() }
+    fn top_right(&self) -> Vec2 { self.top_left() + self.aa_extent().x * Vec2::right() }
+    fn bottom_left(&self) -> Vec2 { self.top_left() + self.aa_extent().y * Vec2::down() }
+    fn bottom_right(&self) -> Vec2 { self.top_left() + self.aa_extent() }
 
     fn left(&self) -> f64 { self.top_left().x }
     fn right(&self) -> f64 { self.top_right().x }
@@ -716,7 +717,7 @@ impl Rect {
 }
 
 impl AxisAlignedExtent for Rect {
-    fn extent(&self) -> Vec2 { self.half_widths * 2. }
+    fn aa_extent(&self) -> Vec2 { self.half_widths * 2. }
     fn centre(&self) -> Vec2 { self.centre }
 }
 

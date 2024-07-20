@@ -224,6 +224,11 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
             }
         })
     }
+    pub fn maybe_cancel_coroutine(&mut self, id: &mut Option<CoroutineId>) {
+        if let Some(id) = id.take() {
+            self.cancel_coroutine(id);
+        }
+    }
     pub fn cancel_coroutine(&mut self, id: CoroutineId) {
         self.pending_removed_coroutines.insert(id);
     }
@@ -361,8 +366,8 @@ impl<'a> ViewportContext<'a> {
 }
 
 impl AxisAlignedExtent for ViewportContext<'_> {
-    fn extent(&self) -> Vec2 {
-        self.viewport.extent()
+    fn aa_extent(&self) -> Vec2 {
+        self.viewport.aa_extent()
     }
 
     fn centre(&self) -> Vec2 {
@@ -488,7 +493,7 @@ impl UpdatePerfStats {
             on_collision: TimeIt::new("on_collision"),
             remove_objects: TimeIt::new("remove objects"),
             add_objects: TimeIt::new("add objects"),
-            render_infos: TimeIt::new("render_info"),
+            render_infos: TimeIt::new("render_infos"),
             last_report: Instant::now(),
         }
     }
@@ -851,10 +856,22 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     }
     fn update_and_send_render_infos(&mut self, did_update_vertices: bool) {
         self.perf_stats.render_infos.start();
-        // Update
         self.update_render_infos();
-
-        // Send
+        self.send_render_infos(did_update_vertices);
+        self.perf_stats.render_infos.stop();
+    }
+    fn update_render_infos(&mut self) {
+        for (object_id, obj) in &self.objects {
+            if let Some(obj) = obj.borrow().as_renderable_object() {
+                let render_info = self.render_infos.get_mut(object_id)
+                    .unwrap_or_else(|| panic!("missing object_id in render_info: {object_id:?}"));
+                render_info.inner = obj.render_info();
+                render_info.transform = obj.transform();
+                render_info.transform.centre -= self.viewport.translation;
+            }
+        }
+    }
+    fn send_render_infos(&mut self, did_update_vertices: bool) {
         let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
         if did_update_vertices {
             let mut vertices = Vec::with_capacity(self.vertex_count);
@@ -869,21 +886,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         render_info_receiver.set_clear_col(self.clear_col);
         self.viewport = render_info_receiver.current_viewport()
             .translated(self.viewport.translation);
-
-        self.perf_stats.render_infos.stop();
     }
 
-    fn update_render_infos(&mut self) {
-        for (object_id, obj) in &self.objects {
-            if let Some(obj) = obj.borrow().as_renderable_object() {
-                let render_info = self.render_infos.get_mut(object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in render_info: {object_id:?}"));
-                render_info.inner = obj.render_info();
-                render_info.transform = obj.transform();
-                render_info.transform.centre -= self.viewport.translation;
-            }
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -1046,8 +1050,8 @@ impl TextureSubArea {
 }
 
 impl AxisAlignedExtent for TextureSubArea {
-    fn extent(&self) -> Vec2 {
-        self.rect.extent()
+    fn aa_extent(&self) -> Vec2 {
+        self.rect.aa_extent()
     }
 
     fn centre(&self) -> Vec2 {

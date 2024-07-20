@@ -70,7 +70,7 @@ impl SceneObject<ObjectType> for Block {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
+        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

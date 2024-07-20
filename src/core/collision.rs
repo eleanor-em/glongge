@@ -46,32 +46,10 @@ pub trait Collider: AxisAlignedExtent + Debug {
     fn translate(&mut self, by: Vec2) -> &mut dyn Collider;
 }
 
-// impl Collider for Box<(dyn Collider + 'static)> {
-//     fn as_any(&self) -> &dyn Any {
-//         self.as_ref().as_any()
-//     }
-//
-//     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-//         self.as_ref().collides_with_box(other)
-//     }
-//
-//     fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
-//         self.as_ref().collides_with(other)
-//     }
-//
-//     fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
-//         self.as_mut().translate(by)
-//     }
-//
-//     fn translate_boxed(self: Box<dyn Collider>, by: Vec2) -> Box<dyn Collider> {
-//         self.
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub struct NullCollider;
 impl AxisAlignedExtent for NullCollider {
-    fn extent(&self) -> Vec2 { Vec2::zero() }
+    fn aa_extent(&self) -> Vec2 { Vec2::zero() }
 
     fn centre(&self) -> Vec2 { Vec2::zero() }
 }
@@ -101,6 +79,17 @@ trait Polygonal {
         }
         start..end
     }
+
+    fn adjust_for_containment(self_proj: &Range<f64>, other_proj: &Range<f64>) -> f64 {
+        if gg_range::contains_f64(self_proj, other_proj) ||
+                gg_range::contains_f64(other_proj, self_proj) {
+            let starts = (self_proj.start - other_proj.start).abs();
+            let ends = (self_proj.end - other_proj.end).abs();
+            f64::min(starts, ends)
+        } else {
+            0.
+        }
+    }
     fn polygon_collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
         let mut min_axis = Vec2::zero();
         let mut min_dist = f64::max_value();
@@ -109,20 +98,14 @@ trait Polygonal {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
             match gg_range::overlap_len_f64(&self_proj, &other_proj) {
-                Some(0.) => return None,
+                None | Some(0.) => return None,
                 Some(mut dist) => {
-                    if gg_range::contains_f64(&self_proj, &other_proj) ||
-                        gg_range::contains_f64(&other_proj, &self_proj) {
-                        let starts = (self_proj.start - other_proj.start).abs();
-                        let ends = (self_proj.end - other_proj.end).abs();
-                        dist += f64::min(starts, ends);
-                    }
+                    dist += Self::adjust_for_containment(&self_proj, &other_proj);
                     if dist < min_dist {
                         min_dist = dist;
                         min_axis = axis;
                     }
                 },
-                _ => return None,
             }
         }
 
@@ -164,12 +147,12 @@ trait Polygonal {
             Vec2::zero()
         }
     }
-    fn extent_of(&self) -> Vec2 {
+    fn extent_of(vertices: Vec<Vec2>) -> Vec2 {
         let mut min_x = f64::MAX;
         let mut min_y = f64::MAX;
         let mut max_x = f64::MIN;
         let mut max_y = f64::MIN;
-        for vertex in self.vertices() {
+        for vertex in vertices {
             min_x = vertex.x.min(min_x);
             min_y = vertex.y.min(min_y);
             max_x = vertex.x.max(max_x);
@@ -195,47 +178,57 @@ impl<T: Polygonal> Polygonal for &T {
 
 #[derive(Debug, Clone)]
 pub struct OrientedBoxCollider {
-    pub centre: Vec2,
-    pub rotation: f64,
-    pub half_widths: Vec2,
+    centre: Vec2,
+    rotation: f64,
+    axis_aligned_half_widths: Vec2,
+    extent: Vec2,
 }
 impl OrientedBoxCollider {
     pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
-        Self {
+        let mut rv = Self {
             centre,
             rotation: 0.,
-            half_widths,
-        }
+            axis_aligned_half_widths: half_widths,
+            extent: Vec2::zero()
+        };
+        rv.extent = Self::extent_of(rv.vertices());
+        rv
     }
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
-        Self {
+        let mut rv = Self {
             centre: top_left + extent.abs() / 2,
             rotation: 0.,
-            half_widths: extent.abs() / 2,
-        }
+            axis_aligned_half_widths: extent.abs() / 2,
+            extent: Vec2::zero()
+        };
+        rv.extent = Self::extent_of(rv.vertices());
+        rv
     }
     pub fn from_transform(transform: Transform, half_widths: Vec2) -> Self {
-        Self {
+        let mut rv = Self {
             centre: transform.centre,
             rotation: transform.rotation,
-            half_widths: transform.scale.component_wise(half_widths).abs(),
-        }
+            axis_aligned_half_widths: transform.scale.component_wise(half_widths).abs(),
+            extent: Vec2::zero()
+        };
+        rv.extent = Self::extent_of(rv.vertices());
+        rv
     }
     pub fn square(transform: Transform, width: f64) -> Self {
         Self::from_transform(transform, width.abs() * Vec2::one())
     }
 
     pub fn top_left_rotated(&self) -> Vec2 {
-        self.centre + (-self.half_widths).rotated(self.rotation)
+        self.centre + (-self.axis_aligned_half_widths).rotated(self.rotation)
     }
     pub fn top_right_rotated(&self) -> Vec2 {
-        self.centre + Vec2 { x: self.half_widths.x, y: -self.half_widths.y }.rotated(self.rotation)
+        self.centre + Vec2 { x: self.axis_aligned_half_widths.x, y: -self.axis_aligned_half_widths.y }.rotated(self.rotation)
     }
     pub fn bottom_left_rotated(&self) -> Vec2 {
-        self.centre + Vec2 { x: -self.half_widths.x, y: self.half_widths.y }.rotated(self.rotation)
+        self.centre + Vec2 { x: -self.axis_aligned_half_widths.x, y: self.axis_aligned_half_widths.y }.rotated(self.rotation)
     }
     pub fn bottom_right_rotated(&self) -> Vec2 {
-        self.centre + self.half_widths.rotated(self.rotation)
+        self.centre + self.axis_aligned_half_widths.rotated(self.rotation)
     }
 }
 impl Polygonal for OrientedBoxCollider {
@@ -254,8 +247,8 @@ impl Polygonal for OrientedBoxCollider {
 }
 
 impl AxisAlignedExtent for OrientedBoxCollider {
-    fn extent(&self) -> Vec2 {
-        self.extent_of()
+    fn aa_extent(&self) -> Vec2 {
+        self.extent
     }
 
     fn centre(&self) -> Vec2 {
@@ -287,26 +280,26 @@ impl Collider for OrientedBoxCollider {
 #[derive(Debug, Clone)]
 pub struct BoxCollider {
     centre: Vec2,
-    half_widths: Vec2,
+    extent: Vec2,
 }
 impl BoxCollider {
     pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
         Self {
             centre,
-            half_widths,
+            extent: half_widths.abs() * 2,
         }
     }
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
         Self {
             centre: top_left + extent.abs() / 2,
-            half_widths: extent.abs() / 2,
+            extent: extent.abs(),
         }
     }
-    pub fn from_transform(transform: Transform, half_widths: Vec2) -> Self {
+    pub fn from_transform(transform: Transform, extent: Vec2) -> Self {
         check_eq!(transform.rotation, 0.);
         Self {
             centre: transform.centre,
-            half_widths: transform.scale.component_wise(half_widths).abs(),
+            extent: transform.scale.component_wise(extent).abs(),
         }
     }
     pub fn square(transform: Transform, width: f64) -> Self {
@@ -330,8 +323,8 @@ impl Polygonal for BoxCollider {
 }
 
 impl AxisAlignedExtent for BoxCollider {
-    fn extent(&self) -> Vec2 {
-        self.half_widths * 2
+    fn aa_extent(&self) -> Vec2 {
+        self.extent
     }
 
     fn centre(&self) -> Vec2 {
@@ -344,7 +337,40 @@ impl Collider for BoxCollider {
     fn get_type(&self) -> ColliderType { ColliderType::Box }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.polygon_collision(other)
+        let self_proj = self.left()..self.right();
+        let other_proj = other.left()..other.right();
+        let right_dist = match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+            None | Some(0.) => return None,
+            Some(dist) => {
+                dist + Self::adjust_for_containment(&self_proj, &other_proj)
+            },
+        };
+
+        let self_proj = self.top()..self.bottom();
+        let other_proj = other.top()..other.bottom();
+        match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+            None | Some(0.) => None,
+            Some(mut dist) => {
+                dist += Self::adjust_for_containment(&self_proj, &other_proj);
+                if dist < right_dist {
+                    // Collision along vertical axis.
+                    let mtv = dist * Vec2::down();
+                    if self.centre.y < other.centre.y {
+                        Some(-mtv)
+                    } else {
+                        Some(mtv)
+                    }
+                } else {
+                    // Collision along horizontal axis.
+                    let mtv = right_dist * Vec2::right();
+                    if self.centre.x < other.centre.x {
+                        Some(-mtv)
+                    } else {
+                        Some(mtv)
+                    }
+                }
+            },
+        }
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
@@ -366,6 +392,7 @@ pub struct ConvexCollider {
     vertices: Vec<Vec2>,
     normals: Vec<Vec2>,
     centre: Vec2,
+    extent: Vec2,
 }
 
 impl ConvexCollider {
@@ -389,7 +416,8 @@ impl ConvexCollider {
         // Does not check that the vertices are convex.
         let normals = Self::normals_of(vertices.clone());
         let centre = Self::centre_of(vertices.clone());
-        Self { vertices, normals, centre }
+        let extent = Self::extent_of(vertices.clone());
+        Self { vertices, normals, centre, extent }
     }
 
     pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Self {
@@ -425,7 +453,7 @@ impl Polygonal for ConvexCollider {
 }
 
 impl AxisAlignedExtent for ConvexCollider {
-    fn extent(&self) -> Vec2 { self.extent_of() }
+    fn aa_extent(&self) -> Vec2 { self.extent }
 
     fn centre(&self) -> Vec2 { self.centre }
 }
