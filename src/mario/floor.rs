@@ -7,7 +7,7 @@ use glongge::{
         Transform,
         VertexWithUV,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         prelude::*,
     },
     resource::{
@@ -51,7 +51,7 @@ impl SceneObject<ObjectType> for Floor {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
+        self.sprite.as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

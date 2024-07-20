@@ -3,7 +3,7 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         prelude::*,
         RenderableObject,
         RenderInfo,
@@ -72,7 +72,7 @@ impl SceneObject<ObjectType> for Pipe {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
+        self.sprite.as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PIPE_COLLISION_TAG, BLOCK_COLLISION_TAG].into()

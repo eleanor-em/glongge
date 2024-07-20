@@ -12,7 +12,7 @@ use glongge::{
         Transform,
         UpdateContext,
         VertexWithUV,
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         prelude::*,
         coroutine::CoroutineResponse,
     },
@@ -128,7 +128,7 @@ impl SceneObject<ObjectType> for Goomba {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
+        self.sprite.as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG].into()

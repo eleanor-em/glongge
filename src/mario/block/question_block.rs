@@ -8,7 +8,7 @@ use glongge::{
         UpdateContext,
         VertexWithUV,
         prelude::*,
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
     },
     resource::{
@@ -99,7 +99,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.current_sprite().aa_extent()))
+        self.current_sprite().as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

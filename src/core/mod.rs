@@ -97,7 +97,6 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
-    // TODO: probably should somehow restrict UpdateContext for on_update_begin/end().
     #[allow(unused_variables)]
     fn on_update_end(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]

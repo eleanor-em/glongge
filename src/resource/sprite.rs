@@ -6,11 +6,13 @@ use crate::{
         linalg::Vec2Int,
         prelude::*,
         linalg::{AxisAlignedExtent, Vec2},
-        VertexWithUV
+        VertexWithUV,
+        collision::{BoxCollider, Collider}
     },
     resource::texture::TextureId,
     shader,
 };
+use crate::core::Transform;
 
 #[derive(Clone, Default)]
 pub struct Sprite {
@@ -116,6 +118,10 @@ impl Sprite {
     }
     pub fn current_frame(&self) -> TextureSubArea {
         self.areas[self.frame]
+    }
+
+    pub fn as_box_collider(&self, transform: Transform) -> Box<dyn Collider> {
+        Box::new(BoxCollider::from_transform(transform, self.aa_extent()))
     }
 
     pub fn render_info_default(&self) -> RenderInfo {

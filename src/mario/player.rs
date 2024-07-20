@@ -21,7 +21,7 @@ use glongge::{
         colour::Colour,
         coroutine::CoroutineState,
         scene::{Scene, SceneStartInstruction},
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         linalg::{Vec2, Vec2Int},
         input::KeyCode,
         prelude::*
@@ -316,7 +316,7 @@ impl Player {
                 match last_state {
                     CoroutineState::Starting => return CoroutineResponse::Wait(Duration::from_millis(500)),
                     CoroutineState::Waiting => { this.pipe_sound.play(); }
-                    CoroutineState::Yielding => {}
+                    _ => {}
                 }
                 // TODO: replace this with some sort of cached collision feature (from end of last update).
                 if ctx.object().test_collision(this.collider().as_ref(), vec![PIPE_COLLISION_TAG]).is_none() {
@@ -473,7 +473,6 @@ impl SceneObject<ObjectType> for Player {
         self.die_sound = resource_handler.sound.wait_load_file("res/death.wav".to_string())?;
         self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
         self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
-        // TODO: music is weirdly slow to load.
         self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
         self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
         Ok(self.current_sprite().create_vertices())
@@ -607,8 +606,8 @@ impl SceneObject<ObjectType> for Player {
                 }
             }
         } else {
-            self.centre += mtv;
-        }
+        self.centre += mtv;
+            }
         CollisionResponse::Done
     }
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
@@ -635,7 +634,7 @@ impl SceneObject<ObjectType> for Player {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_centre(self.centre, self.current_sprite().half_widths()))
+        self.current_sprite().as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()

@@ -1,7 +1,7 @@
 use glongge::{
     core::{
         prelude::*,
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
         RenderableObject,
         RenderInfo,
@@ -78,7 +78,7 @@ impl SceneObject<ObjectType> for Brick {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.aa_extent()))
+        self.sprite.as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
