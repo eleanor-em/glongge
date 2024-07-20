@@ -980,41 +980,48 @@ impl CollisionHandler {
     }
     fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
-        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>)
-        -> Vec<CollisionNotification<ObjectType>> {
-        self.possible_collisions.iter().copied()
+        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
+    ) -> Vec<CollisionNotification<ObjectType>> {
+        let collisions = self.get_collisions_inner(objects);
+        let mut rv = Vec::with_capacity(collisions.len() * 2);
+        for (ids, mtv) in collisions {
+            let this = SceneObjectWithId::new(ids.fst(), objects[&ids.fst()].clone());
+            let (this_listening, this_emitting) = {
+                let this = this.inner.borrow();
+                (this.listening_tags(), this.emitting_tags())
+            };
+            let other = SceneObjectWithId::new(ids.snd(), objects[&ids.snd()].clone());
+            let (other_listening, other_emitting) = {
+                let other = other.inner.borrow();
+                (other.listening_tags(), other.emitting_tags())
+            };
+            if !this_listening.into_iter().chain(other_emitting).all_unique() {
+                rv.push(CollisionNotification {
+                    this: this.clone(),
+                    other: other.clone(),
+                    mtv,
+                });
+            };
+            if !other_listening.into_iter().chain(this_emitting).all_unique() {
+                rv.push(CollisionNotification {
+                    this: other,
+                    other: this,
+                    mtv: -mtv,
+                });
+            }
+        }
+        rv
+    }
+
+    fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
+        &self,
+        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
+    ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
+        self.possible_collisions.iter()
             .filter_map(|ids| {
                 let this = objects[&ids.fst()].borrow().collider();
                 let other = objects[&ids.snd()].borrow().collider();
-                this.collides_with(other.as_ref()).map(|mtv| (ids, mtv))
-            })
-            .flat_map(|(ids, mtv)| {
-                let this = SceneObjectWithId::new(ids.fst(), objects[&ids.fst()].clone());
-                let (this_listening, this_emitting) = {
-                    let this = this.inner.borrow();
-                    (this.listening_tags(), this.emitting_tags())
-                };
-                let other = SceneObjectWithId::new(ids.snd(), objects[&ids.snd()].clone());
-                let (other_listening, other_emitting) = {
-                    let other = other.inner.borrow();
-                    (other.listening_tags(), other.emitting_tags())
-                };
-                let mut rv = Vec::new();
-                if !this_listening.into_iter().chain(other_emitting).all_unique() {
-                    rv.push(CollisionNotification {
-                        this: this.clone(),
-                        other: other.clone(),
-                        mtv,
-                    });
-                };
-                if !other_listening.into_iter().chain(this_emitting).all_unique() {
-                    rv.push(CollisionNotification {
-                        this: other,
-                        other: this,
-                        mtv: -mtv,
-                    });
-                }
-                rv
+                this.collides_with(other.as_ref()).map(|mtv| (*ids, mtv))
             })
             .collect()
     }
