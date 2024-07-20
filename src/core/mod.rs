@@ -1028,9 +1028,9 @@ impl CollisionHandler {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TextureSubArea {
-    rect: Option<Rect>,
+    rect: Rect,
 }
 
 impl TextureSubArea {
@@ -1038,37 +1038,30 @@ impl TextureSubArea {
         Self::from_rect(Rect::new(centre.into(), half_widths.into()))
     }
     pub fn from_rect(rect: Rect) -> Self {
-        Self { rect: Some(rect) }
+        Self { rect }
     }
 
     pub(crate) fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
-        match self.rect {
-            None => raw_uv,
-            Some(rect) => {
+        if self.rect != Rect::default() {
                 let extent = texture.extent();
-                let u0 = rect.top_left().x / extent.x;
-                let v0 = rect.top_left().y / extent.y;
-                let u1 = rect.bottom_right().x / extent.x;
-                let v1 = rect.bottom_right().y / extent.y;
+                let u0 = self.rect.top_left().x / extent.x;
+                let v0 = self.rect.top_left().y / extent.y;
+                let u1 = self.rect.bottom_right().x / extent.x;
+                let v1 = self.rect.bottom_right().y / extent.y;
                 Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
-            }
+        } else {
+            raw_uv
         }
     }
 }
 
 impl AxisAlignedExtent for TextureSubArea {
     fn extent(&self) -> Vec2 {
-        match self.rect {
-            None => Vec2::zero(),
-            Some(rect) => rect.extent(),
-        }
+        self.rect.extent()
     }
 
     fn centre(&self) -> Vec2 {
-        match self.rect {
-            None => Vec2::zero(),
-            Some(rect) => rect.centre(),
-        }
+        self.rect.centre()
     }
 }
 

@@ -695,7 +695,7 @@ pub trait AxisAlignedExtent {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Rect {
     centre: Vec2,
     half_widths: Vec2,
