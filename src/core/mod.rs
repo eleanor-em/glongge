@@ -396,7 +396,7 @@ struct UpdatePerfStats {
     on_collision: TimeIt,
     remove_objects: TimeIt,
     add_objects: TimeIt,
-    render_info: TimeIt,
+    render_infos: TimeIt,
     last_report: Instant,
 }
 
@@ -413,7 +413,7 @@ impl UpdatePerfStats {
             on_collision: TimeIt::new("on_collision"),
             remove_objects: TimeIt::new("remove objects"),
             add_objects: TimeIt::new("add objects"),
-            render_info: TimeIt::new("render_info"),
+            render_infos: TimeIt::new("render_info"),
             last_report: Instant::now(),
         }
     }
@@ -430,7 +430,7 @@ impl UpdatePerfStats {
             self.on_collision.report_ms_if_at_least(1.);
             self.remove_objects.report_ms_if_at_least(1.);
             self.add_objects.report_ms_if_at_least(1.);
-            self.render_info.report_ms_if_at_least(1.);
+            self.render_infos.report_ms_if_at_least(1.);
             self.total_stats.report_ms();
             self.last_report = Instant::now();
         }
@@ -440,6 +440,7 @@ impl UpdatePerfStats {
 pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
+    vertex_count: usize, // saves allocation time in update_and_send_render_infos()
     render_infos: BTreeMap<ObjectId, RenderInfoFull>,
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
     viewport: AdjustedViewport,
@@ -496,6 +497,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let mut rv = Self {
             objects,
             vertices,
+            vertex_count: vertex_index,
             render_infos,
             viewport,
             input_handler,
@@ -539,7 +541,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             };
             object.borrow_mut().on_ready(&mut ctx);
         }
-        rv.update_render_info(true)?;
+        rv.update_and_send_render_infos(true);
         Ok(rv)
     }
 
@@ -569,7 +571,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
                 self.update_with_removed_objects(pending_remove_objects);
                 self.update_with_added_objects(pending_add_objects)?;
-                self.update_render_info(did_update_vertices)?;
+                self.update_and_send_render_infos(did_update_vertices);
                 self.input_handler.lock().unwrap().update_step();
 
                 self.perf_stats.total_stats.stop();
@@ -620,6 +622,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                             .vertex_indices;
                         *count = (count.start - vertices_removed)..(count.end - vertices_removed);
                     }
+                    self.vertex_count -= vertices_removed;
                 }
                 None => {
                     check_false!(self.vertices.contains_key(&remove_index));
@@ -650,9 +653,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 .unwrap_or(0);
             for (new_id, mut new_obj) in pending_add_objects {
                 new_obj.on_load(&mut self.resource_handler)?;
+                let mut new_vertex_count = 0;
                 if let Some(obj) = new_obj.as_renderable_object() {
                     let new_vertices = obj.create_vertices();
                     let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
+                    new_vertex_count += new_vertices.len();
                     next_vertex_index += new_vertices.len();
                     self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
                     self.render_infos.insert(new_id, RenderInfoFull {
@@ -661,6 +666,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                         vertex_indices,
                     });
                 }
+                self.vertex_count += new_vertex_count;
                 self.objects.insert(new_id, Rc::new(RefCell::new(new_obj)));
             }
 
@@ -874,32 +880,41 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             );
         }
     }
-    fn update_render_info(&mut self, did_update_vertices: bool) -> Result<()> {
-        self.perf_stats.render_info.start();
+    fn update_and_send_render_infos(&mut self, did_update_vertices: bool) {
+        self.perf_stats.render_infos.start();
+        // Update
+        self.update_render_infos();
+
+        // Send
+        let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
+        if did_update_vertices {
+            let mut vertices = Vec::with_capacity(self.vertex_count);
+            for (_, values) in self.vertices.values() {
+                vertices.extend(values);
+            }
+            check_eq!(vertices.len(), vertices.capacity());
+            check_eq!(vertices.capacity(), self.vertex_count);
+            render_info_receiver.update_vertices(vertices);
+        }
+        render_info_receiver.update_render_info(self.render_infos.values().cloned().collect());
+        render_info_receiver.set_clear_col(self.clear_col);
+        self.viewport = render_info_receiver.current_viewport()
+            .translated(self.viewport.translation);
+
+        self.perf_stats.render_infos.stop();
+    }
+
+    #[inline(never)] fn update_render_infos(&mut self) {
         for object_id in self.objects.keys() {
             let obj = self.objects[object_id].borrow();
             if let Some(obj) = obj.as_renderable_object() {
                 let render_info = self.render_infos.get_mut(object_id)
-                    .ok_or_else(|| anyhow!("missing object_id in render_info: {:?}", object_id))?;
+                    .unwrap_or_else(|| panic!("missing object_id in render_info: {:?}", object_id));
                 render_info.inner = obj.render_info();
                 render_info.transform = obj.transform();
                 render_info.transform.centre -= self.viewport.translation;
             }
         }
-        let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
-        render_info_receiver.set_clear_col(self.clear_col);
-        if did_update_vertices {
-            render_info_receiver.update_vertices(self.vertices.values()
-                .cloned()
-                .flat_map(|(_, values)| values)
-                .collect());
-        }
-        render_info_receiver.update_render_info(self.render_infos.values().cloned().collect());
-        let translation = self.viewport.translation;
-        self.viewport = render_info_receiver.current_viewport();
-        self.viewport.translation = translation;
-        self.perf_stats.render_info.stop();
-        Ok(())
     }
 }
 

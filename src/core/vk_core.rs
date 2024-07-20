@@ -132,6 +132,11 @@ impl AdjustedViewport {
     pub fn scale_factor(&self) -> f32 { self.scale_factor as f32 }
 
     pub fn inner(&self) -> Viewport { self.inner.clone() }
+    pub fn translated(&self, translation: Vec2) -> AdjustedViewport {
+        let mut rv = self.clone();
+        rv.translation = translation;
+        rv
+    }
 }
 
 impl AxisAlignedExtent for AdjustedViewport {

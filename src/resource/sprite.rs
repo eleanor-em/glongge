@@ -12,6 +12,7 @@ use crate::{
     shader,
 };
 
+#[derive(Clone, Default)]
 pub struct Sprite {
     texture_id: TextureId,
     areas: Vec<TextureSubArea>,
@@ -19,19 +20,6 @@ pub struct Sprite {
     paused: bool,
     frame_time_ms: Vec<u32>,
     frame: usize,
-}
-
-impl Default for Sprite {
-    fn default() -> Self {
-        Self {
-            texture_id: Default::default(),
-            areas: vec![],
-            elapsed_us: 0,
-            paused: false,
-            frame_time_ms: vec![],
-            frame: 0,
-        }
-    }
 }
 
 impl Sprite {
