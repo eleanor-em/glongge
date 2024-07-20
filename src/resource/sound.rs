@@ -1,14 +1,23 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
-use fyrox_resource::io::FsResourceIo;
-use fyrox_sound::buffer::{DataSource, SoundBufferResource, SoundBufferResourceExtension};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex}
+};
+
+use fyrox_sound::{
+    buffer::{
+        loader::FsResourceIo,
+        DataSource,
+        SoundBufferResource,
+        SoundBufferResourceExtension
+    },
+    context::SoundContext,
+    engine::SoundEngine,
+    pool::Handle,
+    source::{SoundSource, SoundSourceBuilder, Status}
+};
+
 #[allow(unused_imports)]
 use crate::core::prelude::*;
-
-use fyrox_sound::context::SoundContext;
-use fyrox_sound::engine::SoundEngine;
-use fyrox_sound::pool::Handle;
-use fyrox_sound::source::{SoundSource, SoundSourceBuilder, Status};
 
 #[derive(Clone)]
 struct SoundInner {

@@ -183,6 +183,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -448,25 +454,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-deque"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613f8cc01fe9cf1a3eb3d7f488fd2fa8388403e97039e2f73692932e291a770d"
-dependencies = [
- "crossbeam-epoch",
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-epoch"
-version = "0.9.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-queue"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -718,14 +705,14 @@ dependencies = [
 [[package]]
 name = "fyrox-core"
 version = "0.28.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "214842f265ba594e9011fac7a3a198ff03b5296cbcf536fa18b197d157b5ab07"
+source = "git+https://github.com/eleanor-em/Fyrox-sound-only#3c34c1ade3b66ce3dc01aeaedaf30d230fcc59da"
 dependencies = [
  "android-activity 0.5.2",
  "arrayvec",
- "base64",
+ "base64 0.22.1",
  "bincode",
  "bitflags 2.5.0",
+ "bytemuck",
  "byteorder",
  "futures",
  "fxhash",
@@ -751,8 +738,7 @@ dependencies = [
 [[package]]
 name = "fyrox-core-derive"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca4265f6d691ddc35b2d0d930cde47802f9cd644e8a631de1f4f28d06d7a36e5"
+source = "git+https://github.com/eleanor-em/Fyrox-sound-only#3c34c1ade3b66ce3dc01aeaedaf30d230fcc59da"
 dependencies = [
  "convert_case",
  "darling",
@@ -765,10 +751,10 @@ dependencies = [
 [[package]]
 name = "fyrox-math"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "497c6e1612a5883a32addb747c43421bf4334414cc6f2091edc0ce03cdf25db1"
+source = "git+https://github.com/eleanor-em/Fyrox-sound-only#3c34c1ade3b66ce3dc01aeaedaf30d230fcc59da"
 dependencies = [
  "arrayvec",
+ "bytemuck",
  "nalgebra",
  "num-traits",
  "rectutils",
@@ -778,12 +764,10 @@ dependencies = [
 [[package]]
 name = "fyrox-resource"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3fc8ccaa53a9b7ec39820ab58b804871b2e29fe4806e55c1f66bbaddb529a11"
+source = "git+https://github.com/eleanor-em/Fyrox-sound-only#3c34c1ade3b66ce3dc01aeaedaf30d230fcc59da"
 dependencies = [
  "fxhash",
  "fyrox-core",
- "rayon",
  "ron",
  "serde",
  "walkdir",
@@ -792,8 +776,7 @@ dependencies = [
 [[package]]
 name = "fyrox-sound"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c628b80d0757745e488bdfcd4fcd497ed31c38d9e66731bb35897a6c7c27c8e"
+source = "git+https://github.com/eleanor-em/Fyrox-sound-only#3c34c1ade3b66ce3dc01aeaedaf30d230fcc59da"
 dependencies = [
  "fyrox-core",
  "fyrox-resource",
@@ -832,7 +815,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asefile",
- "fyrox-resource",
  "fyrox-sound",
  "glongge-derive",
  "itertools 0.13.0",
@@ -1214,6 +1196,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5c17de023a86f59ed79891b2e5d5a94c705dbe904a5b5c9c952ea6221b03e4"
 dependencies = [
  "approx",
+ "bytemuck",
  "matrixmultiply",
  "nalgebra-macros",
  "num-complex",
@@ -1692,26 +1675,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
 
 [[package]]
-name = "rayon"
-version = "1.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b418a60154510ca1a002a752ca9714984e21e4241e804d32555251faf8b78ffa"
-dependencies = [
- "either",
- "rayon-core",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-utils",
-]
-
-[[package]]
 name = "realfft"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1722,9 +1685,9 @@ dependencies = [
 
 [[package]]
 name = "rectutils"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b1b01f604514200fe660907a4916f28d02a8d8a102e22aea8c195637ef781be"
+checksum = "d2ca52c2bef866131a7491de1c018076af8a32ff1881ddf31f70c742ba8ed227"
 dependencies = [
  "arrayvec",
  "nalgebra",
@@ -1793,7 +1756,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
 dependencies = [
- "base64",
+ "base64 0.21.7",
  "bitflags 2.5.0",
  "serde",
  "serde_derive",
