@@ -41,6 +41,7 @@ use crate::mario::{
     block::downcast_bumpable_mut,
     enemy::downcast_stompable_mut
 };
+use crate::mario::enemy::goomba::AliveEnemyMap;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -422,6 +423,7 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
+                    ctx.scene().data::<AliveEnemyMap>().reset();
                     ctx.scene().goto(MarioScene.at_entrance(0));
                     CoroutineResponse::Complete
                 }

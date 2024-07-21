@@ -223,6 +223,10 @@ where
             modified: false,
         })
     }
+    
+    pub fn reset(&mut self) {
+        *self.write() = T::default();
+    }
 
     pub fn read(&self) -> &T { &self.deserialized }
     pub fn write(&mut self) -> &mut T {
@@ -266,7 +270,6 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
         SceneData::new(self.scene_data.clone())
             .expect("failed to ser/de scene_data, do the types match?")
     }
-    // pub fn data(&mut self) -> &mut Vec<u8> { self.scene_data }
 
     pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
     where

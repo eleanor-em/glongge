@@ -32,7 +32,7 @@ use crate::mario::{
 };
 
 #[derive(Default, Serialize, Deserialize)]
-struct AliveEnemyMap {
+pub struct AliveEnemyMap {
     inner: BTreeMap<Vec2Int, bool>,
 }
 
