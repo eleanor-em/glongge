@@ -2,32 +2,30 @@ use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
+    core::{
+        coroutine::{CoroutineId, CoroutineResponse},
+        coroutine::CoroutineState,
+        input::KeyCode,
+        prelude::*,
+        scene::{Scene, SceneDestination},
+        SceneObjectWithId,
+        util::collision::Collider,
+        util::colour::Colour,
+        util::linalg::{Vec2, Vec2Int},
+        util::linalg::AxisAlignedExtent,
+        util::linalg::Transform
+    },
     resource::{
         ResourceHandler,
-        sprite::Sprite,
-        sound::Sound
-    },
-    core::{
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        UpdateContext,
-        CollisionResponse,
-        SceneObjectWithId,
-        coroutine::{CoroutineId, CoroutineResponse},
-        linalg::AxisAlignedExtent,
-        colour::Colour,
-        coroutine::CoroutineState,
-        scene::{Scene, SceneStartInstruction},
-        collision::Collider,
-        linalg::{Vec2, Vec2Int},
-        input::KeyCode,
-        prelude::*
+        sound::Sound,
+        sprite::Sprite
     },
 };
-use glongge::core::{RenderItem, VertexDepth};
-use crate::mario::{MarioOverworldScene, PIPE_COLLISION_TAG, block::pipe::Pipe, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG, ObjectType, block::downcast_bumpable_mut, enemy::downcast_stompable_mut, AliveEnemyMap};
+use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
+use glongge::core::scene::{RenderableObject, SceneObject};
+use glongge::core::update::collision::CollisionResponse;
+use glongge::core::update::UpdateContext;
+use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, ObjectType, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -349,7 +347,7 @@ impl Player {
                   ctx: &mut UpdateContext<ObjectType>,
                   direction: Vec2,
                   pipe_centre: Vec2,
-                  pipe_instruction: SceneStartInstruction) {
+                  pipe_instruction: SceneDestination) {
         self.music.stop();
         self.pipe_sound.play();
         self.state = PlayerState::EnteringPipe;

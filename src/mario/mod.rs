@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use glongge_derive::register_object_type;
-use glongge::{
-    core::{
-        linalg::Vec2Int,
-        SceneObject,
-        linalg::Vec2,
-        AnySceneObject,
-        scene::{Scene, SceneName}
-    }
+use glongge::core::{
+    AnySceneObject,
+    scene::{Scene, SceneName},
+    util::linalg::Vec2,
+    util::linalg::Vec2Int
 };
 
 mod player;
@@ -34,6 +31,7 @@ use background::hill2::*;
 use background::hill3::*;
 use background::hill4::*;
 use background::castle::*;
+use glongge::core::scene::SceneObject;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
     // fixed update at 100 fps

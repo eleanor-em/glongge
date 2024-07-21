@@ -7,7 +7,7 @@ use num_traits::{Float, Zero};
 use crate::{
     core::{
         prelude::*,
-        linalg::{
+        util::linalg::{
             Vec2,
             AxisAlignedExtent
         },
@@ -15,7 +15,7 @@ use crate::{
             gg_range,
             gg_iter
         },
-        Transform,
+        util::linalg::Transform,
     }
 };
 

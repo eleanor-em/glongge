@@ -36,11 +36,13 @@ use vulkano::{
 };
 use crate::{
     core::{
-        linalg::Vec2,
-        vk_core::VulkanoContext,
+        util::linalg::Vec2,
+        vk::VulkanoContext,
     }
 };
-use crate::core::colour::Colour;
+use crate::core::util::colour::Colour;
+use crate::core::util::linalg;
+use crate::core::util::linalg::{AxisAlignedExtent, Rect, Vec2Int};
 
 
 static NEXT_TEXTURE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -297,5 +299,42 @@ impl TextureHandler {
         RwLockReadGuard::try_map(self.cached_textures.read().unwrap(), |textures| {
             textures.get(&texture_id)
         }).ok()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextureSubArea {
+    rect: Rect,
+}
+
+impl TextureSubArea {
+    pub fn new(centre: Vec2Int, half_widths: Vec2Int) -> Self {
+        Self::from_rect(Rect::new(centre.into(), half_widths.into()))
+    }
+    pub fn from_rect(rect: Rect) -> Self {
+        Self { rect }
+    }
+
+    pub(crate) fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
+        if self.rect == Rect::default() {
+            raw_uv
+        } else {
+            let extent = texture.extent();
+            let u0 = self.rect.top_left().x / extent.x;
+            let v0 = self.rect.top_left().y / extent.y;
+            let u1 = self.rect.bottom_right().x / extent.x;
+            let v1 = self.rect.bottom_right().y / extent.y;
+            Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
+        }
+    }
+}
+
+impl AxisAlignedExtent for TextureSubArea {
+    fn aa_extent(&self) -> Vec2 {
+        self.rect.aa_extent()
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.rect.centre()
     }
 }

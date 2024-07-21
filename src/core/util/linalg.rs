@@ -722,6 +722,30 @@ impl AxisAlignedExtent for Rect {
     fn centre(&self) -> Vec2 { self.centre }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Transform {
+    pub centre: Vec2,
+    pub rotation: f64,
+    pub scale: Vec2,
+}
+
+impl Transform {
+    #[must_use]
+    pub fn translated(&self, by: Vec2) -> Self {
+        Self {
+            centre: self.centre + by,
+            rotation: self.rotation,
+            scale: self.scale,
+        }
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self { centre: Vec2::zero(), rotation: 0., scale: Vec2::one() }
+    }
+}
+
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + t * (b - a)
 }

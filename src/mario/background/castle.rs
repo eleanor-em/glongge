@@ -1,19 +1,17 @@
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
         prelude::*,
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
-use glongge::core::{RenderItem, VertexDepth};
+use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
+use glongge::core::scene::{RenderableObject, SceneObject};
 use crate::mario::ObjectType;
 
 #[register_scene_object]

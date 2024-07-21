@@ -6,6 +6,6 @@ pub use tracing::{info, warn, error};
 pub use itertools::Itertools;
 #[allow(unused_imports)]
 pub use crate::core::{
-    assert::*,
+    util::assert::*,
     config::*
 };

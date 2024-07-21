@@ -1,28 +1,27 @@
 use glongge::{
     core::{
         prelude::*,
-        collision::Collider,
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        UpdateContext,
+        util::collision::Collider,
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
-use glongge::core::RenderItem;
+use glongge::core::render::RenderInfo;
+use glongge::core::render::RenderItem;
+use glongge::core::scene::{RenderableObject, SceneObject};
+use glongge::core::update::UpdateContext;
 
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::mario::{
+    block::Bumpable,
     BLOCK_COLLISION_TAG,
     from_nes,
     from_nes_accel,
     ObjectType,
-    block::Bumpable,
     player::Player
 };
 

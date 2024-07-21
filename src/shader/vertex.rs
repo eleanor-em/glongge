@@ -1,9 +1,7 @@
 use num_traits::Zero;
 
-use crate::{
-    core::linalg::Vec2,
-    core::VertexWithUV
-};
+use crate::core::util::linalg::Vec2;
+use crate::core::render::VertexWithUV;
 
 pub fn rectangle(centre: Vec2, half_widths: Vec2) -> Vec<Vec2> {
     let top_left = centre - half_widths;

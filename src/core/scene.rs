@@ -3,22 +3,28 @@ use std::{
     sync::{
         Arc,
         mpsc,
-        Mutex,
-        mpsc::{Receiver, Sender}
+        mpsc::{Receiver, Sender},
+        Mutex
     }
 };
+use std::any::Any;
+use std::time::Duration;
 use crate::{
-    resource::ResourceHandler,
     core::{
-        prelude::*,
-        input::InputHandler,
-        vk_core::RenderEventHandler,
         AnySceneObject,
+        input::InputHandler,
         ObjectTypeEnum,
-        UpdateHandler,
-        RenderInfoReceiver
-    }
+        prelude::*,
+        vk::RenderEventHandler
+    },
+    resource::ResourceHandler
 };
+use crate::core::SceneObjectWithId;
+use crate::core::render::{RenderInfo, RenderInfoReceiver, RenderItem};
+use crate::core::update::{UpdateContext, UpdateHandler};
+use crate::core::update::collision::CollisionResponse;
+use crate::core::util::collision::{Collider, NullCollider};
+use crate::core::util::linalg::{Transform, Vec2};
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
@@ -94,12 +100,12 @@ impl From<&'static str> for SceneName {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct SceneStartInstruction {
+pub struct SceneDestination {
     name: SceneName,
     entrance_id: usize,
 }
 
-impl SceneStartInstruction {
+impl SceneDestination {
     pub fn new(name: SceneName, entrance_id: usize) -> Self {
         Self { name, entrance_id }
     }
@@ -114,17 +120,18 @@ pub trait Scene<ObjectType: ObjectTypeEnum> {
     #[allow(unused_variables)]
     fn initial_data(&self) -> Vec<u8> { Vec::new() }
     
-    fn at_entrance(&self, entrance_id: usize) -> SceneStartInstruction {
-        SceneStartInstruction::new(self.name(), entrance_id)
+    fn at_entrance(&self, entrance_id: usize) -> SceneDestination {
+        SceneDestination::new(self.name(), entrance_id)
     }
 }
 
 #[allow(dead_code)]
 pub(crate) enum SceneHandlerInstruction {
     Exit,
-    Goto(SceneStartInstruction),
+    Goto(SceneDestination),
 }
 
+#[allow(private_bounds)]
 pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -136,6 +143,7 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHa
     rx: Receiver<SceneHandlerInstruction>,
 }
 
+#[allow(private_bounds)]
 impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler<ObjectType, RenderHandler> {
     pub fn new(input_handler: Arc<Mutex<InputHandler>>,
                resource_handler: ResourceHandler,
@@ -170,7 +178,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
             self.run_scene(name, entrance_id);
             match self.rx.recv().expect("failed to receive scene instruction") {
                 SceneHandlerInstruction::Exit => std::process::exit(0),
-                SceneHandlerInstruction::Goto(SceneStartInstruction {
+                SceneHandlerInstruction::Goto(SceneDestination {
                                                   name: next_name,
                                                   entrance_id: next_entrance_id
                                               }) => {
@@ -190,4 +198,57 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
             error!("could not start scene {:?}: scene missing?", name);
         }
     }
+}
+
+pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
+    fn get_type(&self) -> ObjectType;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn new() -> Box<Self> where Self: Sized;
+
+    #[allow(unused_variables)]
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> { Ok(RenderItem::default()) }
+    #[allow(unused_variables)]
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_update_end(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    #[allow(unused_variables)]
+    fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+        CollisionResponse::Done
+    }
+
+    fn transform(&self) -> Transform;
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+        None
+    }
+    fn collider(&self) -> Box<dyn Collider> { Box::new(NullCollider) }
+    fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
+    fn listening_tags(&self) -> Vec<&'static str> { [].into() }
+}
+
+pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
+    fn render_info(&self) -> RenderInfo;
+}
+
+impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>
+where
+    ObjectType: ObjectTypeEnum,
+    T: SceneObject<ObjectType> + 'static
+{
+    fn from(value: Box<T>) -> Self { value }
+}
+
+#[allow(dead_code)]
+pub enum SceneInstruction {
+    Pause,
+    Resume,
+    Stop,
+    Goto(SceneDestination),
 }

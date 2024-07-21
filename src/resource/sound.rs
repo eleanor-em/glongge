@@ -16,9 +16,7 @@ use fyrox_sound::{
     source::{SoundSource, SoundSourceBuilder, Status}
 };
 use rand::{Rng, thread_rng};
-use crate::core::linalg;
-
-#[allow(unused_imports)]
+use crate::core::util::linalg;
 use crate::core::prelude::*;
 
 #[derive(Clone)]

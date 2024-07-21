@@ -5,8 +5,8 @@ use glongge::{
         prelude::*,
         render::BasicRenderHandler,
         input::InputHandler,
-        linalg::{Mat3x3, Vec2},
-        vk_core::{VulkanoContext, WindowContext, WindowEventHandler},
+        util::linalg::{Mat3x3, Vec2},
+        vk::{VulkanoContext, WindowContext, WindowEventHandler},
         scene::SceneHandler,
         scene::Scene,
         ObjectTypeEnum
@@ -19,7 +19,7 @@ mod rectangle;
 mod triangle;
 
 use num_traits::{Float, One, Zero};
-use glongge::core::collision::ConvexCollider;
+use glongge::core::util::collision::ConvexCollider;
 
 #[allow(unused_imports)]
 use crate::{

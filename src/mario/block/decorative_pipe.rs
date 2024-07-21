@@ -1,18 +1,17 @@
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::Collider,
-        prelude::*
+        prelude::*,
+        util::collision::Collider,
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform
     },
     resource::ResourceHandler,
     resource::sprite::Sprite
 };
-use glongge::core::RenderItem;
+use glongge::core::render::RenderInfo;
+use glongge::core::render::RenderItem;
+use glongge::core::scene::{RenderableObject, SceneObject};
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]

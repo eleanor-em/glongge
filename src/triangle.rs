@@ -11,21 +11,17 @@ use glongge_derive::{partially_derive_scene_object, register_object_type};
 
 use glongge::{
     core::{
-        colour::Colour,
-        linalg::Vec2,
         input::KeyCode,
-        SceneObject
+        util::colour::Colour,
+        util::linalg::Vec2
     },
-    core::{
-        self,
-        Transform,
-        UpdateContext,
-        VertexWithUV
-    },
+    core::util::linalg::Transform,
 };
-use glongge::core::linalg::AxisAlignedExtent;
-use glongge::core::{AnySceneObject, RenderableObject, RenderItem};
-use glongge::core::scene::{Scene, SceneName};
+use glongge::core::util::linalg::AxisAlignedExtent;
+use glongge::core::AnySceneObject;
+use glongge::core::render::{RenderInfo, RenderItem, VertexWithUV};
+use glongge::core::scene::{RenderableObject, Scene, SceneName, SceneObject};
+use glongge::core::update::UpdateContext;
 use glongge::resource::ResourceHandler;
 
 #[allow(dead_code)]
@@ -51,7 +47,7 @@ pub enum ObjectType {
 struct Spawner {}
 
 #[partially_derive_scene_object]
-impl core::SceneObject<ObjectType> for Spawner {
+impl SceneObject<ObjectType> for Spawner {
 
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 10;
@@ -79,7 +75,7 @@ impl core::SceneObject<ObjectType> for Spawner {
                     x: vxs[i],
                     y: vys[i],
                 };
-                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() }) as Box<dyn core::SceneObject<ObjectType>>
+                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() }) as Box<dyn SceneObject<ObjectType>>
             })
             .collect();
         ctx.object().add_vec(objects);
@@ -192,14 +188,14 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         }
     }
 
-    fn as_renderable_object(&self) -> Option<&dyn core::RenderableObject<ObjectType>> {
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
 }
 
 impl RenderableObject<ObjectType> for SpinningTriangle {
-    fn render_info(&self) -> core::RenderInfo {
-        core::RenderInfo {
+    fn render_info(&self) -> RenderInfo {
+        RenderInfo {
             col: Colour::red(),
             ..Default::default()
         }

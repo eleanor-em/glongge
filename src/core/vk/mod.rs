@@ -57,15 +57,15 @@ use winit::{
 use crate::{
     core::{
         input::InputHandler,
-        linalg::{
+        util::linalg::{
             Vec2,
             AxisAlignedExtent
         },
-        RenderInfoReceiver,
         prelude::*,
     },
     resource::ResourceHandler,
 };
+use crate::core::render::RenderInfoReceiver;
 use crate::core::util::gg_time::TimeIt;
 
 pub struct WindowContext {
@@ -588,7 +588,7 @@ impl PerImageContext {
     }
 }
 
-pub trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
+pub(crate) trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
     : Clone + Send + Sync
 {
     type InfoReceiver: RenderInfoReceiver + 'static;
@@ -617,7 +617,6 @@ type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<Swapc
 pub struct WindowEventHandler<CommandBuffer, RenderHandler>
 where
     CommandBuffer: PrimaryCommandBufferAbstract,
-    RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
 {
     window: Arc<Window>,
     scale_factor: f64,
@@ -634,6 +633,7 @@ where
     last_ready_poll: Instant,
 }
 
+#[allow(private_bounds)]
 impl<CommandBuffer, RenderHandler> WindowEventHandler<CommandBuffer, RenderHandler>
 where
     CommandBuffer: PrimaryCommandBufferAbstract + 'static,

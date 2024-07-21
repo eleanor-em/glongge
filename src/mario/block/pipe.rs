@@ -2,21 +2,19 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::Collider,
         prelude::*,
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        scene::SceneStartInstruction
+        scene::SceneDestination,
+        util::collision::Collider,
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
-use glongge::core::{RenderItem, VertexDepth};
+use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
+use glongge::core::scene::{RenderableObject, SceneObject};
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType, PIPE_COLLISION_TAG};
 
 #[register_scene_object]
@@ -24,11 +22,11 @@ pub struct Pipe {
     top_left: Vec2,
     sprite: Sprite,
     orientation: Vec2,
-    destination: Option<SceneStartInstruction>,
+    destination: Option<SceneDestination>,
 }
 
 impl Pipe {
-    pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneStartInstruction>) -> Box<Self> {
+    pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
             sprite: Sprite::default(),
@@ -38,7 +36,7 @@ impl Pipe {
     }
 
     pub fn orientation(&self) -> Vec2 { self.orientation }
-    pub fn destination(&self) -> Option<SceneStartInstruction> { self.destination }
+    pub fn destination(&self) -> Option<SceneDestination> { self.destination }
     pub fn top(&self) -> f64 { self.transform().centre.y - self.sprite.half_widths().y }
 }
 

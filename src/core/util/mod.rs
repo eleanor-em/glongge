@@ -5,6 +5,11 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::vec::IntoIter;
 
+pub mod linalg;
+pub mod colour;
+pub mod assert;
+pub mod collision;
+
 #[allow(dead_code)]
 pub mod gg_time {
     use std::cmp;

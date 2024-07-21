@@ -1,18 +1,18 @@
 use num_traits::Zero;
 use crate::{
     core::{
-        RenderInfo,
-        TextureSubArea,
-        linalg::Vec2Int,
         prelude::*,
-        linalg::{AxisAlignedExtent, Vec2},
-        collision::{BoxCollider, Collider}
+        util::collision::{BoxCollider, Collider},
+        util::linalg::{AxisAlignedExtent, Vec2},
+        util::linalg::Vec2Int
     },
     resource::texture::TextureId,
     shader,
 };
-use crate::core::{RenderItem, Transform};
+use crate::core::util::linalg::Transform;
+use crate::core::render::{RenderInfo, RenderItem};
 use crate::core::util::gg_iter::GgIter;
+use crate::resource::texture::TextureSubArea;
 
 #[derive(Clone, Default)]
 pub struct Sprite {

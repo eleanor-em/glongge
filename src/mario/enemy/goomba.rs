@@ -3,25 +3,24 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        CollisionResponse,
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        SceneObjectWithId,
-        Transform,
-        UpdateContext,
-        collision::Collider,
-        prelude::*,
         coroutine::CoroutineResponse,
+        prelude::*,
+        SceneObjectWithId,
+        util::collision::Collider,
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
-use glongge::core::RenderItem;
-use crate::mario::{BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType, enemy::Stompable, AliveEnemyMap};
+use glongge::core::render::RenderInfo;
+use glongge::core::render::RenderItem;
+use glongge::core::scene::{RenderableObject, SceneObject};
+use glongge::core::update::collision::CollisionResponse;
+use glongge::core::update::UpdateContext;
+use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]
 pub struct Goomba {

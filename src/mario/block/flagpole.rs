@@ -1,41 +1,32 @@
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        linalg::{AxisAlignedExtent, Vec2, Vec2Int},
         prelude::*,
-        collision::Collider,
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        Transform,
-        UpdateContext,
+        util::collision::Collider,
+        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
+        util::linalg::Transform,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
-use glongge::core::RenderItem;
+use glongge::core::render::RenderInfo;
+use glongge::core::render::RenderItem;
+use glongge::core::scene::{RenderableObject, SceneObject};
 use crate::mario::{FLAG_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]
 pub struct Flagpole {
     top_left: Vec2,
     sprite: Sprite,
-
-    initial_y: f64,
-    v_speed: f64,
-    v_accel: f64,
 }
 
 impl Flagpole {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
-            sprite: Sprite::default(),
-            initial_y: top_left.y as f64,
-            v_speed: 0.,
-            v_accel: 0.,
+            sprite: Sprite::default()
         })
     }
 }
@@ -49,16 +40,6 @@ impl SceneObject<ObjectType> for Flagpole {
             Vec2Int { x: 0, y: 588},
             Vec2Int { x: 16, y: 748 });
         Ok(self.sprite.create_vertices())
-    }
-
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
-        self.v_speed += self.v_accel;
-        self.top_left.y += self.v_speed;
-        if self.top_left.y > self.initial_y {
-            self.top_left.y = self.initial_y;
-            self.v_speed = 0.;
-            self.v_accel = 0.;
-        }
     }
     fn transform(&self) -> Transform {
         Transform {

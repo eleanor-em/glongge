@@ -1,6 +1,3 @@
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
 pub fn assert_ord<T: PartialOrd>(_: &T) {}
 pub fn assert_partial_eq<T: PartialEq>(_: &T) {}
 pub fn assert_same_type<T, U>(_: &T, _: &U) {}
@@ -20,11 +17,11 @@ pub use current_location;
 #[macro_export]
 macro_rules! check {
     ($lhs:expr) => {{
-        $crate::core::assert::assert_type::<bool>(&$lhs);
+        $crate::core::util::assert::assert_type::<bool>(&$lhs);
         if !$lhs {
             panic!(
                 "check failed: {}: {}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
             );
         }
@@ -37,11 +34,11 @@ pub use check;
 #[macro_export]
 macro_rules! check_false {
     ($lhs:expr) => {
-        $crate::core::assert::assert_type::<bool>(&$lhs);
+        $crate::core::util::assert::assert_type::<bool>(&$lhs);
         if $lhs {
             panic!(
                 "check failed: {}: !{}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
             );
         }
@@ -54,12 +51,12 @@ pub use check_false;
 #[macro_export]
 macro_rules! check_lt {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_ord(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
         if $lhs >= $rhs {
             panic!(
                 "check failed: {}: {} < {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
@@ -75,12 +72,12 @@ pub use check_lt;
 #[macro_export]
 macro_rules! check_gt {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_ord(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
         if $lhs <= $rhs {
             panic!(
                 "check failed: {}: {} > {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
@@ -96,12 +93,12 @@ pub use check_gt;
 #[macro_export]
 macro_rules! check_le {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_ord(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
         if !($lhs <= $rhs) {
             panic!(
                 "check failed: {}: {} <= {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
@@ -117,8 +114,8 @@ pub use check_le;
 #[macro_export]
 macro_rules! check_ge {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_ord(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
         if !($lhs <= $rhs) {
             panic!(
                 "check failed: {}: {} >= {}: {:?} vs. {:?}",
@@ -138,12 +135,12 @@ pub use check_ge;
 #[macro_export]
 macro_rules! check_eq {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_partial_eq(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_partial_eq(&$lhs);
         if !($lhs == $rhs) {
             panic!(
                 "check failed: {}: {} == {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
@@ -159,11 +156,11 @@ pub use check_eq;
 #[macro_export]
 macro_rules! check_almost_eq {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
         if !($lhs.almost_eq($rhs)) {
             panic!(
                 "check failed: {}: {} ~= {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
@@ -179,12 +176,12 @@ pub use check_almost_eq;
 #[macro_export]
 macro_rules! check_ne {
     ($lhs:expr, $rhs:expr) => {{
-        $crate::core::assert::assert_same_type(&$lhs, &$rhs);
-        $crate::core::assert::assert_partial_eq(&$lhs);
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_partial_eq(&$lhs);
         if !($lhs != $rhs) {
             panic!(
                 "check failed: {}: {} != {}: {:?} vs. {:?}",
-                $crate::core::assert::current_location!(),
+                $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,

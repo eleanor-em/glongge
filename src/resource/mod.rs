@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[allow(unused_imports)]
 use crate::core::prelude::*;
 
 use crate::{
-    core::vk_core::VulkanoContext,
+    core::vk::VulkanoContext,
     resource::texture::TextureHandler
 };
 use crate::resource::sound::SoundHandler;

@@ -1,38 +1,35 @@
-use std::{
-    default::Default,
-    sync::{Arc, Mutex, MutexGuard}
-};
+use std::{cmp, default::Default, sync::{Arc, Mutex, MutexGuard}};
+use std::ops::Range;
 
 use vulkano::{
-    Validated,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
         RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
     },
     descriptor_set::{
+        layout::DescriptorSetLayoutCreateFlags,
         PersistentDescriptorSet,
-        WriteDescriptorSet,
-        layout::DescriptorSetLayoutCreateFlags
+        WriteDescriptorSet
     },
     image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
         graphics::{
             color_blend::{
+                AttachmentBlend,
                 ColorBlendAttachmentState,
-                ColorBlendState,
-                AttachmentBlend
+                ColorBlendState
             },
+            GraphicsPipelineCreateInfo,
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
             vertex_input::{Vertex, VertexDefinition},
             viewport::ViewportState,
-            GraphicsPipelineCreateInfo,
         },
-        layout::PipelineDescriptorSetLayoutCreateInfo,
         GraphicsPipeline,
+        layout::PipelineDescriptorSetLayoutCreateInfo,
         Pipeline,
         PipelineBindPoint,
         PipelineLayout,
@@ -43,18 +40,17 @@ use vulkano::{
         Subpass
     },
     shader::ShaderModule,
+    Validated,
 };
 use winit::window::Window;
+use num_traits::Zero;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    resource::{
-        ResourceHandler,
-    },
-    shader::sample::{basic_fragment_shader, basic_vertex_shader},
     core::{
-        colour::Colour,
         prelude::*,
-        vk_core::{
+        util::colour::Colour,
+        vk::{
             AdjustedViewport,
             DataPerImage,
             PerImageContext,
@@ -62,11 +58,13 @@ use crate::{
             VulkanoContext,
             WindowContext,
         },
-        RenderInfoFull,
-        RenderInfoReceiver,
-        VertexWithUV,
-    }
+    },
+    resource::ResourceHandler,
+    shader::sample::{basic_fragment_shader, basic_vertex_shader}
 };
+use crate::core::ObjectId;
+use crate::core::util::linalg::{Transform, Vec2};
+use crate::resource::texture::{TextureId, TextureSubArea};
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -93,6 +91,36 @@ struct BasicVertex {
     #[format(R32G32B32A32_SFLOAT)]
     blend_col: [f32; 4],
 }
+
+#[derive(Clone, Debug)]
+pub struct RenderInfo {
+    pub col: Colour,
+    pub texture_id: Option<TextureId>,
+    pub texture_sub_area: TextureSubArea,
+}
+
+impl Default for RenderInfo {
+    fn default() -> Self {
+        Self { col: Colour::white(), texture_id: None, texture_sub_area: TextureSubArea::default() }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RenderInfoFull {
+    pub(crate) inner: RenderInfo,
+    pub(crate) transform: Transform,
+    pub(crate) vertex_indices: Range<usize>,
+}
+
+pub(crate) trait RenderInfoReceiver: Clone + Send {
+    fn update_vertices(&mut self, vertices: Vec<VertexWithUV>);
+    fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>);
+    fn current_viewport(&self) -> AdjustedViewport;
+    fn is_ready(&self) -> bool;
+    fn get_clear_col(&self) -> Colour;
+    fn set_clear_col(&mut self, col: Colour);
+}
+
 
 #[derive(Clone)]
 pub struct BasicRenderInfoReceiver {
@@ -535,4 +563,206 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
     fn get_receiver(&self) -> Arc<Mutex<BasicRenderInfoReceiver>> {
         self.render_info_receiver.clone()
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum VertexDepth {
+    Back(u64),
+    #[default]
+    Middle,
+    Front(u64),
+}
+
+impl PartialOrd for VertexDepth {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for VertexDepth {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        match self {
+            VertexDepth::Back(depth) => {
+                match other {
+                    VertexDepth::Back(other_depth) => depth.cmp(other_depth),
+                    _ => cmp::Ordering::Less,
+                }
+            },
+            VertexDepth::Middle => {
+                match other {
+                    VertexDepth::Back(_) => cmp::Ordering::Greater,
+                    VertexDepth::Middle => cmp::Ordering::Equal,
+                    VertexDepth::Front(_) => cmp::Ordering::Less,
+                }
+            },
+            VertexDepth::Front(depth) => {
+                match other {
+                    VertexDepth::Front(other_depth) => depth.cmp(other_depth),
+                    _ => cmp::Ordering::Greater,
+                }
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct VertexWithUV {
+    pub vertex: Vec2,
+    pub uv: Vec2,
+}
+
+impl VertexWithUV {
+    pub fn from_vertex(vertex: Vec2) -> Self {
+        Self { vertex, uv: Vec2::zero() }
+    }
+
+    pub fn from_vec2s<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
+        vertices.into_iter().map(Self::from_vertex).collect()
+    }
+    pub fn zip_from_vec2s<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
+        vertices.into_iter().zip(uvs)
+            .map(|(vertex, uv)| Self { vertex, uv })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RenderItem {
+    pub depth: VertexDepth,
+    pub vertices: Vec<VertexWithUV>,
+}
+
+impl RenderItem {
+    pub fn new(vertices: Vec<VertexWithUV>) -> Self {
+        Self {
+            depth: VertexDepth::Middle,
+            vertices,
+        }
+    }
+    #[must_use]
+    pub fn with_depth(mut self, depth: VertexDepth) -> Self {
+        self.depth = depth;
+        self
+    }
+
+    pub fn is_empty(&self) -> bool { self.vertices.is_empty() }
+    pub fn len(&self) -> usize { self.vertices.len() }
+}
+
+pub(crate) struct VertexMap {
+    vertices_back: BTreeMap<ObjectId, VertexDepth>,
+    vertices_middle: BTreeSet<ObjectId>,
+    vertices_front: BTreeMap<ObjectId, VertexDepth>,
+    all_vertices: Vec<StoredRenderItem>,
+    vertex_indices: Vec<Range<usize>>,
+    vertices_changed: bool,
+}
+
+impl VertexMap {
+    pub(crate) fn new() -> Self {
+        Self {
+            vertices_back: BTreeMap::new(),
+            vertices_middle: BTreeSet::new(),
+            vertices_front: BTreeMap::new(),
+            all_vertices: Vec::new(),
+            vertex_indices: Vec::new(),
+            vertices_changed: false,
+        }
+    }
+    fn index_of(&self, object_id: ObjectId) -> Option<usize> {
+        let comparator = |depth| {
+            move |other: &StoredRenderItem| match other.render_item.depth.cmp(depth) {
+                cmp::Ordering::Less => cmp::Ordering::Less,
+                cmp::Ordering::Equal => other.object_id.cmp(&object_id),
+                cmp::Ordering::Greater => cmp::Ordering::Greater,
+            }
+        };
+        let i = if let Some(depth) = self.vertices_back.get(&object_id) {
+            let start = 0;
+            start + self.all_vertices[start..self.vertices_back.len()]
+                .binary_search_by(comparator(depth))
+                .expect("all_vertices not correctly sorted?")
+        } else if self.vertices_middle.contains(&object_id) {
+            let start = self.vertices_back.len();
+            start + self.all_vertices[start..self.vertices_back.len() + self.vertices_middle.len()]
+                .binary_search_by(comparator(&VertexDepth::Middle))
+                .expect("all_vertices not correctly sorted?")
+        } else if let Some(depth) = self.vertices_front.get(&object_id) {
+            let start = self.vertices_back.len() + self.vertices_middle.len();
+            start + self.all_vertices[start..]
+                .binary_search_by(comparator(depth))
+                .expect("all_vertices not correctly sorted?")
+        } else {
+            return None;
+        };
+        Some(i)
+    }
+    pub(crate) fn get(&self, object_id: ObjectId) -> Option<(&Range<usize>, &RenderItem)> {
+        let i = self.index_of(object_id)?;
+        let indices = &self.vertex_indices[i];
+        let stored = &self.all_vertices[i];
+        check_eq!(stored.object_id, object_id);
+        Some((indices, &stored.render_item))
+    }
+    pub(crate) fn insert(&mut self, object_id: ObjectId, new_vertices: RenderItem) {
+        let to_insert = StoredRenderItem { object_id, render_item: new_vertices };
+        let index = self.all_vertices.partition_point(|other| {
+            match other.render_item.depth.cmp(&to_insert.render_item.depth) {
+                cmp::Ordering::Less => true,
+                cmp::Ordering::Equal => other.object_id <= to_insert.object_id,
+                cmp::Ordering::Greater => false
+            }
+        });
+        let new_indices = if index == 0 {
+            0..to_insert.render_item.len()
+        } else {
+            let start = self.vertex_indices[index - 1].end;
+            let end = start + self.all_vertices[index - 1].render_item.len();
+            start..end
+        };
+        self.vertex_indices.insert(index, new_indices);
+        for i in (index + 1)..self.vertex_indices.len() {
+            self.vertex_indices[i].start += to_insert.render_item.len();
+            self.vertex_indices[i].end += to_insert.render_item.len();
+        }
+        match to_insert.render_item.depth {
+            VertexDepth::Back(_) => { self.vertices_back.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
+            VertexDepth::Middle => { self.vertices_middle.insert(to_insert.object_id); }
+            VertexDepth::Front(_) => { self.vertices_front.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
+        };
+        self.vertices_changed = true;
+        self.all_vertices.insert(index, to_insert);
+    }
+    pub(crate) fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
+        let index = self.index_of(object_id)?;
+        self.vertices_front.remove(&object_id);
+        self.vertices_middle.remove(&object_id);
+        self.vertices_back.remove(&object_id);
+        let removed = self.all_vertices.remove(index);
+        check_eq!(removed.object_id, object_id);
+        self.vertex_indices.remove(index);
+        for i in index..self.vertex_indices.len() {
+            self.vertex_indices[i].start -= removed.render_item.len();
+            self.vertex_indices[i].end -= removed.render_item.len();
+        }
+        self.vertices_changed = true;
+        Some(removed.render_item)
+    }
+    pub(crate) fn render_items(&self) -> Vec<RenderItem> { self.all_vertices.clone().into_iter().map(|i| i.render_item).collect() }
+    pub(crate) fn vertex_count(&self) -> usize {
+        self.vertex_indices.last()
+            .map_or(0, |indices| indices.end)
+    }
+
+    pub(crate) fn consume_vertices_changed(&mut self) -> bool {
+        let rv = self.vertices_changed;
+        self.vertices_changed = false;
+        rv
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StoredRenderItem {
+    render_item: RenderItem,
+    object_id: ObjectId,
 }

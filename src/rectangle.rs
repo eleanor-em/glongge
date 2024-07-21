@@ -5,29 +5,28 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 use glongge_derive::*;
 use glongge::{
     core::{
-        collision::{BoxCollider, Collider},
-        colour::Colour,
-        input::KeyCode,
-        linalg::Vec2,
-        linalg::Vec2Int,
-        UpdateContext,
-        RenderableObject,
-        RenderInfo,
-        SceneObject,
-        SceneObjectWithId,
-        Transform,
-        prelude::*,
-        linalg::AxisAlignedExtent,
         AnySceneObject,
-        CollisionResponse,
-        scene::{Scene, SceneName}
+        input::KeyCode,
+        prelude::*,
+        scene::{Scene, SceneName},
+        SceneObjectWithId,
+        util::collision::{BoxCollider, Collider},
+        util::colour::Colour,
+        util::linalg::AxisAlignedExtent,
+        util::linalg::Transform,
+        util::linalg::Vec2,
+        util::linalg::Vec2Int
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     },
 };
-use glongge::core::RenderItem;
+use glongge::core::render::RenderInfo;
+use glongge::core::render::RenderItem;
+use glongge::core::scene::{RenderableObject, SceneObject};
+use glongge::core::update::collision::CollisionResponse;
+use glongge::core::update::UpdateContext;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
