@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -21,6 +22,7 @@ use glongge::{
         sprite::Sprite
     }
 };
+use serde::{Deserialize, Serialize};
 use crate::mario::{
     BASE_GRAVITY,
     BLOCK_COLLISION_TAG,
@@ -29,8 +31,29 @@ use crate::mario::{
     enemy::Stompable
 };
 
+#[derive(Default, Serialize, Deserialize)]
+struct AliveEnemyMap {
+    inner: BTreeMap<Vec2Int, bool>,
+}
+
+impl AliveEnemyMap {
+    fn register(&mut self, initial_coord: Vec2Int) {
+        self.inner.entry(initial_coord).or_insert(true);
+    }
+
+    fn is_alive(&self, initial_coord: Vec2Int) -> bool {
+        self.inner.get(&initial_coord)
+            .map(|v| *v)
+            .unwrap_or(true)
+    }
+    fn set_dead(&mut self, initial_coord: Vec2Int) {
+        *self.inner.entry(initial_coord).or_default() = false;
+    }
+}
+
 #[register_scene_object]
 pub struct Goomba {
+    initial_coord: Vec2Int,
     dead: bool,
     started_death: bool,
     top_left: Vec2,
@@ -43,6 +66,7 @@ pub struct Goomba {
 impl Goomba {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
+            initial_coord: top_left,
             dead: false,
             started_death: false,
             top_left: top_left.into(),
@@ -78,6 +102,13 @@ impl SceneObject<ObjectType> for Goomba {
         );
         Ok(self.sprite.create_vertices())
     }
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let mut data = ctx.scene().data::<AliveEnemyMap>();
+        data.write().register(self.initial_coord);
+        if !data.write().is_alive(self.initial_coord) {
+            ctx.object().remove_this();
+        }
+    }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
         if ctx.object().test_collision_along(self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {
@@ -110,11 +141,13 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {
-            ctx.scene().start_coroutine_after(|_this, update_ctx, _action| {
-                update_ctx.object().remove_this();
+            ctx.scene().start_coroutine_after(|_this, ctx, _action| {
+                ctx.object().remove_this();
                 CoroutineResponse::Complete
             }, Duration::from_millis(300));
             self.started_death = true;
+            ctx.scene().data::<AliveEnemyMap>().write()
+                .set_dead(self.initial_coord);
         }
     }
 

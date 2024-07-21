@@ -12,7 +12,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
     proc_macro::TokenStream::from(expanded)
 }
 
-fn get_initialiser_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2::TokenStream {
+fn get_initializer_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2::TokenStream {
     if let Type::Path(type_path) = ty {
         match type_path.path.segments.last().unwrap().ident.to_string().as_str() {
             "Instant" => return quote! {
@@ -31,12 +31,12 @@ pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = input.ident.clone();
 
-    let mut default_initialisers = Vec::new();
+    let mut default_initializers = Vec::new();
     if let syn::Data::Struct(data_struct) = input.data.clone() {
         if let Fields::Named(fields_named) = data_struct.fields {
             for field in fields_named.named {
                 let field_name = field.ident.unwrap();
-                default_initialisers.push(get_initialiser_for(field_name, field.ty));
+                default_initializers.push(get_initializer_for(field_name, field.ty));
             }
         } else {
             panic!("no named fields");
@@ -51,7 +51,7 @@ pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::
         impl Default for #struct_name {
             fn default() -> Self {
                 Self {
-                    #(#default_initialisers),*
+                    #(#default_initializers),*
                 }
             }
         }

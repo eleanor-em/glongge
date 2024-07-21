@@ -51,7 +51,7 @@ impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> Int
         }
     }
 
-    fn run(&self, data: Vec<u8>, entrance_id: usize, current_scene_name: Arc<Mutex<Option<SceneName>>>) {
+    fn run(&self, data: Arc<Mutex<Vec<u8>>>, entrance_id: usize, current_scene_name: Arc<Mutex<Option<SceneName>>>) {
         let existing_name = current_scene_name.try_lock()
             .expect("scene locked in InternalScene::run()")
             .replace(self.name);
@@ -62,7 +62,8 @@ impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> Int
         let initial_objects = {
             let mut scene = this.scene.try_lock()
                 .unwrap_or_else(|_| panic!("scene locked in InternalScene::run(): {this_name:?}"));
-            scene.load(&data)
+            scene.load(&data.try_lock()
+                    .expect("scene_data still locked?"))
                 .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
             scene.create_objects(entrance_id)
         };
@@ -122,8 +123,6 @@ pub trait Scene<ObjectType: ObjectTypeEnum> {
 pub(crate) enum SceneHandlerInstruction {
     Exit,
     Goto(SceneStartInstruction),
-    SaveAndExit(Vec<u8>),
-    SaveAndGoto(SceneStartInstruction, Vec<u8>),
 }
 
 pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
@@ -131,7 +130,7 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHa
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
     scenes: BTreeMap<SceneName, InternalScene<ObjectType, RenderHandler::InfoReceiver>>,
-    scene_data: BTreeMap<SceneName, Vec<u8>>,
+    scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
     current_scene_name: Arc<Mutex<Option<SceneName>>>,
     tx: Sender<SceneHandlerInstruction>,
     rx: Receiver<SceneHandlerInstruction>,
@@ -174,24 +173,13 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
                     name = next_name;
                     entrance_id = next_entrance_id;
                 }
-                SceneHandlerInstruction::SaveAndExit(data) => {
-                    *self.scene_data.entry(name).or_default() = data;
-                }
-                SceneHandlerInstruction::SaveAndGoto(SceneStartInstruction {
-                                                         name: next_name,
-                                                         entrance_id: next_entrance_id
-                                                     }, data) => {
-                    *self.scene_data.entry(name).or_default() = data;
-                    name = next_name;
-                    entrance_id = next_entrance_id;
-                }
             }
         }
     }
-    fn run_scene(&self, name: SceneName, entrance_id: usize) {
+    fn run_scene(&mut self, name: SceneName, entrance_id: usize) {
         if let Some(scene) = self.scenes.get(&name) {
             info!("starting scene: {:?} [entrance {}]", name, entrance_id);
-            scene.run(self.scene_data.get(&name).unwrap_or(&Vec::new()).clone(),
+            scene.run(self.scene_data.entry(name).or_default().clone(),
                       entrance_id,
                       self.current_scene_name.clone());
         } else {

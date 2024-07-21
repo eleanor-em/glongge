@@ -13,6 +13,7 @@ use crate::{
     shader,
 };
 use crate::core::Transform;
+use crate::core::util::gg_iter::GgIter;
 
 #[derive(Clone, Default)]
 pub struct Sprite {
@@ -108,8 +109,9 @@ impl Sprite {
         let total_animation_time_ms = self.frame_time_ms.iter().sum::<u32>() as u128;
         let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
         let mut cum_sum_ms = 0;
-        self.frame = self.frame_time_ms.iter()
-            .filter(|&&ms| {
+        self.frame = self.frame_time_ms.iter().copied()
+            .cumsum()
+            .filter(|&ms| {
                 cum_sum_ms += ms as u128;
                 cycle_elapsed_ms >= cum_sum_ms
             })

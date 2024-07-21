@@ -15,6 +15,10 @@ use std::{
     time::{Duration, Instant}
 };
 use num_traits::{FromPrimitive, Zero};
+use serde::{
+    Serialize,
+    de::DeserializeOwned
+};
 use crate::{
     core::{
         collision::{Collider, NullCollider},
@@ -24,13 +28,17 @@ use crate::{
         linalg::{AxisAlignedExtent, Rect, Vec2, Vec2Int},
         prelude::*,
         scene::{SceneHandlerInstruction, SceneName, SceneStartInstruction},
-        util::{NonemptyVec, TimeIt, UnorderedPair},
+        util::{
+            NonemptyVec,
+            UnorderedPair,
+            gg_time::TimeIt
+        },
         vk_core::AdjustedViewport,
     },
     resource::{
         ResourceHandler,
         texture::{Texture, TextureId}
-    }
+    },
 };
 
 pub mod collision;
@@ -186,23 +194,79 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }
 
+
+pub struct SceneData<T>
+where
+    T: Default + Serialize + DeserializeOwned
+{
+    raw: Arc<Mutex<Vec<u8>>>,
+    deserialized: T,
+    modified: bool,
+}
+
+impl<T> SceneData<T>
+where
+    T: Default + Serialize + DeserializeOwned
+{
+    fn new(raw: Arc<Mutex<Vec<u8>>>) -> Result<Self> {
+        let deserialized = {
+            let mut raw = raw.try_lock().expect("scene_data locked?");
+            if raw.is_empty() {
+                let deserialized = T::default();
+                *raw = bincode::serialize(&deserialized)?;
+            }
+            bincode::deserialize::<T>(&raw)?
+        };
+        Ok(Self {
+            raw,
+            deserialized,
+            modified: false,
+        })
+    }
+
+    pub fn read(&self) -> &T { &self.deserialized }
+    pub fn write(&mut self) -> &mut T {
+        self.modified = true;
+        &mut self.deserialized
+    }
+}
+
+impl<T> Drop for SceneData<T>
+where
+    T: Default + Serialize + DeserializeOwned
+{
+    fn drop(&mut self) {
+        if self.modified {
+            *self.raw.try_lock().expect("scene_data locked?") =
+                bincode::serialize(&self.deserialized)
+                    .expect("failed to serialize scene data");
+        }
+    }
+}
 pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: &'a mut Vec<u8>,
+    scene_data: Arc<Mutex<Vec<u8>>>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
     pending_removed_coroutines: BTreeSet<CoroutineId>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
     pub fn stop(&self) {
-        self.scene_instruction_tx.send(SceneInstruction::Stop(self.scene_data.clone())).unwrap();
+        self.scene_instruction_tx.send(SceneInstruction::Stop).unwrap();
     }
     pub fn goto(&self, instruction: SceneStartInstruction) {
-        self.scene_instruction_tx.send(SceneInstruction::Goto(instruction, self.scene_data.clone())).unwrap();
+        self.scene_instruction_tx.send(SceneInstruction::Goto(instruction)).unwrap();
     }
     pub fn name(&self) -> SceneName { self.scene_name }
-    pub fn data(&mut self) -> &mut Vec<u8> { self.scene_data }
+    pub fn data<T>(&mut self) -> SceneData<T>
+    where
+        T: Default + Serialize + DeserializeOwned
+    {
+        SceneData::new(self.scene_data.clone())
+            .expect("failed to ser/de scene_data, do the types match?")
+    }
+    // pub fn data(&mut self) -> &mut Vec<u8> { self.scene_data }
 
     pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
     where
@@ -216,10 +280,10 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
     where
         F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineState) -> CoroutineResponse + 'static
     {
-        self.start_coroutine(move |this, update_ctx, action| {
+        self.start_coroutine(move |this, ctx, action| {
             match action {
                 CoroutineState::Starting => CoroutineResponse::Wait(duration),
-                _ => func(this, update_ctx, action)
+                _ => func(this, ctx, action)
             }
         })
     }
@@ -396,7 +460,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),
                 scene_name: caller.scene_name,
-                scene_data: &mut caller.scene_data,
+                scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this.object_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
             },
@@ -422,7 +486,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),
                 scene_name: caller.scene_name,
-                scene_data: &mut caller.scene_data,
+                scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this.object_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
             },
@@ -462,8 +526,8 @@ impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
 enum SceneInstruction {
     Pause,
     Resume,
-    Stop(Vec<u8>),
-    Goto(SceneStartInstruction, Vec<u8>),
+    Stop,
+    Goto(SceneStartInstruction),
 }
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;
@@ -535,7 +599,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: Rend
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: Vec<u8>,
+    scene_data: Arc<Mutex<Vec<u8>>>,
     perf_stats: UpdatePerfStats,
 }
 
@@ -546,7 +610,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         mut resource_handler: ResourceHandler,
         render_info_receiver: Arc<Mutex<RenderReceiver>>,
         scene_name: SceneName,
-        scene_data: Vec<u8>
+        scene_data: Arc<Mutex<Vec<u8>>>
     ) -> Result<Self> {
         let mut objects = objects.into_iter()
             .map(|obj| (ObjectId::next(), obj))
@@ -647,11 +711,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             }
 
             match self.scene_instruction_rx.try_iter().next() {
-                Some(SceneInstruction::Stop(scene_data)) => {
-                    return Ok(SceneHandlerInstruction::SaveAndExit(scene_data));
+                Some(SceneInstruction::Stop) => {
+                    return Ok(SceneHandlerInstruction::Exit);
                 },
-                Some(SceneInstruction::Goto(instruction, scene_data)) => {
-                    return Ok(SceneHandlerInstruction::SaveAndGoto(instruction, scene_data));
+                Some(SceneInstruction::Goto(instruction)) => {
+                    return Ok(SceneHandlerInstruction::Goto(instruction));
                 }
                 Some(SceneInstruction::Pause) => {
                     is_running = false;
@@ -762,8 +826,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         };
 
         self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, update_ctx| {
-                                     obj.on_update_begin(delta, update_ctx);
+                                 |mut obj, delta, ctx| {
+                                     obj.on_update_begin(delta, ctx);
                                  });
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
@@ -771,15 +835,15 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
         self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, update_ctx| {
-                                     obj.on_update(delta, update_ctx);
+                                 |mut obj, delta, ctx| {
+                                     obj.on_update(delta, ctx);
                                  });
         self.perf_stats.on_update.stop();
 
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
             self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                     |mut obj, _delta, update_ctx| {
-                                         obj.on_fixed_update(update_ctx);
+                                     |mut obj, _delta, ctx| {
+                                         obj.on_fixed_update(ctx);
                                      });
             fixed_updates -= 1;
             // Detect collisions after each fixed update: important to prevent glitching through walls etc.
@@ -788,8 +852,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, update_ctx| {
-                                     obj.on_update_end(delta, update_ctx);
+                                 |mut obj, delta, ctx| {
+                                     obj.on_update_end(delta, ctx);
                                  });
         self.perf_stats.on_update_end.stop();
         object_tracker.into_pending()

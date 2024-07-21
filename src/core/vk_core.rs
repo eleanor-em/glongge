@@ -61,12 +61,12 @@ use crate::{
             Vec2,
             AxisAlignedExtent
         },
-        util::TimeIt,
         RenderInfoReceiver,
         prelude::*,
     },
     resource::ResourceHandler,
 };
+use crate::core::util::gg_time::TimeIt;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,

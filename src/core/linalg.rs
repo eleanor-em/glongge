@@ -19,8 +19,9 @@ use std::{
 };
 use itertools::Product;
 use num_traits::{float::Float, One, Zero};
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize)]
 pub struct Vec2Int {
     pub x: i32,
     pub y: i32,
