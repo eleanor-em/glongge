@@ -25,7 +25,8 @@ use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::UpdateContext;
-use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, ObjectType, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
+use glongge::core::util::linalg;
+use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, ObjectType, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -37,6 +38,8 @@ enum PlayerState {
     Dying,
     EnteringPipe,
     ExitingPipe,
+
+    RidingFlagpole,
 }
 
 impl Default for PlayerState {
@@ -79,12 +82,16 @@ pub struct Player {
     skid_sprite: Sprite,
     fall_sprite: Sprite,
     die_sprite: Sprite,
+    flagpole_sprite: Sprite,
 
     jump_sound: Sound,
     stomp_sound: Sound,
     die_sound: Sound,
     pipe_sound: Sound,
     bump_sound: Sound,
+    flagpole_sound: Sound,
+    clear_sound: Sound,
+
     overworld_music: Sound,
     underground_music: Sound,
     music: Sound,
@@ -137,6 +144,7 @@ impl Player {
             PlayerState::Dying => &self.die_sprite,
             PlayerState::EnteringPipe => &self.idle_sprite,
             PlayerState::ExitingPipe => &self.idle_sprite,
+            PlayerState::RidingFlagpole => &self.flagpole_sprite,
         }
     }
     fn current_sprite_mut(&mut self) -> &mut Sprite {
@@ -149,6 +157,7 @@ impl Player {
             PlayerState::Dying => &mut self.die_sprite,
             PlayerState::EnteringPipe => &mut self.idle_sprite,
             PlayerState::ExitingPipe => &mut self.idle_sprite,
+            PlayerState::RidingFlagpole => &mut self.flagpole_sprite,
         }
     }
 
@@ -163,7 +172,8 @@ impl Player {
     fn has_control(&self) -> bool {
         self.state != PlayerState::Dying &&
             self.state != PlayerState::EnteringPipe &&
-            self.state != PlayerState::ExitingPipe
+            self.state != PlayerState::ExitingPipe &&
+            self.state != PlayerState::RidingFlagpole
     }
 
     fn update_as_idle(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
@@ -460,12 +470,20 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
         );
+        self.flagpole_sprite = Sprite::from_single_extent(
+            texture_id,
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 136, y: 8 },
+        );
 
         self.jump_sound = resource_handler.sound.wait_load_file("res/jump-small.wav".to_string())?;
         self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;
         self.die_sound = resource_handler.sound.wait_load_file("res/death.wav".to_string())?;
         self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav".to_string())?;
         self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
+        self.flagpole_sound = resource_handler.sound.wait_load_file("res/flagpole.wav".to_string())?;
+        self.clear_sound = resource_handler.sound.wait_load_file("res/stage-clear.wav".to_string())?;
+
         self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
         self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
         Ok(self.current_sprite().create_vertices()
@@ -514,9 +532,7 @@ impl SceneObject<ObjectType> for Player {
             PlayerState::Running => self.update_as_running(ctx, new_dir, hold_run),
             PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
             PlayerState::Falling => self.update_as_falling(new_dir),
-            PlayerState::Dying => return,
-            PlayerState::EnteringPipe => return,
-            PlayerState::ExitingPipe => return,
+            _ => return,
         }
 
         if !self.dir.is_zero() {
@@ -587,21 +603,43 @@ impl SceneObject<ObjectType> for Player {
         if !self.has_control() {
             return CollisionResponse::Done;
         }
-        if let Some(mut other) = downcast_stompable_mut(&mut other) {
-            if !other.dead() {
-                if self.collider().bottom() <= other.transform().centre.y {
-                    other.stomp();
-                    self.stomp_sound.play();
-                    self.v_speed = self.initial_vspeed();
-                    self.state = PlayerState::Falling;
-                } else {
-                    self.start_die(ctx);
-                    return CollisionResponse::Done;
+        {
+            if let Some(mut other) = downcast_stompable_mut(&mut other) {
+                if !other.dead() {
+                    if self.collider().bottom() <= other.transform().centre.y {
+                        other.stomp();
+                        self.stomp_sound.play();
+                        self.v_speed = self.initial_vspeed();
+                        self.state = PlayerState::Falling;
+                    } else {
+                        self.start_die(ctx);
+                    }
                 }
             }
+        }
+        if other.get_type() == ObjectType::Flagpole {
+            self.state = PlayerState::RidingFlagpole;
+            self.music.stop();
+            self.flagpole_sound.play();
+            let dest_x = other.transform().centre.x - self.current_sprite().half_widths().x;
+            ctx.scene().start_coroutine(move |mut this, ctx, _last_state| {
+                let mut this = this.downcast_mut::<Self>().unwrap();
+                this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
+                this.speed = 0.;
+                this.v_speed = Self::MAX_VSPEED / 3.;
+                if let Some(collisions) = ctx.object().test_collision(
+                        this.collider().as_ref(), vec![BLOCK_COLLISION_TAG]) {
+                    this.v_speed = 0.;
+                    this.centre += collisions.first().mtv;
+                    this.clear_sound.play();
+                    CoroutineResponse::Complete
+                } else {
+                    CoroutineResponse::Yield
+                }
+            });
         } else {
-        self.centre += mtv;
-            }
+            self.centre += mtv;
+        }
         CollisionResponse::Done
     }
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
@@ -634,7 +672,7 @@ impl SceneObject<ObjectType> for Player {
         [PLAYER_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
-        [BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG].into()
+        [BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG].into()
     }
 }
 

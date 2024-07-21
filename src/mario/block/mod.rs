@@ -7,6 +7,7 @@ use crate::mario::{
     ObjectType,
     player::Player
 };
+use crate::mario::block::underground_brick::UndergroundBrick;
 
 pub mod brick;
 pub mod plain_block;
@@ -24,6 +25,7 @@ pub fn downcast_bumpable_mut(obj: &mut SceneObjectWithId<ObjectType>) -> Option<
     match obj.get_type() {
         ObjectType::QuestionBlock => Some(obj.downcast_mut::<QuestionBlock>().unwrap() as RefMut<dyn Bumpable>),
         ObjectType::Brick => Some(obj.downcast_mut::<Brick>().unwrap() as RefMut<dyn Bumpable>),
+        ObjectType::UndergroundBrick => Some(obj.downcast_mut::<UndergroundBrick>().unwrap() as RefMut<dyn Bumpable>),
         _ => None
     }
 }
