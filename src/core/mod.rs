@@ -496,11 +496,24 @@ impl AxisAlignedExtent for ViewportContext<'_> {
     }
 }
 
+pub struct RenderContext<'a> {
+    this_id: ObjectId,
+    vertex_map: &'a mut VertexMap,
+}
+
+impl<'a> RenderContext<'a> {
+    pub fn update_vertices(&mut self, new_vertices: RenderItem) {
+        self.vertex_map.remove(self.this_id);
+        self.vertex_map.insert(self.this_id, new_vertices);
+    }
+}
+
 pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     input: &'a InputHandler,
     scene: SceneContext<'a, ObjectType>,
     object: ObjectContext<'a, ObjectType>,
     viewport: ViewportContext<'a>,
+    render: RenderContext<'a>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
@@ -510,6 +523,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         this: SceneObjectWithId<ObjectType>,
         object_tracker: &'a mut ObjectTracker<ObjectType>
     ) -> Self {
+        let this_id = this.object_id;
         Self {
             input: input_handler,
             scene: SceneContext {
@@ -528,6 +542,10 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 viewport: &mut caller.viewport,
                 clear_col: &mut caller.clear_col,
             },
+            render: RenderContext {
+                this_id,
+                vertex_map: &mut caller.vertex_map,
+            }
         }
     }
 
@@ -535,6 +553,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn scene(&mut self) -> &mut SceneContext<'a, ObjectType> { &mut self.scene }
     pub fn viewport(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
     pub fn input(&self) -> &InputHandler { self.input }
+    pub fn render(&mut self) -> &mut RenderContext<'a> { &mut self.render }
 }
 
 impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
@@ -543,7 +562,6 @@ impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
             self.scene.coroutines.remove(id);
         }
         self.scene.pending_removed_coroutines.clear();
-        // pending_removed_coroutines must be used. Call apply_coroutines() before dropping.
         check!(self.scene.pending_removed_coroutines.is_empty());
     }
 }
@@ -622,6 +640,7 @@ struct VertexMap {
     vertices_front: BTreeMap<ObjectId, VertexDepth>,
     all_vertices: Vec<StoredRenderItem>,
     vertex_indices: Vec<Range<usize>>,
+    vertices_changed: bool,
 }
 
 impl VertexMap {
@@ -632,6 +651,7 @@ impl VertexMap {
             vertices_front: BTreeMap::new(),
             all_vertices: Vec::new(),
             vertex_indices: Vec::new(),
+            vertices_changed: false,
         }
     }
     fn index_of(&self, object_id: ObjectId) -> Option<usize> {
@@ -695,6 +715,7 @@ impl VertexMap {
             VertexDepth::Middle => { self.vertices_middle.insert(to_insert.object_id); }
             VertexDepth::Front(_) => { self.vertices_front.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
         };
+        self.vertices_changed = true;
         self.all_vertices.insert(index, to_insert);
     }
     fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
@@ -709,12 +730,19 @@ impl VertexMap {
             self.vertex_indices[i].start -= removed.render_item.len();
             self.vertex_indices[i].end -= removed.render_item.len();
         }
+        self.vertices_changed = true;
         Some(removed.render_item)
     }
     fn render_items(&self) -> Vec<RenderItem> { self.all_vertices.clone().into_iter().map(|i| i.render_item).collect() }
     fn vertex_count(&self) -> usize {
         self.vertex_indices.last()
             .map_or(0, |indices| indices.end)
+    }
+
+    fn consume_vertices_changed(&mut self) -> bool {
+        let rv = self.vertices_changed;
+        self.vertices_changed = false;
+        rv
     }
 }
 
@@ -771,7 +799,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 .map(|obj| Rc::new(RefCell::new(obj)))
                 .collect()
         )?;
-        rv.update_and_send_render_infos(true);
+        rv.update_and_send_render_infos();
         Ok(rv)
     }
 
@@ -799,11 +827,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 let (pending_add_objects, pending_remove_objects) =
                     self.call_on_update(delta, &input_handler, fixed_updates)
                         .into_pending();
-                let did_update_vertices = !pending_add_objects.is_empty() || !pending_remove_objects.is_empty();
 
                 self.update_with_removed_objects(pending_remove_objects);
                 self.update_with_added_objects(&input_handler, pending_add_objects)?;
-                self.update_and_send_render_infos(did_update_vertices);
+                self.update_and_send_render_infos();
                 self.input_handler.lock().unwrap().update_step();
 
                 self.perf_stats.total_stats.stop();
@@ -997,10 +1024,10 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             call_obj_event(this.inner.borrow_mut(), delta, &mut ctx);
         }
     }
-    fn update_and_send_render_infos(&mut self, did_update_vertices: bool) {
+    fn update_and_send_render_infos(&mut self) {
         self.perf_stats.render_infos.start();
         self.update_render_infos();
-        self.send_render_infos(did_update_vertices);
+        self.send_render_infos();
         self.perf_stats.render_infos.stop();
     }
     fn update_render_infos(&mut self) {
@@ -1016,9 +1043,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             }
         }
     }
-    fn send_render_infos(&mut self, did_update_vertices: bool) {
+    fn send_render_infos(&mut self) {
         let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
-        if did_update_vertices {
+        if self.vertex_map.consume_vertices_changed() {
             let mut vertices = Vec::with_capacity(self.vertex_map.vertex_count());
             for r in self.vertex_map.render_items() {
                 vertices.extend(r.vertices);

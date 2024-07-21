@@ -394,6 +394,8 @@ impl Player {
 
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.music.stop();
+        ctx.render().update_vertices(self.current_sprite().create_vertices()
+            .with_depth(VertexDepth::Front(10000)));
         ctx.scene().start_coroutine(|mut this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
