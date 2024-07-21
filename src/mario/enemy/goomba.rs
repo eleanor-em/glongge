@@ -11,7 +11,6 @@ use glongge::{
         SceneObjectWithId,
         Transform,
         UpdateContext,
-        VertexWithUV,
         collision::Collider,
         prelude::*,
         coroutine::CoroutineResponse,
@@ -21,6 +20,7 @@ use glongge::{
         sprite::Sprite
     }
 };
+use glongge::core::RenderItem;
 use crate::mario::{BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType, enemy::Stompable, AliveEnemyMap};
 
 #[register_scene_object]
@@ -58,7 +58,7 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,

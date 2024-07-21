@@ -9,13 +9,13 @@ use glongge::{
         SceneObject,
         Transform,
         UpdateContext,
-        VertexWithUV,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
+use glongge::core::RenderItem;
 use crate::mario::{FLAG_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]
@@ -42,7 +42,7 @@ impl Flagpole {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Flagpole {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             texture_id,

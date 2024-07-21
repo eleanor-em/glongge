@@ -6,7 +6,6 @@ use glongge::{
         SceneObject,
         Transform,
         UpdateContext,
-        VertexWithUV,
         prelude::*,
         collision::Collider,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
@@ -16,6 +15,7 @@ use glongge::{
         sprite::Sprite
     }
 };
+use glongge::core::RenderItem;
 use crate::mario::{
     BLOCK_COLLISION_TAG,
     from_nes,
@@ -62,7 +62,7 @@ impl QuestionBlock {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for QuestionBlock {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             texture_id,

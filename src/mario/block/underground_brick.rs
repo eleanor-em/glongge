@@ -9,13 +9,13 @@ use glongge::{
         SceneObject,
         Transform,
         UpdateContext,
-        VertexWithUV,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
+use glongge::core::RenderItem;
 use crate::mario::{
     BLOCK_COLLISION_TAG,
     from_nes,
@@ -49,7 +49,7 @@ impl UndergroundBrick {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for UndergroundBrick {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,

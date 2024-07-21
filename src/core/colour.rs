@@ -3,7 +3,7 @@ use crate::core::prelude::*;
 
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Colour {
     pub r: f64,
     pub g: f64,

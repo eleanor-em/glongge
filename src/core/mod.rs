@@ -1,19 +1,10 @@
-use std::{
-    any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
-    collections::{BTreeMap, BTreeSet},
-    fmt::{Debug, Formatter},
-    ops::Range,
-    rc::Rc,
-    sync::{
-        Arc,
-        mpsc,
-        Mutex,
-        atomic::{AtomicUsize, Ordering},
-        mpsc::{Receiver, Sender}
-    },
-    time::{Duration, Instant}
-};
+use std::{any::{Any, TypeId}, cell::{Ref, RefCell, RefMut}, cmp, collections::{BTreeMap, BTreeSet}, fmt::{Debug, Formatter}, ops::Range, rc::Rc, sync::{
+    Arc,
+    mpsc,
+    Mutex,
+    atomic::{AtomicUsize, Ordering},
+    mpsc::{Receiver, Sender}
+}, time::{Duration, Instant}};
 use num_traits::{FromPrimitive, Zero};
 use serde::{
     Serialize,
@@ -63,11 +54,22 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn checked_downcast_mut<T: SceneObject<Self> + 'static>(obj: &mut dyn SceneObject<Self>) -> &mut T;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Transform {
     pub centre: Vec2,
     pub rotation: f64,
     pub scale: Vec2,
+}
+
+impl Transform {
+    #[must_use]
+    pub fn translated(&self, by: Vec2) -> Self {
+        Self {
+            centre: self.centre + by,
+            rotation: self.rotation,
+            scale: self.scale,
+        }
+    }
 }
 
 impl Default for Transform {
@@ -98,7 +100,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn new() -> Box<Self> where Self: Sized;
 
     #[allow(unused_variables)]
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> { Ok(Vec::new()) }
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> { Ok(RenderItem::default()) }
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
@@ -123,7 +125,45 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum VertexDepth {
+    Back(u64),
+    #[default]
+    Middle,
+    Front(u64),
+}
+impl PartialOrd for VertexDepth {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for VertexDepth {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        match self {
+            VertexDepth::Back(depth) => {
+                match other {
+                    VertexDepth::Back(other_depth) => depth.cmp(other_depth),
+                    _ => cmp::Ordering::Less,
+                }
+            },
+            VertexDepth::Middle => {
+                match other {
+                    VertexDepth::Back(_) => cmp::Ordering::Greater,
+                    VertexDepth::Middle => cmp::Ordering::Equal,
+                    VertexDepth::Front(_) => cmp::Ordering::Less,
+                }
+            },
+            VertexDepth::Front(depth) => {
+                match other {
+                    VertexDepth::Front(other_depth) => depth.cmp(other_depth),
+                    _ => cmp::Ordering::Greater,
+                }
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
 pub struct VertexWithUV {
     pub vertex: Vec2,
     pub uv: Vec2,
@@ -142,6 +182,29 @@ impl VertexWithUV {
             .map(|(vertex, uv)| Self { vertex, uv })
             .collect()
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RenderItem {
+    depth: VertexDepth,
+    vertices: Vec<VertexWithUV>,
+}
+
+impl RenderItem {
+    pub fn new(vertices: Vec<VertexWithUV>) -> Self {
+        Self {
+            depth: VertexDepth::Middle,
+            vertices,
+        }
+    }
+    #[must_use]
+    pub fn with_depth(mut self, depth: VertexDepth) -> Self {
+        self.depth = depth;
+        self
+    }
+
+    pub fn is_empty(&self) -> bool { self.vertices.is_empty() }
+    pub fn len(&self) -> usize { self.vertices.len() }
 }
 
 pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
@@ -547,10 +610,117 @@ impl UpdatePerfStats {
     }
 }
 
+#[derive(Clone, Debug)]
+struct StoredRenderItem {
+    render_item: RenderItem,
+    object_id: ObjectId,
+}
+
+struct VertexMap {
+    vertices_back: BTreeMap<ObjectId, VertexDepth>,
+    vertices_middle: BTreeSet<ObjectId>,
+    vertices_front: BTreeMap<ObjectId, VertexDepth>,
+    all_vertices: Vec<StoredRenderItem>,
+    vertex_indices: Vec<Range<usize>>,
+}
+
+impl VertexMap {
+    fn new() -> Self {
+        Self {
+            vertices_back: BTreeMap::new(),
+            vertices_middle: BTreeSet::new(),
+            vertices_front: BTreeMap::new(),
+            all_vertices: Vec::new(),
+            vertex_indices: Vec::new(),
+        }
+    }
+    fn index_of(&self, object_id: ObjectId) -> Option<usize> {
+        let comparator = |depth| {
+            move |other: &StoredRenderItem| match other.render_item.depth.cmp(depth) {
+                cmp::Ordering::Less => cmp::Ordering::Less,
+                cmp::Ordering::Equal => other.object_id.cmp(&object_id),
+                cmp::Ordering::Greater => cmp::Ordering::Greater,
+            }
+        };
+        let i = if let Some(depth) = self.vertices_back.get(&object_id) {
+            let start = 0;
+            start + self.all_vertices[start..self.vertices_back.len()]
+                .binary_search_by(comparator(depth))
+                .expect("all_vertices not correctly sorted?")
+        } else if self.vertices_middle.contains(&object_id) {
+            let start = self.vertices_back.len();
+            start + self.all_vertices[start..self.vertices_back.len() + self.vertices_middle.len()]
+                .binary_search_by(comparator(&VertexDepth::Middle))
+                .expect("all_vertices not correctly sorted?")
+        } else if let Some(depth) = self.vertices_front.get(&object_id) {
+            let start = self.vertices_back.len() + self.vertices_middle.len();
+            start + self.all_vertices[start..]
+                .binary_search_by(comparator(depth))
+                .expect("all_vertices not correctly sorted?")
+        } else {
+            return None;
+        };
+        Some(i)
+    }
+    fn get(&self, object_id: ObjectId) -> Option<(&Range<usize>, &RenderItem)> {
+        let i = self.index_of(object_id)?;
+        let indices = &self.vertex_indices[i];
+        let stored = &self.all_vertices[i];
+        check_eq!(stored.object_id, object_id);
+        Some((indices, &stored.render_item))
+    }
+    fn insert(&mut self, object_id: ObjectId, new_vertices: RenderItem) {
+        let to_insert = StoredRenderItem { object_id, render_item: new_vertices };
+        let index = self.all_vertices.partition_point(|other| {
+            match other.render_item.depth.cmp(&to_insert.render_item.depth) {
+                cmp::Ordering::Less => true,
+                cmp::Ordering::Equal => other.object_id <= to_insert.object_id,
+                cmp::Ordering::Greater => false
+            }
+        });
+        let new_indices = if index == 0 {
+            0..to_insert.render_item.len()
+        } else {
+            let start = self.vertex_indices[index - 1].end;
+            let end = start + self.all_vertices[index - 1].render_item.len();
+            start..end
+        };
+        self.vertex_indices.insert(index, new_indices);
+        for i in (index + 1)..self.vertex_indices.len() {
+            self.vertex_indices[i].start += to_insert.render_item.len();
+            self.vertex_indices[i].end += to_insert.render_item.len();
+        }
+        match to_insert.render_item.depth {
+            VertexDepth::Back(_) => { self.vertices_back.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
+            VertexDepth::Middle => { self.vertices_middle.insert(to_insert.object_id); }
+            VertexDepth::Front(_) => { self.vertices_front.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
+        };
+        self.all_vertices.insert(index, to_insert);
+    }
+    fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
+        let index = self.index_of(object_id)?;
+        self.vertices_front.remove(&object_id);
+        self.vertices_middle.remove(&object_id);
+        self.vertices_back.remove(&object_id);
+        let removed = self.all_vertices.remove(index);
+        check_eq!(removed.object_id, object_id);
+        self.vertex_indices.remove(index);
+        for i in index..self.vertex_indices.len() {
+            self.vertex_indices[i].start -= removed.render_item.len();
+            self.vertex_indices[i].end -= removed.render_item.len();
+        }
+        Some(removed.render_item)
+    }
+    fn render_items(&self) -> Vec<RenderItem> { self.all_vertices.clone().into_iter().map(|i| i.render_item).collect() }
+    fn vertex_count(&self) -> usize {
+        self.vertex_indices.last()
+            .map_or(0, |indices| indices.end)
+    }
+}
+
 pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
-    vertices: BTreeMap<ObjectId, (Range<usize>, Vec<VertexWithUV>)>,
-    vertex_count: usize, // saves allocation time in update_and_send_render_infos()
+    vertex_map: VertexMap,
     render_infos: BTreeMap<ObjectId, RenderInfoFull>,
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
     viewport: AdjustedViewport,
@@ -578,8 +748,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         let mut rv = Self {
             objects: BTreeMap::new(),
-            vertices: BTreeMap::new(),
-            vertex_count: 0,
+            vertex_map: VertexMap::new(),
             render_infos: BTreeMap::new(),
             viewport: render_info_receiver.clone().lock().unwrap().current_viewport(),
             input_handler,
@@ -664,30 +833,8 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         self.perf_stats.remove_objects.start();
         self.collision_handler.update_with_removed_objects(&pending_remove_objects);
         for remove_index in pending_remove_objects.into_iter().rev() {
-            if self.render_infos.remove(&remove_index).is_some() {
-                // Update vertex indices.
-                // This is technically quadratic, but is fast enough.
-                check!(self.vertices.contains_key(&remove_index));
-                let vertices_removed = self.vertices[&remove_index].1.len();
-                self.vertices.remove(&remove_index);
-                let indices = self.vertices.keys()
-                    .copied()
-                    .filter(|&i| i > remove_index)
-                    .collect_vec();
-                for i in indices {
-                    let count = &mut self.vertices.get_mut(&i)
-                        .unwrap_or_else(|| panic!("missing ObjectId in self.vertices: {i:?}"))
-                        .0;
-                    *count = (count.start - vertices_removed)..(count.end - vertices_removed);
-                    let count = &mut self.render_infos.get_mut(&i)
-                        .unwrap_or_else(|| panic!("missing ObjectId in self.render_infos: {i:?}"))
-                        .vertex_indices;
-                    *count = (count.start - vertices_removed)..(count.end - vertices_removed);
-                }
-                self.vertex_count -= vertices_removed;
-            } else {
-                check_false!(self.vertices.contains_key(&remove_index));
-            }
+            self.vertex_map.remove(remove_index);
+            self.render_infos.remove(&remove_index);
             self.objects.remove(&remove_index);
             self.coroutines.remove(&remove_index);
         }
@@ -711,24 +858,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             self.collision_handler.update_with_added_objects(&pending_add);
 
             // Call on_load().
-            let mut next_vertex_index = self.vertices.last_key_value()
-                .map_or(0, |(_, (indices, _))| indices.end);
             for (new_id, new_obj) in pending_add {
-                {
-                    let mut new_obj = new_obj.borrow_mut();
-                    let new_vertices = new_obj.on_load(&mut self.resource_handler)?;
-                    if let Some(obj) = new_obj.as_renderable_object() {
-                        let vertex_indices = next_vertex_index..next_vertex_index + new_vertices.len();
-                        self.vertex_count += new_vertices.len();
-                        next_vertex_index += new_vertices.len();
-                        self.vertices.insert(new_id, (vertex_indices.clone(), new_vertices));
-                        self.render_infos.insert(new_id, RenderInfoFull {
-                            inner: obj.render_info(),
-                            transform: obj.transform(),
-                            vertex_indices,
-                        });
-                    }
-                }
+                let new_vertices = new_obj.borrow_mut().on_load(&mut self.resource_handler)?;
+                self.vertex_map.insert(new_id, new_vertices);
                 self.objects.insert(new_id, new_obj);
             }
 
@@ -874,23 +1006,24 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     fn update_render_infos(&mut self) {
         for (object_id, obj) in &self.objects {
             if let Some(obj) = obj.borrow().as_renderable_object() {
-                let render_info = self.render_infos.get_mut(object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in render_info: {object_id:?}"));
-                render_info.inner = obj.render_info();
-                render_info.transform = obj.transform();
-                render_info.transform.centre -= self.viewport.translation;
+                let (indices, _) = self.vertex_map.get(*object_id)
+                    .unwrap_or_else(|| panic!("missing object_id in vertex_map: {object_id:?}"));
+                self.render_infos.insert(*object_id, RenderInfoFull {
+                    vertex_indices: indices.clone(),
+                    inner: obj.render_info(),
+                    transform: obj.transform().translated(-self.viewport.translation),
+                });
             }
         }
     }
     fn send_render_infos(&mut self, did_update_vertices: bool) {
         let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
         if did_update_vertices {
-            let mut vertices = Vec::with_capacity(self.vertex_count);
-            for (_, values) in self.vertices.values() {
-                vertices.extend(values);
+            let mut vertices = Vec::with_capacity(self.vertex_map.vertex_count());
+            for r in self.vertex_map.render_items() {
+                vertices.extend(r.vertices);
             }
             check_eq!(vertices.len(), vertices.capacity());
-            check_eq!(vertices.capacity(), self.vertex_count);
             render_info_receiver.update_vertices(vertices);
         }
         render_info_receiver.update_render_info(self.render_infos.values().cloned().collect());
@@ -1067,7 +1200,7 @@ impl AxisAlignedExtent for TextureSubArea {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RenderInfo {
     pub col: Colour,
     pub texture_id: Option<TextureId>,
@@ -1080,7 +1213,7 @@ impl Default for RenderInfo {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RenderInfoFull {
     pub(crate) inner: RenderInfo,
     pub(crate) transform: Transform,

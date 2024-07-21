@@ -5,9 +5,8 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        VertexWithUV,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        collision::{BoxCollider, Collider},
+        collision::Collider,
         prelude::*,
     },
     resource::{
@@ -15,6 +14,7 @@ use glongge::{
         sprite::Sprite
     },
 };
+use glongge::core::RenderItem;
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType};
 
 
@@ -32,7 +32,7 @@ impl UndergroundFloor {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for UndergroundFloor {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,
@@ -52,7 +52,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         Some(self)
     }
     fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(self.transform(), self.sprite.half_widths()))
+        self.sprite.as_box_collider(self.transform())
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

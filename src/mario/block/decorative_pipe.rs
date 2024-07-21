@@ -5,7 +5,6 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        VertexWithUV,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
         collision::Collider,
         prelude::*
@@ -13,6 +12,7 @@ use glongge::{
     resource::ResourceHandler,
     resource::sprite::Sprite
 };
+use glongge::core::RenderItem;
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]
@@ -32,7 +32,7 @@ impl DecorativePipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecorativePipe {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             texture_id,

@@ -1,6 +1,5 @@
 use glongge::{
     core::{
-        VertexWithUV,
         RenderableObject,
         RenderInfo,
         SceneObject,
@@ -13,6 +12,7 @@ use glongge::{
         sprite::Sprite
     },
 };
+use glongge::core::{RenderItem, VertexDepth};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::mario::ObjectType;
 
@@ -30,14 +30,14 @@ impl Hill2 {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Hill2 {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             texture_id,
             Vec2Int { x: 112, y: 692 },
             Vec2Int { x: 192, y: 708 }
         );
-        Ok(self.sprite.create_vertices())
+        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Back(0)))
     }
 
     fn transform(&self) -> Transform {

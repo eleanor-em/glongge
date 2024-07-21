@@ -5,7 +5,6 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        VertexWithUV,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
         collision::Collider,
         prelude::*,
@@ -15,6 +14,7 @@ use glongge::{
         sprite::Sprite
     },
 };
+use glongge::core::{RenderItem, VertexDepth};
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType};
 
 #[register_scene_object]
@@ -31,14 +31,14 @@ impl Floor {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Floor {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 16 }
         );
-        Ok(self.sprite.create_vertices())
+        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Front(2000)))
     }
 
     fn transform(&self) -> Transform {

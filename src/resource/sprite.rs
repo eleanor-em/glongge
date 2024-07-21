@@ -6,13 +6,12 @@ use crate::{
         linalg::Vec2Int,
         prelude::*,
         linalg::{AxisAlignedExtent, Vec2},
-        VertexWithUV,
         collision::{BoxCollider, Collider}
     },
     resource::texture::TextureId,
     shader,
 };
-use crate::core::Transform;
+use crate::core::{RenderItem, Transform};
 use crate::core::util::gg_iter::GgIter;
 
 #[derive(Clone, Default)]
@@ -137,8 +136,9 @@ impl Sprite {
         render_info
     }
 
-    pub fn create_vertices(&self) -> Vec<VertexWithUV> {
-        shader::vertex::rectangle_with_uv(Vec2::zero(), self.half_widths())
+    pub fn create_vertices(&self) -> RenderItem {
+        RenderItem::new(shader::vertex::rectangle_with_uv(Vec2::zero(), self.half_widths()))
+        
     }
 }
 

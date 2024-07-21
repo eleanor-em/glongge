@@ -9,7 +9,6 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        VertexWithUV,
         scene::SceneStartInstruction
     },
     resource::{
@@ -17,6 +16,7 @@ use glongge::{
         sprite::Sprite
     }
 };
+use glongge::core::{RenderItem, VertexDepth};
 use crate::mario::{BLOCK_COLLISION_TAG, ObjectType, PIPE_COLLISION_TAG};
 
 #[register_scene_object]
@@ -44,7 +44,7 @@ impl Pipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Pipe {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = if self.orientation.x.is_zero() {
             Sprite::from_single_coords(
@@ -59,7 +59,7 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2Int { x: 256, y: 676}
             )
         };
-        Ok(self.sprite.create_vertices())
+        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Front(1000)))
     }
 
     fn transform(&self) -> Transform {

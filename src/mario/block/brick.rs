@@ -8,13 +8,13 @@ use glongge::{
         SceneObject,
         Transform,
         UpdateContext,
-        VertexWithUV,
     },
     resource::{
         ResourceHandler,
         sprite::Sprite
     }
 };
+use glongge::core::RenderItem;
 
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::mario::{
@@ -50,7 +50,7 @@ impl Brick {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Brick {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             texture_id,

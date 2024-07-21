@@ -13,7 +13,6 @@ use glongge::{
         SceneObject,
         Transform,
         UpdateContext,
-        VertexWithUV,
         CollisionResponse,
         SceneObjectWithId,
         coroutine::{CoroutineId, CoroutineResponse},
@@ -27,6 +26,7 @@ use glongge::{
         prelude::*
     },
 };
+use glongge::core::{RenderItem, VertexDepth};
 use crate::mario::{MarioOverworldScene, PIPE_COLLISION_TAG, block::pipe::Pipe, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG, ObjectType, block::downcast_bumpable_mut, enemy::downcast_stompable_mut, AliveEnemyMap};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -424,7 +424,7 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single_extent(
             texture_id,
@@ -468,7 +468,8 @@ impl SceneObject<ObjectType> for Player {
         self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav".to_string())?;
         self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
         self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
-        Ok(self.current_sprite().create_vertices())
+        Ok(self.current_sprite().create_vertices()
+            .with_depth(VertexDepth::Front(0)))
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.scene().name() == MarioOverworldScene.name() {

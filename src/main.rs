@@ -71,7 +71,7 @@ fn main() -> Result<()> {
     }
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
-        .consume(event_loop, false);
+        .consume(event_loop, true);
     Ok(())
 }
 

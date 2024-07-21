@@ -5,7 +5,6 @@ use glongge::{
         RenderInfo,
         SceneObject,
         Transform,
-        VertexWithUV,
         prelude::*,
         linalg::{AxisAlignedExtent, Vec2, Vec2Int},
     },
@@ -14,6 +13,7 @@ use glongge::{
         sprite::Sprite
     }
 };
+use glongge::core::{RenderItem, VertexDepth};
 use crate::mario::ObjectType;
 
 #[register_scene_object]
@@ -30,14 +30,14 @@ impl Castle {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Castle {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<Vec<VertexWithUV>> {
+    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             texture_id,
             Vec2Int { x: 24, y: 684 },
             Vec2Int { x: 104, y: 764 }
         );
-        Ok(self.sprite.create_vertices())
+        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Back(0)))
     }
     fn transform(&self) -> Transform {
         Transform {
