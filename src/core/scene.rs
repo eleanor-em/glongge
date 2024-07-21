@@ -1,6 +1,3 @@
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
 use std::{
     collections::BTreeMap,
     sync::{
@@ -11,16 +8,17 @@ use std::{
     }
 };
 use crate::{
+    resource::ResourceHandler,
     core::{
+        prelude::*,
         input::InputHandler,
         vk_core::RenderEventHandler,
         AnySceneObject,
         ObjectTypeEnum,
-        UpdateHandler
-    },
-    resource::ResourceHandler
+        UpdateHandler,
+        RenderInfoReceiver
+    }
 };
-use crate::core::RenderInfoReceiver;
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
@@ -113,6 +111,8 @@ pub trait Scene<ObjectType: ObjectTypeEnum> {
 
     #[allow(unused_variables)]
     fn load(&mut self, data: &[u8]) -> Result<()> { Ok(()) }
+    #[allow(unused_variables)]
+    fn initial_data(&self) -> Vec<u8> { Vec::new() }
     
     fn at_entrance(&self, entrance_id: usize) -> SceneStartInstruction {
         SceneStartInstruction::new(self.name(), entrance_id)
@@ -153,6 +153,10 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
     }
     pub fn create_scene<S: Scene<ObjectType> + 'static>(&mut self, scene: S) {
         check_false!(self.scenes.contains_key(&scene.name()));
+        check_false!(self.scene_data.contains_key(&scene.name()));
+        self.scene_data.insert(scene.name(), Arc::new(Mutex::new(
+            scene.initial_data()
+        )));
         self.scenes.insert(scene.name(), InternalScene::new(
             Arc::new(Mutex::new(scene)),
             self.input_handler.clone(),
@@ -179,7 +183,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
     fn run_scene(&mut self, name: SceneName, entrance_id: usize) {
         if let Some(scene) = self.scenes.get(&name) {
             info!("starting scene: {:?} [entrance {}]", name, entrance_id);
-            scene.run(self.scene_data.entry(name).or_default().clone(),
+            scene.run(self.scene_data.get(&name).unwrap().clone(),
                       entrance_id,
                       self.current_scene_name.clone());
         } else {

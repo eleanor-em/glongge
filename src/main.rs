@@ -25,7 +25,7 @@ use glongge::core::collision::ConvexCollider;
 use crate::{
     triangle::TriangleScene,
     rectangle::RectangleScene,
-    mario::{MarioScene, MarioUndergroundScene},
+    mario::{MarioOverworldScene, MarioUndergroundScene},
 };
 
 
@@ -62,9 +62,9 @@ fn main() -> Result<()> {
             );
             // scene_handler.create_scene(TriangleScene); let name = TriangleScene.name();
             // scene_handler.create_scene(RectangleScene); let name = RectangleScene.name();
-            scene_handler.create_scene(MarioScene);
+            scene_handler.create_scene(MarioOverworldScene);
             scene_handler.create_scene(MarioUndergroundScene);
-            let name = MarioScene.name();
+            let name = MarioOverworldScene.name();
             // let name = MarioUndergroundScene{}.name();
             scene_handler.consume_with_scene(name, 0);
         });

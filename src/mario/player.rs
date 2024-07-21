@@ -27,21 +27,7 @@ use glongge::{
         prelude::*
     },
 };
-use crate::mario::{
-    MarioScene,
-    PIPE_COLLISION_TAG,
-    block::pipe::Pipe,
-    BASE_GRAVITY,
-    BLOCK_COLLISION_TAG,
-    ENEMY_COLLISION_TAG,
-    from_nes,
-    from_nes_accel,
-    PLAYER_COLLISION_TAG,
-    ObjectType,
-    block::downcast_bumpable_mut,
-    enemy::downcast_stompable_mut
-};
-use crate::mario::enemy::goomba::AliveEnemyMap;
+use crate::mario::{MarioOverworldScene, PIPE_COLLISION_TAG, block::pipe::Pipe, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, from_nes, from_nes_accel, PLAYER_COLLISION_TAG, ObjectType, block::downcast_bumpable_mut, enemy::downcast_stompable_mut, AliveEnemyMap};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -423,8 +409,10 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
-                    ctx.scene().data::<AliveEnemyMap>().reset();
-                    ctx.scene().goto(MarioScene.at_entrance(0));
+                    if ctx.scene().name() == MarioOverworldScene.name() {
+                        ctx.scene().data::<AliveEnemyMap>().unwrap().reset();
+                    }
+                    ctx.scene().goto(MarioOverworldScene.at_entrance(0));
                     CoroutineResponse::Complete
                 }
             }
@@ -483,7 +471,7 @@ impl SceneObject<ObjectType> for Player {
         Ok(self.current_sprite().create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.scene().name() == MarioScene.name() {
+        if ctx.scene().name() == MarioOverworldScene.name() {
             *ctx.viewport().clear_col() = Colour::from_bytes(92, 148, 252, 255);
             self.music = self.overworld_music.clone();
         } else {

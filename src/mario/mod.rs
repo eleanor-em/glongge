@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
 use glongge_derive::register_object_type;
 use glongge::{
     core::{
@@ -51,10 +53,35 @@ const PIPE_COLLISION_TAG: &str = "PIPE";
 const PLAYER_COLLISION_TAG: &str = "PLAYER";
 const ENEMY_COLLISION_TAG: &str = "ENEMY";
 
+#[derive(Default, Serialize, Deserialize)]
+pub struct AliveEnemyMap {
+    inner: BTreeMap<Vec2Int, bool>,
+}
+
+impl AliveEnemyMap {
+    fn register(&mut self, initial_coord: Vec2Int) {
+        self.inner.entry(initial_coord).or_insert(true);
+    }
+
+    fn is_alive(&self, initial_coord: Vec2Int) -> bool {
+        self.inner.get(&initial_coord)
+            .map(|v| *v)
+            .unwrap_or(true)
+    }
+    fn set_dead(&mut self, initial_coord: Vec2Int) {
+        *self.inner.entry(initial_coord).or_default() = false;
+    }
+}
+
 #[derive(Copy, Clone)]
-pub struct MarioScene;
-impl Scene<ObjectType> for MarioScene {
-    fn name(&self) -> SceneName { "mario".into() }
+pub struct MarioOverworldScene;
+
+impl Scene<ObjectType> for MarioOverworldScene {
+    fn name(&self) -> SceneName { "mario-overworld".into() }
+
+    fn initial_data(&self) -> Vec<u8> {
+        bincode::serialize(&AliveEnemyMap::default()).unwrap()
+    }
 
     fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
@@ -368,7 +395,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         initial_objects.push(Pipe::new(Vec2Int {
             x: 14 * 16,
             y: 384 - 4*16,
-        }, Vec2::left(), Some(MarioScene.at_entrance(1))));
+        }, Vec2::left(), Some(MarioOverworldScene.at_entrance(1))));
         initial_objects.push(DecorativePipe::new(Vec2Int {
             x: 16 * 16,
             y: 0,

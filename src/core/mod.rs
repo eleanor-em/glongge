@@ -208,20 +208,19 @@ impl<T> SceneData<T>
 where
     T: Default + Serialize + DeserializeOwned
 {
-    fn new(raw: Arc<Mutex<Vec<u8>>>) -> Result<Self> {
+    fn new(raw: Arc<Mutex<Vec<u8>>>) -> Result<Option<Self>> {
         let deserialized = {
-            let mut raw = raw.try_lock().expect("scene_data locked?");
+            let raw = raw.try_lock().expect("scene_data locked?");
             if raw.is_empty() {
-                let deserialized = T::default();
-                *raw = bincode::serialize(&deserialized)?;
+                return Ok(None);
             }
             bincode::deserialize::<T>(&raw)?
         };
-        Ok(Self {
+        Ok(Some(Self {
             raw,
             deserialized,
             modified: false,
-        })
+        }))
     }
     
     pub fn reset(&mut self) {
@@ -263,7 +262,7 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
         self.scene_instruction_tx.send(SceneInstruction::Goto(instruction)).unwrap();
     }
     pub fn name(&self) -> SceneName { self.scene_name }
-    pub fn data<T>(&mut self) -> SceneData<T>
+    pub fn data<T>(&mut self) -> Option<SceneData<T>>
     where
         T: Default + Serialize + DeserializeOwned
     {

@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -22,34 +21,7 @@ use glongge::{
         sprite::Sprite
     }
 };
-use serde::{Deserialize, Serialize};
-use crate::mario::{
-    BASE_GRAVITY,
-    BLOCK_COLLISION_TAG,
-    ENEMY_COLLISION_TAG,
-    ObjectType,
-    enemy::Stompable
-};
-
-#[derive(Default, Serialize, Deserialize)]
-pub struct AliveEnemyMap {
-    inner: BTreeMap<Vec2Int, bool>,
-}
-
-impl AliveEnemyMap {
-    fn register(&mut self, initial_coord: Vec2Int) {
-        self.inner.entry(initial_coord).or_insert(true);
-    }
-
-    fn is_alive(&self, initial_coord: Vec2Int) -> bool {
-        self.inner.get(&initial_coord)
-            .map(|v| *v)
-            .unwrap_or(true)
-    }
-    fn set_dead(&mut self, initial_coord: Vec2Int) {
-        *self.inner.entry(initial_coord).or_default() = false;
-    }
-}
+use crate::mario::{BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, ObjectType, enemy::Stompable, AliveEnemyMap};
 
 #[register_scene_object]
 pub struct Goomba {
@@ -103,7 +75,7 @@ impl SceneObject<ObjectType> for Goomba {
         Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let mut data = ctx.scene().data::<AliveEnemyMap>();
+        let mut data = ctx.scene().data::<AliveEnemyMap>().unwrap();
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
             ctx.object().remove_this();
@@ -146,7 +118,7 @@ impl SceneObject<ObjectType> for Goomba {
                 CoroutineResponse::Complete
             }, Duration::from_millis(300));
             self.started_death = true;
-            ctx.scene().data::<AliveEnemyMap>().write()
+            ctx.scene().data::<AliveEnemyMap>().unwrap().write()
                 .set_dead(self.initial_coord);
         }
     }
