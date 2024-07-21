@@ -42,7 +42,6 @@ impl Sound {
             let mut rng = thread_rng();
             source.set_pitch(linalg::eerp(1. - mag, 1. + mag, rng.gen_range(0.0..1.0)));
             source.play();
-            source.set_pitch(1.);
         } else {
             warn!("tried to play non-loaded sound");
         }
@@ -53,6 +52,7 @@ impl Sound {
             let source = state.source_mut(inner.handle);
             source.stop()
                 .expect("should only be fallible for streaming buffers (see source)");
+            source.set_pitch(1.);
             source.play();
         } else {
             warn!("tried to play non-loaded sound");
@@ -66,6 +66,7 @@ impl Sound {
             source.set_looping(true);
             source.stop()
                 .expect("should only be fallible for streaming buffers (see source)");
+            source.set_pitch(1.);
             source.play();
             self.is_looping = true;
         } else {
