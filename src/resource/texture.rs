@@ -16,6 +16,7 @@ use std::{
         atomic::{AtomicUsize, Ordering}
     }
 };
+use std::io::Read;
 
 use png::ColorType;
 use vulkano::{
@@ -63,14 +64,25 @@ impl From<TextureId> for u32 {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Texture {
+    id: TextureId,
+    extent: Vec2Int
+}
+
+impl Texture {
+    pub fn id(&self) -> TextureId { self.id }
+    pub fn extent(&self) -> Vec2Int { self.extent }
+}
+
+#[derive(Clone)]
+pub(crate) struct InternalTexture {
     buf: Subbuffer<[u8]>,
     info: ImageCreateInfo,
     cached_image_view: Option<Arc<ImageView>>,
 }
 
-impl Texture {
+impl InternalTexture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> { self.cached_image_view.clone() }
     pub fn extent(&self) -> Vec2 { Vec2 { x: f64::from(self.info.extent[0]), y: f64::from(self.info.extent[1]) } }
 
@@ -101,11 +113,11 @@ impl Texture {
 #[derive(Clone)]
 pub(crate) enum CachedTexture {
     Loading,
-    Ready(Arc<Texture>),
+    Ready(Arc<InternalTexture>),
 }
 
 impl CachedTexture {
-    pub fn ready<'a>(self: MappedRwLockReadGuard<'a, CachedTexture>) -> Option<MappedRwLockReadGuard<'a, Arc<Texture>>> {
+    pub fn ready<'a>(self: MappedRwLockReadGuard<'a, CachedTexture>) -> Option<MappedRwLockReadGuard<'a, Arc<InternalTexture>>> {
         MappedRwLockReadGuard::try_map(self, |inner| match inner {
             Self::Loading => None,
             Self::Ready(tex) => Some(tex)
@@ -113,9 +125,18 @@ impl CachedTexture {
     }
 }
 
+struct WrappedPngReader<R: Read>(png::Reader<R>);
+
+impl<R: Read> Read for WrappedPngReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.next_frame(buf).map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+        Ok(self.0.output_buffer_size())
+    }
+}
+
 struct TextureHandlerInner {
-    loaded_files: BTreeMap<String, TextureId>,
-    textures: BTreeMap<TextureId, Texture>,
+    loaded_files: BTreeMap<String, Texture>,
+    textures: BTreeMap<TextureId, InternalTexture>,
 }
 
 #[derive(Clone)]
@@ -139,7 +160,7 @@ impl TextureHandler {
         Self { ctx, inner, cached_textures }
     }
 
-    fn blank_texture(ctx: &VulkanoContext) -> Result<Texture> {
+    fn blank_texture(ctx: &VulkanoContext) -> Result<InternalTexture> {
         let image_create_info = ImageCreateInfo {
             image_type: ImageType::Dim2d,
             format: Format::R8G8B8A8_SRGB,
@@ -160,30 +181,37 @@ impl TextureHandler {
             DeviceSize::from(4 as char)
         ).map_err(Validated::unwrap)?;
         buf.write()?.swap_with_slice(&mut Colour::white().as_bytes());
-        Ok(Texture {
+        Ok(InternalTexture {
             buf, info: image_create_info,
             cached_image_view: None,
         })
     }
 
-    pub fn wait_load_file(&self, filename: String) -> Result<TextureId> {
+    pub fn wait_load_file(&self, filename: String) -> Result<Texture> {
         // Beware: do not lock `inner` longer than necessary.
-        if let Some(id) = self.inner.lock().unwrap().loaded_files.get(&filename) {
-            return Ok(*id);
+        if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
+            return Ok(texture.clone());
         }
 
-        let texture = self.load_file_inner(&filename)?;
+        let texture_id = TextureId::next();
+        let internal_texture = self.load_file_inner(&filename)?;
+        let texture = Texture {
+            id: texture_id,
+            extent: Vec2Int {
+                x: internal_texture.extent().x as i32,
+                y: internal_texture.extent().y as i32,
+            }
+        };
 
         let mut inner = self.inner.lock().unwrap();
-        let texture_id = TextureId::next();
         info!("loaded texture: {} = {:?}", filename, texture_id);
-        inner.loaded_files.insert(filename, texture_id);
-        inner.textures.insert(texture_id, texture);
+        inner.loaded_files.insert(filename, texture.clone());
+        inner.textures.insert(texture_id, internal_texture);
         self.cached_textures.write().unwrap().insert(texture_id, CachedTexture::Loading);
-        Ok(texture_id)
+        Ok(texture)
     }
 
-    fn load_file_inner(&self, filename: &str) -> Result<Texture> {
+    fn load_file_inner(&self, filename: &str) -> Result<InternalTexture> {
         let path = Path::new(filename);
         let ext = path.extension()
             .ok_or_else(|| anyhow!("no file extension: {}", filename))?
@@ -195,11 +223,11 @@ impl TextureHandler {
             ext => bail!("unknown file extension: {} (while loading {})", ext, filename),
         }
     }
-    fn load_file_inner_png(&self, filename: &str) -> Result<Texture> {
+    fn load_file_inner_png(&self, filename: &str) -> Result<InternalTexture> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
-        let mut reader = decoder.read_info()?;
+        let reader = decoder.read_info()?;
         let info = reader.info();
 
         if info.srgb.is_none() {
@@ -219,13 +247,6 @@ impl TextureHandler {
             None => Format::R8G8B8A8_UNORM,
         };
 
-        let image_create_info = ImageCreateInfo {
-            image_type: ImageType::Dim2d,
-            format,
-            extent: [info.width, info.height, 1],
-            usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-            ..Default::default()
-        };
         let mut image_data = Vec::new();
         let depth: u32 = match info.bit_depth {
             png::BitDepth::One => 1,
@@ -234,7 +255,39 @@ impl TextureHandler {
             png::BitDepth::Eight => 8,
             png::BitDepth::Sixteen => 16,
         };
-        image_data.resize((info.width * info.height * depth) as usize, 0);
+        let width = info.width;
+        let height = info.height;
+        image_data.resize((width * height * depth) as usize, 0);
+        self.load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
+    }
+
+    pub(crate) fn wait_load_reader_rgba<R: Read>(&self, reader: &mut R, width: u32, height: u32, format: Format) -> Result<Texture> {
+        let texture_id = TextureId::next();
+        let internal_texture = self.load_reader_rgba_inner(reader, width, height, format)?;
+        let texture = Texture {
+            id: texture_id,
+            extent: Vec2Int {
+                x: internal_texture.extent().x as i32,
+                y: internal_texture.extent().y as i32,
+            }
+        };
+
+        let mut inner = self.inner.lock().unwrap();
+        inner.textures.insert(texture_id, internal_texture);
+        self.cached_textures.write().unwrap().insert(texture_id, CachedTexture::Loading);
+        Ok(texture)
+    }
+    fn load_reader_rgba_inner<R: Read>(&self, reader: &mut R, width: u32, height: u32, format: Format) -> Result<InternalTexture> {
+        if format != Format::R8G8B8A8_SRGB {
+            check_eq!(format, Format::R8G8B8A8_UNORM);
+        }
+        let image_create_info = ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [width, height, 1],
+            usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+            ..Default::default()
+        };
         let buf = Buffer::new_slice(
             self.ctx.memory_allocator(),
             BufferCreateInfo {
@@ -245,11 +298,12 @@ impl TextureHandler {
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            DeviceSize::from(info.width * info.height * 4)
+            DeviceSize::from(width * height * 4)
         ).map_err(Validated::unwrap)?;
-        reader.next_frame(&mut buf.write()?)?;
 
-        Ok(Texture {
+        reader.read_exact(&mut buf.write()?)?;
+
+        Ok(InternalTexture {
             buf,
             info: image_create_info,
             cached_image_view: None,
@@ -284,7 +338,7 @@ impl TextureHandler {
     }
 
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub fn ready_values(&self) -> Vec<Arc<Texture>> {
+    pub(crate) fn ready_values(&self) -> Vec<Arc<InternalTexture>> {
         self.cached_textures.read().unwrap()
             .values()
             .filter_map(|tex| match tex {
@@ -315,7 +369,7 @@ impl TextureSubArea {
         Self { rect }
     }
 
-    pub(crate) fn uv(&self, texture: &Texture, raw_uv: Vec2) -> Vec2 {
+    pub(crate) fn uv(&self, texture: &InternalTexture, raw_uv: Vec2) -> Vec2 {
         if self.rect == Rect::default() {
             raw_uv
         } else {

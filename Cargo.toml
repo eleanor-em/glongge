@@ -25,6 +25,7 @@ vulkano-shaders = "0.34.0"
 # windowing
 winit = "0.28.7"
 # media
+ab_glyph = "0.2.28"
 asefile = "0.3.8"
 fyrox-sound = { git = "https://github.com/eleanor-em/Fyrox-sound-only" } # forked from 0.35.0
 png = "0.17.13"

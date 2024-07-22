@@ -33,9 +33,9 @@ impl Hill1 {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Hill1 {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let texture_id = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 112, y: 716 },
             Vec2Int { x: 192, y: 764 }
         );

@@ -45,6 +45,14 @@ impl Vec2Int {
     pub fn range_from_zero(end: Vec2Int) -> Product<Range<i32>, Range<i32>> {
         Self::range(Vec2Int::zero(), end)
     }
+
+    pub fn as_index(&self, width: u32, height: u32) -> usize {
+        check_ge!(self.x, 0);
+        check_ge!(self.y, 0);
+        check_lt!(self.x as u32, width);
+        check_lt!(self.y as u32, height);
+        (self.y as u32 * width + self.x as u32) as usize
+    }
 }
 
 impl From<Vec2Int> for Vec2 {
@@ -386,6 +394,39 @@ impl MulAssign<i32> for Vec2 {
         self.y *= f64::from(rhs);
     }
 }
+impl Mul<u32> for Vec2 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: u32) -> Self::Output {
+        f64::from(rhs) * self
+    }
+}
+impl Mul<Vec2> for u32 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        Vec2 {
+            x: f64::from(self) * rhs.x,
+            y: f64::from(self) * rhs.y,
+        }
+    }
+}
+impl Mul<&Vec2> for u32 {
+    type Output = Vec2;
+
+    fn mul(self, rhs: &Vec2) -> Self::Output {
+        Vec2 {
+            x: f64::from(self) * rhs.x,
+            y: f64::from(self) * rhs.y,
+        }
+    }
+}
+impl MulAssign<u32> for Vec2 {
+    fn mul_assign(&mut self, rhs: u32) {
+        self.x *= f64::from(rhs);
+        self.y *= f64::from(rhs);
+    }
+}
 
 impl Div<f64> for Vec2 {
     type Output = Vec2;
@@ -415,6 +456,22 @@ impl Div<i32> for Vec2 {
 }
 impl DivAssign<i32> for Vec2 {
     fn div_assign(&mut self, rhs: i32) {
+        self.x /= f64::from(rhs);
+        self.y /= f64::from(rhs);
+    }
+}
+impl Div<u32> for Vec2 {
+    type Output = Vec2;
+
+    fn div(self, rhs: u32) -> Self::Output {
+        Vec2 {
+            x: self.x / f64::from(rhs),
+            y: self.y / f64::from(rhs),
+        }
+    }
+}
+impl DivAssign<u32> for Vec2 {
+    fn div_assign(&mut self, rhs: u32) {
         self.x /= f64::from(rhs);
         self.y /= f64::from(rhs);
     }

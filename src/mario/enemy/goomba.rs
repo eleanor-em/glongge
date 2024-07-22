@@ -58,16 +58,16 @@ impl Stompable for Goomba {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let texture_id = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 2, y: 1},
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 16 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(200);
         self.die_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }
         );

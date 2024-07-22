@@ -435,43 +435,43 @@ impl Player {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let texture_id = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 8 },
         );
         self.walk_sprite = Sprite::from_tileset(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(110);
         self.run_sprite = Sprite::from_tileset(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(60);
         self.skid_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
         );
         self.fall_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
         );
         self.die_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
         );
         self.flagpole_sprite = Sprite::from_single_extent(
-            texture_id,
+            texture.id(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 136, y: 8 },
         );

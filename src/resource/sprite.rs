@@ -12,7 +12,7 @@ use crate::{
 use crate::core::util::linalg::Transform;
 use crate::core::render::{RenderInfo, RenderItem};
 use crate::core::util::gg_iter::GgIter;
-use crate::resource::texture::TextureSubArea;
+use crate::resource::texture::{Texture, TextureSubArea};
 
 #[derive(Clone, Default)]
 pub struct Sprite {
@@ -25,6 +25,9 @@ pub struct Sprite {
 }
 
 impl Sprite {
+    pub fn from_texture(texture: &Texture) -> Self {
+        Self::from_single_extent(texture.id(), texture.extent(), Vec2Int::zero())
+    }
     pub fn from_single_extent(
         texture_id: TextureId,
         extent: Vec2Int,

@@ -11,6 +11,7 @@ use crate::resource::sound::SoundHandler;
 pub mod sprite;
 pub mod texture;
 pub mod sound;
+pub mod font;
 
 static CREATED_RESOURCE_HANDLER: AtomicBool = AtomicBool::new(false);
 #[derive(Clone)]

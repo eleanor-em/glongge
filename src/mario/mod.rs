@@ -14,10 +14,12 @@ mod underground_floor;
 mod enemy;
 mod background;
 mod block;
+mod text_display;
 
 use player::*;
 use floor::*;
 use underground_floor::*;
+use text_display::*;
 use block::question_block::*;
 use block::brick::*;
 use block::plain_block::*;
@@ -63,7 +65,7 @@ impl AliveEnemyMap {
 
     fn is_alive(&self, initial_coord: Vec2Int) -> bool {
         self.inner.get(&initial_coord)
-            .map(|v| *v)
+            .copied()
             .unwrap_or(true)
     }
     fn set_dead(&mut self, initial_coord: Vec2Int) {
@@ -348,6 +350,8 @@ impl Scene<ObjectType> for MarioOverworldScene {
         initial_objects.push(Block::new(Vec2Int { x: 198 * 16, y: 384 - 3 * 16 }));
         initial_objects.push(Flagpole::new(Vec2Int { x: 198 * 16, y: 384 - 13 * 16 }));
 
+        initial_objects.push(TextDisplay::new(Vec2Int { x: 128, y: 128 }));
+
         initial_objects
     }
 }
@@ -421,4 +425,5 @@ pub enum ObjectType {
     Castle,
     Pipe,
     DecorativePipe,
+    TextDisplay,
 }

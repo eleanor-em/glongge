@@ -116,7 +116,7 @@ macro_rules! check_ge {
     ($lhs:expr, $rhs:expr) => {{
         $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
         $crate::core::util::assert::assert_ord(&$lhs);
-        if !($lhs <= $rhs) {
+        if !($lhs >= $rhs) {
             panic!(
                 "check failed: {}: {} >= {}: {:?} vs. {:?}",
                 $crate::core::current_location!(),
