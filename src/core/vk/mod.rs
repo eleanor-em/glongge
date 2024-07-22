@@ -845,6 +845,7 @@ struct RenderPerfStats {
     on_time: u64,
     count: u64,
     last_report: Instant,
+    totals_ms: Vec<f64>,
 }
 
 impl RenderPerfStats {
@@ -859,10 +860,11 @@ impl RenderPerfStats {
             render_wait: TimeIt::new("wait for render"),
             render_active: TimeIt::new("render"),
             between_renders: TimeIt::new("between renders"),
-            total: TimeIt::new("total"),
+            total: TimeIt::new("total (render)"),
             on_time: 0,
             count: 0,
             last_report: Instant::now(),
+            totals_ms: Vec::with_capacity(10),
         }
     }
 
@@ -870,6 +872,11 @@ impl RenderPerfStats {
         check_eq!(self.state, RenderState::BetweenRenders);
         self.state = RenderState::HandleSwapchain;
         self.total.stop();
+        if self.totals_ms.len() == self.totals_ms.capacity() {
+            self.totals_ms.remove(0);
+        }
+        self.totals_ms.push(self.total.last_ms());
+
         self.total.start();
         self.between_renders.stop();
         self.render_active.start();
@@ -931,22 +938,34 @@ impl RenderPerfStats {
         if report_stats && self.last_report.elapsed().as_secs() >= 5 {
             #[allow(clippy::cast_precision_loss)]
             let on_time_rate = self.on_time as f64 / self.count as f64 * 100.;
-            info!("frames on time: {on_time_rate:.1}%");
-            let min_report_ms = 0.1;
-            self.render_wait.report_ms_if_at_least(min_report_ms);
+            if on_time_rate.round() != 100. {
+                info!("frames on time: {on_time_rate:.1}%");
+            }
+            self.render_wait.report_ms_if_at_least(17.);
+            let min_report_ms = 0.5;
             self.render_active.report_ms_if_at_least(min_report_ms);
             self.between_renders.report_ms_if_at_least(min_report_ms);
             self.handle_swapchain.report_ms_if_at_least(min_report_ms);
-            self.acquire_and_sync.report_ms_if_at_least(min_report_ms);
+            self.acquire_and_sync.report_ms_if_at_least(17.);
             self.on_render.report_ms_if_at_least(min_report_ms);
             self.submit_command_buffers
                 .report_ms_if_at_least(min_report_ms);
             self.end_step.report_ms_if_at_least(min_report_ms);
-            self.total.report_ms_if_at_least(min_report_ms);
+            self.total.report_ms_if_at_least(17.);
             self.last_report = Instant::now();
             self.on_time = 0;
             self.count = 0;
+
+            let late_in_row = self.totals_ms.iter()
+                .rev()
+                .take_while(|&&t| t > 16.6)
+                .try_len()
+                .unwrap_or(0);
+            if late_in_row > 1 {
+                warn!("{late_in_row} frames late in a row!");
+            }
         }
+
         self.between_renders.start();
     }
 }

@@ -6,7 +6,7 @@ use std::cell::{RefCell, RefMut};
 use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{warn};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use num_traits::{FromPrimitive, Zero};
@@ -369,7 +369,7 @@ struct UpdatePerfStats {
 impl UpdatePerfStats {
     fn new() -> Self {
         Self {
-            total_stats: TimeIt::new("total"),
+            total_stats: TimeIt::new("total (update)"),
             on_update_begin: TimeIt::new("on_update_begin"),
             coroutines: TimeIt::new("coroutines"),
             on_update: TimeIt::new("on_update"),
@@ -386,18 +386,17 @@ impl UpdatePerfStats {
 
     fn report(&mut self) {
         if self.last_report.elapsed().as_secs() >= 5 {
-            info!("update stats:");
-            self.on_update_begin.report_ms_if_at_least(1.);
-            self.coroutines.report_ms_if_at_least(1.);
-            self.on_update.report_ms_if_at_least(1.);
-            self.on_update_end.report_ms_if_at_least(1.);
-            self.fixed_update.report_ms_if_at_least(1.);
-            self.detect_collision.report_ms_if_at_least(1.);
-            self.on_collision.report_ms_if_at_least(1.);
-            self.remove_objects.report_ms_if_at_least(1.);
-            self.add_objects.report_ms_if_at_least(1.);
-            self.render_infos.report_ms_if_at_least(1.);
-            self.total_stats.report_ms();
+            self.on_update_begin.report_ms_if_at_least(2.);
+            self.coroutines.report_ms_if_at_least(2.);
+            self.on_update.report_ms_if_at_least(2.);
+            self.on_update_end.report_ms_if_at_least(2.);
+            self.fixed_update.report_ms_if_at_least(2.);
+            self.detect_collision.report_ms_if_at_least(2.);
+            self.on_collision.report_ms_if_at_least(2.);
+            self.remove_objects.report_ms_if_at_least(2.);
+            self.add_objects.report_ms_if_at_least(2.);
+            self.render_infos.report_ms_if_at_least(2.);
+            self.total_stats.report_ms_if_at_least(2.);
             self.last_report = Instant::now();
         }
     }

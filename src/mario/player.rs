@@ -606,7 +606,7 @@ impl SceneObject<ObjectType> for Player {
         {
             if let Some(mut other) = downcast_stompable_mut(&mut other) {
                 if !other.dead() {
-                    if self.collider().bottom() <= other.transform().centre.y {
+                    if self.collider().bottom() < other.collider().bottom() {
                         other.stomp();
                         self.stomp_sound.play();
                         self.v_speed = self.initial_vspeed();

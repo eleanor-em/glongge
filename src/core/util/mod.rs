@@ -79,12 +79,12 @@ pub mod gg_time {
         }
         pub fn report_ms(&mut self) {
             info!(
-            "TimeIt [{:>18}]: {} events, mean={:.2} ms, max={:.2} ms",
-            self.tag,
-            self.n,
-            self.mean_ms(),
-            self.max_ms()
-        );
+                "TimeIt [{:>18}]: {} events, mean={:.2} ms, max={:.2} ms",
+                self.tag,
+                self.n,
+                self.mean_ms(),
+                self.max_ms()
+            );
             self.reset();
         }
         pub fn report_ms_if_at_least(&mut self, milliseconds: f64) {
