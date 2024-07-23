@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use glongge_derive::register_object_type;
 use glongge::core::{
     AnySceneObject,
     scene::{Scene, SceneName},
@@ -8,13 +7,13 @@ use glongge::core::{
     util::linalg::Vec2Int
 };
 
-mod player;
-mod floor;
-mod underground_floor;
-mod enemy;
-mod background;
-mod block;
-mod text_display;
+pub mod player;
+pub mod floor;
+pub mod underground_floor;
+pub mod enemy;
+pub mod background;
+pub mod block;
+pub mod text_display;
 
 use player::*;
 use floor::*;
@@ -34,6 +33,7 @@ use background::hill3::*;
 use background::hill4::*;
 use background::castle::*;
 use glongge::core::scene::SceneObject;
+use crate::object_type::ObjectType;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
     // fixed update at 100 fps
@@ -405,23 +405,23 @@ impl Scene<ObjectType> for MarioUndergroundScene {
 
 }
 
-#[register_object_type]
-pub enum ObjectType {
-    Player,
-    Floor,
-    UndergroundFloor,
-    QuestionBlock,
-    Brick,
-    Block,
-    Flagpole,
-    UndergroundBrick,
-    Goomba,
-    Hill1,
-    Hill2,
-    Hill3,
-    Hill4,
-    Castle,
-    Pipe,
-    DecorativePipe,
-    WinTextDisplay,
-}
+// #[register_object_type]
+// pub enum ObjectType {
+//     Player,
+//     Floor,
+//     UndergroundFloor,
+//     QuestionBlock,
+//     Brick,
+//     Block,
+//     Flagpole,
+//     UndergroundBrick,
+//     Goomba,
+//     Hill1,
+//     Hill2,
+//     Hill3,
+//     Hill4,
+//     Castle,
+//     Pipe,
+//     DecorativePipe,
+//     WinTextDisplay,
+// }

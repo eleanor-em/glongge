@@ -20,9 +20,9 @@ use crate::mario::{
     BLOCK_COLLISION_TAG,
     from_nes,
     from_nes_accel,
-    ObjectType,
     player::Player
 };
+use crate::object_type::ObjectType;
 
 
 #[register_scene_object]

@@ -1,4 +1,5 @@
 #![feature(const_fn_floating_point_arithmetic)]
+include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
 use glongge::{
     core::{
@@ -13,6 +14,7 @@ use glongge::{
     },
     resource::ResourceHandler
 };
+use crate::object_type::ObjectType;
 
 mod mario;
 mod rectangle;
@@ -43,9 +45,7 @@ fn main() -> Result<()> {
     let window_ctx = WindowContext::new()?;
     let ctx = VulkanoContext::new(&window_ctx)?;
     let mut resource_handler = ResourceHandler::new(&ctx)?;
-    mario::ObjectType::preload_all(&mut resource_handler)?;
-    rectangle::ObjectType::preload_all(&mut resource_handler)?;
-    triangle::ObjectType::preload_all(&mut resource_handler)?;
+    ObjectType::preload_all(&mut resource_handler)?;
 
     let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
         .with_global_scale_factor(2.);

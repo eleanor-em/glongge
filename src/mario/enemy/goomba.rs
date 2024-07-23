@@ -20,7 +20,8 @@ use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::UpdateContext;
-use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG, ObjectType};
+use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
+use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Goomba {

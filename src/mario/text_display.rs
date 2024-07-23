@@ -13,7 +13,7 @@ use glongge::{
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::resource::font::{Font, TextWrapMode};
-use crate::mario::ObjectType;
+use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct WinTextDisplay {
@@ -24,7 +24,7 @@ pub struct WinTextDisplay {
 
 impl WinTextDisplay {
     pub fn new(centre: Vec2) -> Box<Self> {
-        Box::new(Self { centre: centre, font: None, sprite: Sprite::default() })
+        Box::new(Self { centre, font: None, sprite: Sprite::default() })
     }
 }
 

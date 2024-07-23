@@ -12,7 +12,7 @@ use glongge::{
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use crate::mario::ObjectType;
+use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Hill2 {

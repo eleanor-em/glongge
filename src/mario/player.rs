@@ -26,8 +26,9 @@ use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::UpdateContext;
 use glongge::core::util::linalg;
-use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, ObjectType, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
+use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
 use crate::mario::WinTextDisplay;
+use crate::object_type::ObjectType;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {

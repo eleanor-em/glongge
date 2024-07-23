@@ -3,8 +3,8 @@ use glongge::core::SceneObjectWithId;
 use glongge::core::scene::SceneObject;
 use crate::mario::{
     enemy::goomba::Goomba,
-    ObjectType
 };
+use crate::object_type::ObjectType;
 
 pub mod goomba;
 

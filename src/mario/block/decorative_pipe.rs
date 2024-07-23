@@ -12,7 +12,8 @@ use glongge::{
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
-use crate::mario::{BLOCK_COLLISION_TAG, ObjectType};
+use crate::mario::{BLOCK_COLLISION_TAG};
+use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct DecorativePipe {

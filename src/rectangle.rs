@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
-
 use glongge_derive::*;
 use glongge::{
     core::{
@@ -27,6 +26,7 @@ use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::UpdateContext;
+use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
@@ -36,26 +36,26 @@ impl Scene<ObjectType> for RectangleScene {
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![
-            Spawner::new(),
-            Player::new(),
+            RectangleSpawner::new(),
+            RectanglePlayer::new(),
         ]
     }
 }
 
-#[register_object_type]
-pub enum ObjectType {
-    Spawner,
-    Player,
-    SpinningRectangle,
-}
+// #[register_object_type]
+// pub enum ObjectType {
+//     Spawner,
+//     Player,
+//     SpinningRectangle,
+// }
 
 const RECTANGLE_COLL_TAG: &str = "RECTANGLE_COLL_TAG";
 
 #[register_scene_object]
-struct Spawner {}
+pub struct RectangleSpawner {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Spawner {
+impl SceneObject<ObjectType> for RectangleSpawner {
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 1;
         let objects = Uniform::new(0., ctx.viewport().right())
@@ -83,19 +83,19 @@ impl SceneObject<ObjectType> for Spawner {
 }
 
 #[register_scene_object]
-struct Player {
+pub struct RectanglePlayer {
     pos: Vec2,
     vel: Vec2,
     sprite: Sprite,
 }
 
-impl Player {
+impl RectanglePlayer {
     const SIZE: f64 = 100.;
     const SPEED: f64 = 300.;
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Player {
+impl SceneObject<ObjectType> for RectanglePlayer {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
         self.sprite = Sprite::from_tileset(
@@ -137,14 +137,14 @@ impl SceneObject<ObjectType> for Player {
     }
 }
 
-impl RenderableObject<ObjectType> for Player {
+impl RenderableObject<ObjectType> for RectanglePlayer {
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
     }
 }
 
 #[register_scene_object]
-struct SpinningRectangle {
+pub struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,

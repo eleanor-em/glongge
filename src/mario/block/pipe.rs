@@ -15,7 +15,8 @@ use glongge::{
 };
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
-use crate::mario::{BLOCK_COLLISION_TAG, ObjectType, PIPE_COLLISION_TAG};
+use crate::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
+use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Pipe {

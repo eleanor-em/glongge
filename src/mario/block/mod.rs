@@ -4,10 +4,10 @@ use glongge::core::scene::SceneObject;
 use crate::mario::{
     block::brick::Brick,
     block::question_block::QuestionBlock,
-    ObjectType,
     player::Player
 };
 use crate::mario::block::underground_brick::UndergroundBrick;
+use crate::object_type::ObjectType;
 
 pub mod brick;
 pub mod plain_block;

@@ -16,7 +16,8 @@ use glongge::{
         sprite::Sprite
     },
 };
-use crate::mario::ObjectType;
+use crate::object_type::ObjectType;
+
 
 #[register_scene_object]
 pub struct Hill1 {

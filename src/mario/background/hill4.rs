@@ -10,8 +10,7 @@ use glongge::{
 };
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
-use crate::mario::ObjectType;
-
+use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Hill4 {
     top_left: Vec2,

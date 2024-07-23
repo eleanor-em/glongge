@@ -7,7 +7,7 @@ use rand::{
     distributions::{Distribution, Uniform},
     Rng
 };
-use glongge_derive::{partially_derive_scene_object, register_object_type};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 use glongge::{
     core::{
@@ -23,6 +23,7 @@ use glongge::core::render::{RenderInfo, RenderItem, VertexWithUV};
 use glongge::core::scene::{RenderableObject, Scene, SceneName, SceneObject};
 use glongge::core::update::UpdateContext;
 use glongge::resource::ResourceHandler;
+use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
@@ -32,22 +33,22 @@ impl Scene<ObjectType> for TriangleScene {
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![
-            Box::new(Spawner{}),
+            Box::new(TriangleSpawner{}),
         ]
     }
 }
 
-#[register_object_type]
-pub enum ObjectType {
-    Spawner,
-    SpinningTriangle,
-}
+// #[register_object_type]
+// pub enum ObjectType {
+//     Spawner,
+//     SpinningTriangle,
+// }
 
-#[derive(Default)]
-struct Spawner {}
+#[register_scene_object]
+pub struct TriangleSpawner {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Spawner {
+impl SceneObject<ObjectType> for TriangleSpawner {
 
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         const N: usize = 10;
@@ -87,7 +88,7 @@ impl SceneObject<ObjectType> for Spawner {
     }
 }
 
-struct SpinningTriangle {
+pub struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
     t: f64,
