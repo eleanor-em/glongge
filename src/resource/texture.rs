@@ -16,6 +16,7 @@ use std::{
         atomic::{AtomicUsize, Ordering}
     }
 };
+use std::fmt::{Display, Formatter};
 use std::io::Read;
 
 use png::ColorType;
@@ -45,34 +46,55 @@ use crate::core::util::colour::Colour;
 use crate::core::util::linalg;
 use crate::core::util::linalg::{AxisAlignedExtent, Rect, Vec2Int};
 
-
-static NEXT_TEXTURE_ID: AtomicUsize = AtomicUsize::new(0);
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct TextureId(usize);
-
-impl TextureId {
-    fn next() -> Self {
-        Self(NEXT_TEXTURE_ID.fetch_add(1, Ordering::Relaxed))
-    }
-}
-
-impl From<TextureId> for u32 {
-    fn from(value: TextureId) -> Self {
-        check_lt!(value.0, MAX_TEXTURE_COUNT);
-        u32::try_from(value.0)
-            .unwrap_or_else(|_| panic!("too large texture id: {value:?}"))
-    }
-}
-
-#[derive(Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug)]
 pub struct Texture {
-    id: TextureId,
-    extent: Vec2Int
+    id: usize,
+    extent: Vec2,
+    ref_count: Arc<AtomicUsize>,
 }
 
 impl Texture {
-    pub fn id(&self) -> TextureId { self.id }
-    pub fn extent(&self) -> Vec2Int { self.extent }
+    pub(crate) fn id(&self) -> usize { self.id }
+    pub fn extent(&self) -> Vec2 { self.extent }
+}
+
+impl Clone for Texture {
+    fn clone(&self) -> Self {
+        self.ref_count.fetch_add(1, Ordering::Relaxed);
+        Self {
+            id: self.id,
+            extent: self.extent.clone(),
+            ref_count: self.ref_count.clone(),
+        }
+    }
+}
+
+impl Default for Texture {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            extent: Vec2::one(),
+            ref_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl Display for Texture {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Texture(id={}, {}x{})", self.id, self.extent.x, self.extent.y)
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        self.ref_count.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl From<Texture> for u32 {
+    fn from(value: Texture) -> Self {
+        value.id as u32
+    }
 }
 
 #[derive(Clone)]
@@ -80,6 +102,7 @@ pub(crate) struct InternalTexture {
     buf: Subbuffer<[u8]>,
     info: ImageCreateInfo,
     cached_image_view: Option<Arc<ImageView>>,
+    ref_count: Arc<AtomicUsize>,
 }
 
 impl InternalTexture {
@@ -136,32 +159,15 @@ impl<R: Read> Read for WrappedPngReader<R> {
 
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Texture>,
-    textures: BTreeMap<TextureId, InternalTexture>,
+    textures: BTreeMap<usize, InternalTexture>,
 }
 
-#[derive(Clone)]
-pub struct TextureHandler {
-    ctx: VulkanoContext,
-    inner: Arc<Mutex<TextureHandlerInner>>,
-    cached_textures: Arc<RwLock<BTreeMap<TextureId, CachedTexture>>>,
-}
-
-impl TextureHandler {
-    pub(crate) fn new(ctx: VulkanoContext) -> Self {
+impl TextureHandlerInner {
+    fn new(ctx: &VulkanoContext) -> Result<Self> {
         let mut textures = BTreeMap::new();
-        textures.insert(TextureId::next(), Self::blank_texture(&ctx)
-            .expect("could not create blank texture"));
 
-        let inner = Arc::new(Mutex::new(TextureHandlerInner {
-            loaded_files: BTreeMap::new(),
-            textures: textures.clone(),
-        }));
-        let cached_textures = Arc::new(RwLock::new(BTreeMap::new()));
-        Self { ctx, inner, cached_textures }
-    }
-
-    fn blank_texture(ctx: &VulkanoContext) -> Result<InternalTexture> {
-        let image_create_info = ImageCreateInfo {
+        // Create blank texture
+        let info = ImageCreateInfo {
             image_type: ImageType::Dim2d,
             format: Format::R8G8B8A8_SRGB,
             extent: [1, 1, 1],
@@ -181,10 +187,82 @@ impl TextureHandler {
             DeviceSize::from(4 as char)
         ).map_err(Validated::unwrap)?;
         buf.write()?.swap_with_slice(&mut Colour::white().as_bytes());
-        Ok(InternalTexture {
-            buf, info: image_create_info,
+
+        let internal_texture = InternalTexture {
+            buf,
+            info,
             cached_image_view: None,
+            ref_count: Arc::new(AtomicUsize::new(1)),
+        };
+        textures.insert(0, internal_texture);
+
+        Ok(Self {
+            loaded_files: BTreeMap::new(),
+            textures,
         })
+    }
+
+    fn create_texture(&mut self, buf: Subbuffer<[u8]>, info: ImageCreateInfo) -> Texture {
+        // Free up unused textures first.
+        self.free_all_unused_textures();
+
+        let id = self.textures.keys()
+            .copied()
+            .tuple_windows()
+            .filter(|(a, b)| *a + 1 != *b)
+            .next()
+            .map_or_else(
+                || self.textures.keys().last().expect("empty texture map? (blank texture missing)") + 1,
+                |(a, _)| a + 1);
+        let ref_count = Arc::new(AtomicUsize::new(1));
+        let internal_texture = InternalTexture {
+            buf,
+            info,
+            cached_image_view: None,
+            ref_count: ref_count.clone(),
+        };
+        let extent = internal_texture.extent();
+        if let Some(existing) = self.textures.insert(id, internal_texture) {
+            panic!("tried to use texture id {id}, but ref_count={}",
+                   existing.ref_count.load(Ordering::Relaxed));
+        }
+        Texture { id, extent, ref_count }
+    }
+
+    fn free_all_unused_textures(&mut self) {
+        for unused_id in self.textures.iter()
+            .filter(|(_, tex)| tex.ref_count.load(Ordering::Relaxed) == 0)
+            .map(|(id, _)| *id)
+            .collect_vec() {
+            info!("freeing texture id {unused_id}");
+            self.textures.remove(&unused_id);
+        }
+    }
+
+    fn free_unused_files(&mut self) {
+        for filename in self.loaded_files.iter()
+            .filter(|(_, tex)| tex.ref_count.load(Ordering::Relaxed) <= 1)
+            .map(|(filename, _)| filename.clone())
+            .collect_vec() {
+            info!("freeing texture {filename}");
+            self.loaded_files.remove(&filename);
+        }
+        self.free_all_unused_textures();
+    }
+}
+
+#[derive(Clone)]
+pub struct TextureHandler {
+    ctx: VulkanoContext,
+    inner: Arc<Mutex<TextureHandlerInner>>,
+    cached_textures: Arc<RwLock<BTreeMap<usize, CachedTexture>>>,
+}
+
+impl TextureHandler {
+    pub(crate) fn new(ctx: VulkanoContext) -> Result<Self> {
+        let inner = Arc::new(Mutex::new(TextureHandlerInner::new(&ctx)?));
+        let cached_textures = Arc::new(RwLock::new(BTreeMap::new()));
+        Ok(Self { ctx, inner, cached_textures })
     }
 
     pub fn wait_load_file(&self, filename: String) -> Result<Texture> {
@@ -192,26 +270,16 @@ impl TextureHandler {
         if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
             return Ok(texture.clone());
         }
-
-        let texture_id = TextureId::next();
-        let internal_texture = self.load_file_inner(&filename)?;
-        let texture = Texture {
-            id: texture_id,
-            extent: Vec2Int {
-                x: internal_texture.extent().x as i32,
-                y: internal_texture.extent().y as i32,
-            }
-        };
-
+        let (buf, info) = self.load_file_inner(&filename)?;
         let mut inner = self.inner.lock().unwrap();
-        info!("loaded texture: {} = {:?}", filename, texture_id);
+        let texture = inner.create_texture(buf, info);
+        info!("loaded texture: {} = {:?}", filename, texture.id());
         inner.loaded_files.insert(filename, texture.clone());
-        inner.textures.insert(texture_id, internal_texture);
-        self.cached_textures.write().unwrap().insert(texture_id, CachedTexture::Loading);
+        self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
 
-    fn load_file_inner(&self, filename: &str) -> Result<InternalTexture> {
+    fn load_file_inner(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
         let path = Path::new(filename);
         let ext = path.extension()
             .ok_or_else(|| anyhow!("no file extension: {}", filename))?
@@ -223,7 +291,7 @@ impl TextureHandler {
             ext => bail!("unknown file extension: {} (while loading {})", ext, filename),
         }
     }
-    fn load_file_inner_png(&self, filename: &str) -> Result<InternalTexture> {
+    fn load_file_inner_png(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
@@ -261,23 +329,25 @@ impl TextureHandler {
         self.load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
     }
 
-    pub(crate) fn wait_load_reader_rgba<R: Read>(&self, reader: &mut R, width: u32, height: u32, format: Format) -> Result<Texture> {
-        let texture_id = TextureId::next();
-        let internal_texture = self.load_reader_rgba_inner(reader, width, height, format)?;
-        let texture = Texture {
-            id: texture_id,
-            extent: Vec2Int {
-                x: internal_texture.extent().x as i32,
-                y: internal_texture.extent().y as i32,
-            }
-        };
+    pub(crate) fn wait_load_reader_rgba<R: Read>(&self,
+                                                 reader: &mut R,
+                                                 width: u32,
+                                                 height: u32,
+                                                 format: Format
+    ) -> Result<Texture> {
+        let (buf, info) = self.load_reader_rgba_inner(reader, width, height, format)?;
 
         let mut inner = self.inner.lock().unwrap();
-        inner.textures.insert(texture_id, internal_texture);
-        self.cached_textures.write().unwrap().insert(texture_id, CachedTexture::Loading);
+        let texture = inner.create_texture(buf, info);
+        self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
-    fn load_reader_rgba_inner<R: Read>(&self, reader: &mut R, width: u32, height: u32, format: Format) -> Result<InternalTexture> {
+    fn load_reader_rgba_inner<R: Read>(&self,
+                                       reader: &mut R,
+                                       width: u32,
+                                       height: u32,
+                                       format: Format
+    ) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
         if format != Format::R8G8B8A8_SRGB {
             check_eq!(format, Format::R8G8B8A8_UNORM);
         }
@@ -303,14 +373,15 @@ impl TextureHandler {
 
         reader.read_exact(&mut buf.write()?)?;
 
-        Ok(InternalTexture {
-            buf,
-            info: image_create_info,
-            cached_image_view: None,
-        })
+        Ok((buf, image_create_info))
     }
 
-    pub fn wait_build_command_buffer(&self, ctx: &VulkanoContext) -> Result<Option<Box<dyn GpuFuture>>> {
+    pub fn wait_free_unused_files(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.free_unused_files();
+    }
+
+    pub(crate) fn wait_build_command_buffer(&self, ctx: &VulkanoContext) -> Result<Option<Box<dyn GpuFuture>>> {
         let mut inner = self.inner.lock().unwrap();
         let textures_to_upload = inner.textures.iter_mut()
             .filter(|(_, tex)| tex.cached_image_view.is_none())
@@ -349,9 +420,9 @@ impl TextureHandler {
     }
 
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub(crate) fn get(&self, texture_id: TextureId) -> Option<MappedRwLockReadGuard<CachedTexture>> {
+    pub(crate) fn get(&self, texture: &Texture) -> Option<MappedRwLockReadGuard<CachedTexture>> {
         RwLockReadGuard::try_map(self.cached_textures.read().unwrap(), |textures| {
-            textures.get(&texture_id)
+            textures.get(&texture.id())
         }).ok()
     }
 }

@@ -64,7 +64,7 @@ use crate::{
 };
 use crate::core::ObjectId;
 use crate::core::util::linalg::{Transform, Vec2};
-use crate::resource::texture::{TextureId, TextureSubArea};
+use crate::resource::texture::{Texture, TextureSubArea};
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -95,13 +95,13 @@ struct BasicVertex {
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
     pub col: Colour,
-    pub texture_id: Option<TextureId>,
+    pub texture: Option<Texture>,
     pub texture_sub_area: TextureSubArea,
 }
 
 impl Default for RenderInfo {
     fn default() -> Self {
-        Self { col: Colour::white(), texture_id: None, texture_sub_area: TextureSubArea::default() }
+        Self { col: Colour::white(), texture: None, texture_sub_area: TextureSubArea::default() }
     }
 }
 
@@ -273,23 +273,23 @@ impl BasicRenderHandler {
         for render_info in &receiver.render_info {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
-                let texture_id = render_info.inner.texture_id.unwrap_or_default();
+                let texture = render_info.inner.texture.clone().unwrap_or_default();
                 let mut blend_col = render_info.inner.col;
                 let mut uv = receiver.vertices[vertex_index].uv;
-                if let Some(tex) = self.resource_handler.texture.get(texture_id) {
+                if let Some(tex) = self.resource_handler.texture.get(&texture) {
                     if let Some(tex) = tex.ready() {
                         uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                     } else {
                         blend_col = Colour::new(0., 0., 0., 0.);
                     }
                 } else {
-                    error!("missing texture id: {:?}", texture_id);
+                    error!("missing texture: {}", texture);
                     blend_col = Colour::magenta();
                 }
                 vertex_buffer[vertex_index] = BasicVertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
-                    texture_id: texture_id.into(),
+                    texture_id: texture.into(),
                     translation: render_info.transform.centre.into(),
                     #[allow(clippy::cast_possible_truncation)]
                     rotation: render_info.transform.rotation as f32,

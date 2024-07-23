@@ -247,6 +247,10 @@ impl Vec2 {
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
         (*self - rhs).len() < f64::from(f32::epsilon())
     }
+
+    pub fn as_vec2int_lossy(&self) -> Vec2Int {
+        Vec2Int { x: self.x as i32, y: self.y as i32 }
+    }
 }
 
 impl Zero for Vec2 {

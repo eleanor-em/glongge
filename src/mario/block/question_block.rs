@@ -64,7 +64,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
-            texture.id(),
+            texture.clone(),
             Vec2Int { x: 3, y: 1},
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 298, y: 78 },
@@ -72,7 +72,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
             .with_frame_orders(vec![0, 1, 2, 1])
             .with_frame_time_ms(vec![600, 100, 100, 100]);
         self.empty_sprite = Sprite::from_single_extent(
-            texture.id(),
+            texture,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 349, y: 78 });
         Ok(self.sprite.create_vertices())

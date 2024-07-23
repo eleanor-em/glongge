@@ -99,7 +99,7 @@ impl SceneObject<ObjectType> for Player {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
         self.sprite = Sprite::from_tileset(
-            texture.id(),
+            texture,
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 0 },
@@ -186,7 +186,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
         self.sprite = Sprite::from_tileset(
-            texture.id(),
+            texture,
             Vec2Int{ x: 2, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 0 },

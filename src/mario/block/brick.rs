@@ -52,7 +52,7 @@ impl SceneObject<ObjectType> for Brick {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
-            texture.id(),
+            texture,
             Vec2Int { x: 16, y: 16},
             Vec2Int { x: 17, y: 16 });
         Ok(self.sprite.create_vertices())

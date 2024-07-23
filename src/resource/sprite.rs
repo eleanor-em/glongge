@@ -6,7 +6,6 @@ use crate::{
         util::linalg::{AxisAlignedExtent, Vec2},
         util::linalg::Vec2Int
     },
-    resource::texture::TextureId,
     shader,
 };
 use crate::core::util::linalg::Transform;
@@ -16,7 +15,7 @@ use crate::resource::texture::{Texture, TextureSubArea};
 
 #[derive(Clone, Default)]
 pub struct Sprite {
-    texture_id: TextureId,
+    texture: Texture,
     areas: Vec<TextureSubArea>,
     elapsed_us: u128,
     paused: bool,
@@ -25,16 +24,17 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn from_texture(texture: &Texture) -> Self {
-        Self::from_single_extent(texture.id(), texture.extent(), Vec2Int::zero())
+    pub fn from_texture(texture: Texture) -> Self {
+        let extent = texture.extent();
+        Self::from_single_extent(texture, extent.as_vec2int_lossy(), Vec2Int::zero())
     }
     pub fn from_single_extent(
-        texture_id: TextureId,
+        texture: Texture,
         extent: Vec2Int,
         top_left: Vec2Int
     ) -> Self {
         Self::from_tileset(
-            texture_id,
+            texture,
             Vec2Int::one(),
             extent,
             top_left,
@@ -42,19 +42,19 @@ impl Sprite {
         )
     }
     pub fn from_single_coords(
-        texture_id: TextureId,
+        texture: Texture,
         top_left: Vec2Int,
         bottom_right: Vec2Int,
     ) -> Self {
         Self::from_single_extent(
-            texture_id,
+            texture,
             bottom_right - top_left,
             top_left
         )
     }
 
     pub fn from_tileset(
-        texture_id: TextureId,
+        texture: Texture,
         tile_count: Vec2Int,
         tile_size: Vec2Int,
         offset: Vec2Int,
@@ -70,7 +70,7 @@ impl Sprite {
             .collect_vec();
         let frame_time_ms = vec![1000; areas.len()];
         Self {
-            texture_id, areas, frame_time_ms,
+            texture, areas, frame_time_ms,
             paused: false,
             elapsed_us: 0,
             frame: 0,
@@ -133,7 +133,7 @@ impl Sprite {
     }
     pub fn render_info_from(&self, mut render_info: RenderInfo) -> RenderInfo {
         if self.ready() {
-            render_info.texture_id = Some(self.texture_id);
+            render_info.texture = Some(self.texture.clone());
             render_info.texture_sub_area = self.current_frame();
         }
         render_info

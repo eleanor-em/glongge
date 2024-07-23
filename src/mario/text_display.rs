@@ -38,7 +38,7 @@ const SAMPLE_RATIO: u32 = 8;
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for TextDisplay {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        self.sprite = Sprite::from_texture(&font::create_bitmap(
+        self.sprite = Sprite::from_texture(font::create_bitmap(
             resource_handler,
             SENTENCE,
             12.0,
