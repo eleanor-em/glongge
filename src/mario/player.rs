@@ -27,6 +27,7 @@ use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::UpdateContext;
 use glongge::core::util::linalg;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, ObjectType, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
+use crate::mario::WinTextDisplay;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum PlayerState {
@@ -621,7 +622,9 @@ impl SceneObject<ObjectType> for Player {
             self.state = PlayerState::RidingFlagpole;
             self.music.stop();
             self.flagpole_sound.play();
-            let dest_x = other.transform().centre.x - self.current_sprite().half_widths().x;
+            let flagpole_top = other.collider().top();
+            let flagpole_centre = other.transform().centre.x;
+            let dest_x = flagpole_centre - self.current_sprite().half_widths().x;
             ctx.scene().start_coroutine(move |mut this, ctx, _last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
@@ -631,6 +634,7 @@ impl SceneObject<ObjectType> for Player {
                         this.collider().as_ref(), vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
+                    ctx.object().add(WinTextDisplay::new(Vec2 { x: flagpole_centre, y: flagpole_top - 80. }));
                     this.clear_sound.play();
                     CoroutineResponse::Complete
                 } else {

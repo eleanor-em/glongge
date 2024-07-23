@@ -350,8 +350,6 @@ impl Scene<ObjectType> for MarioOverworldScene {
         initial_objects.push(Block::new(Vec2Int { x: 198 * 16, y: 384 - 3 * 16 }));
         initial_objects.push(Flagpole::new(Vec2Int { x: 198 * 16, y: 384 - 13 * 16 }));
 
-        initial_objects.push(TextDisplay::new(Vec2Int { x: 128, y: 128 }));
-
         initial_objects
     }
 }
@@ -425,5 +423,5 @@ pub enum ObjectType {
     Castle,
     Pipe,
     DecorativePipe,
-    TextDisplay,
+    WinTextDisplay,
 }

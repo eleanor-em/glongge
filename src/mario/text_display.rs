@@ -2,7 +2,7 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
         prelude::*,
-        util::linalg::{Vec2, Vec2Int},
+        util::linalg::Vec2,
         util::linalg::Transform,
     },
     resource::{
@@ -16,30 +16,25 @@ use glongge::resource::font::{Font, TextWrapMode};
 use crate::mario::ObjectType;
 
 #[register_scene_object]
-pub struct TextDisplay {
+pub struct WinTextDisplay {
     centre: Vec2,
     font: Option<Font>,
     sprite: Sprite,
 }
 
-impl TextDisplay {
-    pub fn new(centre: Vec2Int) -> Box<Self> {
-        Box::new(Self { centre: centre.into(), font: None, sprite: Sprite::default() })
+impl WinTextDisplay {
+    pub fn new(centre: Vec2) -> Box<Self> {
+        Box::new(Self { centre: centre, font: None, sprite: Sprite::default() })
     }
 }
 
-const SENTENCE: &str =
-    "a set of words that is complete in itself, typically containing a subject and predicate, \
-     conveying a statement, question, exclamation, or command, and consisting of a main \
-     clause and sometimes one or more subordinate clauses.";
-
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for TextDisplay {
+impl SceneObject<ObjectType> for WinTextDisplay {
     fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let font = Font::from_slice(include_bytes!("../../res/DejaVuSansMono.ttf"), 12.)?;
+        let font = Font::from_slice(include_bytes!("../../res/DejaVuSansMono.ttf"), 20.)?;
         self.sprite = Sprite::from_texture(font.render_texture(
             resource_handler,
-            SENTENCE,
+            "You win!",
             200.0,
             TextWrapMode::WrapAnywhere
         )?);
@@ -58,7 +53,7 @@ impl SceneObject<ObjectType> for TextDisplay {
     }
 }
 
-impl RenderableObject<ObjectType> for TextDisplay {
+impl RenderableObject<ObjectType> for WinTextDisplay {
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
     }
