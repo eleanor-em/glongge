@@ -284,7 +284,7 @@ impl Player {
             }
         }
 
-        if ctx.object().test_collision_along(self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {
+        if ctx.object().test_collision_along(self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
                 ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
@@ -331,7 +331,7 @@ impl Player {
     fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().down(KeyCode::Down) {
             if let Some(collisions) = ctx.object().test_collision_along(
-                    self.collider(), vec![PIPE_COLLISION_TAG], Vec2::down(), 1.) {
+                self.collider(), Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.downcast::<Pipe>()
                     .expect("non-pipe with pipe collision tag?");
                 if !pipe.orientation().dot(Vec2::down()).is_zero() {
@@ -342,7 +342,7 @@ impl Player {
             }
         } else if ctx.input().down(KeyCode::Right) {
             if let Some(collisions) = ctx.object().test_collision_along(
-                    self.collider(), vec![PIPE_COLLISION_TAG], Vec2::right(), 1.) {
+                self.collider(), Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.downcast::<Pipe>()
                     .expect("non-pipe with pipe collision tag?");
                 if let Some(instruction) = pipe.destination() {
@@ -552,7 +552,7 @@ impl SceneObject<ObjectType> for Player {
         }
 
         self.maybe_start_pipe(ctx);
-        match ctx.object().test_collision_along(self.collider(), vec![BLOCK_COLLISION_TAG], self.dir, self.speed) {
+        match ctx.object().test_collision_along(self.collider(), self.dir, self.speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 self.centre += self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
@@ -560,7 +560,7 @@ impl SceneObject<ObjectType> for Player {
             None => self.centre += self.speed * self.dir,
         }
 
-        match ctx.object().test_collision_along(self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), self.v_speed) {
+        match ctx.object().test_collision_along(self.collider(), Vec2::down(), self.v_speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 let mut coll = collisions.into_iter()
                     .min_by(|a, b| {

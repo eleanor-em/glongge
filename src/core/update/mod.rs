@@ -634,9 +634,9 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
     pub fn test_collision_along(&self,
                                 mut collider: Box<dyn Collider>,
-                                tags: Vec<&'static str>,
                                 axis: Vec2,
                                 distance: f64,
+                                tags: Vec<&'static str>,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.test_collision(collider.translate(distance * axis), tags)
             .and_then(|vec| {

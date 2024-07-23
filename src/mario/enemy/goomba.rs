@@ -82,7 +82,7 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
-        if ctx.object().test_collision_along(self.collider(), vec![BLOCK_COLLISION_TAG], Vec2::down(), 1.).is_none() {
+        if ctx.object().test_collision_along(self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.v_accel = BASE_GRAVITY;
         }
     }
