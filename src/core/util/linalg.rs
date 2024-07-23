@@ -46,6 +46,7 @@ impl Vec2Int {
         Self::range(Vec2Int::zero(), end)
     }
 
+    #[allow(clippy::cast_sign_loss)]
     pub fn as_index(&self, width: u32, height: u32) -> usize {
         check_ge!(self.x, 0);
         check_ge!(self.y, 0);
@@ -248,6 +249,7 @@ impl Vec2 {
         (*self - rhs).len() < f64::from(f32::epsilon())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn as_vec2int_lossy(&self) -> Vec2Int {
         Vec2Int { x: self.x as i32, y: self.y as i32 }
     }

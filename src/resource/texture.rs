@@ -63,7 +63,7 @@ impl Clone for Texture {
         self.ref_count.fetch_add(1, Ordering::Relaxed);
         Self {
             id: self.id,
-            extent: self.extent.clone(),
+            extent: self.extent,
             ref_count: self.ref_count.clone(),
         }
     }
@@ -93,7 +93,8 @@ impl Drop for Texture {
 
 impl From<Texture> for u32 {
     fn from(value: Texture) -> Self {
-        value.id as u32
+        u32::try_from(value.id)
+            .expect("texture IDs should stay small")
     }
 }
 
@@ -209,11 +210,10 @@ impl TextureHandlerInner {
         let id = self.textures.keys()
             .copied()
             .tuple_windows()
-            .filter(|(a, b)| *a + 1 != *b)
-            .next()
-            .map_or_else(
-                || self.textures.keys().last().expect("empty texture map? (blank texture missing)") + 1,
-                |(a, _)| a + 1);
+            .find(|(a, b)| *a + 1 != *b)
+            .map(|(a, _)| a + 1)
+            .or_else(|| self.textures.last_key_value().map(|(id, _)| id + 1))
+            .expect("empty textures? (blank texture missing)");
         let ref_count = Arc::new(AtomicUsize::new(1));
         let internal_texture = InternalTexture {
             buf,
@@ -329,11 +329,12 @@ impl TextureHandler {
         self.load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
     }
 
-    pub(crate) fn wait_load_reader_rgba<R: Read>(&self,
-                                                 reader: &mut R,
-                                                 width: u32,
-                                                 height: u32,
-                                                 format: Format
+    pub(crate) fn wait_load_reader_rgba<R: Read>(
+        &self,
+        reader: &mut R,
+        width: u32,
+        height: u32,
+        format: Format
     ) -> Result<Texture> {
         let (buf, info) = self.load_reader_rgba_inner(reader, width, height, format)?;
 
@@ -342,11 +343,12 @@ impl TextureHandler {
         self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
-    fn load_reader_rgba_inner<R: Read>(&self,
-                                       reader: &mut R,
-                                       width: u32,
-                                       height: u32,
-                                       format: Format
+    fn load_reader_rgba_inner<R: Read>(
+        &self,
+        reader: &mut R,
+        width: u32,
+        height: u32,
+        format: Format
     ) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
         if format != Format::R8G8B8A8_SRGB {
             check_eq!(format, Format::R8G8B8A8_UNORM);

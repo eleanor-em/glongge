@@ -938,7 +938,7 @@ impl RenderPerfStats {
         if report_stats && self.last_report.elapsed().as_secs() >= 5 {
             #[allow(clippy::cast_precision_loss)]
             let on_time_rate = self.on_time as f64 / self.count as f64 * 100.;
-            if on_time_rate.round() != 100. {
+            if on_time_rate.round() < 100. {
                 info!("frames on time: {on_time_rate:.1}%");
             }
             self.render_wait.report_ms_if_at_least(17.);
