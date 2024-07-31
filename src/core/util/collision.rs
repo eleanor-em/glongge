@@ -821,6 +821,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         check!(self.show_wireframe);
         RenderInfo {
             col: Colour::cyan().with_alpha(0.5).into(),
+            shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
         }
     }
@@ -829,4 +830,4 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
-use crate::shader::vertex;
+use crate::shader::{get_shader, Shader, vertex, WireframeShader};

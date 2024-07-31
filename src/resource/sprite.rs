@@ -17,6 +17,7 @@ use crate::{
 };
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
+use crate::shader::{get_shader, Shader, SpriteShader};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 enum SpriteState {
@@ -171,6 +172,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
     fn render_info(&self) -> RenderInfo {
         check_eq!(self.state, SpriteState::Show);
         RenderInfo {
+            shader_id: get_shader(SpriteShader::name()),
             texture_id: self.texture.id(),
             texture_sub_area: self.current_frame(),
             ..Default::default()

@@ -81,7 +81,7 @@ macro_rules! check_is_some {
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_none() {
             panic!(
-                "check failed: {}: {}",
+                "check failed: {}.is_some(): {}",
                 $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
             );
@@ -92,7 +92,7 @@ macro_rules! check_is_some {
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_none() {
             panic!(
-                "check failed: {}: {}: {}",
+                "check failed: {}.is_some(): {}: {}",
                 $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
                 $extra
@@ -102,6 +102,36 @@ macro_rules! check_is_some {
 }
 #[allow(unused_imports)]
 pub use check_is_some;
+#[allow(unused_macros)]
+#[macro_export]
+macro_rules! check_is_none {
+    ($lhs:expr) => {{
+        let value = $lhs;
+        $crate::core::util::assert::assert_type::<Option<_>>(&value);
+        if value.is_none() {
+            panic!(
+                "check failed: {}.is_none(): {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+            );
+        }
+    }};
+    ($lhs:expr, $extra:expr) => {{
+        let value = $lhs;
+        $crate::core::util::assert::assert_type::<Option<_>>(&value);
+        if value.is_some() {
+            panic!(
+                "check failed: {}.is_none(): {}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                $extra
+            );
+        }
+    }};
+}
+#[allow(unused_imports)]
+pub use check_is_none;
+
 
 #[allow(unused_macros)]
 #[macro_export]

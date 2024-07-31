@@ -172,6 +172,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                                           item.object_id,
                                           self.objects.get(&item.object_id).unwrap().borrow().get_type()))
                 .render_info();
+            check!(render_info.shader_id.is_valid());
             let transform = self.absolute_transforms.get(&item.object_id)
                 .unwrap_or_else(|| panic!("missing object_id in transforms: {:?} [{:?}]",
                                           item.object_id,
@@ -385,7 +386,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler.collision_handler.remove_objects(&pending_remove_objects);
-        for remove_id in pending_remove_objects.into_iter() {
+        for remove_id in pending_remove_objects {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);

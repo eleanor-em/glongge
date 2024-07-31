@@ -12,9 +12,8 @@ use glongge::core::{
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
     ObjectTypeEnum,
 };
-use glongge::core::render::RenderInfoFull;
 use glongge::core::util::UniqueShared;
-use glongge::shader::{SpriteShader, WireframeShader};
+use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
 use crate::object_type::ObjectType;
 
@@ -44,9 +43,10 @@ fn main() -> Result<()> {
     ObjectType::preload_all(&mut resource_handler)?;
 
     let viewport = UniqueShared::new(window_ctx.create_default_viewport());
-    let shaders = vec![
+    let shaders: Vec<UniqueShared<dyn Shader>> = vec![
         SpriteShader::new(ctx.clone(), viewport.clone(), resource_handler.clone())?,
         WireframeShader::new(ctx.clone(), viewport.clone())?,
+        BasicShader::new(ctx.clone(), viewport.clone())?,
     ];
     let render_handler = RenderHandler::new(viewport.clone(), shaders)
         .with_global_scale_factor(2.);
@@ -71,7 +71,6 @@ fn main() -> Result<()> {
         });
     }
 
-    println!("{}", std::mem::size_of::<RenderInfoFull>());
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
         .consume(event_loop);

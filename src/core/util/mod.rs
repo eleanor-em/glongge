@@ -6,6 +6,8 @@ use std::{
     vec::IntoIter
 };
 use std::fmt::{Debug, Display, Formatter};
+use std::marker::Unsize;
+use std::ops::CoerceUnsized;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub mod linalg;
@@ -345,16 +347,29 @@ impl<'a, T> Deref for NonemptyVecRefMut<'a, T> {
     fn deref(&self) -> &Self::Target { self.inner }
 }
 
-#[derive(Clone)]
-pub struct UniqueShared<T> {
+pub struct UniqueShared<T: ?Sized> {
     inner: Arc<Mutex<T>>,
+}
+
+// #[derive(Clone)] does not respect ?Sized.
+impl<T: ?Sized> Clone for UniqueShared<T> {
+    fn clone(&self) -> Self {
+        UniqueShared { inner: self.inner.clone() }
+    }
 }
 
 impl<T> UniqueShared<T> {
     pub fn new(value: T) -> Self {
         Self { inner: Arc::new(Mutex::new(value)) }
     }
+}
+impl<T: Clone> UniqueShared<T> {
+    pub fn new_from_ref(value: &T) -> Self {
+        Self { inner: Arc::new(Mutex::new(value.clone())) }
+    }
+}
 
+impl<T: ?Sized> UniqueShared<T> {
     pub fn get(&self) -> MutexGuard<T> {
         self.inner.try_lock()
             .expect("attempted to acquire UniqueShared but it was already in use")
@@ -376,3 +391,5 @@ impl<T: Display> Display for UniqueShared<T> {
         write!(f, "UniqueShared[{}]", self.get())
     }
 }
+
+impl<T: Unsize<U> + ?Sized, U: ?Sized> CoerceUnsized<UniqueShared<U>> for UniqueShared<T> {}

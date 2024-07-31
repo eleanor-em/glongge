@@ -30,18 +30,24 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
-use crate::shader::Shader;
+use crate::shader::{Shader, ShaderId};
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
     pub col: [f32; 4],
     pub texture_id: u16,
     pub texture_sub_area: TextureSubArea,
+    pub shader_id: ShaderId,
 }
 
 impl Default for RenderInfo {
     fn default() -> Self {
-        Self { col: Colour::white().into(), texture_id: 0, texture_sub_area: TextureSubArea::default() }
+        Self {
+            col: Colour::white().into(),
+            texture_id: 0,
+            texture_sub_area: TextureSubArea::default(),
+            shader_id: ShaderId::default()
+        }
     }
 }
 
@@ -104,20 +110,43 @@ pub struct RenderFrame {
     pub clear_col: Colour,
 }
 
+impl RenderFrame {
+    fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame {
+        let render_infos = self.render_infos.iter()
+            .filter(move |ri| ri.inner.shader_id == id)
+            .cloned()
+            .collect_vec();
+        ShaderRenderFrame {
+            vertices: &self.vertices,
+            render_infos,
+        }
+    }
+}
+
+pub struct ShaderRenderFrame<'a> {
+    pub vertices: &'a [VertexWithUV],
+    pub render_infos: Vec<RenderInfoFull>,
+}
+
 #[derive(Clone)]
 pub struct RenderHandler {
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
-    shaders: Vec<Arc<Mutex<dyn Shader>>>,
+    shaders: Vec<UniqueShared<dyn Shader>>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
     pub fn new(
         viewport: UniqueShared<AdjustedViewport>,
-        shaders: Vec<Arc<Mutex<dyn Shader>>>,
+        shaders: Vec<UniqueShared<dyn Shader>>,
     ) -> Self {
         let render_info_receiver = RenderDataChannel::new(viewport.clone_inner());
+        for (a, b) in shaders.iter().tuple_combinations() {
+            check_ne!(a.get().name_concrete(),
+                      b.get().name_concrete(),
+                      "duplicate shader name");
+        }
         Self {
             shaders,
             viewport,
@@ -131,9 +160,7 @@ impl RenderHandler {
         self.viewport.get().set_global_scale_factor(global_scale_factor);
         self
     }
-}
 
-impl RenderHandler {
     pub(crate) fn on_resize(
         &mut self,
         _ctx: &VulkanoContext,
@@ -150,8 +177,9 @@ impl RenderHandler {
         framebuffer: &Arc<Framebuffer>,
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let render_frame = self.render_data_channel.lock().unwrap().next_frame();
-        for shader in &mut self.shaders {
-            shader.try_lock().unwrap().on_render(&render_frame)?;
+        for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
+            let shader_id = shader.id();
+            shader.on_render(render_frame.for_shader(shader_id))?;
         }
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
@@ -173,7 +201,7 @@ impl RenderHandler {
             SubpassBeginInfo::default(),
         )?;
         for shader in &mut self.shaders {
-            shader.try_lock().unwrap().build_render_pass(&mut builder)?;
+            shader.get().build_render_pass(&mut builder)?;
         }
         builder.end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)

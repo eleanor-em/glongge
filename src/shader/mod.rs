@@ -1,6 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::atomic::{AtomicU8, Ordering};
 use anyhow::{Context, Result};
 use itertools::Itertools;
+use num_traits::Zero;
 use tracing::error;
 use vulkano::{pipeline::{
     graphics::{
@@ -25,7 +28,6 @@ use vulkano::{pipeline::{
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
 use crate::{
     core::{
-        render::RenderFrame,
         prelude::*,
         vk::{AdjustedViewport, VulkanoContext},
         util::UniqueShared
@@ -33,6 +35,7 @@ use crate::{
     shader::glsl::*,
 };
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
+use crate::core::render::ShaderRenderFrame;
 
 pub mod vertex;
 pub mod glsl;
@@ -46,11 +49,37 @@ impl ShaderName {
     }
 }
 
+// Shader ID 0 is reserved for an error code.
+static NEXT_SHADER_ID: AtomicU8 = AtomicU8::new(1);
+#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ShaderId(u8);
+impl ShaderId {
+    fn next() -> Self {
+        ShaderId(NEXT_SHADER_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub(crate) fn is_valid(self) -> bool { self.0 != 0 }
+}
+static SHADER_IDS: LazyLock<Arc<Mutex<HashMap<ShaderName, ShaderId>>>> = LazyLock::new(|| {
+    Arc::new(Mutex::new(HashMap::new()))
+});
+pub fn register_shader<S: Shader + Sized>() -> ShaderId {
+    let mut shader_ids = SHADER_IDS.lock().unwrap();
+    *shader_ids.entry(S::name())
+        .or_insert_with(ShaderId::next)
+}
+pub fn get_shader(name: ShaderName) -> ShaderId {
+    *SHADER_IDS.lock().unwrap().get(&name)
+        .unwrap_or_else(|| panic!("unknown shader: {name:?}"))
+}
+
 pub trait Shader: Send {
     fn name() -> ShaderName where Self: Sized;
+    fn name_concrete(&self) -> ShaderName;
+    fn id(&self) -> ShaderId { get_shader(self.name_concrete()) }
     fn on_render(
         &mut self,
-        render_frame: &RenderFrame
+        render_frame: ShaderRenderFrame
     ) -> Result<()>;
     fn build_render_pass(
         &mut self,
@@ -138,10 +167,11 @@ impl SpriteShader {
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler
-    ) -> Result<Arc<Mutex<dyn Shader>>> {
+    ) -> Result<UniqueShared<Self>> {
+        register_shader::<Self>();
         let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
-        Ok(Arc::new(Mutex::new(Self {
+        Ok(UniqueShared::new(Self {
             ctx,
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
@@ -149,7 +179,7 @@ impl SpriteShader {
             pipeline: None,
             vertex_buffer,
             resource_handler,
-        })) as Arc<Mutex<dyn Shader>>)
+        }))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -276,10 +306,11 @@ impl Shader for SpriteShader {
     {
         ShaderName::new("sprite")
     }
+    fn name_concrete(&self) -> ShaderName { Self::name() }
 
     fn on_render(
         &mut self,
-        render_frame: &RenderFrame
+        render_frame: ShaderRenderFrame
     ) -> Result<()> {
         let render_infos = render_frame.render_infos
             .iter()
@@ -288,38 +319,30 @@ impl Shader for SpriteShader {
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
-                // TODO: better way to switch shaders.
-                let final_vertex = if render_info.inner.texture_id != 0 {
-                    let vertex = render_frame.vertices[vertex_index as usize];
-                    let mut blend_col = render_info.inner.col;
-                    let mut uv = vertex.uv;
-                    if let Some(tex) = self.resource_handler.texture.get(render_info.inner.texture_id) {
-                        if let Some(tex) = tex.ready() {
-                            uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
-                        } else {
-                            warn!("texture not ready: {}", render_info.inner.texture_id);
-                            blend_col = Colour::empty().into();
-                        }
-                    } else {
-                        error!("missing texture: {}", render_info.inner.texture_id);
-                        blend_col = Colour::magenta().into();
-                    }
-                    sprite::Vertex {
-                        position: vertex.xy,
-                        uv,
-                        texture_id: render_info.inner.texture_id,
-                        translation: render_info.transform.centre,
-                        rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
-                        blend_col,
-                    }
+                let vertex = render_frame.vertices[vertex_index as usize];
+
+                let mut blend_col = render_info.inner.col;
+                let mut uv = vertex.uv;
+                let maybe_tex = self.resource_handler.texture.get(render_info.inner.texture_id);
+                if maybe_tex.is_none() || render_info.inner.texture_id.is_zero() {
+                    error!("missing texture: {}", render_info.inner.texture_id);
+                    blend_col = Colour::magenta().into();
+                } else if let Some(tex) = maybe_tex.unwrap().ready() {
+                        uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
                 } else {
-                    sprite::Vertex {
-                        blend_col: Colour::empty().into(),
-                        ..Default::default()
-                    }
-                };
-                vertices.push(final_vertex);
+                    warn!("texture not ready: {}", render_info.inner.texture_id);
+                    blend_col = Colour::empty().into();
+                }
+
+                vertices.push(sprite::Vertex {
+                    position: vertex.xy,
+                    uv,
+                    texture_id: render_info.inner.texture_id,
+                    translation: render_info.transform.centre,
+                    rotation: render_info.transform.rotation,
+                    scale: render_info.transform.scale,
+                    blend_col,
+                });
             }
         }
         self.vertex_buffer.write(vertices)?;
@@ -359,17 +382,18 @@ impl WireframeShader {
     pub fn new(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>
-    ) -> Result<Arc<Mutex<dyn Shader>>> {
+    ) -> Result<UniqueShared<Self>> {
+        register_shader::<Self>();
         let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
-        Ok(Arc::new(Mutex::new(Self {
+        Ok(UniqueShared::new(Self {
             ctx,
             vs: wireframe::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: wireframe::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
             vertex_buffer,
-        })) as Arc<Mutex<dyn Shader>>)
+        }))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -473,31 +497,191 @@ impl Shader for WireframeShader {
     {
         ShaderName::new("wireframe")
     }
+    fn name_concrete(&self) -> ShaderName { Self::name() }
 
     fn on_render(
         &mut self,
-        render_frame: &RenderFrame,
+        render_frame: ShaderRenderFrame,
     ) -> Result<()> {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
-                // Calculate transformed UVs.
-                // TODO: better way to switch shaders.
-                let vertex = if render_info.inner.texture_id == 0 {
-                    wireframe::Vertex {
-                        position: render_frame.vertices[vertex_index as usize].xy,
-                        translation: render_info.transform.centre,
-                        rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
-                        blend_col: render_info.inner.col,
-                    }
-                } else {
-                    wireframe::Vertex {
-                        blend_col: Colour::empty().into(),
-                        ..Default::default()
-                    }
-                };
-                vertices.push(vertex);
+                vertices.push(wireframe::Vertex {
+                    position: render_frame.vertices[vertex_index as usize].xy,
+                    translation: render_info.transform.centre,
+                    rotation: render_info.transform.rotation,
+                    scale: render_info.transform.scale,
+                    blend_col: render_info.inner.col,
+                });
+            }
+        }
+        self.vertex_buffer.write(vertices)?;
+        Ok(())
+    }
+    fn build_render_pass(
+        &mut self,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
+    ) -> Result<()> {
+        let pipeline = self.get_or_create_pipeline()?;
+        let uniform_buffer_set = self.create_uniform_buffer_set()?;
+        let layout = pipeline.layout().clone();
+        builder
+            .bind_pipeline_graphics(pipeline.clone())?
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                layout,
+                0,
+                uniform_buffer_set.clone(),
+            )?;
+        self.vertex_buffer.draw(builder)?;
+        Ok(())
+    }
+}
+#[derive(Clone)]
+pub struct BasicShader {
+    ctx: VulkanoContext,
+    vs: Arc<ShaderModule>,
+    fs: Arc<ShaderModule>,
+    viewport: UniqueShared<AdjustedViewport>,
+    pipeline: Option<Arc<GraphicsPipeline>>,
+    vertex_buffer: CachedVertexBuffer<basic::Vertex>,
+}
+
+impl BasicShader {
+    pub fn new(
+        ctx: VulkanoContext,
+        viewport: UniqueShared<AdjustedViewport>
+    ) -> Result<UniqueShared<Self>> {
+        register_shader::<Self>();
+        let device = ctx.device();
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
+        Ok(UniqueShared::new(Self {
+            ctx,
+            vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
+            fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
+            viewport,
+            pipeline: None,
+            vertex_buffer,
+        }))
+    }
+
+    fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
+        match self.pipeline.clone() {
+            None => {
+                let vs = self.vs.entry_point("main")
+                    .context("vertex shader: entry point missing")?;
+                let fs = self.fs.entry_point("main")
+                    .context("fragment shader: entry point missing")?;
+                let vertex_input_state =
+                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                let stages = [
+                    PipelineShaderStageCreateInfo::new(vs),
+                    PipelineShaderStageCreateInfo::new(fs),
+                ];
+                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+                for layout in &mut create_info.set_layouts {
+                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+                }
+                let layout = PipelineLayout::new(
+                    self.ctx.device(),
+                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+                ).map_err(Validated::unwrap)?;
+                let subpass = Subpass::from(self.ctx.render_pass(), 0).context("failed to create subpass")?;
+
+                let pipeline = GraphicsPipeline::new(
+                    self.ctx.device(),
+                    /* cache= */ None,
+                    GraphicsPipelineCreateInfo {
+                        stages: stages.into_iter().collect(),
+                        vertex_input_state: Some(vertex_input_state),
+                        input_assembly_state: Some(InputAssemblyState::default()),
+                        viewport_state: Some(ViewportState {
+                            viewports: [self.viewport.get().inner()].into_iter().collect(),
+                            ..Default::default()
+                        }),
+                        rasterization_state: Some(RasterizationState::default()),
+                        multisample_state: Some(MultisampleState::default()),
+                        color_blend_state: Some(ColorBlendState::with_attachment_states(
+                            subpass.num_color_attachments(),
+                            ColorBlendAttachmentState {
+                                blend: Some(AttachmentBlend::alpha()),
+                                ..Default::default()
+                            },
+                        )),
+                        subpass: Some(subpass.into()),
+                        ..GraphicsPipelineCreateInfo::layout(layout)
+                    })?;
+                self.pipeline = Some(pipeline.clone());
+                Ok(pipeline)
+            },
+            Some(pipeline) => Ok(pipeline)
+        }
+    }
+    fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
+        let uniform_buffer= Buffer::new_sized(
+            self.ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        ).map_err(Validated::unwrap)?;
+
+        let uniform_data = {
+            let viewport = self.viewport.get();
+            sprite::UniformData {
+                #[allow(clippy::cast_possible_truncation)]
+                window_width: viewport.physical_width() as f32,
+                #[allow(clippy::cast_possible_truncation)]
+                window_height: viewport.physical_height() as f32,
+                #[allow(clippy::cast_possible_truncation)]
+                scale_factor: viewport.scale_factor() as f32,
+            }
+        };
+        *uniform_buffer.write()? = uniform_data;
+        Ok(uniform_buffer)
+    }
+
+    fn create_uniform_buffer_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
+        let pipeline = self.get_or_create_pipeline()?;
+        Ok(PersistentDescriptorSet::new(
+            &self.ctx.descriptor_set_allocator(),
+            pipeline.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, self.create_uniform_buffer()?),
+            ],
+            [],
+        ).map_err(Validated::unwrap)?)
+    }
+}
+
+impl Shader for BasicShader {
+    fn name() -> ShaderName
+    where
+        Self: Sized
+    {
+        ShaderName::new("basic")
+    }
+    fn name_concrete(&self) -> ShaderName { Self::name() }
+
+    fn on_render(
+        &mut self,
+        render_frame: ShaderRenderFrame,
+    ) -> Result<()> {
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        for render_info in &render_frame.render_infos {
+            for vertex_index in render_info.vertex_indices.clone() {
+                vertices.push(basic::Vertex {
+                    position: render_frame.vertices[vertex_index as usize].xy,
+                    translation: render_info.transform.centre,
+                    rotation: render_info.transform.rotation,
+                    scale: render_info.transform.scale,
+                    blend_col: render_info.inner.col,
+                });
             }
         }
         self.vertex_buffer.write(vertices)?;
