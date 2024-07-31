@@ -2,17 +2,10 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
         prelude::*,
-        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        util::linalg::Transform,
+        render::VertexDepth,
     },
-    resource::{
-        ResourceHandler,
-    }
+    resource::sprite::Sprite,
 };
-use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::ObjectContext;
-use glongge::resource::sprite::Sprite;
 use crate::object_type::ObjectType;
 
 #[register_scene_object]

@@ -1,23 +1,21 @@
-#[allow(unused_imports)]
-use crate::core::prelude::*;
-
 use std::{
     collections::BTreeMap,
     default::Default,
+    fmt::{Display, Formatter},
     fs,
-    io::Cursor,
+    io::{
+        Cursor,
+        Read
+    },
     path::Path,
     sync::{
         Arc,
         Mutex,
         RwLock,
         atomic::{AtomicUsize, Ordering}
-    }
+    },
 };
-use std::fmt::{Display, Formatter};
-use std::io::Read;
 
-use png::ColorType;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract},
@@ -34,15 +32,13 @@ use vulkano::{
     DeviceSize,
     Validated,
 };
-use crate::{
-    core::{
-        util::linalg::Vec2,
-        vk::VulkanoContext,
-    }
+
+use png::ColorType;
+
+use crate::core::{
+    prelude::*,
+    vk::VulkanoContext,
 };
-use crate::core::util::colour::Colour;
-use crate::core::util::linalg;
-use crate::core::util::linalg::{AxisAlignedExtent, Rect, Vec2Int};
 
 #[derive(Debug)]
 pub struct Texture {

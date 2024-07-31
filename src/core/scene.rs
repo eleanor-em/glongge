@@ -1,30 +1,36 @@
 use std::{
+    any::Any,
     collections::BTreeMap,
     sync::{
         Arc,
         mpsc,
         mpsc::{Receiver, Sender},
         Mutex
-    }
+    },
+    time::Duration
 };
-use std::any::Any;
-use std::time::Duration;
 use crate::{
+    resource::ResourceHandler,
     core::{
+        util::{
+            collision::GenericCollider,
+            linalg::{Transform, Vec2}
+        },
+        update::{
+            collision::CollisionResponse,
+            ObjectContext,
+            UpdateContext,
+            UpdateHandler
+        },
         AnySceneObject,
         input::InputHandler,
         ObjectTypeEnum,
         prelude::*,
-        vk::RenderEventHandler
-    },
-    resource::ResourceHandler
+        vk::RenderEventHandler,
+        SceneObjectWithId,
+        render::{RenderInfo, RenderInfoReceiver, RenderItem},
+    }
 };
-use crate::core::SceneObjectWithId;
-use crate::core::render::{RenderInfo, RenderInfoReceiver, RenderItem};
-use crate::core::update::{ObjectContext, UpdateContext, UpdateHandler};
-use crate::core::update::collision::CollisionResponse;
-use crate::core::util::collision::GenericCollider;
-use crate::core::util::linalg::{Transform, Vec2};
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {

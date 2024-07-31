@@ -1,28 +1,12 @@
-#[allow(unused_imports)]
-use glongge::core::prelude::*;
-
 use std::time::{Duration, Instant};
-use num_traits::{Float, FloatConst, Zero};
-use rand::{
-    distributions::{Distribution, Uniform},
-    Rng
+use num_traits::{FloatConst, Zero};
+use rand::{distributions::{Distribution, Uniform}, Rng};
+use glongge_derive::*;
+use glongge::core::{
+    prelude::*,
+    render::VertexWithUV,
+    scene::{Scene, SceneName},
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-
-use glongge::{
-    core::{
-        input::KeyCode,
-        util::colour::Colour,
-        util::linalg::Vec2
-    },
-    core::util::linalg::Transform,
-};
-use glongge::core::util::linalg::AxisAlignedExtent;
-use glongge::core::AnySceneObject;
-use glongge::core::render::{RenderInfo, RenderItem, VertexWithUV};
-use glongge::core::scene::{RenderableObject, Scene, SceneName, SceneObject};
-use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::resource::ResourceHandler;
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
@@ -120,7 +104,7 @@ impl SpinningTriangle {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningTriangle {
     fn on_load(&mut self, _object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
+        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f64.sqrt();
         let centre_correction = -tri_height / 6.;
         let vertex1 = Vec2 {
             x: -Self::TRI_WIDTH,

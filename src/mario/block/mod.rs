@@ -1,13 +1,16 @@
 use std::cell::RefMut;
-use glongge::core::{DowncastRef, SceneObjectWithId};
-use glongge::core::scene::SceneObject;
-use crate::mario::{
-    block::brick::Brick,
-    block::question_block::QuestionBlock,
-    player::Player
+use glongge::core::prelude::*;
+use crate::{
+    mario::{
+        block::{
+            brick::Brick,
+            question_block::QuestionBlock,
+            underground_brick::UndergroundBrick
+        },
+        player::Player,
+    },
+    object_type::ObjectType
 };
-use crate::mario::block::underground_brick::UndergroundBrick;
-use crate::object_type::ObjectType;
 
 pub mod brick;
 pub mod plain_block;
@@ -23,9 +26,9 @@ pub trait Bumpable: SceneObject<ObjectType> {
 
 pub fn downcast_bumpable_mut(obj: &mut SceneObjectWithId<ObjectType>) -> Option<RefMut<dyn Bumpable>> {
     match obj.get_type() {
-        ObjectType::QuestionBlock => Some(obj.downcast_mut::<QuestionBlock>().unwrap() as RefMut<dyn Bumpable>),
-        ObjectType::Brick => Some(obj.downcast_mut::<Brick>().unwrap() as RefMut<dyn Bumpable>),
-        ObjectType::UndergroundBrick => Some(obj.downcast_mut::<UndergroundBrick>().unwrap() as RefMut<dyn Bumpable>),
+        ObjectType::QuestionBlock => Some(obj.checked_downcast_mut::<QuestionBlock>() as RefMut<dyn Bumpable>),
+        ObjectType::Brick => Some(obj.checked_downcast_mut::<Brick>() as RefMut<dyn Bumpable>),
+        ObjectType::UndergroundBrick => Some(obj.checked_downcast_mut::<UndergroundBrick>() as RefMut<dyn Bumpable>),
         _ => None
     }
 }

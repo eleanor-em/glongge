@@ -7,18 +7,18 @@ use std::{
 use itertools::Itertools;
 use crate::{
     core::{
+        update::PendingAddObject,
         AnySceneObject,
         ObjectId,
         ObjectTypeEnum,
         SceneObjectWithId,
         util::{
             linalg::Vec2,
-            UnorderedPair
+            UnorderedPair,
+            collision::Collider
         }
     }
 };
-use crate::core::update::PendingAddObject;
-use crate::core::util::collision::Collider;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {

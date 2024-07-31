@@ -1,6 +1,15 @@
 use quote::{quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{parse_macro_input, Data, DeriveInput, ItemImpl, ImplItemFn, ImplItem, Fields, Type};
+use syn::{
+    spanned::Spanned,
+    parse_macro_input,
+    Data,
+    DeriveInput,
+    ItemImpl,
+    ImplItemFn,
+    ImplItem,
+    Fields,
+    Type
+};
 
 #[proc_macro_attribute]
 pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {

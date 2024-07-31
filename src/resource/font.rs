@@ -1,16 +1,19 @@
 use std::io::{ErrorKind, Read};
-use ab_glyph::{point, Glyph, ScaleFont, OutlinedGlyph, FontVec, PxScaleFont};
-use crate::core::util::colour::Colour;
-use crate::core::util::linalg::Vec2Int;
-use anyhow::{anyhow, Result};
+
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
-use crate::check_ge;
-use crate::core::ObjectTypeEnum;
-use crate::core::update::ObjectContext;
-use crate::resource::ResourceHandler;
-use crate::resource::sprite::Sprite;
+
+use anyhow::{anyhow, Result};
+
+use ab_glyph::{point, Glyph, ScaleFont, OutlinedGlyph, FontVec, PxScaleFont};
+use crate::{
+    core::{
+        prelude::*,
+        ObjectTypeEnum,
+    },
+    resource::sprite::Sprite
+};
 
 const SAMPLE_RATIO: f64 = 8.;
 

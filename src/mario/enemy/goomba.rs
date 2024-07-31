@@ -2,25 +2,10 @@ use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
-    core::{
-        coroutine::CoroutineResponse,
-        prelude::*,
-        SceneObjectWithId,
-        util::collision::Collider,
-        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        util::linalg::Transform,
-    },
-    resource::{
-        ResourceHandler,
-    }
+    core::prelude::*,
+    core::coroutine::prelude::*,
+    resource::sprite::Sprite
 };
-use glongge::core::render::RenderInfo;
-use glongge::core::render::RenderItem;
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::core::util::collision::GenericCollider;
-use glongge::resource::sprite::Sprite;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
 use crate::object_type::ObjectType;
 

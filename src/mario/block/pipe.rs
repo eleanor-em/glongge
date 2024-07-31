@@ -4,19 +4,10 @@ use glongge::{
     core::{
         prelude::*,
         scene::SceneDestination,
-        util::collision::Collider,
-        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        util::linalg::Transform
+        render::VertexDepth
     },
-    resource::{
-        ResourceHandler,
-    }
+    resource::sprite::Sprite,
 };
-use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::ObjectContext;
-use glongge::core::util::collision::GenericCollider;
-use glongge::resource::sprite::Sprite;
 use crate::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
 use crate::object_type::ObjectType;
 

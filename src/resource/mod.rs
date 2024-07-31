@@ -1,12 +1,17 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::core::prelude::*;
-
-use crate::{
-    core::vk::VulkanoContext,
-    resource::texture::TextureHandler
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering}
 };
-use crate::resource::sound::SoundHandler;
+use crate::{
+    core::{
+        prelude::*,
+        vk::VulkanoContext
+    },
+    resource::{
+        sound::SoundHandler,
+        texture::TextureHandler,
+    }
+};
 
 pub mod sprite;
 pub mod texture;

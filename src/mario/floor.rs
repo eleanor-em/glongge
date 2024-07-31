@@ -2,19 +2,10 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
         prelude::*,
-        util::collision::Collider,
-        util::linalg::{AxisAlignedExtent, Vec2, Vec2Int},
-        util::linalg::Transform,
+        render::VertexDepth
     },
-    resource::{
-        ResourceHandler,
-    },
+    resource::sprite::Sprite,
 };
-use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::ObjectContext;
-use glongge::core::util::collision::GenericCollider;
-use glongge::resource::sprite::Sprite;
 use crate::mario::{BLOCK_COLLISION_TAG};
 use crate::object_type::ObjectType;
 

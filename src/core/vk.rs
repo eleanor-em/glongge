@@ -56,17 +56,19 @@ use winit::{
 
 use crate::{
     core::{
+        render::RenderInfoReceiver,
         input::InputHandler,
-        util::linalg::{
-            Vec2,
-            AxisAlignedExtent
+        util::{
+            linalg::{
+                Vec2,
+                AxisAlignedExtent
+            },
+            gg_time::TimeIt
         },
         prelude::*,
     },
     resource::ResourceHandler,
 };
-use crate::core::render::RenderInfoReceiver;
-use crate::core::util::gg_time::TimeIt;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,

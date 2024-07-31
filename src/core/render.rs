@@ -1,5 +1,10 @@
-use std::{cmp, default::Default, sync::{Arc, Mutex, MutexGuard}};
-use std::ops::Range;
+use std::{
+    cmp,
+    default::Default,
+    sync::{Arc, Mutex, MutexGuard},
+    ops::Range,
+    collections::{BTreeMap, BTreeSet}
+};
 
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -44,12 +49,14 @@ use vulkano::{
 };
 use winit::window::Window;
 use num_traits::Zero;
-use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     core::{
         prelude::*,
-        util::colour::Colour,
+        util::{
+            colour::Colour,
+            linalg::{Transform, Vec2}
+        },
         vk::{
             AdjustedViewport,
             DataPerImage,
@@ -58,13 +65,14 @@ use crate::{
             VulkanoContext,
             WindowContext,
         },
+        ObjectId,
     },
-    resource::ResourceHandler,
-    shader::sample::{basic_fragment_shader, basic_vertex_shader}
+    resource::{
+        ResourceHandler,
+        texture::{Texture, TextureSubArea}
+    },
+    shader::sample::{basic_fragment_shader, basic_vertex_shader},
 };
-use crate::core::ObjectId;
-use crate::core::util::linalg::{Transform, Vec2};
-use crate::resource::texture::{Texture, TextureSubArea};
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]

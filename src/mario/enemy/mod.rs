@@ -1,6 +1,5 @@
 use std::cell::RefMut;
-use glongge::core::{DowncastRef, SceneObjectWithId};
-use glongge::core::scene::SceneObject;
+use glongge::core::prelude::*;
 use crate::mario::{
     enemy::goomba::Goomba,
 };

@@ -26,6 +26,17 @@ macro_rules! check {
             );
         }
     }};
+    ($lhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_type::<bool>(&$lhs);
+        if !$lhs {
+            panic!(
+                "check failed: {}: {}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                $extra
+            );
+        }
+    }};
 }
 #[allow(unused_imports)]
 pub use check;
@@ -40,6 +51,17 @@ macro_rules! check_false {
                 "check failed: {}: !{}",
                 $crate::core::util::assert::current_location!(),
                 stringify!($lhs),
+            );
+        }
+    };
+    ($lhs:expr, $extra:expr) => {
+        $crate::core::util::assert::assert_type::<bool>(&$lhs);
+        if $lhs {
+            panic!(
+                "check failed: {}: !{}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                $extra
             );
         }
     };
@@ -64,6 +86,21 @@ macro_rules! check_lt {
             );
         }
     }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
+        if $lhs >= $rhs {
+            panic!(
+                "check failed: {}: {} < {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
+            );
+        }
+    }};
 }
 #[allow(unused_imports)]
 pub use check_lt;
@@ -82,6 +119,21 @@ macro_rules! check_gt {
                 stringify!($rhs),
                 $lhs,
                 $rhs
+            );
+        }
+    }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
+        if $lhs <= $rhs {
+            panic!(
+                "check failed: {}: {} > {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
             );
         }
     }};
@@ -106,6 +158,21 @@ macro_rules! check_le {
             );
         }
     }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
+        if !($lhs <= $rhs) {
+            panic!(
+                "check failed: {}: {} <= {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
+            );
+        }
+    }};
 }
 #[allow(unused_imports)]
 pub use check_le;
@@ -123,7 +190,22 @@ macro_rules! check_ge {
                 stringify!($lhs),
                 stringify!($rhs),
                 $lhs,
-                $rhs
+                $rhs,
+            );
+        }
+    }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_ord(&$lhs);
+        if $lhs < $rhs {
+            panic!(
+                "check failed: {}: {} >= {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
             );
         }
     }};
@@ -180,6 +262,20 @@ macro_rules! check_almost_eq {
                 stringify!($rhs),
                 $lhs,
                 $rhs
+            );
+        }
+    }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        if !($lhs.almost_eq($rhs)) {
+            panic!(
+                "check failed: {}: {} ~= {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
             );
         }
     }};

@@ -1,8 +1,10 @@
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex}
+    sync::{Arc, Mutex},
+    thread::JoinHandle
 };
-use std::thread::JoinHandle;
+
+use rand::{Rng, thread_rng};
 
 use fyrox_sound::{
     buffer::{
@@ -16,10 +18,7 @@ use fyrox_sound::{
     pool::Handle,
     source::{SoundSource, SoundSourceBuilder, Status}
 };
-use rand::{Rng, thread_rng};
-use crate::core::util::linalg;
 use crate::core::prelude::*;
-use crate::resource::Loader;
 
 #[derive(Clone)]
 struct SoundInner {

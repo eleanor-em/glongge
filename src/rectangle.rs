@@ -4,30 +4,12 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 use glongge_derive::*;
 use glongge::{
     core::{
-        AnySceneObject,
-        input::KeyCode,
         prelude::*,
         scene::{Scene, SceneName},
-        SceneObjectWithId,
-        util::collision::{BoxCollider, Collider},
-        util::colour::Colour,
-        util::linalg::AxisAlignedExtent,
-        util::linalg::Transform,
-        util::linalg::Vec2,
-        util::linalg::Vec2Int
+        util::collision::BoxCollider,
     },
-    resource::{
-        ResourceHandler,
-    },
+    resource::sprite::Sprite
 };
-use glongge::core::DowncastRef;
-use glongge::core::render::RenderInfo;
-use glongge::core::render::RenderItem;
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::core::util::collision::GenericCollider;
-use glongge::resource::sprite::Sprite;
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]

@@ -1,25 +1,26 @@
 pub mod collision;
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
-use std::cell::{RefCell, RefMut};
-use std::sync::{Arc, mpsc, Mutex};
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::{
+    rc::Rc,
+    collections::{BTreeMap, BTreeSet},
+    cell::{RefCell, RefMut},
+    sync::{
+        Arc,
+        mpsc,
+        Mutex,
+        mpsc::{Receiver, Sender}
+    },
+    time::{Duration, Instant}
+};
 use tracing::{warn};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use serde::{
+    Serialize,
+    de::DeserializeOwned
+};
 use num_traits::{FromPrimitive, Zero};
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use crate::{
     core::{
-        util::{
-            gg_time::TimeIt,
-            linalg::{AxisAlignedExtent, Vec2},
-            colour::Colour,
-            collision::Collider,
-            NonemptyVec
-        },
         prelude::*,
         AnySceneObject,
         ObjectId,
@@ -30,12 +31,19 @@ use crate::{
         input::InputHandler,
         render::{RenderInfoFull, RenderInfoReceiver, RenderItem, VertexMap},
         scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
-        vk::AdjustedViewport
+        vk::AdjustedViewport,
+        util::{
+            collision::GenericCollider,
+            gg_time::TimeIt,
+            linalg::{AxisAlignedExtent, Vec2},
+            colour::Colour,
+            collision::Collider,
+            NonemptyVec,
+            linalg::Transform
+        }
     },
-    resource::ResourceHandler
+    resource::ResourceHandler,
 };
-use crate::core::util::collision::GenericCollider;
-use crate::core::util::linalg::Transform;
 
 pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     input_handler: Arc<Mutex<InputHandler>>,

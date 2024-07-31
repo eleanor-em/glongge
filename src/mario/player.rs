@@ -3,34 +3,32 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        coroutine::{CoroutineId, CoroutineResponse},
-        coroutine::CoroutineState,
-        input::KeyCode,
+        coroutine::prelude::*,
         prelude::*,
+        render::VertexDepth,
         scene::{Scene, SceneDestination},
-        SceneObjectWithId,
-        util::collision::Collider,
-        util::colour::Colour,
-        util::linalg::{Vec2, Vec2Int},
-        util::linalg::AxisAlignedExtent,
-        util::linalg::Transform
     },
     resource::{
-        ResourceHandler,
         sound::Sound,
+        sprite::Sprite
     },
 };
-use glongge::core::DowncastRef;
-use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
-use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::core::util::collision::GenericCollider;
-use glongge::core::util::linalg;
-use glongge::resource::Loader;
-use glongge::resource::sprite::Sprite;
-use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
-use crate::mario::WinTextDisplay;
+use crate::mario::{
+    AliveEnemyMap,
+    BASE_GRAVITY,
+    block::downcast_bumpable_mut,
+    block::pipe::Pipe,
+    BLOCK_COLLISION_TAG,
+    enemy::downcast_stompable_mut,
+    ENEMY_COLLISION_TAG,
+    FLAG_COLLISION_TAG,
+    from_nes,
+    from_nes_accel,
+    MarioOverworldScene,
+    PIPE_COLLISION_TAG,
+    PLAYER_COLLISION_TAG,
+    WinTextDisplay
+};
 use crate::object_type::ObjectType;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

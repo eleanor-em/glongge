@@ -1,9 +1,11 @@
 #[allow(unused_imports)]
 use crate::core::prelude::*;
 
-use std::hash::Hash;
-use std::ops::Deref;
-use std::vec::IntoIter;
+use std::{
+    hash::Hash,
+    ops::Deref,
+    vec::IntoIter
+};
 
 pub mod linalg;
 pub mod colour;

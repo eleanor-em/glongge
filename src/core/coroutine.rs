@@ -2,8 +2,15 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant}
 };
-use crate::core::{ObjectTypeEnum, SceneObjectWithId};
-use crate::core::update::UpdateContext;
+use crate::core::{
+    ObjectTypeEnum,
+    SceneObjectWithId,
+    update::UpdateContext
+};
+
+pub mod prelude {
+    pub use crate::core::coroutine::{CoroutineId, CoroutineResponse, CoroutineState};
+}
 
 static NEXT_COROUTINE_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]

@@ -1,27 +1,24 @@
 #![feature(const_fn_floating_point_arithmetic)]
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
-use glongge::{
-    core::{
-        prelude::*,
-        render::BasicRenderHandler,
-        input::InputHandler,
-        util::linalg::{Mat3x3, Vec2},
-        vk::{VulkanoContext, WindowContext, WindowEventHandler},
-        scene::SceneHandler,
-        scene::Scene,
-        ObjectTypeEnum
-    },
-    resource::ResourceHandler
+use num_traits::{Float, One, Zero};
+
+use glongge::core::{
+    input::InputHandler,
+    prelude::*,
+    render::BasicRenderHandler,
+    scene::SceneHandler,
+    scene::Scene,
+    util::collision::ConvexCollider,
+    vk::{VulkanoContext, WindowContext, WindowEventHandler},
+    ObjectTypeEnum,
 };
+
 use crate::object_type::ObjectType;
 
 mod mario;
 mod rectangle;
 mod triangle;
-
-use num_traits::{Float, One, Zero};
-use glongge::core::util::collision::ConvexCollider;
 
 #[allow(unused_imports)]
 use crate::{
@@ -29,7 +26,6 @@ use crate::{
     rectangle::RectangleScene,
     mario::{MarioOverworldScene, MarioUndergroundScene},
 };
-
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()

@@ -1,24 +1,24 @@
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    marker::PhantomData,
+    rc::Rc
+};
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
+        AnySceneObject,
+        DowncastRef,
+        ObjectTypeEnum,
         prelude::*,
-        util::collision::BoxCollider,
-        util::linalg::{AxisAlignedExtent, Vec2},
-        util::linalg::Vec2Int
+        util::{
+            collision::BoxCollider,
+            gg_iter::GgIter
+        }
     },
     shader,
+    resource::texture::{Texture, TextureSubArea}
 };
-use crate::core::{AnySceneObject, DowncastRef, ObjectTypeEnum};
-use crate::core::util::linalg::Transform;
-use crate::core::render::{RenderInfo, RenderItem};
-use crate::core::scene::SceneObject;
-use crate::core::update::{ObjectContext, UpdateContext};
-use crate::core::util::gg_iter::GgIter;
-use crate::resource::texture::{Texture, TextureSubArea};
 
 #[register_scene_object]
 pub struct GgInternalSprite<ObjectType> {

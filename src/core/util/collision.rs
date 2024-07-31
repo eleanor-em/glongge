@@ -1,28 +1,28 @@
 use std::{
+    marker::PhantomData,
     any::Any,
     fmt::Debug,
-    ops::Range
+    ops::Range,
+    sync::Arc
 };
-use std::marker::PhantomData;
-use std::sync::Arc;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         prelude::*,
-        util::linalg::{
-            Vec2,
-            AxisAlignedExtent
-        },
         util::{
             gg_range,
-            gg_iter
+            gg_iter,
+            linalg::{
+                Vec2,
+                AxisAlignedExtent,
+                Transform
+            }
         },
-        util::linalg::Transform,
+        ObjectTypeEnum,
+        scene::SceneObject
     }
 };
-use crate::core::ObjectTypeEnum;
-use crate::core::scene::SceneObject;
 
 pub enum ColliderType {
     Null,
