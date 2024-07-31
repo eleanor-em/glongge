@@ -7,7 +7,6 @@ use std::{
         mpsc::{Receiver, Sender},
         Mutex
     },
-    time::Duration,
 };
 use crate::{
     resource::ResourceHandler,
@@ -79,6 +78,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
                     .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
                 scene.create_objects(entrance_id)
             };
+            check_false!(initial_objects.is_empty(), "must create at least one object");
             let update_handler = UpdateHandler::new(
                 initial_objects,
                 this.input_handler,
@@ -227,11 +227,11 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_update_end(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]

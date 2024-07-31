@@ -4,7 +4,6 @@ use std::{
     ops::Range,
 };
 use std::ops::Deref;
-use std::time::Duration;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -634,6 +633,32 @@ impl Collider for ConvexCollider {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CompoundCollider {
+    inner: Vec<ConvexCollider>,
+}
+
+impl CompoundCollider {
+    pub fn new(inner: Vec<ConvexCollider>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Polygonal for CompoundCollider {
+    fn vertices(&self) -> Vec<Vec2> {
+        self.inner.iter().flat_map(ConvexCollider::vertices).collect()
+    }
+
+    fn normals(&self) -> Vec<Vec2> {
+        self.inner.iter().flat_map(ConvexCollider::normals).collect()
+    }
+
+    fn polygon_centre(&self) -> Vec2 {
+        self.inner.iter().map(ConvexCollider::centre).sum::<Vec2>() / self.inner.len() as u32
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub enum GenericCollider {
     Null,
@@ -792,7 +817,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.show_wireframe {
             let centre = ctx.object().absolute_transform().centre;
             let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();

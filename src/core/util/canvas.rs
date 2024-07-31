@@ -1,4 +1,3 @@
-use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
@@ -28,11 +27,11 @@ impl GgInternalCanvas {
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
     fn get_type(&self) -> ObjectType { ObjectType::gg_canvas() }
 
-    fn on_update_begin(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().remove_children();
     }
 
-    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         for (render_item, render_info) in self.render_items.drain(..).zip(self.render_infos.drain(..)) {
             ctx.object().add_child(GgInternalCanvasItem::new(render_item, render_info));
         }

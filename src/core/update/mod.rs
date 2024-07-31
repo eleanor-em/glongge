@@ -86,7 +86,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     fn get_children_or_panic(&self, id: ObjectId) -> &Vec<SceneObjectWithId<ObjectType>> {
         self.children.get(&id)
             .unwrap_or_else(|| panic!("missing object_id from children: {:?} [{:?}]",
-                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+                                      id, self.objects.get(&id).unwrap_or_else(
+                    || panic!("missing object_id from objects: {id:?}")
+                ).borrow().get_type()))
     }
     fn get_children_or_panic_mut(&mut self, id: ObjectId) -> &mut Vec<SceneObjectWithId<ObjectType>> {
         self.children.get_mut(&id)
@@ -285,7 +287,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) =
-                    self.call_on_update(delta, &input_handler, fixed_updates)
+                    self.call_on_update(&input_handler, fixed_updates)
                         .into_pending();
 
                 self.perf_stats.remove_objects.start();
@@ -406,7 +408,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
 
     fn call_on_update(&mut self,
-                      delta: Duration,
                       input_handler: &InputHandler,
                       mut fixed_updates: u128
     ) -> ObjectTracker<ObjectType> {
@@ -417,25 +418,25 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             pending_remove: BTreeSet::new()
         };
 
-        self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, ctx| {
-                                     obj.on_update_begin(delta, ctx);
+        self.iter_with_other_map(input_handler, &mut object_tracker,
+                                 |mut obj, ctx| {
+                                     obj.on_update_begin(ctx);
                                  });
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
         self.update_coroutines(input_handler, &mut object_tracker);
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
-        self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, ctx| {
-                                     obj.on_update(delta, ctx);
+        self.iter_with_other_map(input_handler, &mut object_tracker,
+                                 |mut obj, ctx| {
+                                     obj.on_update(ctx);
                                  });
         self.perf_stats.on_update.stop();
 
         self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                     |mut obj, _delta, ctx| {
+            self.iter_with_other_map(input_handler, &mut object_tracker,
+                                     |mut obj, ctx| {
                                          obj.on_fixed_update(ctx);
                                      });
             fixed_updates -= 1;
@@ -447,9 +448,9 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         self.perf_stats.fixed_update.stop();
 
         self.perf_stats.on_update_end.start();
-        self.iter_with_other_map(delta, input_handler, &mut object_tracker,
-                                 |mut obj, delta, ctx| {
-                                     obj.on_update_end(delta, ctx);
+        self.iter_with_other_map(input_handler, &mut object_tracker,
+                                 |mut obj, ctx| {
+                                     obj.on_update_end(ctx);
                                  });
         self.perf_stats.on_update_end.stop();
         object_tracker
@@ -499,11 +500,10 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         }
     }
     fn iter_with_other_map<F>(&mut self,
-                              delta: Duration,
                               input_handler: &InputHandler,
                               object_tracker: &mut ObjectTracker<ObjectType>,
                               call_obj_event: F)
-    where F: Fn(RefMut<dyn SceneObject<ObjectType>>, Duration, &mut UpdateContext<ObjectType>) {
+    where F: Fn(RefMut<dyn SceneObject<ObjectType>>, &mut UpdateContext<ObjectType>) {
         for (this_id, this) in self.object_handler.objects.clone() {
             let this = SceneObjectWithId::new(this_id, this.clone());
             let mut ctx = UpdateContext::new(
@@ -512,7 +512,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 this_id,
                 object_tracker
             );
-            call_obj_event(this.inner.borrow_mut(), delta, &mut ctx);
+            call_obj_event(this.inner.borrow_mut(), &mut ctx);
         }
     }
     fn update_and_send_render_infos(&mut self) {

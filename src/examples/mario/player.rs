@@ -536,12 +536,12 @@ impl SceneObject<ObjectType> for Player {
         );
     }
 
-    fn on_update_begin(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.accel = 0.;
         self.v_accel = 0.;
         self.maybe_start_exit_pipe(ctx);
     }
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::W) {
             if self.show_wireframes {
                 ctx.object().others_as_mut::<CollisionShape>()
@@ -692,7 +692,7 @@ impl SceneObject<ObjectType> for Player {
         }
         CollisionResponse::Done
     }
-    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
         ctx.viewport().clamp_to_left(Some(0.), None);

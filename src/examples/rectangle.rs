@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
 use glongge_derive::*;
@@ -71,7 +71,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.pos = Vec2 { x: 512., y: 384. };
     }
 
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
         if ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
         if ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
@@ -80,7 +80,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.vel = Self::SPEED * direction.normed();
     }
 
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.pos += self.vel;
     }
 
@@ -150,7 +150,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             CollisionShape::from_object_sprite(self, &self.sprite)
         );
     }
-    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));

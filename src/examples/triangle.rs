@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use num_traits::{FloatConst, Zero};
 use rand::{distributions::{Distribution, Uniform}, Rng};
 use glongge_derive::*;
@@ -99,7 +99,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         };
         Ok(Some(RenderItem::new(VertexWithUV::from_vec2s(vec![vertex1, vertex2, vertex3]))))
     }
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space) &&
             ctx.object().others().len() < 2500 &&
             ctx.viewport().contains_point(self.pos) {
@@ -134,7 +134,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         self.pos += self.velocity;
     }
 
-    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
             ctx.viewport().contains_point(self.pos) {
             for other in ctx.object().others() {

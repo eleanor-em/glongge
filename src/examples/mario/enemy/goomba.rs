@@ -74,7 +74,7 @@ impl SceneObject<ObjectType> for Goomba {
             ));
         }
     }
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
         if ctx.object().test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.v_accel = BASE_GRAVITY;
@@ -103,7 +103,7 @@ impl SceneObject<ObjectType> for Goomba {
         }
         CollisionResponse::Done
     }
-    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {
             ctx.scene().start_coroutine_after(|_this, ctx, _action| {
                 ctx.object().remove_this();
