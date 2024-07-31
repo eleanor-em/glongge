@@ -278,6 +278,15 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
     fn update_with_added_objects(&mut self, input_handler: &InputHandler, mut pending_add_objects: Vec<PendingAddObject<ObjectType>>) -> Result<()> {
         while !pending_add_objects.is_empty() {
+            pending_add_objects.retain(|obj| {
+                let rv = obj.parent_id.0 == 0 ||
+                    self.object_handler.objects.contains_key(&obj.parent_id);
+                if !rv {
+                    info!("removed orphaned object: {:?} (parent {:?})",
+                          obj.inner.borrow().get_type(), obj.parent_id);
+                }
+                rv
+            });
             let pending_add = pending_add_objects.drain(..)
                 .map(|obj| (ObjectId::next(), obj))
                 .collect::<BTreeMap<_, _>>();
@@ -313,6 +322,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
 
     fn load_new_objects(&mut self, object_tracker: &mut ObjectTracker<ObjectType>, pending_add: BTreeMap<ObjectId, PendingAddObject<ObjectType>>) -> Result<()> {
         for (new_id, new_obj) in pending_add {
+            self.object_handler.add_object(new_id, new_obj.clone());
             let new_vertices = {
                 let parent = self.object_handler.get_parent(new_obj.parent_id);
                 let mut object_ctx = ObjectContext {
@@ -325,7 +335,6 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                 new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?
             };
             self.vertex_map.insert(new_id, new_vertices);
-            self.object_handler.add_object(new_id, new_obj);
         }
         Ok(())
     }
@@ -366,6 +375,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                  });
         self.perf_stats.on_update.stop();
 
+        self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
             self.iter_with_other_map(delta, input_handler, &mut object_tracker,
                                      |mut obj, _delta, ctx| {
@@ -373,8 +383,11 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                      });
             fixed_updates -= 1;
             // Detect collisions after each fixed update: important to prevent glitching through walls etc.
+            self.perf_stats.fixed_update.pause();
             self.handle_collisions(input_handler, &mut object_tracker);
+            self.perf_stats.fixed_update.unpause();
         }
+        self.perf_stats.fixed_update.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(delta, input_handler, &mut object_tracker,
@@ -736,6 +749,7 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn parent(&self) -> Option<&BorrowedSceneObjectWithId<'a, ObjectType>> { self.parent.as_ref() }
+    pub fn children(&self) -> &[SceneObjectWithId<ObjectType>] { &self.children }
     pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.object_tracker.last.iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
