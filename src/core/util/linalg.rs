@@ -809,6 +809,18 @@ impl Default for Transform {
     }
 }
 
+impl Mul<Transform> for Transform {
+    type Output = Transform;
+
+    fn mul(self, rhs: Transform) -> Self::Output {
+        Self {
+            centre: self.centre + rhs.centre,
+            rotation: self.rotation + rhs.rotation,
+            scale: self.scale.component_wise(rhs.scale),
+        }
+    }
+}
+
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + t * (b - a)
 }

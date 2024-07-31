@@ -16,13 +16,15 @@ fn main() -> Result<()> {
     for entry in WalkDir::new(current_dir.clone()) {
         let entry = entry?;
         let filename = entry.file_name().display().to_string();
-        if filename != "build.rs" && filename != "object_type.rs" && filename.ends_with(".rs") {
+        let is_rust_file = entry.path().extension()
+            .map_or(false, |ext| ext.eq_ignore_ascii_case("rs"));
+        if is_rust_file && filename != "build.rs" && filename != "object_type.rs" {
             let path = entry.path().display().to_string();
             let path = path.replace(&format!("{}/", current_dir.display()), "");
             let parts = path.split("src/").collect::<Vec<_>>();
             if parts.len() == 2 {
                 let rest = parts[1].to_string();
-                let import = rest.replace(".rs", "").replace("/", "::");
+                let import = rest.replace(".rs", "").replace('/', "::");
                 if import.contains("mod") || import == "main" || import == "lib" {
                     continue;
                 }
@@ -35,26 +37,20 @@ fn main() -> Result<()> {
                     .map(|(i, _)| lines[i + 1].clone())
                     .collect::<Vec<_>>();
                 if !lines_with_decls.is_empty() {
-                    if lines.iter().find(|line| line.starts_with("use crate::object_type::ObjectType;"))
-                            .is_none() {
-                        panic!("file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`");
-                    }
+                    assert!(lines.iter().any(|line| line.starts_with("use crate::object_type::ObjectType;")),
+                        "file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`");
                 }
                 for line in lines_with_decls {
                     let parts = line.split("for").collect::<Vec<_>>();
-                    if parts.len() < 2 {
-                        panic!("could not parse impl line: `{line}`");
-                    }
-                    let parts = parts[1].trim().split(" ").collect::<Vec<_>>();
-                    if parts.is_empty() {
-                        panic!("could not parse impl line: `{line}`");
-                    }
+                    assert!(parts.len() >= 2, "could not parse impl line: `{line}`");
+                    let parts = parts[1].trim().split(' ').collect::<Vec<_>>();
+                    assert!(!parts.is_empty(), "could not parse impl line: `{line}`");
                     let struct_name = parts[0];
                     imports.push(format!("use crate::{import}::{struct_name};"));
                     decls.push(format!("{struct_name},"));
                 }
-            } else if parts.len() > 2 {
-                panic!("could not parse file path: {}", entry.path().display());
+            } else {
+                assert!(parts.len() == 1, "could not parse file path: {}", entry.path().display());
             }
         }
     }

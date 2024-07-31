@@ -623,9 +623,7 @@ impl SceneObject<ObjectType> for Player {
             self.state = PlayerState::RidingFlagpole;
             self.music.stop();
             self.flagpole_sound.play();
-            let flagpole_top = other.collider().top();
-            let flagpole_centre = other.transform().centre.x;
-            let dest_x = flagpole_centre - self.current_sprite().half_widths().x;
+            let dest_x = other.transform().centre.x - self.current_sprite().half_widths().x;
             ctx.scene().start_coroutine(move |mut this, ctx, _last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
@@ -635,7 +633,7 @@ impl SceneObject<ObjectType> for Player {
                         this.collider().as_ref(), vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
-                    ctx.object().add(WinTextDisplay::new(Vec2 { x: flagpole_centre, y: flagpole_top - 80. }));
+                    ctx.object().add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
                     this.clear_sound.play();
                     CoroutineResponse::Complete
                 } else {

@@ -157,11 +157,11 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
                 };
-                ctx.object().add(Box::new(SpinningTriangle::new(
+                ctx.object().add_child(Box::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity - vel).normed(),
                 )));
-                ctx.object().add(Box::new(SpinningTriangle::new(
+                ctx.object().add_child(Box::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity + vel).normed(),
                 )));

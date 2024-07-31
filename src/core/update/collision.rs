@@ -17,6 +17,7 @@ use crate::{
         }
     }
 };
+use crate::core::update::PendingAddObject;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {
@@ -56,12 +57,15 @@ impl CollisionHandler {
             possible_collisions: BTreeSet::new()
         }
     }
-    pub(crate) fn update_with_added_objects<ObjectType: ObjectTypeEnum>(&mut self, added_objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>) {
+    pub(crate) fn update_with_added_objects<ObjectType: ObjectTypeEnum>(
+        &mut self,
+        added_objects: &BTreeMap<ObjectId, PendingAddObject<ObjectType>>
+    ) {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
 
         for (id, obj) in added_objects {
-            let obj = obj.borrow();
+            let obj = obj.inner.borrow();
             for tag in obj.emitting_tags() {
                 new_object_ids_by_emitting_tag.entry(tag).or_default().push(*id);
                 new_object_ids_by_listening_tag.entry(tag).or_default();

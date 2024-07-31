@@ -37,9 +37,8 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
-                if value.as_typeid() == actual {
-                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
-                }
+                check_ne!(value.as_typeid(), actual,
+                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value));
             }
             panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
         }
@@ -50,17 +49,16 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
-                if value.as_typeid() == actual {
-                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
-                }
+                check_ne!(value.as_typeid(), actual,
+                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value));
             }
-            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
         }
         obj.as_any_mut().downcast_mut::<T>().unwrap()
     }
 }
 
-static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(0);
+// ObjectId(0) represents the root object.
+static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId(usize);
 
@@ -105,7 +103,5 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }
-
-type PendingObjectVec<ObjectType> = Vec<Rc<RefCell<AnySceneObject<ObjectType>>>>;
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;

@@ -210,7 +210,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));
-            ctx.object().add(Box::new(SpinningRectangle::new(
+            ctx.object().add_child(Box::new(SpinningRectangle::new(
                 self.pos,
                 Vec2::one().rotated(angle)
             )));
