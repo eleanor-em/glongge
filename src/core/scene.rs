@@ -31,6 +31,7 @@ use crate::{
 };
 use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
+use crate::shader::ensure_shaders_locked;
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum> {
@@ -180,6 +181,7 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
         ));
     }
     pub fn consume_with_scene(mut self, mut name: SceneName, mut entrance_id: usize) {
+        ensure_shaders_locked();
         loop {
             self.run_scene(name, entrance_id);
             match self.rx.recv().expect("failed to receive scene instruction") {

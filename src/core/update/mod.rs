@@ -51,6 +51,7 @@ use crate::{
     resource::ResourceHandler,
 };
 use crate::core::render::StoredRenderItem;
+use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
@@ -148,6 +149,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         }
     }
 
+    #[cold]
+    fn maybe_replace_invalid_shader_id(render_info: &mut RenderInfo) {
+        if !render_info.shader_id.is_valid() {
+            render_info.shader_id = get_shader(BasicShader::name());
+        }
+    }
+
     fn create_render_infos(&mut self, vertex_map: &mut VertexMap, viewport: &AdjustedViewport) -> Vec<RenderInfoFull> {
         self.update_all_transforms();
         for (this_id, mut this) in self.objects.iter()
@@ -166,13 +174,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         let mut render_infos = Vec::with_capacity(vertex_map.len());
         let mut start = 0;
         for item in vertex_map.render_items() {
-            let render_info = self.get_object_or_panic(item.object_id)
+            let mut render_info = self.get_object_or_panic(item.object_id)
                 .borrow_mut().as_renderable_object()
                 .unwrap_or_else(|| panic!("object in vertex_map not renderable: {:?} [{:?}]",
                                           item.object_id,
                                           self.objects.get(&item.object_id).unwrap().borrow().get_type()))
                 .render_info();
-            check!(render_info.shader_id.is_valid());
+            Self::maybe_replace_invalid_shader_id(&mut render_info);
             let transform = self.absolute_transforms.get(&item.object_id)
                 .unwrap_or_else(|| panic!("missing object_id in transforms: {:?} [{:?}]",
                                           item.object_id,
@@ -312,7 +320,10 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         }
     }
 
-    fn update_with_added_objects(&mut self, input_handler: &InputHandler, mut pending_add_objects: Vec<PendingAddObject<ObjectType>>) -> Result<()> {
+    fn update_with_added_objects(&mut self,
+                                 input_handler: &InputHandler,
+                                 mut pending_add_objects: Vec<PendingAddObject<ObjectType>>
+    ) -> Result<()> {
         while !pending_add_objects.is_empty() {
             pending_add_objects.retain(|obj| {
                 let rv = obj.parent_id.0 == 0 ||
@@ -323,6 +334,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 }
                 rv
             });
+            if pending_add_objects.is_empty() { break; }
             let pending_add = pending_add_objects.drain(..)
                 .map(|obj| (ObjectId::next(), obj))
                 .collect_vec();
@@ -891,6 +903,14 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                 parent_id: self.this_id,
             }
         }));
+    }
+    pub fn add_sibling(&mut self, object: AnySceneObject<ObjectType>) {
+        self.object_tracker.pending_add.push(PendingAddObject {
+            inner: object,
+            parent_id: self.parent().map(|obj| {
+                obj.object_id
+            }).unwrap_or(ObjectId(0)),
+        });
     }
     pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) {
         self.object_tracker.pending_add.push(PendingAddObject {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use num_traits::Zero;
@@ -60,17 +60,33 @@ impl ShaderId {
 
     pub(crate) fn is_valid(self) -> bool { self.0 != 0 }
 }
-static SHADER_IDS: LazyLock<Arc<Mutex<HashMap<ShaderName, ShaderId>>>> = LazyLock::new(|| {
+static SHADER_IDS_INIT: LazyLock<Arc<Mutex<HashMap<ShaderName, ShaderId>>>> = LazyLock::new(|| {
     Arc::new(Mutex::new(HashMap::new()))
 });
+static SHADERS_LOCKED: AtomicBool = AtomicBool::new(false);
+
+static SHADER_IDS_FINAL: LazyLock<HashMap<ShaderName, ShaderId>> = LazyLock::new(|| {
+    if !SHADERS_LOCKED.load(Ordering::Acquire) {
+        panic!("attempted to load shader IDs too early");
+    }
+    let shader_ids = SHADER_IDS_INIT.lock().unwrap();
+    shader_ids.clone()
+});
+
 pub fn register_shader<S: Shader + Sized>() -> ShaderId {
-    let mut shader_ids = SHADER_IDS.lock().unwrap();
+    if SHADERS_LOCKED.load(Ordering::Acquire) {
+        panic!("attempted to register shader too late: {:?}", S::name());
+    }
+    let mut shader_ids = SHADER_IDS_INIT.lock().unwrap();
     *shader_ids.entry(S::name())
         .or_insert_with(ShaderId::next)
 }
 pub fn get_shader(name: ShaderName) -> ShaderId {
-    *SHADER_IDS.lock().unwrap().get(&name)
+    *SHADER_IDS_FINAL.get(&name)
         .unwrap_or_else(|| panic!("unknown shader: {name:?}"))
+}
+pub(crate) fn ensure_shaders_locked() {
+    SHADERS_LOCKED.swap(true, Ordering::Release);
 }
 
 pub trait Shader: Send {

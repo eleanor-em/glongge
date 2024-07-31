@@ -16,26 +16,7 @@ impl Scene<ObjectType> for TriangleScene {
     fn name(&self) -> SceneName { SceneName::new("triangle") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        vec![
-            AnySceneObject::new(TriangleSpawner{}),
-        ]
-    }
-}
-
-// #[register_object_type]
-// pub enum ObjectType {
-//     Spawner,
-//     SpinningTriangle,
-// }
-
-#[register_scene_object]
-pub struct TriangleSpawner {}
-
-#[partially_derive_scene_object]
-impl SceneObject<ObjectType> for TriangleSpawner {
-
-    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
-        const N: usize = 10;
+        const N: usize = 1;
         let mut rng = rand::thread_rng();
         let xs: Vec<f64> = Uniform::new(0., 1024.)
             .sample_iter(&mut rng)
@@ -53,7 +34,7 @@ impl SceneObject<ObjectType> for TriangleSpawner {
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let objects = (0..N)
+        (0..N)
             .map(|i| {
                 let pos = Vec2 { x: xs[i], y: ys[i] };
                 let vel = Vec2 {
@@ -62,15 +43,13 @@ impl SceneObject<ObjectType> for TriangleSpawner {
                 };
                 AnySceneObject::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() })
             })
-            .collect();
-        ctx.object().add_vec(objects);
-        ctx.object().remove_this();
-    }
-
-    fn transform(&self) -> Transform {
-        Transform::default()
+            .collect()
     }
 }
+
+#[register_scene_object]
+pub struct TriangleSpawner {}
+
 
 pub struct SpinningTriangle {
     pos: Vec2,
@@ -86,9 +65,9 @@ impl Default for SpinningTriangle {
 }
 
 impl SpinningTriangle {
-    const TRI_WIDTH: f64 = 5.;
-    const VELOCITY: f64 = 200.;
-    const ANGULAR_VELOCITY: f64 = 1.;
+    const TRI_WIDTH: f64 = 20.;
+    const VELOCITY: f64 = 20.;
+    const ANGULAR_VELOCITY: f64 = 0.1;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         Self {
@@ -120,18 +99,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         };
         Ok(Some(RenderItem::new(VertexWithUV::from_vec2s(vec![vertex1, vertex2, vertex3]))))
     }
-    fn on_update(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
-        let delta_s = delta.as_secs_f64();
-        self.t += delta_s;
-        let next_pos = self.pos + self.velocity * delta_s;
-        if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {
-            self.velocity.x = -self.velocity.x;
-        }
-        if !(0.0..ctx.viewport().bottom()).contains(&next_pos.y) {
-            self.velocity.y = -self.velocity.y;
-        }
-        self.pos += self.velocity * delta_s;
-
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space) &&
             ctx.object().others().len() < 2500 &&
             ctx.viewport().contains_point(self.pos) {
@@ -141,11 +109,11 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
                 };
-                ctx.object().add_child(AnySceneObject::new(SpinningTriangle::new(
+                ctx.object().add_sibling(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity - vel).normed(),
                 )));
-                ctx.object().add_child(AnySceneObject::new(SpinningTriangle::new(
+                ctx.object().add_sibling(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity + vel).normed(),
                 )));
@@ -154,12 +122,25 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         }
     }
 
+    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        self.t += Self::ANGULAR_VELOCITY;
+        let next_pos = self.pos + self.velocity;
+        if !ctx.viewport().contains_point(Vec2 { x: next_pos.x, y: self.pos.y }) {
+            self.velocity.x = -self.velocity.x;
+        }
+        if !ctx.viewport().contains_point(Vec2 { x: self.pos.x, y: next_pos.y }) {
+            self.velocity.y = -self.velocity.y;
+        }
+        self.pos += self.velocity;
+    }
+
     fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
             ctx.viewport().contains_point(self.pos) {
             for other in ctx.object().others() {
-                if (other.transform().centre -  self.pos).len() < Self::TRI_WIDTH {
-                    self.velocity = (self.pos - other.transform().centre).normed() * Self::VELOCITY;
+                let dist = ctx.object().absolute_transform_of(&other).centre - ctx.object().absolute_transform().centre;
+                if dist.len() < Self::TRI_WIDTH {
+                    self.velocity = -dist.normed() * Self::VELOCITY;
                 }
             }
         }

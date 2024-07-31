@@ -68,6 +68,7 @@ use crate::{
     resource::ResourceHandler,
 };
 use crate::core::render::RenderHandler;
+use crate::shader::ensure_shaders_locked;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -649,6 +650,7 @@ impl WindowEventHandler {
     }
 
     pub fn consume(mut self, event_loop: EventLoop<()>) {
+        ensure_shaders_locked();
         event_loop.run(move |event, _, control_flow| {
             self.run_inner(&event, control_flow).expect("error running event loop");
         });

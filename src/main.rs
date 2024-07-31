@@ -49,6 +49,7 @@ fn main() -> Result<()> {
         BasicShader::new(ctx.clone(), viewport.clone())?,
     ];
     let render_handler = RenderHandler::new(viewport.clone(), shaders)
+        // .with_global_scale_factor(1.);
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();
     {
@@ -61,10 +62,12 @@ fn main() -> Result<()> {
                 resource_handler,
                 render_handler
             );
-            // scene_handler.create_scene(TriangleScene); let name = TriangleScene.name();
-            // scene_handler.create_scene(RectangleScene); let name = RectangleScene.name();
+            scene_handler.create_scene(TriangleScene);
+            scene_handler.create_scene(RectangleScene);
             scene_handler.create_scene(MarioOverworldScene);
             scene_handler.create_scene(MarioUndergroundScene);
+            // let name = TriangleScene.name();
+            // let name = RectangleScene.name();
             let name = MarioOverworldScene.name();
             // let name = MarioUndergroundScene.name();
             scene_handler.consume_with_scene(name, 0);
