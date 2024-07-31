@@ -173,7 +173,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         }
     }
 
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
 }

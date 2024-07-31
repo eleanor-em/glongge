@@ -57,8 +57,8 @@ impl SceneObject<ObjectType> for Goomba {
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }
-        );
-        self.die_sprite.hide();
+        )
+            .with_hidden();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

@@ -121,10 +121,23 @@ pub mod gg_time {
 
 #[allow(dead_code)]
 pub mod gg_iter {
+    use std::cmp;
+    use std::cmp::Ordering;
     use std::ops::Add;
+    use crate::core::prelude::Vec2;
 
     pub fn sum_tuple3<T: Add<Output=T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
         (acc.0 + x.0, acc.1 + x.1, acc.2 + x.2)
+    }
+
+    pub fn cmp_vec2(u: &Vec2, v: &Vec2) -> Ordering {
+        u.partial_cmp(v).unwrap()
+    }
+
+    pub fn partition_point_by<T, F>(slice: &[T], mut comparator: F) -> usize
+    where F: FnMut(&T) -> cmp::Ordering
+    {
+        slice.partition_point(|x| (comparator)(x) != cmp::Ordering::Greater)
     }
 
     #[must_use]

@@ -2,6 +2,7 @@
 #![feature(arbitrary_self_types)]
 #![feature(duration_millis_float)]
 #![feature(stmt_expr_attributes)]
+#![feature(trait_upcasting)]
 
 pub mod core;
 pub mod resource;

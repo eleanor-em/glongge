@@ -235,6 +235,7 @@ impl Vec2 {
         self.x * other.y - self.y * other.x
     }
     pub fn angle_radians(&self, other: Vec2) -> f64 { self.normed().dot(other.normed()).acos() }
+    pub fn longest_component(&self) -> f64 { self.x.abs().max(self.y.abs()) }
 
     pub fn abs(&self) -> Vec2 { Vec2 { x: self.x.abs(), y: self.y.abs() }}
     pub fn rotated(&self, radians: f64) -> Vec2 {
@@ -244,6 +245,16 @@ impl Vec2 {
         *self - 2. * self.dot(normal) * normal
     }
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
+    pub fn intersect(p1: Vec2, ax1: Vec2, p2: Vec2, ax2: Vec2) -> Option<Vec2> {
+        let denom = ax1.cross(ax2);
+        if denom.is_zero() {
+            None
+        } else {
+            let t = (p2 - p1).cross(ax2) / denom;
+            Some(p1 + t * ax1)
+        }
+    }
+    pub fn orthog(&self) -> Vec2 { Vec2 { x: self.y, y: -self.x } }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
         (*self - rhs).len() < f64::from(f32::epsilon())
@@ -785,7 +796,7 @@ impl AxisAlignedExtent for Rect {
     fn centre(&self) -> Vec2 { self.centre }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Transform {
     pub centre: Vec2,
     pub rotation: f64,

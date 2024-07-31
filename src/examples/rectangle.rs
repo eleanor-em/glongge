@@ -53,7 +53,7 @@ impl SceneObject<ObjectType> for RectangleSpawner {
             .map(|(((x, y), vx), vy)|  {
                 let pos = Vec2 { x, y };
                 let vel = Vec2 { x: vx, y: vy };
-                SpinningRectangle::new(pos, vel.normed()).into()
+                SpinningRectangle::new(pos, vel.normed())
             })
             .collect();
         ctx.object().add_vec(objects);

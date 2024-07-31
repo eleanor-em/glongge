@@ -31,7 +31,6 @@ impl Pipe {
 
     pub fn orientation(&self) -> Vec2 { self.orientation }
     pub fn destination(&self) -> Option<SceneDestination> { self.destination }
-    pub fn top(&self) -> f64 { self.transform().centre.y - self.sprite.half_widths().y }
 }
 
 #[partially_derive_scene_object]

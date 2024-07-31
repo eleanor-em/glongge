@@ -1,4 +1,3 @@
-use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::prelude::*,
@@ -62,7 +61,9 @@ impl SceneObject<ObjectType> for QuestionBlock {
             object_ctx,
             texture,
             Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 349, y: 78 });
+            Vec2Int { x: 349, y: 78 }
+        )
+            .with_hidden();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -82,15 +83,6 @@ impl SceneObject<ObjectType> for QuestionBlock {
             self.v_accel = 0.;
         }
     }
-    fn on_update_end(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {
-        if self.is_empty {
-            self.sprite.hide();
-            self.empty_sprite.show();
-        } else {
-            self.sprite.show();
-            self.empty_sprite.hide();
-        }
-    }
 
     fn transform(&self) -> Transform {
         Transform {
@@ -108,6 +100,7 @@ impl Bumpable for QuestionBlock {
         self.v_speed = -from_nes(3, 0, 0, 0);
         self.v_accel = from_nes_accel(0, 9, 15, 0);
         self.is_empty = true;
-        // TODO: drop item
+        self.sprite.hide();
+        self.empty_sprite.show();
     }
 }

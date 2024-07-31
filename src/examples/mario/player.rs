@@ -70,9 +70,11 @@ pub struct Player {
     v_accel: f64,
 
     hold_jump: bool,
+    show_wireframes: bool,
 
     speed_regime: SpeedRegime,
     state: PlayerState,
+    last_state: PlayerState,
     last_ground_state: PlayerState,
     last_nonzero_dir: Vec2,
     cancel_run_crt: Option<CoroutineId>,
@@ -119,6 +121,7 @@ impl Player {
             // Prevents player getting "stuck" on ground when level starts in air.
             last_ground_state: PlayerState::Walking,
             state: if exiting_pipe { PlayerState::ExitingPipe } else { PlayerState::Idle },
+            show_wireframes: false,
             ..Default::default()
         })
     }
@@ -403,7 +406,7 @@ impl Player {
 
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.music.stop();
-        self.current_sprite_mut().set_depth(ctx, VertexDepth::Front(10000));
+        self.current_sprite_mut().set_depth(VertexDepth::Front(10000));
         ctx.scene().start_coroutine(|this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
@@ -464,7 +467,9 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
-        ).with_fixed_ms_per_frame(110);
+        )
+            .with_fixed_ms_per_frame(110)
+            .with_hidden();
         self.run_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
@@ -472,31 +477,37 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
-        ).with_fixed_ms_per_frame(60);
+        )
+            .with_fixed_ms_per_frame(60)
+            .with_hidden();
         self.skid_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
-        );
+        )
+            .with_hidden();
         self.fall_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
-        );
+        )
+            .with_hidden();
         self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
-        );
+        )
+            .with_hidden();
         self.flagpole_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 136, y: 8 },
-        );
+        )
+            .with_hidden();
 
         self.jump_sound = resource_handler.sound.wait_load_file("res/jump-small.wav".to_string())?;
         self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;
@@ -532,14 +543,17 @@ impl SceneObject<ObjectType> for Player {
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::W) {
-            ctx.object().others_as_mut::<CollisionShape>()
-                .into_iter()
-                .for_each(|mut shape| shape.show_wireframe());
-        }
-        if ctx.input().released(KeyCode::W) {
-            ctx.object().others_as_mut::<CollisionShape>()
-                .into_iter()
-                .for_each(|mut shape| shape.hide_wireframe());
+            if self.show_wireframes {
+                ctx.object().others_as_mut::<CollisionShape>()
+                    .into_iter()
+                    .for_each(|mut shape| shape.hide_wireframe());
+                self.show_wireframes = false;
+            } else {
+                ctx.object().others_as_mut::<CollisionShape>()
+                    .into_iter()
+                    .for_each(|mut shape| shape.show_wireframe());
+                self.show_wireframes = true;
+            }
         }
 
         if self.state == PlayerState::Dying {
@@ -682,19 +696,23 @@ impl SceneObject<ObjectType> for Player {
         ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
         ctx.viewport().clamp_to_left(Some(0.), None);
+
         let death_y = ctx.viewport().bottom() + self.current_sprite_mut().aa_extent().y;
         if self.has_control() && self.centre.y > death_y {
             self.start_die(ctx);
         }
 
-        self.walk_sprite.hide();
-        self.run_sprite.hide();
-        self.idle_sprite.hide();
-        self.skid_sprite.hide();
-        self.fall_sprite.hide();
-        self.die_sprite.hide();
-        self.flagpole_sprite.hide();
-        self.current_sprite_mut().show();
+        if self.state != self.last_state {
+            self.walk_sprite.hide();
+            self.run_sprite.hide();
+            self.idle_sprite.hide();
+            self.skid_sprite.hide();
+            self.fall_sprite.hide();
+            self.die_sprite.hide();
+            self.flagpole_sprite.hide();
+            self.current_sprite_mut().show();
+            self.last_state = self.state;
+        }
     }
 
     fn transform(&self) -> Transform {

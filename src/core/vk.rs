@@ -639,6 +639,8 @@ where
 
     is_ready: bool,
     last_ready_poll: Instant,
+
+    report_stats: bool,
 }
 
 #[allow(private_bounds)]
@@ -668,12 +670,19 @@ where
             command_buffer_type: PhantomData,
             is_ready: false,
             last_ready_poll: Instant::now(),
+            report_stats: false,
         }
     }
 
-    pub fn consume(mut self, event_loop: EventLoop<()>, report_stats: bool) {
+    #[must_use]
+    pub fn with_report_stats(mut self) -> Self {
+        self.report_stats = true;
+        self
+    }
+
+    pub fn consume(mut self, event_loop: EventLoop<()>) {
         event_loop.run(move |event, _, control_flow| {
-            self.run_inner(&event, control_flow, report_stats).expect("error running event loop");
+            self.run_inner(&event, control_flow).expect("error running event loop");
         });
     }
 
@@ -771,7 +780,7 @@ where
         self.is_ready
     }
 
-    fn run_inner(&mut self, event: &Event<()>, control_flow: &mut ControlFlow, report_stats: bool) -> Result<()> {
+    fn run_inner(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -821,7 +830,7 @@ where
                     },
                     Err(e) => Err(e.into()),
                 };
-                self.render_stats.report_and_end_step(report_stats);
+                self.render_stats.report_and_end_step(self.report_stats);
                 rv
             }
             _ => Ok(()),
@@ -877,7 +886,7 @@ impl RenderPerfStats {
     }
 
     fn begin_handle_swapchain(&mut self) {
-        check_eq!(self.state, RenderState::BetweenRenders);
+        check_eq!(&self.state, &RenderState::BetweenRenders);
         self.state = RenderState::HandleSwapchain;
         self.total.stop();
         if self.totals_ms.len() == self.totals_ms.capacity() {
@@ -892,26 +901,26 @@ impl RenderPerfStats {
     }
 
     fn begin_acquire_and_sync(&mut self) {
-        check_eq!(self.state, RenderState::HandleSwapchain);
+        check_eq!(&self.state, &RenderState::HandleSwapchain);
         self.state = RenderState::AcquireAndSync;
         self.acquire_and_sync.start();
     }
     fn begin_on_render(&mut self) {
-        check_eq!(self.state, RenderState::AcquireAndSync);
+        check_eq!(&self.state, &RenderState::AcquireAndSync);
         self.state = RenderState::OnRender;
         self.acquire_and_sync.stop();
         self.on_render.start();
     }
 
     fn begin_submit_command_buffers(&mut self) {
-        check_eq!(self.state, RenderState::OnRender);
+        check_eq!(&self.state, &RenderState::OnRender);
         self.state = RenderState::SubmitCommandBuffers;
         self.on_render.stop();
         self.submit_command_buffers.start();
     }
 
     fn end_render(&mut self) {
-        check_eq!(self.state, RenderState::SubmitCommandBuffers);
+        check_eq!(&self.state, &RenderState::SubmitCommandBuffers);
         self.state = RenderState::EndRender;
         self.submit_command_buffers.stop();
         self.end_step.start();

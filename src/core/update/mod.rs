@@ -54,8 +54,6 @@ struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
 
     collision_handler: CollisionHandler,
-
-    render_infos: BTreeMap<ObjectId, RenderInfoFull>,
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
@@ -66,17 +64,34 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             absolute_transforms: BTreeMap::new(),
             children: BTreeMap::new(),
             collision_handler: CollisionHandler::new(),
-            render_infos: BTreeMap::new()
         }
     }
 
+    fn get_object_or_panic(&self, id: ObjectId) -> &AnySceneObject<ObjectType> {
+        self.objects.get(&id)
+            .unwrap_or_else(|| panic!("missing object_id from objects: {:?} [{:?}]",
+                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+    }
+    fn get_parent_or_panic(&self, id: ObjectId) -> ObjectId {
+        *self.parents.get(&id)
+            .unwrap_or_else(|| panic!("missing object_id from parents: {:?} [{:?}]",
+                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+    }
+    fn get_children_or_panic(&self, id: ObjectId) -> &Vec<SceneObjectWithId<ObjectType>> {
+        self.children.get(&id)
+            .unwrap_or_else(|| panic!("missing object_id from children: {:?} [{:?}]",
+                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+    }
+    fn get_children_or_panic_mut(&mut self, id: ObjectId) -> &mut Vec<SceneObjectWithId<ObjectType>> {
+        self.children.get_mut(&id)
+            .unwrap_or_else(|| panic!("missing object_id from children: {:?} [{:?}]",
+                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+    }
+
     fn remove_object(&mut self, remove_id: ObjectId) {
-        self.render_infos.remove(&remove_id);
         self.objects.remove(&remove_id);
-        let parent = self.parents.get(&remove_id)
-            .unwrap_or_else(|| panic!("missing object_id in parents: {remove_id:?}"));
-        self.children.get_mut(parent)
-            .unwrap_or_else(|| panic!("missing object_id in children: {remove_id:?}"))
+        let parent = self.get_parent_or_panic(remove_id);
+        self.get_children_or_panic_mut(parent)
             .retain(|obj| obj.object_id != remove_id);
         self.parents.remove(&remove_id);
     }
@@ -88,8 +103,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.objects.insert(new_id, new_obj.inner.clone());
         self.parents.insert(new_id, new_obj.parent_id);
         self.children.insert(new_id, Vec::new());
-        self.children.get_mut(&new_obj.parent_id)
-            .unwrap_or_else(|| panic!("missing object_id in children: {:?}", new_obj.parent_id))
+        self.get_children_or_panic_mut(new_obj.parent_id)
             .push(SceneObjectWithId::new(new_id, new_obj.inner));
     }
 
@@ -103,62 +117,71 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             return None;
         }
 
-        let parent_id = self.parents.get(&this_id)
-            .unwrap_or_else(|| panic!("missing object_id in parents: {this_id:?}"));
+        let parent_id = self.get_parent_or_panic(this_id);
         if parent_id.0 == 0 {
             None
         } else {
-            let parent = self.objects.get(parent_id)
-                .unwrap_or_else(|| panic!("the only missing parent should be the root node: {parent_id:?}"));
-            Some(SceneObjectWithId::new(*parent_id, parent.clone()))
+            let parent = self.get_object_or_panic(parent_id);
+            Some(SceneObjectWithId::new(parent_id, parent.clone()))
         }
     }
     fn get_children(&self, this_id: ObjectId) -> Vec<SceneObjectWithId<ObjectType>> {
-        self.children
-            .get(&this_id)
-            .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
+        self.get_children_or_panic(this_id)
             .iter()
             .map(SceneObjectWithId::clone)
             .collect()
     }
 
     fn update_all_transforms(&mut self) {
-        self.update_transforms(ObjectId(0), Transform::default());
-    }
-    fn update_transforms(
-        &mut self,
-        parent_id: ObjectId,
-        parent_transform: Transform,
-    ) {
         let mut child_stack = Vec::with_capacity(self.objects.len());
-        child_stack.push((parent_id, parent_transform));
+        child_stack.push((ObjectId(0), Transform::default()));
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
             self.absolute_transforms.insert(parent_id, parent_transform);
-            for child in self.children.get(&parent_id)
-                .unwrap_or_else(|| panic!("missing object_id in children: {parent_id:?}")) {
-                let child_id = child.object_id;
-                let child_transform = child.transform() * parent_transform;
-                child_stack.push((child_id, child_transform));
+            for child in self.get_children_or_panic(parent_id) {
+                child_stack.push((child.object_id, child.transform() * parent_transform));
             }
         }
     }
 
-    fn update_render_infos(&mut self, vertex_map: &VertexMap, viewport: &AdjustedViewport) {
+    fn create_render_infos(&mut self, vertex_map: &mut VertexMap, viewport: &AdjustedViewport) -> Vec<RenderInfoFull> {
         self.update_all_transforms();
-        for (object_id, obj) in &self.objects {
-            if let Some(obj) = obj.borrow().as_renderable_object() {
-                let (indices, _) = vertex_map.get(*object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in vertex_map: {object_id:?}"));
-                let transform = self.absolute_transforms.get(object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in transforms: {object_id:?}"))
-                    .translated(-viewport.translation);
-                self.render_infos.insert(*object_id, RenderInfoFull {
-                    vertex_indices: indices.clone(),
-                    inner: obj.render_info(),
-                    transform,
-                });
-            }
+        for (this_id, mut this) in self.objects.iter()
+            .filter_map(|(this_id, this)| {
+                RefMut::filter_map(this.borrow_mut(), SceneObject::as_renderable_object)
+                    .ok()
+                    .map(|this| (this_id, this))
+            }) {
+            let mut render_ctx = RenderContext::new(
+                *this_id,
+                &*this as &dyn SceneObject<ObjectType>,
+                vertex_map
+            );
+            this.on_render(&mut render_ctx);
         }
+        let mut render_infos = Vec::with_capacity(vertex_map.len());
+        let mut start = 0;
+        for item in vertex_map.render_items() {
+            let render_info = self.get_object_or_panic(item.object_id)
+                .borrow_mut().as_renderable_object()
+                .unwrap_or_else(|| panic!("object in vertex_map not renderable: {:?} [{:?}]",
+                                          item.object_id,
+                                          self.objects.get(&item.object_id).unwrap().borrow().get_type()))
+                .render_info();
+            let transform = self.absolute_transforms.get(&item.object_id)
+                .unwrap_or_else(|| panic!("missing object_id in transforms: {:?} [{:?}]",
+                                          item.object_id,
+                                          self.objects.get(&item.object_id).unwrap().borrow().get_type()))
+                .translated(-viewport.translation);
+
+            let end = start + item.len();
+            render_infos.push(RenderInfoFull {
+                vertex_indices: start..end,
+                inner: render_info,
+                transform,
+            });
+            start = end;
+        }
+        render_infos
     }
 }
 
@@ -469,17 +492,17 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     }
     fn update_and_send_render_infos(&mut self) {
         self.perf_stats.render_infos.start();
-        self.object_handler.update_render_infos(&self.vertex_map, &self.viewport);
-        self.send_render_infos();
+        let render_infos = self.object_handler.create_render_infos(
+            &mut self.vertex_map, &self.viewport);
+        self.send_render_infos(render_infos);
         self.perf_stats.render_infos.stop();
     }
 
-    fn send_render_infos(&mut self) {
-        let vertex_map = &mut self.vertex_map;
-        let maybe_vertices = if vertex_map.consume_vertices_changed() {
-            let mut vertices = Vec::with_capacity(vertex_map.vertex_count());
-            for r in vertex_map.render_items() {
-                vertices.extend(r.vertices);
+    fn send_render_infos(&mut self, render_infos: Vec<RenderInfoFull>) {
+        let maybe_vertices = if self.vertex_map.consume_vertices_changed() {
+            let mut vertices = Vec::with_capacity(self.vertex_map.vertex_count());
+            for r in self.vertex_map.render_items() {
+                vertices.extend(r.vertices());
             }
             check_eq!(vertices.len(), vertices.capacity());
             Some(vertices)
@@ -490,7 +513,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         if let Some(vertices) = maybe_vertices {
             render_info_receiver.update_vertices(vertices);
         }
-        render_info_receiver.update_render_info(self.object_handler.render_infos.values().cloned().collect());
+        render_info_receiver.update_render_info(render_infos);
         render_info_receiver.set_clear_col(self.clear_col);
         self.viewport = render_info_receiver.current_viewport()
             .translated(self.viewport.translation);
@@ -554,7 +577,6 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     scene: SceneContext<'a, ObjectType>,
     object: ObjectContext<'a, ObjectType>,
     viewport: ViewportContext<'a>,
-    render: RenderContext<'a>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
@@ -589,11 +611,6 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 viewport: &mut caller.viewport,
                 clear_col: &mut caller.clear_col,
             },
-            render: RenderContext {
-                this_id,
-                vertex_map: &mut caller.vertex_map,
-                render_infos: &mut caller.object_handler.render_infos,
-            }
         }
     }
 
@@ -601,7 +618,6 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn scene(&mut self) -> &mut SceneContext<'a, ObjectType> { &mut self.scene }
     pub fn viewport(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
     pub fn input(&self) -> &InputHandler { self.input }
-    pub fn render(&mut self) -> &mut RenderContext<'a> { &mut self.render }
 }
 
 impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
@@ -994,19 +1010,38 @@ impl AxisAlignedExtent for ViewportContext<'_> {
     }
 }
 
-impl<'a> RenderContext<'a> {
-    pub fn update_vertices(&mut self, new_vertices: RenderItem) {
-        self.vertex_map.remove(self.this_id);
-        self.vertex_map.insert(self.this_id, new_vertices);
-    }
-    pub fn remove_vertices(&mut self) {
-        self.vertex_map.remove(self.this_id);
-        self.render_infos.remove(&self.this_id);
-    }
+pub struct RenderContext<'a> {
+    pub(crate) this_id: ObjectId,
+    this_type: String,
+    vertex_map: &'a mut VertexMap,
 }
 
-pub struct RenderContext<'a> {
-    this_id: ObjectId,
-    vertex_map: &'a mut VertexMap,
-    render_infos: &'a mut BTreeMap<ObjectId, RenderInfoFull>,
+impl<'a> RenderContext<'a> {
+    pub(crate) fn new<ObjectType: ObjectTypeEnum>(
+        this_id: ObjectId,
+        obj: &dyn SceneObject<ObjectType>,
+        vertex_map: &'a mut VertexMap
+    ) -> Self {
+        Self {
+            this_id,
+            this_type: format!("{:?}", obj.get_type()),
+            vertex_map,
+        }
+    }
+
+    pub fn update_render_item(&mut self, new_render_item: &RenderItem) {
+        self.remove_render_item();
+        self.vertex_map.insert(self.this_id, new_render_item.clone());
+    }
+    pub fn insert_render_item(&mut self, new_render_item: &RenderItem) {
+        if let Some(existing) = self.vertex_map.remove(self.this_id) {
+            self.vertex_map.insert(self.this_id, existing.concat(new_render_item.clone()));
+        } else {
+            self.vertex_map.insert(self.this_id, new_render_item.clone());
+        }
+    }
+    pub fn remove_render_item(&mut self) {
+        check_is_some!(self.vertex_map.remove(self.this_id),
+                       format!("removed nonexistent vertices: {:?} [{}]", self.this_id, self.this_type));
+    }
 }

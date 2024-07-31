@@ -3,7 +3,7 @@ use std::{
     default::Default,
     sync::{Arc, Mutex, MutexGuard},
     ops::Range,
-    collections::{BTreeMap, BTreeSet}
+    collections::BTreeMap
 };
 
 use vulkano::{
@@ -133,25 +133,25 @@ pub(crate) trait RenderInfoReceiver: Clone + Send {
 #[derive(Clone)]
 pub struct BasicRenderInfoReceiver {
     vertices: Vec<VertexWithUV>,
-    vertices_up_to_date: DataPerImage<bool>,
+    vertices_up_to_date: bool,
     pub(crate) render_info: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
 impl BasicRenderInfoReceiver {
-    fn new(ctx: &VulkanoContext, viewport: AdjustedViewport) -> Self {
-        Self {
+    fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
-            vertices_up_to_date: DataPerImage::new_with_value(ctx, true),
+            vertices_up_to_date: false,
             render_info: Vec::new(),
             viewport,
             clear_col: Colour::black(),
-        }
+        }))
     }
 }
 impl RenderInfoReceiver for BasicRenderInfoReceiver {
     fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
-        self.vertices_up_to_date.clone_from_value(false);
+        self.vertices_up_to_date = false;
         self.vertices = vertices;
     }
 
@@ -190,9 +190,7 @@ impl BasicRenderHandler {
         let vs = basic_vertex_shader::load(ctx.device()).context("failed to create shader module")?;
         let fs = basic_fragment_shader::load(ctx.device()).context("failed to create shader module")?;
         let viewport = window_ctx.create_default_viewport();
-        let render_info_receiver = Arc::new(Mutex::new(BasicRenderInfoReceiver::new(
-            ctx, viewport.clone()
-        )));
+        let render_info_receiver = BasicRenderInfoReceiver::new(viewport.clone());
         Ok(Self {
             resource_handler,
             vs,
@@ -222,7 +220,6 @@ impl BasicRenderHandler {
                 Self::create_single_vertex_buffer(ctx, &receiver.vertices)
             })?);
             self.command_buffers = None;
-            receiver.vertices_up_to_date.clone_from_value(true);
         }
         Ok(())
     }
@@ -249,27 +246,14 @@ impl BasicRenderHandler {
         ).map_err(Validated::unwrap)?)
     }
 
-    fn maybe_update_with_new_vertices(&mut self,
-                                      ctx: &VulkanoContext,
-                                      receiver: &mut MutexGuard<BasicRenderInfoReceiver>,
-                                      per_image_ctx: &mut MutexGuard<PerImageContext>
-    ) -> Result<()> {
-        if !per_image_ctx.get_current_value(&receiver.vertices_up_to_date) {
-            per_image_ctx.replace_current_value(
-                &mut self.vertex_buffers,
-                Self::create_single_vertex_buffer(ctx, &receiver.vertices)?);
-            let command_buffer = Self::create_single_command_buffer(
-                ctx,
-                receiver,
-                self.get_or_create_pipeline(ctx)?,
-                per_image_ctx.current_value_as_ref(&Some(ctx.framebuffers())),
-                per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets),
-                per_image_ctx.current_value_as_ref(&self.vertex_buffers),
-            )?;
-            per_image_ctx.replace_current_value(&mut self.command_buffers, command_buffer);
-            per_image_ctx.set_current_value(&mut receiver.vertices_up_to_date, true);
+    fn maybe_update_with_new_vertices(
+        &mut self,
+        receiver: &mut MutexGuard<BasicRenderInfoReceiver>,
+    ) {
+        if !receiver.vertices_up_to_date {
+            self.vertex_buffers = None;
+            receiver.vertices_up_to_date = true;
         }
-        Ok(())
     }
 
     fn write_vertex_buffer(&mut self,
@@ -287,7 +271,8 @@ impl BasicRenderHandler {
                     if let Some(tex) = tex.ready() {
                         uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                     } else {
-                        blend_col = Colour::new(0., 0., 0., 0.);
+                        // blend_col = Colour::new(0., 0., 0., 0.);
+                        blend_col = Colour::magenta();
                     }
                 } else {
                     error!("missing texture: {}", texture);
@@ -555,9 +540,9 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
     ) -> Result<DataPerImage<Arc<PrimaryAutoCommandBuffer>>> {
         let render_info_receiver = self.render_info_receiver.clone();
         let mut receiver = render_info_receiver.lock().unwrap();
+        self.maybe_update_with_new_vertices(&mut receiver);
         self.maybe_create_vertex_buffers(ctx, &mut receiver)?;
         let command_buffers = self.get_or_create_command_buffers(ctx, &receiver)?;
-        self.maybe_update_with_new_vertices(ctx, &mut receiver, per_image_ctx)?;
         self.write_vertex_buffer(&mut receiver, per_image_ctx)?;
         Ok(command_buffers)
     }
@@ -572,7 +557,7 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum VertexDepth {
     Back(u64),
     #[default]
@@ -652,114 +637,55 @@ impl RenderItem {
         self
     }
 
+    #[must_use]
+    pub fn concat(mut self, other: RenderItem) -> Self {
+        self.vertices.extend(other.vertices);
+        Self {
+            depth: self.depth.max(other.depth),
+            vertices: self.vertices,
+        }
+    }
+
     pub fn is_empty(&self) -> bool { self.vertices.is_empty() }
     pub fn len(&self) -> usize { self.vertices.len() }
 }
 
 pub(crate) struct VertexMap {
-    vertices_back: BTreeMap<ObjectId, VertexDepth>,
-    vertices_middle: BTreeSet<ObjectId>,
-    vertices_front: BTreeMap<ObjectId, VertexDepth>,
-    all_vertices: Vec<StoredRenderItem>,
-    vertex_indices: Vec<Range<usize>>,
+    render_items: BTreeMap<ObjectId, StoredRenderItem>,
+    vertex_count: usize,
     vertices_changed: bool,
 }
 
 impl VertexMap {
     pub(crate) fn new() -> Self {
         Self {
-            vertices_back: BTreeMap::new(),
-            vertices_middle: BTreeSet::new(),
-            vertices_front: BTreeMap::new(),
-            all_vertices: Vec::new(),
-            vertex_indices: Vec::new(),
+            render_items: BTreeMap::new(),
+            vertex_count: 0,
             vertices_changed: false,
         }
     }
-    fn index_of(&self, object_id: ObjectId) -> Option<usize> {
-        let comparator = |depth| {
-            move |other: &StoredRenderItem| match other.render_item.depth.cmp(depth) {
-                cmp::Ordering::Less => cmp::Ordering::Less,
-                cmp::Ordering::Equal => other.object_id.cmp(&object_id),
-                cmp::Ordering::Greater => cmp::Ordering::Greater,
-            }
-        };
-        let i = if let Some(depth) = self.vertices_back.get(&object_id) {
-            let start = 0;
-            start + self.all_vertices[start..self.vertices_back.len()]
-                .binary_search_by(comparator(depth))
-                .expect("all_vertices not correctly sorted?")
-        } else if self.vertices_middle.contains(&object_id) {
-            let start = self.vertices_back.len();
-            start + self.all_vertices[start..self.vertices_back.len() + self.vertices_middle.len()]
-                .binary_search_by(comparator(&VertexDepth::Middle))
-                .expect("all_vertices not correctly sorted?")
-        } else if let Some(depth) = self.vertices_front.get(&object_id) {
-            let start = self.vertices_back.len() + self.vertices_middle.len();
-            start + self.all_vertices[start..]
-                .binary_search_by(comparator(depth))
-                .expect("all_vertices not correctly sorted?")
-        } else {
-            return None;
-        };
-        Some(i)
-    }
-    pub(crate) fn get(&self, object_id: ObjectId) -> Option<(&Range<usize>, &RenderItem)> {
-        let i = self.index_of(object_id)?;
-        let indices = &self.vertex_indices[i];
-        let stored = &self.all_vertices[i];
-        check_eq!(stored.object_id, object_id);
-        Some((indices, &stored.render_item))
-    }
-    pub(crate) fn insert(&mut self, object_id: ObjectId, new_vertices: RenderItem) {
-        let to_insert = StoredRenderItem { object_id, render_item: new_vertices };
-        let index = self.all_vertices.partition_point(|other| {
-            match other.render_item.depth.cmp(&to_insert.render_item.depth) {
-                cmp::Ordering::Less => true,
-                cmp::Ordering::Equal => other.object_id <= to_insert.object_id,
-                cmp::Ordering::Greater => false
-            }
-        });
-        let new_indices = if index == 0 {
-            0..to_insert.render_item.len()
-        } else {
-            let start = self.vertex_indices[index - 1].end;
-            let end = start + self.all_vertices[index - 1].render_item.len();
-            start..end
-        };
-        self.vertex_indices.insert(index, new_indices);
-        for i in (index + 1)..self.vertex_indices.len() {
-            self.vertex_indices[i].start += to_insert.render_item.len();
-            self.vertex_indices[i].end += to_insert.render_item.len();
-        }
-        match to_insert.render_item.depth {
-            VertexDepth::Back(_) => { self.vertices_back.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
-            VertexDepth::Middle => { self.vertices_middle.insert(to_insert.object_id); }
-            VertexDepth::Front(_) => { self.vertices_front.insert(to_insert.object_id, to_insert.render_item.depth.clone()); }
-        };
+
+    pub(crate) fn insert(&mut self, object_id: ObjectId, render_item: RenderItem) {
+        self.vertex_count += render_item.len();
+        check_eq!(render_item.len() % 3, 0);
+        self.render_items.insert(object_id, StoredRenderItem { object_id, render_item });
         self.vertices_changed = true;
-        self.all_vertices.insert(index, to_insert);
     }
     pub(crate) fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
-        let index = self.index_of(object_id)?;
-        self.vertices_front.remove(&object_id);
-        self.vertices_middle.remove(&object_id);
-        self.vertices_back.remove(&object_id);
-        let removed = self.all_vertices.remove(index);
-        check_eq!(removed.object_id, object_id);
-        self.vertex_indices.remove(index);
-        for i in index..self.vertex_indices.len() {
-            self.vertex_indices[i].start -= removed.render_item.len();
-            self.vertex_indices[i].end -= removed.render_item.len();
+        if let Some(removed) = self.render_items.remove(&object_id) {
+            check_eq!(removed.object_id, object_id);
+            self.vertex_count -= removed.len();
+            self.vertices_changed = true;
+            Some(removed.render_item)
+        } else {
+            None
         }
-        self.vertices_changed = true;
-        Some(removed.render_item)
     }
-    pub(crate) fn render_items(&self) -> Vec<RenderItem> { self.all_vertices.clone().into_iter().map(|i| i.render_item).collect() }
-    pub(crate) fn vertex_count(&self) -> usize {
-        self.vertex_indices.last()
-            .map_or(0, |indices| indices.end)
+    pub(crate) fn render_items(&self) -> impl Iterator<Item=&StoredRenderItem> {
+        self.render_items.values()
     }
+    pub(crate) fn len(&self) -> usize { self.render_items.len() }
+    pub(crate) fn vertex_count(&self) -> usize { self.vertex_count }
 
     pub(crate) fn consume_vertices_changed(&mut self) -> bool {
         let rv = self.vertices_changed;
@@ -769,7 +695,12 @@ impl VertexMap {
 }
 
 #[derive(Clone, Debug)]
-struct StoredRenderItem {
+pub(crate) struct StoredRenderItem {
+    pub(crate) object_id: ObjectId,
     render_item: RenderItem,
-    object_id: ObjectId,
+}
+
+impl StoredRenderItem {
+    pub(crate) fn vertices(&self) -> &[VertexWithUV] { &self.render_item.vertices }
+    pub(crate) fn len(&self) -> usize { self.render_item.len()}
 }

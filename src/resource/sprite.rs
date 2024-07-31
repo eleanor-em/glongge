@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -19,27 +18,43 @@ use crate::{
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
 
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+enum SpriteState {
+    Hide,
+    #[default]
+    Show,
+    ShouldHide,
+    ShouldShow,
+    ShouldUpdate
+}
+
 #[register_scene_object]
 pub struct GgInternalSprite {
     texture: Texture,
     areas: Vec<TextureSubArea>,
     elapsed_us: u128,
-    paused: bool,
-    show: bool,
-    last_show: bool,
     frame_time_ms: Vec<u32>,
     frame: usize,
-    collider: BoxCollider,
     render_item: RenderItem,
+
+    paused: bool,
+    state: SpriteState,
+    last_state: SpriteState,
 }
 
 pub struct Sprite {
     inner: Rc<RefCell<GgInternalSprite>>,
+    extent: Vec2,
+    collider: BoxCollider,
 }
 
 impl Default for Sprite {
     fn default() -> Self {
-        Self { inner: Rc::new(RefCell::new(GgInternalSprite::default())) }
+        Self {
+            inner: Rc::new(RefCell::new(GgInternalSprite::default())),
+            extent: Vec2::zero(),
+            collider: BoxCollider::default(),
+        }
     }
 }
 
@@ -67,22 +82,26 @@ impl GgInternalSprite {
         let inner = Rc::new(RefCell::new(Self {
             texture, areas, frame_time_ms, render_item,
             paused: false,
-            show: true,
-            last_show: true,
             elapsed_us: 0,
             frame: 0,
-            collider: BoxCollider::from_centre(Vec2::zero(), (tile_size / 2).into()),
+            state: SpriteState::Show,
+            last_state: SpriteState::Show,
         }));
         object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
-        Sprite { inner }
+        let extent = tile_size.into();
+        let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
+        Sprite { inner, extent, collider }
     }
 
     fn current_frame(&self) -> TextureSubArea {
         self.areas[self.frame]
     }
 
-    fn set_depth(&mut self, ctx: &mut RenderContext, depth: VertexDepth) {
-        ctx.update_vertices(self.render_item.clone().with_depth(depth));
+    fn set_depth(&mut self, depth: VertexDepth) {
+        self.render_item.depth = depth;
+        if self.state == SpriteState::Show {
+            self.state = SpriteState::ShouldUpdate;
+        }
     }
 }
 
@@ -95,9 +114,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         _object_ctx: &mut ObjectContext<ObjectType>,
         _resource_handler: &mut ResourceHandler
     ) -> Result<Option<RenderItem>> {
-        Ok(if self.show {
+        Ok(if self.state == SpriteState::Show {
+            self.last_state = SpriteState::Show;
             Some(self.render_item.clone())
         } else {
+            self.state = SpriteState::Hide;
+            self.last_state = SpriteState::Hide;
             None
         })
     }
@@ -117,36 +139,42 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         check_lt!(self.frame, self.areas.len());
     }
 
-    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
-        if self.show && !self.last_show {
-            ctx.render().update_vertices(self.render_item.clone());
-        }
-        if !self.show && self.last_show {
-            ctx.render().remove_vertices();
-        }
-        self.last_show = self.show;
-    }
-
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        if self.show {
-            Some(self)
-        } else {
-            None
-        }
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+        Some(self)
     }
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSprite {
-    fn render_info(&self) -> RenderInfo {
-        check!(self.show);
-        let mut render_info = RenderInfo::default();
-        if self.show {
-            render_info.texture = Some(self.texture.clone());
-            render_info.texture_sub_area = self.current_frame();
-        } else {
-            render_info.col = Colour::empty();
+    fn on_render(&mut self, render_ctx: &mut RenderContext) {
+        match self.state {
+            SpriteState::Hide | SpriteState::Show => {},
+            SpriteState::ShouldHide => {
+                if self.last_state == SpriteState::Show {
+                    render_ctx.remove_render_item();
+                }
+                self.state = SpriteState::Hide;
+            }
+            SpriteState::ShouldShow => {
+                if self.last_state == SpriteState::Hide {
+                    render_ctx.insert_render_item(&self.render_item);
+                }
+                self.state = SpriteState::Show;
+            }
+            SpriteState::ShouldUpdate => {
+                check_eq!(self.last_state, SpriteState::Show);
+                render_ctx.update_render_item(&self.render_item);
+                self.state = SpriteState::Show;
+            }
         }
-        render_info
+        self.last_state = self.state;
+    }
+    fn render_info(&self) -> RenderInfo {
+        check_eq!(self.state, SpriteState::Show);
+        RenderInfo {
+            texture: Some(self.texture.clone()),
+            texture_sub_area: self.current_frame(),
+            ..Default::default()
+        }
     }
 }
 
@@ -193,15 +221,13 @@ impl Sprite {
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture
     ) -> Sprite {
-        let extent = texture.aa_extent();
-        Self::from_single_extent(object_ctx, texture, extent.as_vec2int_lossy(), Vec2Int::zero())
+        let extent = texture.aa_extent().as_vec2int_lossy();
+        Self::from_single_extent(object_ctx, texture, extent, Vec2Int::zero())
     }
 
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
-        {
-            self.inner.borrow_mut().render_item.depth = depth;
-        }
+        self.inner.borrow_mut().render_item.depth = depth;
         self
     }
     #[must_use]
@@ -229,6 +255,13 @@ impl Sprite {
         }
         self
     }
+    #[must_use]
+    pub fn with_hidden(self) -> Self {
+        {
+            self.inner.borrow_mut().state = SpriteState::Hide;
+        }
+        self
+    }
 
     pub fn reset(&mut self) {
         self.inner.borrow_mut().elapsed_us = 0;
@@ -240,31 +273,27 @@ impl Sprite {
         self.inner.borrow_mut().paused = false;
     }
     pub fn hide(&mut self) {
-        self.inner.borrow_mut().show = false;
+        self.inner.borrow_mut().state = SpriteState::ShouldHide;
     }
     pub fn show(&mut self) {
-        self.inner.borrow_mut().show = true;
+        self.inner.borrow_mut().state = SpriteState::ShouldShow;
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {
-        self.inner.borrow().collider.clone()
+        self.collider.clone()
     }
 
-    pub fn set_depth<ObjectType: ObjectTypeEnum>(
-        &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        depth: VertexDepth
-    ) {
-        self.inner.borrow_mut().set_depth(ctx.render(), depth);
+    pub fn set_depth(&mut self, depth: VertexDepth) {
+        self.inner.borrow_mut().set_depth(depth);
     }
 }
 
 impl AxisAlignedExtent for Sprite {
     fn aa_extent(&self) -> Vec2 {
-        self.inner.borrow().current_frame().aa_extent()
+        self.extent
     }
 
     fn centre(&self) -> Vec2 {
-        self.inner.borrow().current_frame().centre()
+        Vec2::zero()
     }
 }

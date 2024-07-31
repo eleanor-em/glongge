@@ -30,6 +30,7 @@ use crate::{
         render::{RenderInfo, RenderInfoReceiver, RenderItem},
     }
 };
+use crate::core::update::RenderContext;
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
@@ -235,7 +236,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     }
 
     fn transform(&self) -> Transform { Transform::default() }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         None
     }
     fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
@@ -243,6 +244,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
 }
 
 pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
+    #[allow(unused_variables)]
+    fn on_render(&mut self, render_ctx: &mut RenderContext) {}
     fn render_info(&self) -> RenderInfo;
 }
 
