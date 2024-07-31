@@ -11,7 +11,10 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let mut imports = Vec::new();
-    let mut decls = vec!["#[register_object_type]".to_string(), "pub enum ObjectType {".to_string()];
+    let mut decls = vec![
+        "#[register_object_type]".to_string(),
+        "pub enum ObjectType {".to_string(),
+    ];
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {
         let entry = entry?;
@@ -33,20 +36,38 @@ fn main() -> Result<()> {
                 let lines = reader.lines().try_collect::<Vec<_>>()?;
                 let lines_with_decls = lines.iter()
                     .enumerate()
-                    .filter(|(_, line)| line.contains("#[partially_derive_scene_object]"))
+                    .filter(|(_, line)| line.starts_with("#[partially_derive_scene_object]"))
                     .map(|(i, _)| lines[i + 1].clone())
                     .collect::<Vec<_>>();
-                if !lines_with_decls.is_empty() {
-                    assert!(lines.iter().any(|line| line.starts_with("use crate::object_type::ObjectType;")),
-                        "file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`");
+                if lines_with_decls.is_empty() {
+                    if lines.iter().any(|line| line.starts_with("#[register_scene_object]")) {
+                        println!("cargo::warning=file {path}: contains `#[register_scene_object]` but not `#[partially_derive_scene_object]`");
+                    }
+                    continue;
                 }
+
+                let mut warned = false;
                 for line in lines_with_decls {
                     let parts = line.split("for").collect::<Vec<_>>();
                     assert!(parts.len() >= 2, "could not parse impl line: `{line}`");
                     let parts = parts[1].trim().split(' ').collect::<Vec<_>>();
-                    assert!(!parts.is_empty(), "could not parse impl line: `{line}`");
+                    let parts = parts[0].trim().split('<').collect::<Vec<_>>();
                     let struct_name = parts[0];
-                    imports.push(format!("use crate::{import}::{struct_name};"));
+                    if struct_name.starts_with("Gg") {
+                        imports.push(format!("use glongge::{import}::{struct_name};"));
+                    } else {
+                        if !warned {
+                            if !lines.iter().any(|line| line.starts_with("use crate::object_type::ObjectType;")) {
+                                println!("cargo::warning=file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`");
+                            }
+                            if !lines.iter().any(|line| line.starts_with("#[partially_derive_scene_object]")) {
+                                assert!(lines.iter().any(|line| line.starts_with("impl SceneObject<ObjectType>")),
+                                        "file {path}: contains `#[partially_derive_scene_object]`, but does not contain an implementation of SceneObject<ObjectType>");
+                            }
+                            warned = true;
+                        }
+                        imports.push(format!("use crate::{import}::{struct_name};"));
+                    }
                     decls.push(format!("{struct_name},"));
                 }
             } else {

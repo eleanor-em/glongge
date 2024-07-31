@@ -18,14 +18,17 @@ use glongge::{
     resource::{
         ResourceHandler,
         sound::Sound,
-        sprite::Sprite
+        sprite::GgSprite
     },
 };
+use glongge::core::DowncastRef;
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
 use glongge::core::util::linalg;
+use glongge::resource::Loader;
+use glongge::resource::sprite::BoxedGgSprite;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
 use crate::mario::WinTextDisplay;
 use crate::object_type::ObjectType;
@@ -78,13 +81,13 @@ pub struct Player {
     coyote_crt: Option<CoroutineId>,
     exit_pipe_crt: Option<CoroutineId>,
 
-    walk_sprite: Sprite,
-    run_sprite: Sprite,
-    idle_sprite: Sprite,
-    skid_sprite: Sprite,
-    fall_sprite: Sprite,
-    die_sprite: Sprite,
-    flagpole_sprite: Sprite,
+    walk_sprite: BoxedGgSprite<ObjectType>,
+    run_sprite: BoxedGgSprite<ObjectType>,
+    idle_sprite: BoxedGgSprite<ObjectType>,
+    skid_sprite: BoxedGgSprite<ObjectType>,
+    fall_sprite: BoxedGgSprite<ObjectType>,
+    die_sprite: BoxedGgSprite<ObjectType>,
+    flagpole_sprite: BoxedGgSprite<ObjectType>,
 
     jump_sound: Sound,
     stomp_sound: Sound,
@@ -136,7 +139,7 @@ impl Player {
             SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
         }
     }
-    fn current_sprite(&self) -> &Sprite {
+    fn current_sprite(&self) -> &BoxedGgSprite<ObjectType> {
         match self.state {
             PlayerState::Idle => &self.idle_sprite,
             PlayerState::Walking => &self.walk_sprite,
@@ -149,7 +152,7 @@ impl Player {
             PlayerState::RidingFlagpole => &self.flagpole_sprite,
         }
     }
-    fn current_sprite_mut(&mut self) -> &mut Sprite {
+    fn current_sprite_mut(&mut self) -> &mut BoxedGgSprite<ObjectType> {
         match self.state {
             PlayerState::Idle => &mut self.idle_sprite,
             PlayerState::Walking => &mut self.walk_sprite,
@@ -209,7 +212,7 @@ impl Player {
             ctx.scene().maybe_cancel_coroutine(&mut self.cancel_run_crt);
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
+                ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if !this.has_control() {
                         return CoroutineResponse::Complete;
@@ -287,7 +290,7 @@ impl Player {
 
         if ctx.object().test_collision_along(self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|mut this, _ctx, _last_state| {
+                ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if !this.has_control() {
                         return CoroutineResponse::Complete;
@@ -308,7 +311,7 @@ impl Player {
 
     fn maybe_start_exit_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.state == PlayerState::ExitingPipe && self.exit_pipe_crt.is_none() {
-            self.exit_pipe_crt.replace(ctx.scene().start_coroutine(|mut this, ctx, last_state| {
+            self.exit_pipe_crt.replace(ctx.scene().start_coroutine(|this, ctx, last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 match last_state {
                     CoroutineState::Starting => return CoroutineResponse::Wait(Duration::from_millis(500)),
@@ -363,7 +366,7 @@ impl Player {
         self.music.stop();
         self.pipe_sound.play();
         self.state = PlayerState::EnteringPipe;
-        ctx.scene().start_coroutine(move |mut this, ctx, last_state| {
+        ctx.scene().start_coroutine(move |this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             if direction.x.is_zero() {
                 // Vertical travel through pipe.
@@ -406,7 +409,7 @@ impl Player {
         self.music.stop();
         ctx.render().update_vertices(self.current_sprite().create_vertices()
             .with_depth(VertexDepth::Front(10000)));
-        ctx.scene().start_coroutine(|mut this, ctx, last_state| {
+        ctx.scene().start_coroutine(|this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
                 CoroutineState::Starting => {
@@ -436,43 +439,65 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Player {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
+        resource_handler.sound.spawn_load_file("res/jump-small.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/stomp.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/death.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/pipe.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/bump.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/flagpole.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/stage-clear.wav".to_string());
+        resource_handler.sound.spawn_load_file("res/overworld.ogg".to_string());
+        resource_handler.sound.spawn_load_file("res/underground.ogg".to_string());
+        resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
+        resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
+        resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
+        Ok(())
+    }
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
-        self.idle_sprite = Sprite::from_single_extent(
+        self.idle_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 8 },
         );
-        self.walk_sprite = Sprite::from_tileset(
+        self.walk_sprite = GgSprite::from_tileset(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(110);
-        self.run_sprite = Sprite::from_tileset(
+        self.run_sprite = GgSprite::from_tileset(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(60);
-        self.skid_sprite = Sprite::from_single_extent(
+        self.skid_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
         );
-        self.fall_sprite = Sprite::from_single_extent(
+        self.fall_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
         );
-        self.die_sprite = Sprite::from_single_extent(
+        self.die_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
         );
-        self.flagpole_sprite = Sprite::from_single_extent(
+        self.flagpole_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 136, y: 8 },
@@ -542,7 +567,6 @@ impl SceneObject<ObjectType> for Player {
         }
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.current_sprite_mut().fixed_update();
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
@@ -624,7 +648,7 @@ impl SceneObject<ObjectType> for Player {
             self.music.stop();
             self.flagpole_sound.play();
             let dest_x = other.transform().centre.x - self.current_sprite().half_widths().x;
-            ctx.scene().start_coroutine(move |mut this, ctx, _last_state| {
+            ctx.scene().start_coroutine(move |this, ctx, _last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
                 this.speed = 0.;

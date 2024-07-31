@@ -18,6 +18,7 @@ use fyrox_sound::{
 use rand::{Rng, thread_rng};
 use crate::core::util::linalg;
 use crate::core::prelude::*;
+use crate::resource::Loader;
 
 #[derive(Clone)]
 struct SoundInner {
@@ -129,17 +130,19 @@ impl SoundHandler {
         })
     }
 
-    pub fn wait_load_file(&self, filename: String) -> Result<Sound> {
+    fn load_file_inner(inner: Arc<Mutex<SoundHandlerInner>>, ctx: SoundContext, filename: String) -> Result<Sound> {
         let sound_buffer = {
-            let mut inner = self.inner.lock().unwrap();
-            if let Some(buffer) = inner.loaded_files.get(&filename) {
-                buffer.clone()
-            }  else {
+            let maybe_buffer = inner.lock().unwrap()
+                .loaded_files.get(&filename)
+                .cloned();
+            if let Some(buffer) = maybe_buffer {
+                buffer
+            } else {
                 let buffer = SoundBufferResource::new_generic(fyrox_sound::futures::executor::block_on(
                     DataSource::from_file(&filename, &FsResourceIo))
                     .map_err(|err| anyhow!("fyrox-sound error: DataSource::from_file(): {:?}", err))?
                 ).map_err(|err| anyhow!("fyrox-sound error: SoundBufferResource::new_generic(): {:?}", err))?;
-                inner.loaded_files.insert(filename, buffer.clone());
+                inner.lock().unwrap().loaded_files.insert(filename, buffer.clone());
                 buffer
             }
         };
@@ -151,9 +154,21 @@ impl SoundHandler {
             .with_spatial_blend_factor(0.0)
             .build()?;
         let inner = Some(SoundInner {
-            ctx: self.ctx.clone(),
-            handle: self.ctx.state().add_source(source),
+            ctx: ctx.clone(),
+            handle: ctx.state().add_source(source),
         });
         Ok(Sound { inner, is_looping: false })
+    }
+}
+
+impl Loader<Sound> for SoundHandler {
+    fn spawn_load_file(&self, filename: String) {
+        let inner = self.inner.clone();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || Self::load_file_inner(inner, ctx, filename).unwrap());
+    }
+
+    fn wait_load_file(&self, filename: String) -> Result<Sound> {
+        Self::load_file_inner(self.inner.clone(), self.ctx.clone(), filename)
     }
 }

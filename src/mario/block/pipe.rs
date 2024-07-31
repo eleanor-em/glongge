@@ -10,18 +10,20 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::Sprite
+        sprite::GgSprite
     }
 };
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
+use glongge::core::update::ObjectContext;
+use glongge::resource::sprite::BoxedGgSprite;
 use crate::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Pipe {
     top_left: Vec2,
-    sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
     orientation: Vec2,
     destination: Option<SceneDestination>,
 }
@@ -30,9 +32,9 @@ impl Pipe {
     pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
-            sprite: Sprite::default(),
             orientation,
-            destination
+            destination,
+            ..Default::default()
         })
     }
 
@@ -43,16 +45,18 @@ impl Pipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Pipe {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = if self.orientation.x.is_zero() {
-            Sprite::from_single_coords(
+            GgSprite::from_single_coords(
+                object_ctx,
                 texture,
                 Vec2Int { x: 112, y: 612 },
                 Vec2Int { x: 144, y: 676}
             )
         } else {
-            Sprite::from_single_coords(
+            GgSprite::from_single_coords(
+                object_ctx,
                 texture,
                 Vec2Int { x: 192, y: 644 },
                 Vec2Int { x: 256, y: 676}

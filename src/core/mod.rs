@@ -21,14 +21,16 @@ pub mod render;
 pub mod scene;
 pub mod update;
 
-pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static {
+pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static + Send {
+
     fn as_default(self) -> AnySceneObject<Self>;
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
+    fn gg_sprite() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
-            value.as_default().on_load(resource_handler)?;
+            value.as_default().on_preload(resource_handler)?;
         }
         Ok(())
     }
@@ -78,30 +80,77 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     }
 
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
-    pub fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>> {
-        Ref::filter_map(self.inner.borrow(), |obj| {
-            obj.as_any().downcast_ref::<T>()
-        }).ok()
-    }
-    pub fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> Option<RefMut<T>> {
-        RefMut::filter_map(self.inner.borrow_mut(), |obj| {
-            obj.as_any_mut().downcast_mut::<T>()
-        }).ok()
-    }
-    // TODO: the below may turn out to still be useful.
-    #[allow(dead_code)]
-    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
-        Ref::map(self.inner.borrow(), |obj| ObjectType::checked_downcast::<T>(obj.as_ref()))
-    }
-    #[allow(dead_code)]
-    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
-        RefMut::map(self.inner.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj.as_mut()))
-    }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
     pub fn collider(&self) -> Box<dyn Collider> { self.inner.borrow().collider() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
+}
+
+pub trait Downcast<ObjectType: ObjectTypeEnum> {
+    fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<&T>;
+    fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> Option<&mut T>;
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> &T;
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> &mut T;
+}
+
+pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
+    fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>>;
+    fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> Option<RefMut<T>>;
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T>;
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T>;
+}
+
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWithId<ObjectType> {
+    fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>> {
+        self.inner.downcast()
+    }
+    fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> Option<RefMut<T>> {
+        self.inner.downcast_mut()
+    }
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
+        self.inner.checked_downcast()
+    }
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
+        self.inner.checked_downcast_mut()
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> Downcast<ObjectType> for dyn SceneObject<ObjectType> {
+    fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<&T> {
+        self.as_any().downcast_ref()
+    }
+    fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> Option<&mut T> {
+        self.as_any_mut().downcast_mut()
+    }
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> &T {
+        ObjectType::checked_downcast(self)
+    }
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&mut self) -> &mut T {
+        ObjectType::checked_downcast_mut(self)
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for Rc<RefCell<AnySceneObject<ObjectType>>> {
+    fn downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Option<Ref<T>> {
+        Ref::filter_map(self.borrow(), |obj| {
+            obj.as_any().downcast_ref::<T>()
+        }).ok()
+    }
+
+    fn downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> Option<RefMut<T>> {
+        RefMut::filter_map(self.borrow_mut(), |obj| {
+            obj.as_any_mut().downcast_mut::<T>()
+        }).ok()
+    }
+
+    fn checked_downcast<T: SceneObject<ObjectType> + 'static>(&self) -> Ref<T> {
+        Ref::map(self.borrow(), |obj| ObjectType::checked_downcast::<T>(obj.as_ref()))
+    }
+
+    fn checked_downcast_mut<T: SceneObject<ObjectType> + 'static>(&self) -> RefMut<T> {
+        RefMut::map(self.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj.as_mut()))
+    }
 }
 
 pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;

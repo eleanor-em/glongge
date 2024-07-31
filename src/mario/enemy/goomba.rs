@@ -12,14 +12,15 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::Sprite
+        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::resource::sprite::BoxedGgSprite;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
@@ -31,8 +32,8 @@ pub struct Goomba {
     top_left: Vec2,
     vel: Vec2,
     v_accel: f64,
-    sprite: Sprite,
-    die_sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
+    die_sprite: BoxedGgSprite<ObjectType>,
 }
 
 impl Goomba {
@@ -42,10 +43,8 @@ impl Goomba {
             dead: false,
             started_death: false,
             top_left: top_left.into(),
-            sprite: Sprite::default(),
-            die_sprite: Sprite::default(),
             vel: Vec2 { x: -0.5, y: 0. },
-            v_accel: 0.,
+            ..Default::default()
         })
     }
 
@@ -58,16 +57,18 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = GgSprite::from_tileset(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 2, y: 1},
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 16 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(200);
-        self.die_sprite = Sprite::from_single_extent(
+        self.die_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }
@@ -88,7 +89,6 @@ impl SceneObject<ObjectType> for Goomba {
         }
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.sprite.fixed_update();
         let in_view = ctx.viewport().contains_point(self.top_left) ||
             ctx.viewport().contains_point(self.top_left + self.sprite.aa_extent());
         if !self.dead && in_view {

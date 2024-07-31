@@ -18,14 +18,16 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::Sprite
+        sprite::GgSprite
     },
 };
+use glongge::core::DowncastRef;
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::resource::sprite::BoxedGgSprite;
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
@@ -86,7 +88,7 @@ impl SceneObject<ObjectType> for RectangleSpawner {
 pub struct RectanglePlayer {
     pos: Vec2,
     vel: Vec2,
-    sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
 }
 
 impl RectanglePlayer {
@@ -96,9 +98,10 @@ impl RectanglePlayer {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for RectanglePlayer {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = GgSprite::from_tileset(
+            object_ctx,
             texture,
             Vec2Int { x: 3, y: 1 },
             Vec2Int { x: 16, y: 16 },
@@ -149,7 +152,7 @@ pub struct SpinningRectangle {
     velocity: Vec2,
     t: f64,
     col: Colour,
-    sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
     alive_since: Instant,
 }
 
@@ -172,10 +175,8 @@ impl SpinningRectangle {
         Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
-            t: 0.,
             col,
-            sprite: Sprite::default(),
-            alive_since: Instant::now(),
+            ..Default::default()
         }
     }
 
@@ -183,9 +184,10 @@ impl SpinningRectangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = GgSprite::from_tileset(
+            object_ctx,
             texture,
             Vec2Int{ x: 2, y: 1 },
             Vec2Int { x: 16, y: 16 },
@@ -217,7 +219,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
-    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, mut other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         self.pos += mtv;
 
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {

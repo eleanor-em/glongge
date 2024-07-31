@@ -180,7 +180,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                                  input_handler: &InputHandler,
                                  mut pending_add_objects: Vec<PendingAddObject<ObjectType>>
     ) -> Result<()> {
-        if self.objects.is_empty() {
+        if self.children.is_empty() {
             self.children.insert(ObjectId(0), BTreeSet::new());
         }
         self.perf_stats.add_objects.start();
@@ -200,24 +200,32 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             self.collision_handler.update_with_added_objects(&pending_add);
 
             // Call on_load().
+            let mut object_tracker = ObjectTracker::new(self);
             for (new_id, new_obj) in pending_add {
-                let new_vertices = new_obj.inner.borrow_mut().on_load(&mut self.resource_handler)?;
+                let parent = self.objects.get(&new_obj.parent)
+                    .map(|parent| SceneObjectWithId::new(new_obj.parent, parent.clone()));
+                let mut object_ctx = ObjectContext {
+                    collision_handler: &self.collision_handler,
+                    this: SceneObjectWithId {
+                        object_id: new_id,
+                        inner: new_obj.inner.clone(),
+                    },
+                    parent,
+                    children: Vec::new(),
+                    object_tracker: &mut object_tracker,
+                };
+                let new_vertices = new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?;
                 self.vertex_map.insert(new_id, new_vertices);
                 self.objects.insert(new_id, new_obj.inner);
                 self.parents.insert(new_id, new_obj.parent);
                 self.children.insert(new_id, BTreeSet::new());
-                // println!("{:?} -> {new_id:?}", new_obj.parent);
                 self.children.get_mut(&new_obj.parent)
                     .unwrap_or_else(|| panic!("missing object_id in children: {:?}", new_obj.parent))
                     .insert(new_id);
             }
 
+
             // Call on_ready().
-            let mut object_tracker = ObjectTracker {
-                last: self.objects.clone(),
-                pending_add: Vec::new(),
-                pending_remove: BTreeSet::new()
-            };
             for i in first_new_id.0..=last_new_id.0 {
                 let this_id = ObjectId(i);
                 let this = self.objects.get_mut(&this_id)
@@ -480,6 +488,14 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
             // The only missing parent should be the root node.
             check_eq!(parent_id.0, 0);
         }
+        let children = caller.children.get(&this_id)
+            .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
+            .iter().map(|child_id| {
+                let child = caller.objects.get(child_id)
+                    .unwrap_or_else(|| panic!("missing object_id in objects: {child_id:?}"));
+                SceneObjectWithId::new(*child_id, child.clone())
+            })
+            .collect();
         Self {
             input: input_handler,
             scene: SceneContext {
@@ -493,6 +509,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 collision_handler: &caller.collision_handler,
                 this,
                 parent,
+                children,
                 object_tracker,
             },
             viewport: ViewportContext {
@@ -642,6 +659,16 @@ struct ObjectTracker<ObjectType: ObjectTypeEnum> {
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
+    fn new<R: RenderInfoReceiver>(update_handler: &UpdateHandler<ObjectType, R>) -> Self {
+        Self {
+            last: update_handler.objects.clone(),
+            pending_add: Vec::new(),
+            pending_remove: BTreeSet::new(),
+        }
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
     fn into_pending(self) -> (Vec<PendingAddObject<ObjectType>>, BTreeSet<ObjectId>) {
         (self.pending_add, self.pending_remove)
     }
@@ -651,6 +678,7 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     collision_handler: &'a CollisionHandler,
     this: SceneObjectWithId<ObjectType>,
     parent: Option<SceneObjectWithId<ObjectType>>,
+    children: Vec<SceneObjectWithId<ObjectType>>,
     object_tracker: &'a mut ObjectTracker<ObjectType>,
 }
 
@@ -663,6 +691,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .map(|(object_id, obj)| SceneObjectWithId::new(*object_id, obj.clone()))
             .collect()
     }
+    pub fn this_id(&self) -> ObjectId { self.this.object_id }
 
     pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) -> Vec<Rc<RefCell<AnySceneObject<ObjectType>>>> {
         let pending_add = &mut self.object_tracker.pending_add;
@@ -686,10 +715,15 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
     pub fn remove(&mut self, obj: &SceneObjectWithId<ObjectType>) {
         self.object_tracker.pending_remove.insert(obj.object_id);
+        for child in &self.children {
+            self.object_tracker.pending_remove.insert(child.object_id);
+        }
     }
     pub fn remove_this(&mut self) {
-        let this_id = self.this.object_id;
-        self.object_tracker.pending_remove.insert(this_id);
+        self.object_tracker.pending_remove.insert(self.this_id());
+        for child in &self.children {
+            self.object_tracker.pending_remove.insert(child.object_id);
+        }
     }
     pub fn test_collision(&self,
                           collider: &dyn Collider,

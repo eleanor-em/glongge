@@ -7,13 +7,14 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::Sprite
+        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::resource::sprite::BoxedGgSprite;
 
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::mario::{
@@ -28,7 +29,7 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Brick {
     top_left: Vec2,
-    sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
 
     initial_y: f64,
     v_speed: f64,
@@ -39,19 +40,18 @@ impl Brick {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
-            sprite: Sprite::default(),
             initial_y: top_left.y as f64,
-            v_speed: 0.,
-            v_accel: 0.,
+            ..Default::default()
         })
     }
 }
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Brick {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = Sprite::from_single_extent(
+        self.sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture,
             Vec2Int { x: 16, y: 16},
             Vec2Int { x: 17, y: 16 });

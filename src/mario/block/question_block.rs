@@ -8,13 +8,14 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::Sprite
+        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::resource::sprite::BoxedGgSprite;
 use crate::mario::{
     block::Bumpable,
     BLOCK_COLLISION_TAG,
@@ -28,8 +29,8 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct QuestionBlock {
     top_left: Vec2,
-    sprite: Sprite,
-    empty_sprite: Sprite,
+    sprite: BoxedGgSprite<ObjectType>,
+    empty_sprite: BoxedGgSprite<ObjectType>,
     is_empty: bool,
 
     initial_y: f64,
@@ -41,16 +42,13 @@ impl QuestionBlock {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
-            sprite: Sprite::default(),
-            empty_sprite: Sprite::default(),
             is_empty: false,
             initial_y: top_left.y as f64,
-            v_speed: 0.,
-            v_accel: 0.,
+            ..Default::default()
         })
     }
 
-    fn current_sprite(&self) -> &Sprite {
+    fn current_sprite(&self) -> &BoxedGgSprite<ObjectType> {
         if self.is_empty {
             &self.empty_sprite
         } else {
@@ -61,9 +59,10 @@ impl QuestionBlock {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for QuestionBlock {
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = GgSprite::from_tileset(
+            object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1},
             Vec2Int { x: 16, y: 16 },
@@ -71,7 +70,8 @@ impl SceneObject<ObjectType> for QuestionBlock {
             Vec2Int { x: 1, y: 0 })
             .with_frame_orders(vec![0, 1, 2, 1])
             .with_frame_time_ms(vec![600, 100, 100, 100]);
-        self.empty_sprite = Sprite::from_single_extent(
+        self.empty_sprite = GgSprite::from_single_extent(
+            object_ctx,
             texture,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 349, y: 78 });
@@ -79,7 +79,6 @@ impl SceneObject<ObjectType> for QuestionBlock {
     }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
-        self.sprite.fixed_update();
         self.v_speed += self.v_accel;
         self.top_left.y += self.v_speed;
         if self.top_left.y > self.initial_y {

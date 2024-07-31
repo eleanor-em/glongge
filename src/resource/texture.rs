@@ -265,6 +265,7 @@ impl TextureHandler {
         Ok(Self { ctx, inner, cached_textures })
     }
 
+    // TODO: implement spawn_load_file().
     pub fn wait_load_file(&self, filename: String) -> Result<Texture> {
         // Beware: do not lock `inner` longer than necessary.
         if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {

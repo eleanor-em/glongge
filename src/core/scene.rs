@@ -21,14 +21,14 @@ use crate::{
 };
 use crate::core::SceneObjectWithId;
 use crate::core::render::{RenderInfo, RenderInfoReceiver, RenderItem};
-use crate::core::update::{UpdateContext, UpdateHandler};
+use crate::core::update::{ObjectContext, UpdateContext, UpdateHandler};
 use crate::core::update::collision::CollisionResponse;
 use crate::core::util::collision::{Collider, NullCollider};
 use crate::core::util::linalg::{Transform, Vec2};
 
 #[derive(Clone)]
 struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
-    scene: Arc<Mutex<dyn Scene<ObjectType>>>,
+    scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -37,7 +37,7 @@ struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceive
 }
 
 impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> InternalScene<ObjectType, InfoReceiver> {
-    fn new(scene: Arc<Mutex<dyn Scene<ObjectType>>>,
+    fn new(scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
            input_handler: Arc<Mutex<InputHandler>>,
            resource_handler: ResourceHandler,
            render_info_receiver: Arc<Mutex<InfoReceiver>>,
@@ -63,15 +63,15 @@ impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> Int
 
         let this = self.clone();
         let this_name = self.name;
-        let initial_objects = {
-            let mut scene = this.scene.try_lock()
-                .unwrap_or_else(|_| panic!("scene locked in InternalScene::run(): {this_name:?}"));
-            scene.load(&data.try_lock()
-                    .expect("scene_data still locked?"))
-                .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
-            scene.create_objects(entrance_id)
-        };
         std::thread::spawn(move || {
+            let initial_objects = {
+                let mut scene = this.scene.try_lock()
+                    .unwrap_or_else(|_| panic!("scene locked in InternalScene::run(): {this_name:?}"));
+                scene.load(&data.try_lock()
+                    .expect("scene_data still locked?"))
+                    .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
+                scene.create_objects(entrance_id)
+            };
             let update_handler = UpdateHandler::new(
                 initial_objects,
                 this.input_handler,
@@ -111,7 +111,7 @@ impl SceneDestination {
     }
 }
 
-pub trait Scene<ObjectType: ObjectTypeEnum> {
+pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     fn name(&self) -> SceneName;
     fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>>;
 
@@ -200,7 +200,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
     }
 }
 
-pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
+pub trait SceneObject<ObjectType: ObjectTypeEnum> {
     fn get_type(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -208,7 +208,9 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
     fn new() -> Box<Self> where Self: Sized;
 
     #[allow(unused_variables)]
-    fn on_load(&mut self, resource_handler: &mut ResourceHandler) -> Result<RenderItem> { Ok(RenderItem::default()) }
+    fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
+    #[allow(unused_variables)]
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> { Ok(RenderItem::default()) }
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
@@ -224,7 +226,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: Send {
         CollisionResponse::Done
     }
 
-    fn transform(&self) -> Transform;
+    fn transform(&self) -> Transform { Transform::default() }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }

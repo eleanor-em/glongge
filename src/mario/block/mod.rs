@@ -1,5 +1,5 @@
 use std::cell::RefMut;
-use glongge::core::SceneObjectWithId;
+use glongge::core::{DowncastRef, SceneObjectWithId};
 use glongge::core::scene::SceneObject;
 use crate::mario::{
     block::brick::Brick,

@@ -5,10 +5,23 @@ use syn::{parse_macro_input, Data, DeriveInput, ItemImpl, ImplItemFn, ImplItem, 
 #[proc_macro_attribute]
 pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident.clone();
+    let as_default_code = as_default_impl(&input.data);
+    let as_typeid_code = as_typeid_impl(&input.data);
+    let all_values_code = all_values_impl(&input.data);
+
     let expanded = quote! {
-        #[derive(Clone, Copy, Debug, Eq, PartialEq, glongge_derive::ObjectTypeEnum)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         #input
+
+        impl glongge::core::ObjectTypeEnum for #name {
+            fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_code }
+            fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
+            fn all_values() -> Vec<Self> { #all_values_code }
+            fn gg_sprite() -> Self { Self::GgSprite }
+        }
     };
+
     proc_macro::TokenStream::from(expanded)
 }
 
@@ -30,6 +43,13 @@ fn get_initializer_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2:
 pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = input.ident.clone();
+    let maybe_template = if struct_name.to_string().starts_with("Gg") {
+        quote! {
+            <ObjectType>
+        }
+    } else {
+        quote! {}
+    };
 
     let mut default_initializers = Vec::new();
     if let syn::Data::Struct(data_struct) = input.data.clone() {
@@ -48,7 +68,7 @@ pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::
     let expanded = quote! {
         #input
 
-        impl Default for #struct_name {
+        impl #maybe_template Default for #struct_name #maybe_template {
             fn default() -> Self {
                 Self {
                     #(#default_initializers),*
@@ -133,33 +153,19 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
     proc_macro::TokenStream::from(quote! { #item_impl })
 }
 
-#[proc_macro_derive(ObjectTypeEnum)]
-pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-
-    let as_default_code = as_default_impl(&input.data);
-    let as_typeid_code = as_typeid_impl(&input.data);
-    let all_values_code = all_values_impl(&input.data);
-
-    let expanded = quote! {
-        impl glongge::core::ObjectTypeEnum for #name {
-            fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_code }
-            fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
-            fn all_values() -> Vec<Self> { #all_values_code }
-        }
-    };
-
-    proc_macro::TokenStream::from(expanded)
-}
-
 fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                quote_spanned! {variant.span()=>
-                    Self::#name => Box::new(#name::default())
+                if name.to_string().starts_with("Gg") {
+                    quote_spanned! {variant.span()=>
+                        Self::#name => Box::new(#name::<Self>::default())
+                    }
+                } else {
+                    quote_spanned! {variant.span()=>
+                        Self::#name => Box::new(#name::default())
+                    }
                 }
             });
             quote! {
@@ -168,7 +174,7 @@ fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
                 }
             }
         }
-        _ => unimplemented!(),
+        _ => panic!("unimplemented (as_default_impl, {data:?})")
     }
 }
 fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
@@ -176,8 +182,14 @@ fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                quote_spanned! {variant.span()=>
-                    Self::#name => std::any::TypeId::of::<#name>()
+                if name.to_string().starts_with("Gg") {
+                    quote_spanned! {variant.span()=>
+                        Self::#name => std::any::TypeId::of::<#name::<Self>>()
+                    }
+                } else {
+                    quote_spanned! {variant.span()=>
+                        Self::#name => std::any::TypeId::of::<#name>()
+                    }
                 }
             });
             quote! {
@@ -186,7 +198,7 @@ fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
                 }
             }
         }
-        _ => unimplemented!(),
+        _ => panic!("unimplemented (as_typeid_impl, {data:?})")
     }
 }
 
@@ -203,6 +215,6 @@ fn all_values_impl(data: &Data) -> proc_macro2::TokenStream {
                 vec![#(Self::#recurse,)*]
             }
         }
-        _ => unimplemented!(),
+        _ => panic!("unimplemented (all_values_impl, {data:?})")
     }
 }

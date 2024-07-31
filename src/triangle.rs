@@ -21,7 +21,7 @@ use glongge::core::util::linalg::AxisAlignedExtent;
 use glongge::core::AnySceneObject;
 use glongge::core::render::{RenderInfo, RenderItem, VertexWithUV};
 use glongge::core::scene::{RenderableObject, Scene, SceneName, SceneObject};
-use glongge::core::update::UpdateContext;
+use glongge::core::update::{ObjectContext, UpdateContext};
 use glongge::resource::ResourceHandler;
 use crate::object_type::ObjectType;
 
@@ -119,7 +119,7 @@ impl SpinningTriangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningTriangle {
-    fn on_load(&mut self, _resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, _object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0.sqrt();
         let centre_correction = -tri_height / 6.;
         let vertex1 = Vec2 {
