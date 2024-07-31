@@ -35,7 +35,7 @@ use crate::{
         texture::{Texture, TextureSubArea}
     },
 };
-use crate::shader::{ShaderName, ShaderPair, ShaderWithPipeline};
+use crate::shader::{Shader, ShaderName, ShaderPair, BasicShader};
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
@@ -60,7 +60,6 @@ pub(crate) struct RenderInfoFull {
 #[derive(Clone)]
 pub struct RenderInfoReceiver {
     pub(crate) vertices: Vec<VertexWithUV>,
-    vertices_up_to_date: bool,
     pub(crate) render_info: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
     clear_col: Colour,
@@ -69,7 +68,6 @@ impl RenderInfoReceiver {
     fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
-            vertices_up_to_date: false,
             render_info: Vec::new(),
             viewport,
             clear_col: Colour::black(),
@@ -78,7 +76,6 @@ impl RenderInfoReceiver {
 }
 impl RenderInfoReceiver {
     pub(crate) fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
-        self.vertices_up_to_date = false;
         self.vertices = vertices;
     }
 
@@ -102,7 +99,7 @@ impl RenderInfoReceiver {
 pub struct RenderHandler {
     render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
     viewport: Arc<Mutex<AdjustedViewport>>,
-    shaders: BTreeMap<ShaderName, ShaderWithPipeline>,
+    shaders: BTreeMap<ShaderName, Arc<Mutex<dyn Shader>>>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
@@ -111,7 +108,9 @@ impl RenderHandler {
         let viewport = Arc::new(Mutex::new(window_ctx.create_default_viewport()));
         let mut shaders = BTreeMap::new();
         let basic_shader = ShaderPair::new_basic(ctx.device().clone())?;
-        shaders.insert(basic_shader.name(), ShaderWithPipeline::new(basic_shader, viewport.clone(), resource_handler.clone()));
+        shaders.insert(basic_shader.name(), Arc::new(Mutex::new(
+            BasicShader::new(basic_shader, viewport.clone(), resource_handler.clone())
+        )) as Arc<Mutex<dyn Shader>>);
         let render_info_receiver = RenderInfoReceiver::new(viewport.try_lock().unwrap().clone());
         Ok(Self {
             shaders,
@@ -148,12 +147,8 @@ impl RenderHandler {
         {
             let mut receiver = self.render_info_receiver.lock().unwrap();
             for shader in self.shaders.values_mut() {
-                if !receiver.vertices_up_to_date {
-                    shader.reset_vertex_buffer();
-                }
-                shader.on_render(ctx, &mut receiver)?;
+                shader.try_lock().unwrap().on_render(ctx, &mut receiver)?;
             }
-            receiver.vertices_up_to_date = true;
         }
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
@@ -161,7 +156,7 @@ impl RenderHandler {
             CommandBufferUsage::OneTimeSubmit,
         )?;
         for shader in self.shaders.values_mut() {
-            shader.build_render_pass(ctx, framebuffer.clone(), &mut builder)?;
+            shader.try_lock().unwrap().build_render_pass(ctx, framebuffer.clone(), &mut builder)?;
         }
         Ok(builder.build().map_err(Validated::unwrap)?)
     }

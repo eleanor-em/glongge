@@ -46,7 +46,23 @@ use crate::{
 pub mod vertex;
 mod glsl;
 
+
 pub type ShaderName = &'static str;
+
+pub trait Shader: Send {
+    fn name() -> ShaderName where Self: Sized;
+    fn on_render(
+        &mut self,
+        ctx: &VulkanoContext,
+        receiver: &mut MutexGuard<RenderInfoReceiver>
+    ) -> Result<()>;
+    fn build_render_pass(
+        &mut self,
+        ctx: &VulkanoContext,
+        framebuffer: Arc<Framebuffer>,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
+    ) -> Result<()>;
+}
 #[derive(Clone)]
 pub struct ShaderPair {
     name: ShaderName,
@@ -75,7 +91,7 @@ impl ShaderPair {
 }
 
 #[derive(Clone)]
-pub(crate) struct ShaderWithPipeline {
+pub(crate) struct BasicShader {
     shaders: ShaderPair,
     viewport: Arc<Mutex<AdjustedViewport>>,
     pipeline: Option<Arc<GraphicsPipeline>>,
@@ -84,7 +100,7 @@ pub(crate) struct ShaderWithPipeline {
     resource_handler: ResourceHandler,
 }
 
-impl ShaderWithPipeline {
+impl BasicShader {
     pub(crate) fn new(shaders: ShaderPair, viewport: Arc<Mutex<AdjustedViewport>>, resource_handler: ResourceHandler) -> Self {
         Self {
             shaders,
@@ -95,14 +111,13 @@ impl ShaderWithPipeline {
             resource_handler,
         }
     }
-    pub(crate) fn on_render(
-        &mut self,
-        ctx: &VulkanoContext,
+
+    fn write_vertices(
+        &self,
         receiver: &mut MutexGuard<RenderInfoReceiver>,
+        buf: &mut [basic::Vertex]
     ) -> Result<()> {
-        self.clear_col = receiver.get_clear_col();
-        let vertex_buffer = self.get_or_create_vertex_buffer(ctx, receiver)?;
-        let mut writer = vertex_buffer.write()?;
+        check_le!(receiver.vertices.len(), buf.len());
         for render_info in &receiver.render_info {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
@@ -119,7 +134,7 @@ impl ShaderWithPipeline {
                     error!("missing texture: {}", texture);
                     blend_col = Colour::magenta();
                 }
-                writer[vertex_index] = basic::Vertex {
+                buf[vertex_index] = basic::Vertex {
                     position: receiver.vertices[vertex_index].vertex.into(),
                     uv: uv.into(),
                     texture_id: texture.into(),
@@ -133,44 +148,7 @@ impl ShaderWithPipeline {
         }
         Ok(())
     }
-    pub(crate) fn build_render_pass(
-        &mut self,
-        ctx: &VulkanoContext,
-        framebuffer: Arc<Framebuffer>,
-        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
-    ) -> Result<()> {
-        let pipeline = self.get_or_create_pipeline(ctx)?;
-        let uniform_buffer_set = self.create_uniform_buffer_set(ctx)?;
-        let vertex_buffer = self.vertex_buffer.as_ref().unwrap();
-        let layout = pipeline.layout().clone();
-        builder
-            .begin_render_pass(
-                RenderPassBeginInfo {
-                    clear_values: vec![Some(self.clear_col.as_f32().into())],
-                    ..RenderPassBeginInfo::framebuffer(framebuffer)
-                },
-                SubpassBeginInfo {
-                    contents: SubpassContents::Inline,
-                    ..Default::default()
-                },
-            )?
-            .bind_pipeline_graphics(pipeline.clone())?
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                layout,
-                0,
-                uniform_buffer_set.clone(),
-            )?
-            .bind_vertex_buffers(0, vertex_buffer.clone())?
-            .draw(u32::try_from(vertex_buffer.len())
-                      .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", vertex_buffer.len())),
-                  1, 0, 0)?
-            .end_render_pass(SubpassEndInfo::default())?;
-        Ok(())
-    }
-    pub(crate) fn reset_vertex_buffer(&mut self) {
-        self.vertex_buffer = None;
-    }
+
 
     fn get_or_create_pipeline(&mut self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
         match self.pipeline.clone() {
@@ -227,30 +205,32 @@ impl ShaderWithPipeline {
         ctx: &VulkanoContext,
         receiver: &mut MutexGuard<RenderInfoReceiver>,
     ) -> Result<Subbuffer<[basic::Vertex]>> {
-        match self.vertex_buffer.clone() {
-            None => {
-                let vertices = receiver.vertices.iter().map(|_| basic::Vertex {
-                    blend_col: Colour::magenta().into(),
-                    ..Default::default()
-                });
-                let vertex_buffer = Buffer::from_iter(
-                    ctx.memory_allocator(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    vertices,
-                ).map_err(Validated::unwrap)?;
-                self.vertex_buffer = Some(vertex_buffer.clone());
-                Ok(vertex_buffer)
-            },
-            Some(vertex_buffer) => Ok(vertex_buffer)
+        if let Some(vertex_buffer) = &self.vertex_buffer {
+            if receiver.vertices.len() == vertex_buffer.len() as usize {
+                return Ok(vertex_buffer.clone());
+            }
         }
+
+        let mut vertices = vec![basic::Vertex {
+            blend_col: Colour::magenta().into(),
+            ..Default::default()
+        }; receiver.vertices.len()];
+        self.write_vertices(receiver, &mut vertices)?;
+        let vertex_buffer = Buffer::from_iter(
+            ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            vertices
+        ).map_err(Validated::unwrap)?;
+        self.vertex_buffer = Some(vertex_buffer.clone());
+        Ok(vertex_buffer)
     }
     fn create_uniform_buffer(&mut self, ctx: &VulkanoContext) -> Result<Subbuffer<basic::UniformData>> {
         let uniform_buffer= Buffer::new_sized(
@@ -314,5 +294,60 @@ impl ShaderWithPipeline {
             ],
             [],
         ).map_err(Validated::unwrap)?)
+    }
+}
+
+impl Shader for BasicShader {
+    fn name() -> ShaderName
+    where
+        Self: Sized
+    {
+        "basic"
+    }
+
+    fn on_render(
+        &mut self,
+        ctx: &VulkanoContext,
+        receiver: &mut MutexGuard<RenderInfoReceiver>,
+    ) -> Result<()> {
+        self.clear_col = receiver.get_clear_col();
+        let vertex_buffer = self.get_or_create_vertex_buffer(ctx, receiver)?;
+        self.write_vertices(receiver, &mut vertex_buffer.write()?)?;
+        Ok(())
+    }
+    fn build_render_pass(
+        &mut self,
+        ctx: &VulkanoContext,
+        framebuffer: Arc<Framebuffer>,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
+    ) -> Result<()> {
+        let pipeline = self.get_or_create_pipeline(ctx)?;
+        let uniform_buffer_set = self.create_uniform_buffer_set(ctx)?;
+        let vertex_buffer = self.vertex_buffer.as_ref().unwrap();
+        let layout = pipeline.layout().clone();
+        builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some(self.clear_col.as_f32().into())],
+                    ..RenderPassBeginInfo::framebuffer(framebuffer)
+                },
+                SubpassBeginInfo {
+                    contents: SubpassContents::Inline,
+                    ..Default::default()
+                },
+            )?
+            .bind_pipeline_graphics(pipeline.clone())?
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                layout,
+                0,
+                uniform_buffer_set.clone(),
+            )?
+            .bind_vertex_buffers(0, vertex_buffer.clone())?
+            .draw(u32::try_from(vertex_buffer.len())
+                      .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", vertex_buffer.len())),
+                  1, 0, 0)?
+            .end_render_pass(SubpassEndInfo::default())?;
+        Ok(())
     }
 }
