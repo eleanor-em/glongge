@@ -808,13 +808,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn rect(&self) -> Rect {
         self.collider()
             .unwrap_or_default()
-            .translated(self.absolute_transform().centre)
+            .transformed(&self.absolute_transform())
             .as_rect()
     }
     pub fn rect_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
         self.collider_of(other)
             .unwrap_or_default()
-            .translated(self.absolute_transform_of(other).centre)
+            .transformed(&self.absolute_transform_of(other))
             .as_rect()
     }
     pub fn extent(&self) -> Vec2 {
@@ -847,11 +847,11 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                     .map(|inner| (obj.object_id, inner))
             })
             .map(|(collision_shape_id, collision_shape)| {
-                let centre = self.all_absolute_transforms
-                    .get(&collision_shape_id)
-                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {collision_shape_id:?}"))
-                    .centre;
-                collision_shape.collider().translated(centre)
+                collision_shape.collider().transformed(
+                    self.all_absolute_transforms
+                        .get(&collision_shape_id)
+                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {collision_shape_id:?}"))
+                )
             })
     }
 
@@ -918,10 +918,9 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                     .unwrap_or_else(|| panic!("missing object_id in objects: {other_id:?}"));
                 let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
                     .collider()
-                    .translated(
+                    .transformed(
                         self.all_absolute_transforms.get(other_id)
                             .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {other_id:?}"))
-                            .centre
                     );
                 if let Some(mtv) = collider.collides_with(&other_collider) {
                     let other = self.lookup_parent(*other_id)

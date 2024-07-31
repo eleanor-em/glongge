@@ -57,7 +57,13 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     }
 
     fn translated(&self, by: Vec2) -> GenericCollider;
-    // TODO: scaled/rotated/transformed
+    fn scaled(&self, by: Vec2) -> GenericCollider;
+    fn rotated(&self, by: f64) -> GenericCollider;
+    fn transformed(&self, by: &Transform) -> GenericCollider {
+        self.translated(by.centre)
+            .scaled(by.scale)
+            .rotated(by.rotation)
+    }
 
     fn as_polygon(&self) -> Vec<Vec2>;
     fn as_triangles(&self) -> Vec<[Vec2; 3]>;
@@ -78,7 +84,9 @@ impl Collider for NullCollider {
     fn collides_with_oriented_box(&self, _other: &OrientedBoxCollider) -> Option<Vec2> { None }
     fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
 
-    fn translated(&self, _by: Vec2) -> GenericCollider { Self.as_generic() }
+    fn translated(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
+    fn scaled(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
+    fn rotated(&self, _by: f64) -> GenericCollider { Self.into_generic() }
 
     // By convention, clockwise edges starting from the top-leftmost vertex.
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -300,7 +308,19 @@ impl Collider for OrientedBoxCollider {
     fn translated(&self, by: Vec2) -> GenericCollider {
         let mut rv = self.clone();
         rv.centre += by.rotated(self.rotation);
-        rv.as_generic()
+        rv.into_generic()
+    }
+
+    fn scaled(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        rv.axis_aligned_half_widths = self.axis_aligned_half_widths.component_wise(by).abs();
+        rv.into_generic()
+    }
+
+    fn rotated(&self, by: f64) -> GenericCollider {
+        let mut rv = self.clone();
+        rv.rotation += by;
+        rv.into_generic()
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -436,6 +456,17 @@ impl Collider for BoxCollider {
         rv.into_generic()
     }
 
+    fn scaled(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        rv.extent = self.extent.component_wise(by).abs();
+        rv.into_generic()
+    }
+
+    fn rotated(&self, by: f64) -> GenericCollider {
+        OrientedBoxCollider::from_centre(self.centre, self.extent / 2)
+            .rotated(by)
+    }
+
     fn as_polygon(&self) -> Vec<Vec2> {
         self.vertices()
     }
@@ -543,6 +574,20 @@ impl Collider for ConvexCollider {
         }
         rv.into_generic()
     }
+    fn scaled(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        for vertex in &mut rv.vertices {
+            *vertex = vertex.component_wise(by).abs();
+        }
+        rv.into_generic()
+    }
+    fn rotated(&self, by: f64) -> GenericCollider {
+        let mut rv = self.clone();
+        for vertex in &mut rv.vertices {
+            *vertex = vertex.rotated(by);
+        }
+        rv.into_generic()
+    }
 
     fn as_polygon(&self) -> Vec<Vec2> {
         // TODO: check that this conforms to the spec
@@ -627,6 +672,14 @@ impl Collider for GenericCollider {
 
     fn as_triangles(&self) -> Vec<[Vec2; 3]> {
         self.inner.as_triangles()
+    }
+
+    fn scaled(&self, by: Vec2) -> GenericCollider {
+        self.inner.scaled(by)
+    }
+
+    fn rotated(&self, by: f64) -> GenericCollider {
+        self.inner.rotated(by)
     }
 }
 

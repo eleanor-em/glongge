@@ -173,15 +173,13 @@ impl CollisionHandler {
         self.possible_collisions.iter()
             .filter_map(|ids| {
                 let this = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>().collider()
-                    .translated(absolute_transforms
+                    .transformed(absolute_transforms
                         .get(&ids.fst())
-                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.fst()))
-                        .centre);
+                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.fst())));
                 let other = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>().collider()
-                    .translated(absolute_transforms
+                    .transformed(absolute_transforms
                         .get(&ids.snd())
-                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.snd()))
-                        .centre);
+                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.snd())));
                 this.collides_with(&other).map(|mtv| (*ids, mtv))
             })
             .collect()
