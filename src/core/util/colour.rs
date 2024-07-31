@@ -1,6 +1,6 @@
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Colour {
     pub r: f64,
     pub g: f64,

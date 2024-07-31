@@ -32,7 +32,7 @@ use crate::{
         config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
         coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
         input::InputHandler,
-        render::{RenderInfoFull, RenderInfoReceiver, RenderItem, VertexMap},
+        render::{RenderInfoFull, RenderDataChannel, RenderItem, VertexMap},
         scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
         vk::AdjustedViewport,
         util::{
@@ -50,6 +50,7 @@ use crate::{
     },
     resource::ResourceHandler,
 };
+use crate::core::render::StoredRenderItem;
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
@@ -197,7 +198,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     vertex_map: VertexMap,
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderDataChannel>>,
     clear_col: Colour,
 
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
@@ -214,7 +215,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         objects: Vec<AnySceneObject<ObjectType>>,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
-        render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
+        render_info_receiver: Arc<Mutex<RenderDataChannel>>,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>
     ) -> Result<Self> {
@@ -384,7 +385,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler.collision_handler.remove_objects(&pending_remove_objects);
-        for remove_id in pending_remove_objects.into_iter().rev() {
+        for remove_id in pending_remove_objects.into_iter() {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);
@@ -511,12 +512,10 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn send_render_infos(&mut self, render_infos: Vec<RenderInfoFull>) {
         let maybe_vertices = if self.vertex_map.consume_vertices_changed() {
-            let mut vertices = Vec::with_capacity(self.vertex_map.vertex_count());
-            for r in self.vertex_map.render_items() {
-                vertices.extend(r.vertices());
-            }
-            check_eq!(vertices.len(), vertices.capacity());
-            Some(vertices)
+            Some(self.vertex_map.render_items()
+                .flat_map(StoredRenderItem::vertices)
+                .copied()
+                .collect_vec())
         } else {
             None
         };

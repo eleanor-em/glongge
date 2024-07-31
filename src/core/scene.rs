@@ -26,7 +26,7 @@ use crate::{
         ObjectTypeEnum,
         prelude::*,
         SceneObjectWithId,
-        render::{RenderInfo, RenderInfoReceiver, RenderItem},
+        render::{RenderInfo, RenderDataChannel, RenderItem},
     }
 };
 use crate::core::render::RenderHandler;
@@ -38,7 +38,7 @@ struct InternalScene<ObjectType: ObjectTypeEnum> {
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderDataChannel>>,
     tx: Sender<SceneHandlerInstruction>,
 }
 
@@ -46,7 +46,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
     fn new(scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
            input_handler: Arc<Mutex<InputHandler>>,
            resource_handler: ResourceHandler,
-           render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
+           render_info_receiver: Arc<Mutex<RenderDataChannel>>,
            tx: Sender<SceneHandlerInstruction>) -> Self {
         let name = scene.try_lock()
             .expect("scene locked in InternalScene::new(), could not get scene name")

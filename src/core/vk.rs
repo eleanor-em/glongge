@@ -691,7 +691,6 @@ impl WindowEventHandler {
             uploads.flush()?;
             info!("loaded textures");
         }
-        // TODO: if below step takes >16.67 ms, expect that the next instance will be faster.
         if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
             if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future

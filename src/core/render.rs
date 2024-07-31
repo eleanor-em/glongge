@@ -49,21 +49,21 @@ impl Default for RenderInfo {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RenderInfoFull {
-    pub(crate) inner: RenderInfo,
-    pub(crate) transform: Transform,
-    pub(crate) vertex_indices: Range<usize>,
-    pub(crate) depth: VertexDepth,
+pub struct RenderInfoFull {
+    pub inner: RenderInfo,
+    pub transform: Transform,
+    pub vertex_indices: Range<usize>,
+    pub depth: VertexDepth,
 }
 
 #[derive(Clone)]
-pub struct RenderInfoReceiver {
+pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
-impl RenderInfoReceiver {
+impl RenderDataChannel {
     fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
@@ -72,8 +72,15 @@ impl RenderInfoReceiver {
             clear_col: Colour::black(),
         }))
     }
-}
-impl RenderInfoReceiver {
+
+    pub(crate) fn next_frame(&self) -> RenderFrame {
+        RenderFrame {
+            vertices: self.vertices.clone(),
+            render_infos: self.render_infos.clone(),
+            clear_col: self.clear_col
+        }
+    }
+
     pub(crate) fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
         self.vertices = vertices;
     }
@@ -90,13 +97,19 @@ impl RenderInfoReceiver {
         !self.vertices.is_empty() && !self.render_infos.is_empty()
     }
 
-    pub(crate) fn get_clear_col(&self) -> Colour { self.clear_col }
     pub(crate) fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
 }
 
 #[derive(Clone)]
+pub struct RenderFrame {
+    pub vertices: Vec<VertexWithUV>,
+    pub render_infos: Vec<RenderInfoFull>,
+    pub clear_col: Colour,
+}
+
+#[derive(Clone)]
 pub struct RenderHandler {
-    render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
+    render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<Arc<Mutex<dyn Shader>>>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
@@ -107,12 +120,12 @@ impl RenderHandler {
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<Arc<Mutex<dyn Shader>>>,
     ) -> Self {
-        let render_info_receiver = RenderInfoReceiver::new(viewport.clone_inner());
+        let render_info_receiver = RenderDataChannel::new(viewport.clone_inner());
         Self {
             shaders,
             viewport,
             command_buffer: None,
-            render_info_receiver,
+            render_data_channel: render_info_receiver,
         }
     }
 
@@ -131,7 +144,7 @@ impl RenderHandler {
     ) -> Result<()> {
         self.viewport.get().update_from_window(window);
         self.command_buffer = None;
-        self.render_info_receiver.lock().unwrap().viewport = self.viewport.get().clone();
+        self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
         Ok(())
     }
 
@@ -140,13 +153,10 @@ impl RenderHandler {
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
-        let clear_col = {
-            let mut receiver = self.render_info_receiver.lock().unwrap();
-            for shader in &mut self.shaders {
-                shader.try_lock().unwrap().on_render(&mut receiver)?;
-            }
-            receiver.clear_col
-        };
+        let render_frame = self.render_data_channel.lock().unwrap().next_frame();
+        for shader in &mut self.shaders {
+            shader.try_lock().unwrap().on_render(&render_frame)?;
+        }
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
             ctx.queue().queue_family_index(),
@@ -161,7 +171,7 @@ impl RenderHandler {
             RenderPassBeginInfo {
                 render_area_offset: top_left,
                 render_area_extent: extent,
-                clear_values: vec![Some(clear_col.as_f32().into())],
+                clear_values: vec![Some(render_frame.clear_col.as_f32().into())],
                 ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
             },
             SubpassBeginInfo::default(),
@@ -173,8 +183,8 @@ impl RenderHandler {
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
 
-    pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderInfoReceiver>> {
-        self.render_info_receiver.clone()
+    pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderDataChannel>> {
+        self.render_data_channel.clone()
     }
 }
 
@@ -220,13 +230,13 @@ impl Ord for VertexDepth {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct VertexWithUV {
-    pub vertex: Vec2,
+    pub xy: Vec2,
     pub uv: Vec2,
 }
 
 impl VertexWithUV {
     pub fn from_vertex(vertex: Vec2) -> Self {
-        Self { vertex, uv: Vec2::zero() }
+        Self { xy: vertex, uv: Vec2::zero() }
     }
 
     pub fn from_vec2s<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
@@ -234,7 +244,7 @@ impl VertexWithUV {
     }
     pub fn zip_from_vec2s<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
         vertices.into_iter().zip(uvs)
-            .map(|(vertex, uv)| Self { vertex, uv })
+            .map(|(vertex, uv)| Self { xy: vertex, uv })
             .collect()
     }
 }
@@ -273,7 +283,6 @@ impl RenderItem {
 
 pub(crate) struct VertexMap {
     render_items: BTreeMap<ObjectId, StoredRenderItem>,
-    vertex_count: usize,
     vertices_changed: bool,
 }
 
@@ -281,13 +290,11 @@ impl VertexMap {
     pub(crate) fn new() -> Self {
         Self {
             render_items: BTreeMap::new(),
-            vertex_count: 0,
             vertices_changed: false,
         }
     }
 
     pub(crate) fn insert(&mut self, object_id: ObjectId, render_item: RenderItem) {
-        self.vertex_count += render_item.len();
         check_eq!(render_item.len() % 3, 0);
         self.render_items.insert(object_id, StoredRenderItem { object_id, render_item });
         self.vertices_changed = true;
@@ -295,7 +302,6 @@ impl VertexMap {
     pub(crate) fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
         if let Some(removed) = self.render_items.remove(&object_id) {
             check_eq!(removed.object_id, object_id);
-            self.vertex_count -= removed.len();
             self.vertices_changed = true;
             Some(removed.render_item)
         } else {
@@ -306,7 +312,6 @@ impl VertexMap {
         self.render_items.values()
     }
     pub(crate) fn len(&self) -> usize { self.render_items.len() }
-    pub(crate) fn vertex_count(&self) -> usize { self.vertex_count }
 
     pub(crate) fn consume_vertices_changed(&mut self) -> bool {
         let rv = self.vertices_changed;

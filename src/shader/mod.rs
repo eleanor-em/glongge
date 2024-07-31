@@ -1,46 +1,37 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use tracing::error;
-use vulkano::{
-    pipeline::{
-        graphics::{
-            multisample::MultisampleState,
-            input_assembly::InputAssemblyState,
-            GraphicsPipelineCreateInfo,
-            rasterization::RasterizationState,
-            vertex_input::{Vertex, VertexDefinition},
-            viewport::ViewportState,
-            color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState}
-        },
-        GraphicsPipeline,
-        Pipeline,
-        PipelineBindPoint,
-        PipelineLayout,
-        PipelineShaderStageCreateInfo,
-        layout::PipelineDescriptorSetLayoutCreateInfo
+use vulkano::{pipeline::{
+    graphics::{
+        multisample::MultisampleState,
+        input_assembly::InputAssemblyState,
+        GraphicsPipelineCreateInfo,
+        rasterization::RasterizationState,
+        vertex_input::{Vertex, VertexDefinition},
+        viewport::ViewportState,
+        color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState}
     },
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
-    descriptor_set::{
-        PersistentDescriptorSet,
-        WriteDescriptorSet,
-        layout::DescriptorSetLayoutCreateFlags
-    },
-    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer},
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    shader::ShaderModule,
-    render_pass::Subpass,
-    Validated
-};
+    GraphicsPipeline,
+    Pipeline,
+    PipelineBindPoint,
+    PipelineLayout,
+    PipelineShaderStageCreateInfo,
+    layout::PipelineDescriptorSetLayoutCreateInfo
+}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo}, descriptor_set::{
+    PersistentDescriptorSet,
+    WriteDescriptorSet,
+    layout::DescriptorSetLayoutCreateFlags
+}, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
 use crate::{
     core::{
         prelude::*,
-        render::RenderInfoReceiver,
+        render::RenderDataChannel,
         vk::{AdjustedViewport, VulkanoContext}
     },
     shader::glsl::*,
 };
+use crate::core::render::{RenderFrame, RenderInfoFull, VertexWithUV};
 use crate::core::util::UniqueShared;
 
 pub mod vertex;
@@ -53,7 +44,7 @@ pub trait Shader: Send {
     fn name() -> ShaderName where Self: Sized;
     fn on_render(
         &mut self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>
+        render_frame: &RenderFrame
     ) -> Result<()>;
     fn build_render_pass(
         &mut self,
@@ -69,7 +60,6 @@ pub struct SpriteShader {
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[sprite::Vertex]>>,
-    clear_col: Colour,
     resource_handler: ResourceHandler,
 }
 
@@ -87,18 +77,18 @@ impl SpriteShader {
             viewport,
             pipeline: None,
             vertex_buffer: None,
-            clear_col: Colour::default(),
             resource_handler,
         })) as Arc<Mutex<dyn Shader>>)
     }
 
     fn write_vertices(
         &self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        render_frame: &RenderFrame,
         buf: &mut [sprite::Vertex]
     ) {
-        check_eq!(receiver.vertices.len(), buf.len());
-        let render_infos = receiver.render_infos
+        check_gt!(buf.len(), 0);
+        check_eq!(render_frame.vertices.len(), buf.len());
+        let render_infos = render_frame.render_infos
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
         let mut write_index = 0;
@@ -107,22 +97,23 @@ impl SpriteShader {
                 // Calculate transformed UVs.
                 let texture = render_info.inner.texture.clone().unwrap_or_default();
                 // TODO: better way to switch shaders.
-                let vertex = if texture.id() != 0 {
+                let final_vertex = if texture.id() != 0 {
+                    let vertex = render_frame.vertices[vertex_index];
                     let mut blend_col = render_info.inner.col;
-                    let mut uv = receiver.vertices[vertex_index].uv;
+                    let mut uv = vertex.uv;
                     if let Some(tex) = self.resource_handler.texture.get(&texture) {
                         if let Some(tex) = tex.ready() {
                             uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                         } else {
                             warn!("texture not ready: {}", texture);
-                            blend_col = Colour::new(0., 0., 0., 0.);
+                            blend_col = Colour::empty();
                         }
                     } else {
                         error!("missing texture: {}", texture);
                         blend_col = Colour::magenta();
                     }
                     sprite::Vertex {
-                        position: receiver.vertices[vertex_index].vertex.into(),
+                        position: vertex.xy.into(),
                         uv: uv.into(),
                         texture_id: texture.into(),
                         translation: render_info.transform.centre.into(),
@@ -137,7 +128,7 @@ impl SpriteShader {
                         ..Default::default()
                     }
                 };
-                buf[write_index] = vertex;
+                buf[write_index] = final_vertex;
                 write_index += 1;
             }
         }
@@ -199,20 +190,22 @@ impl SpriteShader {
     }
     fn get_or_create_vertex_buffer(
         &mut self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        len: usize
     ) -> Result<Subbuffer<[sprite::Vertex]>> {
         if let Some(vertex_buffer) = &self.vertex_buffer {
-            if receiver.vertices.len() == vertex_buffer.len() as usize {
+            if vertex_buffer.len() as usize == len {
                 return Ok(vertex_buffer.clone());
             }
         }
-
-        let mut vertices = vec![sprite::Vertex {
-            blend_col: Colour::magenta().into(),
-            ..Default::default()
-        }; receiver.vertices.len()];
-        self.write_vertices(receiver, &mut vertices);
-        let vertex_buffer = Buffer::from_iter(
+        // XXX: needed to prevent flickering. No idea why.
+        self.vertex_buffer.take();
+        self.create_vertex_buffer(len)
+    }
+    fn create_vertex_buffer(
+        &mut self,
+        len: usize
+    ) -> Result<Subbuffer<[sprite::Vertex]>> {
+        let vertex_buffer = Buffer::new_unsized(
             self.ctx.memory_allocator(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
@@ -223,9 +216,9 @@ impl SpriteShader {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vertices
+            len as DeviceSize
         ).map_err(Validated::unwrap)?;
-        self.vertex_buffer = Some(vertex_buffer.clone());
+        self.vertex_buffer.replace(vertex_buffer.clone());
         Ok(vertex_buffer)
     }
     fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
@@ -303,11 +296,10 @@ impl Shader for SpriteShader {
 
     fn on_render(
         &mut self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        render_frame: &RenderFrame
     ) -> Result<()> {
-        self.clear_col = receiver.get_clear_col();
-        let vertex_buffer = self.get_or_create_vertex_buffer(receiver)?;
-        self.write_vertices(receiver, &mut vertex_buffer.write()?);
+        let vertex_buffer = self.get_or_create_vertex_buffer(render_frame.vertices.len())?;
+        self.write_vertices(render_frame, &mut vertex_buffer.write()?);
         Ok(())
     }
     fn build_render_pass(
@@ -342,7 +334,6 @@ pub struct WireframeShader {
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[wireframe::Vertex]>>,
-    clear_col: Colour,
 }
 
 impl WireframeShader {
@@ -358,24 +349,23 @@ impl WireframeShader {
             viewport,
             pipeline: None,
             vertex_buffer: None,
-            clear_col: Colour::default(),
         })) as Arc<Mutex<dyn Shader>>)
     }
 
     fn write_vertices(
         &self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        render_frame: &RenderFrame,
         buf: &mut [wireframe::Vertex]
     ) {
-        check_le!(receiver.vertices.len(), buf.len());
-        for render_info in &receiver.render_infos {
+        check_le!(render_frame.vertices.len(), buf.len());
+        for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
                 let texture = render_info.inner.texture.clone().unwrap_or_default();
                 // TODO: better way to switch shaders.
                 let vertex = if texture.id() == 0 {
                     wireframe::Vertex {
-                        position: receiver.vertices[vertex_index].vertex.into(),
+                        position: render_frame.vertices[vertex_index].xy.into(),
                         translation: render_info.transform.centre.into(),
                         #[allow(clippy::cast_possible_truncation)]
                         rotation: render_info.transform.rotation as f32,
@@ -384,7 +374,6 @@ impl WireframeShader {
                     }
                 } else {
                     wireframe::Vertex {
-                        position: receiver.vertices[vertex_index].vertex.into(),
                         blend_col: Colour::empty().into(),
                         ..Default::default()
                     }
@@ -448,17 +437,22 @@ impl WireframeShader {
     }
     fn get_or_create_vertex_buffer(
         &mut self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        len: usize
     ) -> Result<Subbuffer<[wireframe::Vertex]>> {
         if let Some(vertex_buffer) = &self.vertex_buffer {
-            if receiver.vertices.len() == vertex_buffer.len() as usize {
+            if vertex_buffer.len() as usize == len {
                 return Ok(vertex_buffer.clone());
             }
         }
-
-        let mut vertices = vec![wireframe::Vertex::default(); receiver.vertices.len()];
-        self.write_vertices(receiver, &mut vertices);
-        let vertex_buffer = Buffer::from_iter(
+        // XXX: needed to prevent flickering. No idea why.
+        self.vertex_buffer.take();
+        self.create_vertex_buffer(len)
+    }
+    fn create_vertex_buffer(
+        &mut self,
+        len: usize
+    ) -> Result<Subbuffer<[wireframe::Vertex]>> {
+        let vertex_buffer = Buffer::new_unsized(
             self.ctx.memory_allocator(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
@@ -469,9 +463,9 @@ impl WireframeShader {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vertices
+            len as DeviceSize
         ).map_err(Validated::unwrap)?;
-        self.vertex_buffer = Some(vertex_buffer.clone());
+        self.vertex_buffer.replace(vertex_buffer.clone());
         Ok(vertex_buffer)
     }
     fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
@@ -526,11 +520,10 @@ impl Shader for WireframeShader {
 
     fn on_render(
         &mut self,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
+        render_frame: &RenderFrame,
     ) -> Result<()> {
-        self.clear_col = receiver.get_clear_col();
-        let vertex_buffer = self.get_or_create_vertex_buffer(receiver)?;
-        self.write_vertices(receiver, &mut vertex_buffer.write()?);
+        let vertex_buffer = self.get_or_create_vertex_buffer(render_frame.vertices.len())?;
+        self.write_vertices(render_frame, &mut vertex_buffer.write()?);
         Ok(())
     }
     fn build_render_pass(
