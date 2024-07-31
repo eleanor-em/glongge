@@ -53,12 +53,13 @@ pub(crate) struct RenderInfoFull {
     pub(crate) inner: RenderInfo,
     pub(crate) transform: Transform,
     pub(crate) vertex_indices: Range<usize>,
+    pub(crate) depth: VertexDepth,
 }
 
 #[derive(Clone)]
 pub struct RenderInfoReceiver {
     pub(crate) vertices: Vec<VertexWithUV>,
-    pub(crate) render_info: Vec<RenderInfoFull>,
+    pub(crate) render_infos: Vec<RenderInfoFull>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
@@ -66,7 +67,7 @@ impl RenderInfoReceiver {
     fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
-            render_info: Vec::new(),
+            render_infos: Vec::new(),
             viewport,
             clear_col: Colour::black(),
         }))
@@ -78,7 +79,7 @@ impl RenderInfoReceiver {
     }
 
     pub(crate) fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>) {
-        self.render_info = render_info;
+        self.render_infos = render_info;
     }
 
     pub(crate) fn current_viewport(&self) -> AdjustedViewport {
@@ -86,7 +87,7 @@ impl RenderInfoReceiver {
     }
 
     pub(crate) fn is_ready(&self) -> bool {
-        !self.vertices.is_empty() && !self.render_info.is_empty()
+        !self.vertices.is_empty() && !self.render_infos.is_empty()
     }
 
     pub(crate) fn get_clear_col(&self) -> Colour { self.clear_col }
@@ -317,7 +318,7 @@ impl VertexMap {
 #[derive(Clone, Debug)]
 pub(crate) struct StoredRenderItem {
     pub(crate) object_id: ObjectId,
-    render_item: RenderItem,
+    pub(crate) render_item: RenderItem,
 }
 
 impl StoredRenderItem {

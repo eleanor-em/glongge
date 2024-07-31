@@ -182,6 +182,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                 vertex_indices: start..end,
                 inner: render_info,
                 transform,
+                depth: item.render_item.depth,
             });
             start = end;
         }

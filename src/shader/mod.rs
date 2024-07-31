@@ -97,8 +97,12 @@ impl SpriteShader {
         receiver: &mut MutexGuard<RenderInfoReceiver>,
         buf: &mut [sprite::Vertex]
     ) {
-        check_le!(receiver.vertices.len(), buf.len());
-        for render_info in &receiver.render_info {
+        check_eq!(receiver.vertices.len(), buf.len());
+        let render_infos = receiver.render_infos
+            .iter()
+            .sorted_unstable_by_key(|item| item.depth);
+        let mut write_index = 0;
+        for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
                 let texture = render_info.inner.texture.clone().unwrap_or_default();
@@ -110,6 +114,7 @@ impl SpriteShader {
                         if let Some(tex) = tex.ready() {
                             uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                         } else {
+                            warn!("texture not ready: {}", texture);
                             blend_col = Colour::new(0., 0., 0., 0.);
                         }
                     } else {
@@ -132,9 +137,11 @@ impl SpriteShader {
                         ..Default::default()
                     }
                 };
-                buf[vertex_index] = vertex;
+                buf[write_index] = vertex;
+                write_index += 1;
             }
         }
+        check_eq!(write_index, buf.len());
     }
 
 
@@ -361,7 +368,7 @@ impl WireframeShader {
         buf: &mut [wireframe::Vertex]
     ) {
         check_le!(receiver.vertices.len(), buf.len());
-        for render_info in &receiver.render_info {
+        for render_info in &receiver.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
                 let texture = render_info.inner.texture.clone().unwrap_or_default();
