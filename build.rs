@@ -11,9 +11,10 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let mut imports = Vec::new();
-    let mut decls = vec![
-        "#[register_object_type]".to_string(),
-        "pub enum ObjectType {".to_string(),
+    let mut decls = Vec::new();
+    let builtins = vec![
+        "GgInternalSprite,".to_string(),
+        "GgInternalCollisionShape,".to_string(),
     ];
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {
@@ -75,7 +76,6 @@ fn main() -> Result<()> {
             }
         }
     }
-    decls.push("}".to_string());
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("object_type.rs");
@@ -86,9 +86,17 @@ fn main() -> Result<()> {
         writer.write_all(import.as_bytes())?;
     }
     writer.write_all("\n".as_bytes())?;
+    writer.write_all("#[register_object_type]\n".as_bytes())?;
+    writer.write_all("pub enum ObjectType {\n".as_bytes())?;
+    for builtin in builtins {
+        if !decls.contains(&builtin) {
+            decls.push(builtin);
+        }
+    }
     for decl in decls.into_iter().map(|line| format!("{line}\n")) {
         writer.write_all(decl.as_bytes())?;
     }
+    writer.write_all("}\n".as_bytes())?;
     writer.write_all("}\n".as_bytes())?;
     println!("cargo::rerun-if-changed=build.rs");
     println!("cargo::rerun-if-changed=src/");
