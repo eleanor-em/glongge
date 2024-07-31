@@ -26,16 +26,12 @@ use crate::{
         vk::{
             AdjustedViewport,
             VulkanoContext,
-            WindowContext,
         },
         ObjectId,
     },
-    resource::{
-        ResourceHandler,
-        texture::{Texture, TextureSubArea}
-    },
+    resource::texture::{Texture, TextureSubArea},
 };
-use crate::shader::{Shader, ShaderName, ShaderPair, BasicShader};
+use crate::shader::Shader;
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
@@ -99,25 +95,22 @@ impl RenderInfoReceiver {
 pub struct RenderHandler {
     render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
     viewport: Arc<Mutex<AdjustedViewport>>,
-    shaders: BTreeMap<ShaderName, Arc<Mutex<dyn Shader>>>,
+    shaders: Vec<Arc<Mutex<dyn Shader>>>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
-    pub fn new(window_ctx: &WindowContext, ctx: &VulkanoContext, resource_handler: ResourceHandler) -> Result<Self> {
-        let viewport = Arc::new(Mutex::new(window_ctx.create_default_viewport()));
-        let mut shaders = BTreeMap::new();
-        let basic_shader = ShaderPair::new_basic(ctx.device().clone())?;
-        shaders.insert(basic_shader.name(), Arc::new(Mutex::new(
-            BasicShader::new(basic_shader, viewport.clone(), resource_handler.clone())
-        )) as Arc<Mutex<dyn Shader>>);
+    pub fn new(
+        viewport: Arc<Mutex<AdjustedViewport>>,
+        shaders: Vec<Arc<Mutex<dyn Shader>>>,
+    ) -> Self {
         let render_info_receiver = RenderInfoReceiver::new(viewport.try_lock().unwrap().clone());
-        Ok(Self {
+        Self {
             shaders,
             viewport,
             command_buffer: None,
             render_info_receiver,
-        })
+        }
     }
 
     #[must_use]
@@ -146,7 +139,7 @@ impl RenderHandler {
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         {
             let mut receiver = self.render_info_receiver.lock().unwrap();
-            for shader in self.shaders.values_mut() {
+            for shader in &mut self.shaders {
                 shader.try_lock().unwrap().on_render(ctx, &mut receiver)?;
             }
         }
@@ -155,7 +148,7 @@ impl RenderHandler {
             ctx.queue().queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )?;
-        for shader in self.shaders.values_mut() {
+        for shader in &mut self.shaders {
             shader.try_lock().unwrap().build_render_pass(ctx, framebuffer.clone(), &mut builder)?;
         }
         Ok(builder.build().map_err(Validated::unwrap)?)

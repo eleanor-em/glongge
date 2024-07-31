@@ -1,6 +1,7 @@
 #![feature(const_fn_floating_point_arithmetic)]
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
+use std::sync::{Arc, Mutex};
 use num_traits::{Float, One};
 
 use glongge::core::{
@@ -12,6 +13,7 @@ use glongge::core::{
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
     ObjectTypeEnum,
 };
+use glongge::shader::SpriteShader;
 
 use crate::object_type::ObjectType;
 
@@ -40,7 +42,11 @@ fn main() -> Result<()> {
     let mut resource_handler = ResourceHandler::new(&ctx)?;
     ObjectType::preload_all(&mut resource_handler)?;
 
-    let render_handler = RenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
+    let viewport = Arc::new(Mutex::new(window_ctx.create_default_viewport()));
+    let shaders = vec![
+        SpriteShader::new(ctx.device(), viewport.clone(), resource_handler.clone())?
+    ];
+    let render_handler = RenderHandler::new(viewport.clone(), shaders)
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();
     {

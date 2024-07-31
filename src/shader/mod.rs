@@ -30,7 +30,7 @@ use vulkano::{
     },
     command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo},
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    shader::{EntryPoint, ShaderModule},
+    shader::ShaderModule,
     render_pass::{Framebuffer, Subpass},
     Validated
 };
@@ -64,35 +64,9 @@ pub trait Shader: Send {
     ) -> Result<()>;
 }
 #[derive(Clone)]
-pub struct ShaderPair {
-    name: ShaderName,
+pub struct SpriteShader {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-}
-
-impl ShaderPair {
-    pub(crate) fn new_basic(device: Arc<Device>) -> Result<Self> {
-        Ok(Self {
-            name: "basic",
-            vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
-            fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
-        })
-    }
-    pub(crate) fn entry_vs(&self) -> Result<EntryPoint> {
-        self.vs.entry_point("main")
-            .context("vertex shader: entry point missing")
-    }
-    pub(crate) fn entry_fs(&self) -> Result<EntryPoint> {
-        self.fs.entry_point("main")
-            .context("fragment shader: entry point missing")
-    }
-
-    pub fn name(&self) -> ShaderName { self.name }
-}
-
-#[derive(Clone)]
-pub(crate) struct BasicShader {
-    shaders: ShaderPair,
     viewport: Arc<Mutex<AdjustedViewport>>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[basic::Vertex]>>,
@@ -100,16 +74,21 @@ pub(crate) struct BasicShader {
     resource_handler: ResourceHandler,
 }
 
-impl BasicShader {
-    pub(crate) fn new(shaders: ShaderPair, viewport: Arc<Mutex<AdjustedViewport>>, resource_handler: ResourceHandler) -> Self {
-        Self {
-            shaders,
+impl SpriteShader {
+    pub fn new(
+        device: Arc<Device>,
+        viewport: Arc<Mutex<AdjustedViewport>>,
+        resource_handler: ResourceHandler
+    ) -> Result<Arc<Mutex<dyn Shader>>> {
+        Ok(Arc::new(Mutex::new(Self {
+            vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
+            fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
             vertex_buffer: None,
             clear_col: Colour::default(),
             resource_handler,
-        }
+        })) as Arc<Mutex<dyn Shader>>)
     }
 
     fn write_vertices(
@@ -153,8 +132,10 @@ impl BasicShader {
     fn get_or_create_pipeline(&mut self, ctx: &VulkanoContext) -> Result<Arc<GraphicsPipeline>> {
         match self.pipeline.clone() {
             None => {
-                let vs = self.shaders.entry_vs()?;
-                let fs = self.shaders.entry_fs()?;
+                let vs = self.vs.entry_point("main")
+                    .context("vertex shader: entry point missing")?;
+                let fs = self.fs.entry_point("main")
+                    .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
                     basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
                 let stages = [
@@ -297,7 +278,7 @@ impl BasicShader {
     }
 }
 
-impl Shader for BasicShader {
+impl Shader for SpriteShader {
     fn name() -> ShaderName
     where
         Self: Sized
@@ -331,10 +312,7 @@ impl Shader for BasicShader {
                     clear_values: vec![Some(self.clear_col.as_f32().into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer)
                 },
-                SubpassBeginInfo {
-                    contents: SubpassContents::Inline,
-                    ..Default::default()
-                },
+                SubpassBeginInfo::default(),
             )?
             .bind_pipeline_graphics(pipeline.clone())?
             .bind_descriptor_sets(
