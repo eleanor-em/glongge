@@ -404,8 +404,7 @@ impl Player {
 
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.music.stop();
-        ctx.render().update_vertices(self.current_sprite().create_vertices()
-            .with_depth(VertexDepth::Front(10000)));
+        self.current_sprite_mut().set_depth(ctx, VertexDepth::Front(10000));
         ctx.scene().start_coroutine(|this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
@@ -451,7 +450,7 @@ impl SceneObject<ObjectType> for Player {
         resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         Ok(())
     }
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
         self.idle_sprite = Sprite::from_single_extent(
             object_ctx,
@@ -510,8 +509,7 @@ impl SceneObject<ObjectType> for Player {
 
         self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg".to_string())?;
         self.underground_music = resource_handler.sound.wait_load_file("res/underground.ogg".to_string())?;
-        Ok(self.current_sprite().create_vertices()
-            .with_depth(VertexDepth::Front(0)))
+        Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.scene().name() == MarioOverworldScene.name() {
@@ -678,6 +676,15 @@ impl SceneObject<ObjectType> for Player {
         if self.has_control() && self.centre.y > death_y {
             self.start_die(ctx);
         }
+
+        self.walk_sprite.hide();
+        self.run_sprite.hide();
+        self.idle_sprite.hide();
+        self.skid_sprite.hide();
+        self.fall_sprite.hide();
+        self.die_sprite.hide();
+        self.flagpole_sprite.hide();
+        self.current_sprite_mut().show();
     }
 
     fn transform(&self) -> Transform {
@@ -690,19 +697,10 @@ impl SceneObject<ObjectType> for Player {
             }
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for Player {
-    fn render_info(&self) -> RenderInfo {
-        self.current_sprite().render_info_default()
     }
 }

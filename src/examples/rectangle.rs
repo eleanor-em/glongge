@@ -79,7 +79,7 @@ impl RectanglePlayer {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for RectanglePlayer {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
@@ -89,7 +89,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
             Vec2Int { x: 0, y: 0 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(100);
-        Ok(self.sprite.create_vertices())
+        Ok(None)
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.pos = Vec2 { x: 512., y: 384. };
@@ -110,17 +110,8 @@ impl SceneObject<ObjectType> for RectanglePlayer {
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for RectanglePlayer {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
     }
 }
 
@@ -162,7 +153,7 @@ impl SpinningRectangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
@@ -172,7 +163,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             Vec2Int { x: 0, y: 0 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(500);
-        Ok(self.sprite.create_vertices())
+        Ok(None)
     }
     fn on_update_begin(&mut self, delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity * delta.as_secs_f64();
@@ -218,22 +209,10 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for SpinningRectangle {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_from(RenderInfo {
-            col: self.col,
-            ..Default::default()
-        })
     }
 }

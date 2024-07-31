@@ -22,15 +22,15 @@ impl Hill3 {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Hill3 {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
             Vec2Int { x: 200, y: 732 },
             Vec2Int { x: 248, y: 764 }
-        );
-        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Back(0)))
+        ).with_depth(VertexDepth::Back(0));
+        Ok(None)
     }
 
     fn transform(&self) -> Transform {
@@ -38,14 +38,5 @@ impl SceneObject<ObjectType> for Hill3 {
             centre: self.top_left + self.sprite.half_widths(),
             ..Default::default()
         }
-    }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
-}
-
-impl RenderableObject<ObjectType> for Hill3 {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
     }
 }

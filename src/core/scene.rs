@@ -216,7 +216,9 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     #[allow(unused_variables)]
     fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
     #[allow(unused_variables)]
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> { Ok(RenderItem::default()) }
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+        Ok(None)
+    }
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]

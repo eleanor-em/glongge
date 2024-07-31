@@ -329,21 +329,21 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
     fn load_new_objects(&mut self, object_tracker: &mut ObjectTracker<ObjectType>, pending_add: BTreeMap<ObjectId, PendingAddObject<ObjectType>>) -> Result<()> {
         for (new_id, new_obj) in pending_add {
             self.object_handler.add_object(new_id, new_obj.clone());
-            let new_vertices = {
-                let parent = self.object_handler.get_parent(new_obj.parent_id);
-                let mut object_ctx = ObjectContext {
-                    collision_handler: &self.object_handler.collision_handler,
-                    this_id: new_id,
-                    parent,
-                    children: Vec::new(),
-                    object_tracker,
-                    all_absolute_transforms: &self.object_handler.absolute_transforms,
-                    all_parents: &self.object_handler.parents,
-                    all_children: &self.object_handler.children,
-                };
-                new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?
+            let parent = self.object_handler.get_parent(new_obj.parent_id);
+            let mut object_ctx = ObjectContext {
+                collision_handler: &self.object_handler.collision_handler,
+                this_id: new_id,
+                parent,
+                children: Vec::new(),
+                object_tracker,
+                all_absolute_transforms: &self.object_handler.absolute_transforms,
+                all_parents: &self.object_handler.parents,
+                all_children: &self.object_handler.children,
             };
-            self.vertex_map.insert(new_id, new_vertices);
+            if let Some(new_vertices) = new_obj.inner.borrow_mut()
+                .on_load(&mut object_ctx, &mut self.resource_handler)? {
+                self.vertex_map.insert(new_id, new_vertices);
+            }
         }
         Ok(())
     }

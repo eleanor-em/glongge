@@ -36,7 +36,7 @@ impl Pipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Pipe {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = if self.orientation.x.is_zero() {
             Sprite::from_single_coords(
@@ -52,8 +52,8 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2Int { x: 192, y: 644 },
                 Vec2Int { x: 256, y: 676}
             )
-        };
-        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Front(1000)))
+        }.with_depth(VertexDepth::Front(1000));
+        Ok(None)
     }
 
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -66,16 +66,7 @@ impl SceneObject<ObjectType> for Pipe {
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PIPE_COLLISION_TAG, BLOCK_COLLISION_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for Pipe {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
     }
 }

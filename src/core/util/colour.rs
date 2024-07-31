@@ -33,6 +33,7 @@ impl Colour {
     pub fn cyan() -> Self { Self { g: 1., b: 1., ..Default::default() } }
     pub fn black() -> Self { Self::default() }
     pub fn white() -> Self { Self { r: 1., g: 1., b: 1., a: 1. } }
+    pub fn empty() -> Self { Self { r: 0., g: 0., b: 0., a: 0. } }
 
     pub fn as_bytes(&self) -> [u8; 4] {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]

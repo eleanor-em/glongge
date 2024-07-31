@@ -23,7 +23,7 @@ impl DecorativePipe {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecorativePipe {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
@@ -31,7 +31,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
             Vec2Int { x: 224, y: 324 },
             Vec2Int { x: 256, y: 676}
         );
-        Ok(self.sprite.create_vertices())
+        Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().add_child(CollisionShape::from_collider(
@@ -47,16 +47,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for DecorativePipe {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
     }
 }

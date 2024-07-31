@@ -1,9 +1,6 @@
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
-    core::{
-        prelude::*,
-        render::VertexDepth,
-    },
+    core::prelude::*,
     resource::{
         font::{Font, TextWrapMode},
         sprite::Sprite
@@ -26,7 +23,7 @@ impl WinTextDisplay {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for WinTextDisplay {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let font = Font::from_slice(include_bytes!("../../../res/DejaVuSansMono.ttf"), 20.)?;
         self.sprite = font.render_to_sprite(
                 object_ctx,
@@ -36,7 +33,7 @@ impl SceneObject<ObjectType> for WinTextDisplay {
                 TextWrapMode::WrapAnywhere
             )?;
         self.font = Some(font);
-        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Back(0)))
+        Ok(None)
     }
     fn transform(&self) -> Transform {
         Transform {
@@ -44,14 +41,5 @@ impl SceneObject<ObjectType> for WinTextDisplay {
             scale: Vec2::one() / self.font.as_ref().map_or_else(|| 1., |f| f.sample_ratio()),
             ..Default::default()
         }
-    }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
-}
-
-impl RenderableObject<ObjectType> for WinTextDisplay {
-    fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
     }
 }

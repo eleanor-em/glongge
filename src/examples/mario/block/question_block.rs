@@ -1,3 +1,4 @@
+use std::time::Duration;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::prelude::*,
@@ -46,7 +47,7 @@ impl QuestionBlock {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for QuestionBlock {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
@@ -62,7 +63,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
             texture,
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 349, y: 78 });
-        Ok(self.sprite.create_vertices())
+        Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().add_child(CollisionShape::from_collider(
@@ -81,23 +82,24 @@ impl SceneObject<ObjectType> for QuestionBlock {
             self.v_accel = 0.;
         }
     }
+    fn on_update_end(&mut self, _delta: Duration, _ctx: &mut UpdateContext<ObjectType>) {
+        if self.is_empty {
+            self.sprite.hide();
+            self.empty_sprite.show();
+        } else {
+            self.sprite.show();
+            self.empty_sprite.hide();
+        }
+    }
+
     fn transform(&self) -> Transform {
         Transform {
             centre: self.top_left + self.current_sprite().half_widths(),
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for QuestionBlock {
-    fn render_info(&self) -> RenderInfo {
-        self.current_sprite().render_info_default()
     }
 }
 

@@ -42,7 +42,7 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
@@ -58,7 +58,8 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 36, y: 16 }
         );
-        Ok(self.sprite.create_vertices())
+        self.die_sprite.hide();
+        Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let mut data = ctx.scene().data::<AliveEnemyMap>().unwrap();
@@ -111,6 +112,8 @@ impl SceneObject<ObjectType> for Goomba {
             self.started_death = true;
             ctx.scene().data::<AliveEnemyMap>().unwrap().write()
                 .set_dead(self.initial_coord);
+            self.sprite.hide();
+            self.die_sprite.show();
         }
     }
 
@@ -120,23 +123,10 @@ impl SceneObject<ObjectType> for Goomba {
             ..Default::default()
         }
     }
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
-        Some(self)
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG].into()
     }
     fn listening_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG, BLOCK_COLLISION_TAG].into()
-    }
-}
-
-impl RenderableObject<ObjectType> for Goomba {
-    fn render_info(&self) -> RenderInfo {
-        if self.dead {
-            self.die_sprite.render_info_default()
-        } else {
-            self.sprite.render_info_default()
-        }
     }
 }

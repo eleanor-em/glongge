@@ -49,7 +49,16 @@ pub struct Texture {
 
 impl Texture {
     pub(crate) fn id(&self) -> usize { self.id }
-    pub fn extent(&self) -> Vec2 { self.extent }
+}
+
+impl AxisAlignedExtent for Texture {
+    fn aa_extent(&self) -> Vec2 {
+        self.extent
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.extent / 2
+    }
 }
 
 impl Clone for Texture {
