@@ -1,37 +1,37 @@
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
-    core::{
-        prelude::*,
-        render::VertexDepth
-    },
-    resource::sprite::Sprite,
+    core::prelude::*,
+    resource::sprite::Sprite
 };
-use crate::mario::{BLOCK_COLLISION_TAG};
+use crate::examples::mario::BLOCK_COLLISION_TAG;
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
-pub struct Floor {
+pub struct DecorativePipe {
     top_left: Vec2,
     sprite: Sprite<ObjectType>,
 }
 
-impl Floor {
+impl DecorativePipe {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self { top_left: top_left.into(), ..Default::default() })
+        Box::new(Self {
+            top_left: top_left.into(),
+            ..Default::default()
+        })
     }
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Floor {
+impl SceneObject<ObjectType> for DecorativePipe {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = Sprite::from_single_extent(
+        self.sprite = Sprite::from_single_coords(
             object_ctx,
-            texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 16 }
+            texture,
+            Vec2Int { x: 224, y: 324 },
+            Vec2Int { x: 256, y: 676}
         );
-        Ok(self.sprite.create_vertices().with_depth(VertexDepth::Front(2000)))
+        Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().add_child(CollisionShape::new(
@@ -55,7 +55,7 @@ impl SceneObject<ObjectType> for Floor {
     }
 }
 
-impl RenderableObject<ObjectType> for Floor {
+impl RenderableObject<ObjectType> for DecorativePipe {
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
     }

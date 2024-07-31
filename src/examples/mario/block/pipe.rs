@@ -8,7 +8,7 @@ use glongge::{
     },
     resource::sprite::Sprite,
 };
-use crate::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
+use crate::examples::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]

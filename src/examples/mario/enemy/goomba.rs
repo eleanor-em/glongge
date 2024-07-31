@@ -6,7 +6,7 @@ use glongge::{
     core::coroutine::prelude::*,
     resource::sprite::Sprite
 };
-use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
+use crate::examples::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]

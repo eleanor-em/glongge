@@ -27,7 +27,7 @@ impl WinTextDisplay {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for WinTextDisplay {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
-        let font = Font::from_slice(include_bytes!("../../res/DejaVuSansMono.ttf"), 20.)?;
+        let font = Font::from_slice(include_bytes!("../../../res/DejaVuSansMono.ttf"), 20.)?;
         self.sprite = font.render_to_sprite(
                 object_ctx,
                 resource_handler,

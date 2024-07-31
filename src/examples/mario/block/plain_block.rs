@@ -3,18 +3,11 @@ use glongge::{
     core::prelude::*,
     resource::sprite::Sprite
 };
-
-use crate::mario::{
-    block::Bumpable,
-    BLOCK_COLLISION_TAG,
-    from_nes,
-    from_nes_accel,
-    player::Player
-};
+use crate::examples::mario::{BLOCK_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
-pub struct Brick {
+pub struct Block {
     top_left: Vec2,
     sprite: Sprite<ObjectType>,
 
@@ -23,7 +16,7 @@ pub struct Brick {
     v_accel: f64,
 }
 
-impl Brick {
+impl Block {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
@@ -34,14 +27,14 @@ impl Brick {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Brick {
+impl SceneObject<ObjectType> for Block {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
         self.sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
             Vec2Int { x: 16, y: 16},
-            Vec2Int { x: 17, y: 16 });
+            Vec2Int { x: 48, y: 476 });
         Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -75,15 +68,8 @@ impl SceneObject<ObjectType> for Brick {
     }
 }
 
-impl RenderableObject<ObjectType> for Brick {
+impl RenderableObject<ObjectType> for Block {
     fn render_info(&self) -> RenderInfo {
         self.sprite.render_info_default()
-    }
-}
-
-impl Bumpable for Brick {
-    fn bump(&mut self, _player: &mut Player) {
-        self.v_speed = -from_nes(3, 0, 0, 0);
-        self.v_accel = from_nes_accel(0, 9, 15, 0);
     }
 }

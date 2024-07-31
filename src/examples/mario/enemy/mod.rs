@@ -1,6 +1,6 @@
 use std::cell::RefMut;
 use glongge::core::prelude::*;
-use crate::mario::{
+use crate::examples::mario::{
     enemy::goomba::Goomba,
 };
 use crate::object_type::ObjectType;

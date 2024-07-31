@@ -13,7 +13,7 @@ use glongge::{
         sprite::Sprite
     },
 };
-use crate::mario::{
+use crate::examples::mario::{
     AliveEnemyMap,
     BASE_GRAVITY,
     block::downcast_bumpable_mut,

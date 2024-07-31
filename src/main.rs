@@ -16,12 +16,10 @@ use glongge::core::{
 
 use crate::object_type::ObjectType;
 
-mod mario;
-mod rectangle;
-mod triangle;
+mod examples;
 
 #[allow(unused_imports)]
-use crate::{
+use crate::examples::{
     triangle::TriangleScene,
     rectangle::RectangleScene,
     mario::{MarioOverworldScene, MarioUndergroundScene},

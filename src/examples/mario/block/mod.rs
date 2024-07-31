@@ -1,16 +1,14 @@
 use std::cell::RefMut;
 use glongge::core::prelude::*;
-use crate::{
-    mario::{
-        block::{
-            brick::Brick,
-            question_block::QuestionBlock,
-            underground_brick::UndergroundBrick
-        },
-        player::Player,
+use crate::examples::mario::{
+    block::{
+        brick::Brick,
+        question_block::QuestionBlock,
+        underground_brick::UndergroundBrick
     },
-    object_type::ObjectType
+    player::Player,
 };
+use crate::object_type::ObjectType;
 
 pub mod brick;
 pub mod plain_block;

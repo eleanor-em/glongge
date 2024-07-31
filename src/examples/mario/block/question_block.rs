@@ -3,38 +3,65 @@ use glongge::{
     core::prelude::*,
     resource::sprite::Sprite
 };
-use crate::mario::{BLOCK_COLLISION_TAG};
+use crate::examples::mario::{
+    block::Bumpable,
+    BLOCK_COLLISION_TAG,
+    from_nes,
+    from_nes_accel,
+    player::Player
+};
 use crate::object_type::ObjectType;
 
+
 #[register_scene_object]
-pub struct Block {
+pub struct QuestionBlock {
     top_left: Vec2,
     sprite: Sprite<ObjectType>,
+    empty_sprite: Sprite<ObjectType>,
+    is_empty: bool,
 
     initial_y: f64,
     v_speed: f64,
     v_accel: f64,
 }
 
-impl Block {
+impl QuestionBlock {
     pub fn new(top_left: Vec2Int) -> Box<Self> {
         Box::new(Self {
             top_left: top_left.into(),
+            is_empty: false,
             initial_y: top_left.y as f64,
             ..Default::default()
         })
     }
+
+    fn current_sprite(&self) -> &Sprite<ObjectType> {
+        if self.is_empty {
+            &self.empty_sprite
+        } else {
+            &self.sprite
+        }
+    }
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Block {
+impl SceneObject<ObjectType> for QuestionBlock {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = Sprite::from_single_extent(
+        self.sprite = Sprite::from_tileset(
+            object_ctx,
+            texture.clone(),
+            Vec2Int { x: 3, y: 1},
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 298, y: 78 },
+            Vec2Int { x: 1, y: 0 })
+            .with_frame_orders(vec![0, 1, 2, 1])
+            .with_frame_time_ms(vec![600, 100, 100, 100]);
+        self.empty_sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
-            Vec2Int { x: 16, y: 16},
-            Vec2Int { x: 48, y: 476 });
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 349, y: 78 });
         Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -56,7 +83,7 @@ impl SceneObject<ObjectType> for Block {
     }
     fn transform(&self) -> Transform {
         Transform {
-            centre: self.top_left + self.sprite.half_widths(),
+            centre: self.top_left + self.current_sprite().half_widths(),
             ..Default::default()
         }
     }
@@ -68,8 +95,17 @@ impl SceneObject<ObjectType> for Block {
     }
 }
 
-impl RenderableObject<ObjectType> for Block {
+impl RenderableObject<ObjectType> for QuestionBlock {
     fn render_info(&self) -> RenderInfo {
-        self.sprite.render_info_default()
+        self.current_sprite().render_info_default()
+    }
+}
+
+impl Bumpable for QuestionBlock {
+    fn bump(&mut self, _player: &mut Player) {
+        self.v_speed = -from_nes(3, 0, 0, 0);
+        self.v_accel = from_nes_accel(0, 9, 15, 0);
+        self.is_empty = true;
+        // TODO: drop item
     }
 }

@@ -3,7 +3,7 @@ use glongge::{
     core::prelude::*,
     resource::sprite::Sprite
 };
-use crate::mario::{FLAG_COLLISION_TAG};
+use crate::examples::mario::{FLAG_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
