@@ -8,14 +8,13 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::mario::{
     block::Bumpable,
     BLOCK_COLLISION_TAG,
@@ -29,8 +28,8 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct QuestionBlock {
     top_left: Vec2,
-    sprite: BoxedGgSprite<ObjectType>,
-    empty_sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
+    empty_sprite: Sprite<ObjectType>,
     is_empty: bool,
 
     initial_y: f64,
@@ -48,7 +47,7 @@ impl QuestionBlock {
         })
     }
 
-    fn current_sprite(&self) -> &BoxedGgSprite<ObjectType> {
+    fn current_sprite(&self) -> &Sprite<ObjectType> {
         if self.is_empty {
             &self.empty_sprite
         } else {
@@ -61,7 +60,7 @@ impl QuestionBlock {
 impl SceneObject<ObjectType> for QuestionBlock {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = GgSprite::from_tileset(
+        self.sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1},
@@ -70,7 +69,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
             Vec2Int { x: 1, y: 0 })
             .with_frame_orders(vec![0, 1, 2, 1])
             .with_frame_time_ms(vec![600, 100, 100, 100]);
-        self.empty_sprite = GgSprite::from_single_extent(
+        self.empty_sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
             Vec2Int { x: 16, y: 16 },

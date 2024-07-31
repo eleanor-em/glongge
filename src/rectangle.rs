@@ -18,7 +18,6 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     },
 };
 use glongge::core::DowncastRef;
@@ -27,7 +26,7 @@ use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
@@ -88,7 +87,7 @@ impl SceneObject<ObjectType> for RectangleSpawner {
 pub struct RectanglePlayer {
     pos: Vec2,
     vel: Vec2,
-    sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
 }
 
 impl RectanglePlayer {
@@ -100,7 +99,7 @@ impl RectanglePlayer {
 impl SceneObject<ObjectType> for RectanglePlayer {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
-        self.sprite = GgSprite::from_tileset(
+        self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,
             Vec2Int { x: 3, y: 1 },
@@ -152,7 +151,7 @@ pub struct SpinningRectangle {
     velocity: Vec2,
     t: f64,
     col: Colour,
-    sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
     alive_since: Instant,
 }
 
@@ -186,7 +185,7 @@ impl SpinningRectangle {
 impl SceneObject<ObjectType> for SpinningRectangle {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
-        self.sprite = GgSprite::from_tileset(
+        self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,
             Vec2Int{ x: 2, y: 1 },

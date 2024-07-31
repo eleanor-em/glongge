@@ -2,13 +2,15 @@ use std::io::{ErrorKind, Read};
 use ab_glyph::{point, Glyph, ScaleFont, OutlinedGlyph, FontVec, PxScaleFont};
 use crate::core::util::colour::Colour;
 use crate::core::util::linalg::Vec2Int;
-use crate::resource::texture::Texture;
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
 use crate::check_ge;
+use crate::core::ObjectTypeEnum;
+use crate::core::update::ObjectContext;
 use crate::resource::ResourceHandler;
+use crate::resource::sprite::Sprite;
 
 const SAMPLE_RATIO: f64 = 8.;
 
@@ -77,23 +79,25 @@ impl Font {
         rv
     }
 
-    pub fn render_texture(
+    pub fn render_to_sprite<ObjectType: ObjectTypeEnum>(
         &self,
+        object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         text: &str,
         max_width: f64,
         text_wrap_mode: TextWrapMode
-    ) -> Result<Texture> {
+    ) -> Result<Sprite<ObjectType>> {
         let glyphs = self.layout(text, max_width * SAMPLE_RATIO, text_wrap_mode);
         let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        resource_handler.texture.wait_load_reader_rgba(
-            &mut reader,
-            width,
-            height,
-            Format::R8G8B8A8_UNORM
-        )
+        Ok(Sprite::from_texture(object_ctx,
+            resource_handler.texture.wait_load_reader_rgba(
+                &mut reader,
+                width,
+                height,
+                Format::R8G8B8A8_UNORM
+            )?))
     }
 
 }

@@ -53,7 +53,7 @@ fn main() -> Result<()> {
                     let parts = parts[1].trim().split(' ').collect::<Vec<_>>();
                     let parts = parts[0].trim().split('<').collect::<Vec<_>>();
                     let struct_name = parts[0];
-                    if struct_name.starts_with("Gg") {
+                    if struct_name.starts_with("GgInternal") {
                         imports.push(format!("use glongge::{import}::{struct_name};"));
                     } else {
                         if !warned {

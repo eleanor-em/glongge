@@ -8,21 +8,20 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::mario::{BLOCK_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Block {
     top_left: Vec2,
-    sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
 
     initial_y: f64,
     v_speed: f64,
@@ -43,7 +42,7 @@ impl Block {
 impl SceneObject<ObjectType> for Block {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = GgSprite::from_single_extent(
+        self.sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
             Vec2Int { x: 16, y: 16},

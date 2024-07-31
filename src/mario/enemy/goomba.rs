@@ -12,7 +12,6 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
@@ -20,7 +19,7 @@ use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::{ObjectContext, UpdateContext};
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
@@ -32,8 +31,8 @@ pub struct Goomba {
     top_left: Vec2,
     vel: Vec2,
     v_accel: f64,
-    sprite: BoxedGgSprite<ObjectType>,
-    die_sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
+    die_sprite: Sprite<ObjectType>,
 }
 
 impl Goomba {
@@ -59,7 +58,7 @@ impl Stompable for Goomba {
 impl SceneObject<ObjectType> for Goomba {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
-        self.sprite = GgSprite::from_tileset(
+        self.sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 2, y: 1},
@@ -67,7 +66,7 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2Int { x: 0, y: 16 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(200);
-        self.die_sprite = GgSprite::from_single_extent(
+        self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },

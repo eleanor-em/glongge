@@ -8,21 +8,20 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     }
 };
 use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::ObjectContext;
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::mario::{FLAG_COLLISION_TAG};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Flagpole {
     top_left: Vec2,
-    sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
 }
 
 impl Flagpole {
@@ -38,7 +37,7 @@ impl Flagpole {
 impl SceneObject<ObjectType> for Flagpole {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = GgSprite::from_single_coords(
+        self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
             Vec2Int { x: 0, y: 588},

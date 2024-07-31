@@ -6,20 +6,19 @@ use glongge::{
     },
     resource::{
         ResourceHandler,
-        sprite::GgSprite
     },
 };
 use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::ObjectContext;
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Hill2 {
     top_left: Vec2,
-    sprite: BoxedGgSprite<ObjectType>,
+    sprite: Sprite<ObjectType>,
 }
 
 impl Hill2 {
@@ -32,7 +31,7 @@ impl Hill2 {
 impl SceneObject<ObjectType> for Hill2 {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
-        self.sprite = GgSprite::from_single_coords(
+        self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
             Vec2Int { x: 112, y: 692 },

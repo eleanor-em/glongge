@@ -18,7 +18,6 @@ use glongge::{
     resource::{
         ResourceHandler,
         sound::Sound,
-        sprite::GgSprite
     },
 };
 use glongge::core::DowncastRef;
@@ -28,7 +27,7 @@ use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::{ObjectContext, UpdateContext};
 use glongge::core::util::linalg;
 use glongge::resource::Loader;
-use glongge::resource::sprite::BoxedGgSprite;
+use glongge::resource::sprite::Sprite;
 use crate::mario::{AliveEnemyMap, BASE_GRAVITY, block::downcast_bumpable_mut, block::pipe::Pipe, BLOCK_COLLISION_TAG, enemy::downcast_stompable_mut, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, from_nes, from_nes_accel, MarioOverworldScene, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG};
 use crate::mario::WinTextDisplay;
 use crate::object_type::ObjectType;
@@ -81,13 +80,13 @@ pub struct Player {
     coyote_crt: Option<CoroutineId>,
     exit_pipe_crt: Option<CoroutineId>,
 
-    walk_sprite: BoxedGgSprite<ObjectType>,
-    run_sprite: BoxedGgSprite<ObjectType>,
-    idle_sprite: BoxedGgSprite<ObjectType>,
-    skid_sprite: BoxedGgSprite<ObjectType>,
-    fall_sprite: BoxedGgSprite<ObjectType>,
-    die_sprite: BoxedGgSprite<ObjectType>,
-    flagpole_sprite: BoxedGgSprite<ObjectType>,
+    walk_sprite: Sprite<ObjectType>,
+    run_sprite: Sprite<ObjectType>,
+    idle_sprite: Sprite<ObjectType>,
+    skid_sprite: Sprite<ObjectType>,
+    fall_sprite: Sprite<ObjectType>,
+    die_sprite: Sprite<ObjectType>,
+    flagpole_sprite: Sprite<ObjectType>,
 
     jump_sound: Sound,
     stomp_sound: Sound,
@@ -139,7 +138,7 @@ impl Player {
             SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
         }
     }
-    fn current_sprite(&self) -> &BoxedGgSprite<ObjectType> {
+    fn current_sprite(&self) -> &Sprite<ObjectType> {
         match self.state {
             PlayerState::Idle => &self.idle_sprite,
             PlayerState::Walking => &self.walk_sprite,
@@ -152,7 +151,7 @@ impl Player {
             PlayerState::RidingFlagpole => &self.flagpole_sprite,
         }
     }
-    fn current_sprite_mut(&mut self) -> &mut BoxedGgSprite<ObjectType> {
+    fn current_sprite_mut(&mut self) -> &mut Sprite<ObjectType> {
         match self.state {
             PlayerState::Idle => &mut self.idle_sprite,
             PlayerState::Walking => &mut self.walk_sprite,
@@ -456,13 +455,13 @@ impl SceneObject<ObjectType> for Player {
     }
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<RenderItem> {
         let texture = resource_handler.texture.wait_load_file("res/mario_sheet.png".to_string())?;
-        self.idle_sprite = GgSprite::from_single_extent(
+        self.idle_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 8 },
         );
-        self.walk_sprite = GgSprite::from_tileset(
+        self.walk_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1 },
@@ -470,7 +469,7 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(110);
-        self.run_sprite = GgSprite::from_tileset(
+        self.run_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 3, y: 1 },
@@ -478,25 +477,25 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 20, y: 8 },
             Vec2Int { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(60);
-        self.skid_sprite = GgSprite::from_single_extent(
+        self.skid_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
         );
-        self.fall_sprite = GgSprite::from_single_extent(
+        self.fall_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
         );
-        self.die_sprite = GgSprite::from_single_extent(
+        self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
         );
-        self.flagpole_sprite = GgSprite::from_single_extent(
+        self.flagpole_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },

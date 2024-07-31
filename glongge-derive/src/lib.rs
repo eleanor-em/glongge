@@ -18,7 +18,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
             fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_code }
             fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
             fn all_values() -> Vec<Self> { #all_values_code }
-            fn gg_sprite() -> Self { Self::GgSprite }
+            fn gg_sprite() -> Self { Self::GgInternalSprite }
         }
     };
 
@@ -43,7 +43,7 @@ fn get_initializer_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2:
 pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = input.ident.clone();
-    let maybe_template = if struct_name.to_string().starts_with("Gg") {
+    let maybe_template = if struct_name.to_string().starts_with("GgInternal") {
         quote! {
             <ObjectType>
         }
@@ -158,7 +158,7 @@ fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                if name.to_string().starts_with("Gg") {
+                if name.to_string().starts_with("GgInternal") {
                     quote_spanned! {variant.span()=>
                         Self::#name => Box::new(#name::<Self>::default())
                     }
@@ -182,7 +182,7 @@ fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                if name.to_string().starts_with("Gg") {
+                if name.to_string().starts_with("GgInternal") {
                     quote_spanned! {variant.span()=>
                         Self::#name => std::any::TypeId::of::<#name::<Self>>()
                     }

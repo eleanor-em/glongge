@@ -21,7 +21,7 @@ use crate::core::util::gg_iter::GgIter;
 use crate::resource::texture::{Texture, TextureSubArea};
 
 #[register_scene_object]
-pub struct GgSprite<ObjectType> {
+pub struct GgInternalSprite<ObjectType> {
     texture: Texture,
     areas: Vec<TextureSubArea>,
     elapsed_us: u128,
@@ -31,58 +31,25 @@ pub struct GgSprite<ObjectType> {
     object_type: PhantomData<ObjectType>,
 }
 
-pub struct BoxedGgSprite<ObjectType> {
+pub struct Sprite<ObjectType> {
     inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
 }
 
-impl<ObjectType: ObjectTypeEnum> Default for BoxedGgSprite<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> Default for Sprite<ObjectType> {
     fn default() -> Self {
-        Self { inner: Rc::new(RefCell::new(Box::new(GgSprite::default()))) }
+        Self { inner: Rc::new(RefCell::new(Box::new(GgInternalSprite::default()))) }
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> GgSprite<ObjectType> {
-    pub fn from_texture(object_ctx: &mut ObjectContext<ObjectType>, texture: Texture) -> BoxedGgSprite<ObjectType> {
-        let extent = texture.extent();
-        Self::from_single_extent(object_ctx, texture, extent.as_vec2int_lossy(), Vec2Int::zero())
-    }
-    pub fn from_single_extent(
-        object_ctx: &mut ObjectContext<ObjectType>,
-        texture: Texture,
-        extent: Vec2Int,
-        top_left: Vec2Int
-    ) -> BoxedGgSprite<ObjectType> {
-        Self::from_tileset(
-            object_ctx,
-            texture,
-            Vec2Int::one(),
-            extent,
-            top_left,
-            Vec2Int::zero()
-        )
-    }
-    pub fn from_single_coords(
-        object_ctx: &mut ObjectContext<ObjectType>,
-        texture: Texture,
-        top_left: Vec2Int,
-        bottom_right: Vec2Int,
-    ) -> BoxedGgSprite<ObjectType> {
-        Self::from_single_extent(
-            object_ctx,
-            texture,
-            bottom_right - top_left,
-            top_left
-        )
-    }
-
-    pub fn from_tileset(
+impl<ObjectType: ObjectTypeEnum> GgInternalSprite<ObjectType> {
+    fn from_tileset(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
         tile_count: Vec2Int,
         tile_size: Vec2Int,
         offset: Vec2Int,
         margin: Vec2Int
-    ) -> BoxedGgSprite<ObjectType> {
+    ) -> Sprite<ObjectType> {
         let areas = Vec2Int::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
                 let top_left = offset
@@ -100,7 +67,7 @@ impl<ObjectType: ObjectTypeEnum> GgSprite<ObjectType> {
             object_type: PhantomData,
         });
         let inner = object_ctx.add_child(inner);
-        BoxedGgSprite { inner }
+        Sprite { inner }
     }
 
     fn ready(&self) -> bool {
@@ -109,7 +76,7 @@ impl<ObjectType: ObjectTypeEnum> GgSprite<ObjectType> {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgSprite<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite<ObjectType> {
     fn get_type(&self) -> ObjectType { ObjectType::gg_sprite() }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
@@ -129,11 +96,54 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgSprite<ObjectType
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> BoxedGgSprite<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
+    pub fn from_tileset(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        texture: Texture,
+        tile_count: Vec2Int,
+        tile_size: Vec2Int,
+        offset: Vec2Int,
+        margin: Vec2Int
+    ) -> Sprite<ObjectType> {
+        GgInternalSprite::from_tileset(object_ctx, texture, tile_count, tile_size, offset, margin)
+    }
+    pub fn from_single_extent(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        texture: Texture,
+        extent: Vec2Int,
+        top_left: Vec2Int
+    ) -> Sprite<ObjectType> {
+        Self::from_tileset(
+            object_ctx,
+            texture,
+            Vec2Int::one(),
+            extent,
+            top_left,
+            Vec2Int::zero()
+        )
+    }
+    pub fn from_single_coords(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        texture: Texture,
+        top_left: Vec2Int,
+        bottom_right: Vec2Int,
+    ) -> Sprite<ObjectType> {
+        Self::from_single_extent(
+            object_ctx,
+            texture,
+            bottom_right - top_left,
+            top_left
+        )
+    }
+    pub(crate) fn from_texture(object_ctx: &mut ObjectContext<ObjectType>, texture: Texture) -> Sprite<ObjectType> {
+        let extent = texture.extent();
+        Self::from_single_extent(object_ctx, texture, extent.as_vec2int_lossy(), Vec2Int::zero())
+    }
+
     #[must_use]
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
             inner.frame_time_ms = vec![ms; inner.areas.len()];
         }
         self
@@ -141,7 +151,7 @@ impl<ObjectType: ObjectTypeEnum> BoxedGgSprite<ObjectType> {
     #[must_use]
     pub fn with_frame_time_ms(self, times: Vec<u32>) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
             check_eq!(times.len(), inner.areas.len());
             inner.frame_time_ms = times;
         }
@@ -150,32 +160,32 @@ impl<ObjectType: ObjectTypeEnum> BoxedGgSprite<ObjectType> {
     #[must_use]
     pub fn with_frame_orders(self, frames: Vec<usize>) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
             inner.areas = frames.into_iter().map(|i| inner.areas[i]).collect();
         }
         self
     }
 
     pub fn ready(&self) -> bool {
-        let inner = self.inner.checked_downcast::<GgSprite::<ObjectType>>();
+        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
         inner.ready()
     }
 
     pub fn reset(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
         inner.elapsed_us = 0;
     }
     pub fn pause(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
         inner.paused = true;
     }
     pub fn play(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgSprite::<ObjectType>>();
+        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
         inner.paused = false;
     }
 
     pub fn current_frame(&self) -> TextureSubArea {
-        let inner = self.inner.checked_downcast::<GgSprite::<ObjectType>>();
+        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
         inner.areas[inner.frame]
     }
 
@@ -187,7 +197,7 @@ impl<ObjectType: ObjectTypeEnum> BoxedGgSprite<ObjectType> {
         self.render_info_from(RenderInfo::default())
     }
     pub fn render_info_from(&self, mut render_info: RenderInfo) -> RenderInfo {
-        let inner = self.inner.checked_downcast::<GgSprite::<ObjectType>>();
+        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
         if inner.ready() {
             render_info.texture = Some(inner.texture.clone());
             render_info.texture_sub_area = self.current_frame();
@@ -200,7 +210,7 @@ impl<ObjectType: ObjectTypeEnum> BoxedGgSprite<ObjectType> {
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> AxisAlignedExtent for BoxedGgSprite<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> AxisAlignedExtent for Sprite<ObjectType> {
     fn aa_extent(&self) -> Vec2 {
         self.current_frame().aa_extent()
     }
