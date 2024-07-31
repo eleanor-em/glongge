@@ -786,28 +786,24 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .map(SceneObjectWithId::clone)
             .collect()
     }
-    fn others_inner(&self) -> Vec<(ObjectId, &AnySceneObject<ObjectType>)> {
+    fn others_inner(&self) -> impl Iterator<Item=(ObjectId, &AnySceneObject<ObjectType>)> {
         self.object_tracker.last.iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
             .filter(|(object_id, _)| self.this_id != **object_id)
             .map(|(object_id, obj)| (*object_id, obj))
-            .collect()
     }
     pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.others_inner()
-            .into_iter()
             .map(|(object_id, obj)| SceneObjectWithId::new(object_id, obj.clone()))
             .collect()
     }
     pub fn others_as_ref<T: SceneObject<ObjectType>>(&self) -> Vec<Ref<T>> {
         self.others_inner()
-            .into_iter()
             .filter_map(|(_, obj)| obj.downcast())
             .collect()
     }
     pub fn others_as_mut<T: SceneObject<ObjectType>>(&self) -> Vec<RefMut<T>> {
         self.others_inner()
-            .into_iter()
             .filter_map(|(_, obj)| obj.downcast_mut())
             .collect()
     }
