@@ -79,13 +79,13 @@ pub struct Player {
     coyote_crt: Option<CoroutineId>,
     exit_pipe_crt: Option<CoroutineId>,
 
-    walk_sprite: Sprite<ObjectType>,
-    run_sprite: Sprite<ObjectType>,
-    idle_sprite: Sprite<ObjectType>,
-    skid_sprite: Sprite<ObjectType>,
-    fall_sprite: Sprite<ObjectType>,
-    die_sprite: Sprite<ObjectType>,
-    flagpole_sprite: Sprite<ObjectType>,
+    walk_sprite: Sprite,
+    run_sprite: Sprite,
+    idle_sprite: Sprite,
+    skid_sprite: Sprite,
+    fall_sprite: Sprite,
+    die_sprite: Sprite,
+    flagpole_sprite: Sprite,
 
     jump_sound: Sound,
     stomp_sound: Sound,
@@ -113,8 +113,8 @@ impl Player {
     const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
 
-    pub fn new(centre: Vec2Int, exiting_pipe: bool) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(centre: Vec2Int, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             centre: centre.into(),
             // Prevents player getting "stuck" on ground when level starts in air.
             last_ground_state: PlayerState::Walking,
@@ -137,7 +137,7 @@ impl Player {
             SpeedRegime::Fast => from_nes_accel(0, 9, 0, 0)
         }
     }
-    fn current_sprite(&self) -> &Sprite<ObjectType> {
+    fn current_sprite(&self) -> &Sprite {
         match self.state {
             PlayerState::Idle => &self.idle_sprite,
             PlayerState::Walking => &self.walk_sprite,
@@ -150,7 +150,7 @@ impl Player {
             PlayerState::RidingFlagpole => &self.flagpole_sprite,
         }
     }
-    fn current_sprite_mut(&mut self) -> &mut Sprite<ObjectType> {
+    fn current_sprite_mut(&mut self) -> &mut Sprite {
         match self.state {
             PlayerState::Idle => &mut self.idle_sprite,
             PlayerState::Walking => &mut self.walk_sprite,

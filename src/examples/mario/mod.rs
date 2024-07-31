@@ -83,7 +83,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
     }
 
     fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
+        let mut initial_objects = vec![
             Hill1::new(Vec2Int {
                 x: 16,
                 y: 384 - 2 * 16 - 48,
@@ -359,7 +359,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
     fn name(&self) -> SceneName { "mario-underground".into() }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        let mut initial_objects: Vec<Box<dyn SceneObject<ObjectType>>> = vec![
+        let mut initial_objects = vec![
             Player::new(Vec2Int {
                 x: 2*16 + 8,
                 y: 8,

@@ -1,14 +1,10 @@
-use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    rc::Rc
-};
+use std::cell::RefCell;
+use std::rc::Rc;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         AnySceneObject,
-        DowncastRef,
         ObjectTypeEnum,
         prelude::*,
         util::{
@@ -21,37 +17,35 @@ use crate::{
 };
 
 #[register_scene_object]
-pub struct GgInternalSprite<ObjectType> {
+pub struct GgInternalSprite {
     texture: Texture,
     areas: Vec<TextureSubArea>,
     elapsed_us: u128,
     paused: bool,
     frame_time_ms: Vec<u32>,
     frame: usize,
-    object_type: PhantomData<ObjectType>,
     collider: BoxCollider,
 }
 
-// TODO: can maybe eliminate ObjectType using idea from CollisionShape.
-pub struct Sprite<ObjectType> {
-    inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
+pub struct Sprite {
+    inner: Rc<RefCell<GgInternalSprite>>,
 }
 
-impl<ObjectType: ObjectTypeEnum> Default for Sprite<ObjectType> {
+impl Default for Sprite {
     fn default() -> Self {
-        Self { inner: Rc::new(RefCell::new(Box::new(GgInternalSprite::default()))) }
+        Self { inner: Rc::new(RefCell::new(GgInternalSprite::default())) }
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> GgInternalSprite<ObjectType> {
-    fn from_tileset(
+impl GgInternalSprite {
+    fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
         tile_count: Vec2Int,
         tile_size: Vec2Int,
         offset: Vec2Int,
         margin: Vec2Int
-    ) -> Sprite<ObjectType> {
+    ) -> Sprite {
         let areas = Vec2Int::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
                 let top_left = offset
@@ -61,15 +55,14 @@ impl<ObjectType: ObjectTypeEnum> GgInternalSprite<ObjectType> {
             })
             .collect_vec();
         let frame_time_ms = vec![1000; areas.len()];
-        let inner = Box::new(Self {
+        let inner = Rc::new(RefCell::new(Self {
             texture, areas, frame_time_ms,
             paused: false,
             elapsed_us: 0,
             frame: 0,
-            object_type: PhantomData,
             collider: BoxCollider::from_top_left(Vec2::zero(), tile_size.into()),
-        });
-        let inner = object_ctx.add_child(inner);
+        }));
+        object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
         Sprite { inner }
     }
 
@@ -79,7 +72,7 @@ impl<ObjectType: ObjectTypeEnum> GgInternalSprite<ObjectType> {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
     fn get_type(&self) -> ObjectType { ObjectType::gg_sprite() }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
@@ -99,23 +92,23 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite<Ob
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
-    pub fn from_tileset(
+impl Sprite {
+    pub fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
         tile_count: Vec2Int,
         tile_size: Vec2Int,
         offset: Vec2Int,
         margin: Vec2Int
-    ) -> Sprite<ObjectType> {
+    ) -> Sprite {
         GgInternalSprite::from_tileset(object_ctx, texture, tile_count, tile_size, offset, margin)
     }
-    pub fn from_single_extent(
+    pub fn from_single_extent<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
         extent: Vec2Int,
         top_left: Vec2Int
-    ) -> Sprite<ObjectType> {
+    ) -> Sprite {
         Self::from_tileset(
             object_ctx,
             texture,
@@ -125,12 +118,12 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
             Vec2Int::zero()
         )
     }
-    pub fn from_single_coords(
+    pub fn from_single_coords<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
         top_left: Vec2Int,
         bottom_right: Vec2Int,
-    ) -> Sprite<ObjectType> {
+    ) -> Sprite {
         Self::from_single_extent(
             object_ctx,
             texture,
@@ -138,7 +131,10 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
             top_left
         )
     }
-    pub(crate) fn from_texture(object_ctx: &mut ObjectContext<ObjectType>, texture: Texture) -> Sprite<ObjectType> {
+    pub(crate) fn from_texture<ObjectType: ObjectTypeEnum>(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        texture: Texture
+    ) -> Sprite {
         let extent = texture.extent();
         Self::from_single_extent(object_ctx, texture, extent.as_vec2int_lossy(), Vec2Int::zero())
     }
@@ -146,7 +142,7 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
     #[must_use]
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+            let mut inner = self.inner.borrow_mut();
             inner.frame_time_ms = vec![ms; inner.areas.len()];
         }
         self
@@ -154,7 +150,7 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
     #[must_use]
     pub fn with_frame_time_ms(self, times: Vec<u32>) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+            let mut inner = self.inner.borrow_mut();
             check_eq!(times.len(), inner.areas.len());
             inner.frame_time_ms = times;
         }
@@ -163,46 +159,44 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
     #[must_use]
     pub fn with_frame_orders(self, frames: Vec<usize>) -> Self {
         {
-            let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+            let mut inner = self.inner.borrow_mut();
             inner.areas = frames.into_iter().map(|i| inner.areas[i]).collect();
         }
         self
     }
 
     pub fn ready(&self) -> bool {
-        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
+        let inner = self.inner.borrow();
         inner.ready()
     }
 
     pub fn reset(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+        let mut inner = self.inner.borrow_mut();
         inner.elapsed_us = 0;
     }
     pub fn pause(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+        let mut inner = self.inner.borrow_mut();
         inner.paused = true;
     }
     pub fn play(&mut self) {
-        let mut inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+        let mut inner = self.inner.borrow_mut();
         inner.paused = false;
     }
 
     pub fn current_frame(&self) -> TextureSubArea {
-        let inner = self.inner.checked_downcast::<GgInternalSprite<ObjectType>>();
+        let inner = self.inner.borrow();
         inner.areas[inner.frame]
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {
-        self.inner.checked_downcast::<GgInternalSprite<ObjectType>>()
-            .collider
-            .clone()
+        self.inner.borrow().collider.clone()
     }
 
     pub fn render_info_default(&self) -> RenderInfo {
         self.render_info_from(RenderInfo::default())
     }
     pub fn render_info_from(&self, mut render_info: RenderInfo) -> RenderInfo {
-        let inner = self.inner.checked_downcast::<GgInternalSprite<ObjectType>>();
+        let inner = self.inner.borrow();
         if inner.ready() {
             render_info.texture = Some(inner.texture.clone());
             render_info.texture_sub_area = self.current_frame();
@@ -215,7 +209,7 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> AxisAlignedExtent for Sprite<ObjectType> {
+impl AxisAlignedExtent for Sprite {
     fn aa_extent(&self) -> Vec2 {
         self.current_frame().aa_extent()
     }

@@ -40,7 +40,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
-            value.as_default().on_preload(resource_handler)?;
+            value.as_default().borrow_mut().on_preload(resource_handler)?;
         }
         resource_handler.wait_all()?;
         Ok(())
@@ -79,28 +79,50 @@ impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
 }
 
+
+#[derive(Clone)]
+pub struct AnySceneObject<ObjectType>(Rc<RefCell<dyn SceneObject<ObjectType>>>);
+
+impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
+    pub fn new<O: SceneObject<ObjectType>>(inner: O) -> Self {
+        Self(Rc::new(RefCell::new(inner)))
+    }
+
+    pub(crate) fn from_rc<O: SceneObject<ObjectType>>(rc: Rc<RefCell<O>>) -> Self {
+        Self(rc)
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
+    type Target = Rc<RefCell<dyn SceneObject<ObjectType>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub struct BorrowedSceneObjectWithId<'a, ObjectType> {
     _object_id: ObjectId,
-    inner: Ref<'a, AnySceneObject<ObjectType>>,
+    inner: Ref<'a, dyn SceneObject<ObjectType>>,
 }
 impl<'a, ObjectType: ObjectTypeEnum> BorrowedSceneObjectWithId<'a, ObjectType> {
-    fn new(object_id: ObjectId, obj: &'a Rc<RefCell<AnySceneObject<ObjectType>>>) -> Self {
+    fn new(object_id: ObjectId, obj: &'a AnySceneObject<ObjectType>) -> Self {
         Self { _object_id: object_id, inner: obj.borrow() }
     }
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> Deref for BorrowedSceneObjectWithId<'a, ObjectType> {
-    type Target = AnySceneObject<ObjectType>;
-    fn deref(&self) -> &Self::Target { &self.inner }
+    type Target = dyn SceneObject<ObjectType>;
+    fn deref(&self) -> &Self::Target { &*self.inner }
 }
 
 pub struct SceneObjectWithId<ObjectType> {
     object_id: ObjectId,
-    inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
+    inner: AnySceneObject<ObjectType>,
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
-    fn new(object_id: ObjectId, obj: Rc<RefCell<AnySceneObject<ObjectType>>>) -> Self {
+    fn new(object_id: ObjectId, obj: AnySceneObject<ObjectType>) -> Self {
         Self { object_id, inner: obj }
     }
 
@@ -112,7 +134,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
-    pub fn collider(&self) -> GenericCollider { self.inner.borrow().collider() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }
@@ -123,18 +144,33 @@ impl<ObjectType: ObjectTypeEnum> Debug for SceneObjectWithId<ObjectType> {
     }
 }
 
-pub trait Downcast<ObjectType: ObjectTypeEnum> {
-    fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<&T>;
-    fn downcast_mut<T: SceneObject<ObjectType>>(&mut self) -> Option<&mut T>;
-    fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> &T;
-    fn checked_downcast_mut<T: SceneObject<ObjectType>>(&mut self) -> &mut T;
-}
-
 pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>>;
     fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>>;
     fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T>;
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T>;
+}
+
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for AnySceneObject<ObjectType> {
+    fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
+        Ref::filter_map(self.borrow(), |obj| {
+            obj.as_any().downcast_ref::<T>()
+        }).ok()
+    }
+
+    fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
+        RefMut::filter_map(self.borrow_mut(), |obj| {
+            obj.as_any_mut().downcast_mut::<T>()
+        }).ok()
+    }
+
+    fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
+        Ref::map(self.borrow(), |obj| ObjectType::checked_downcast::<T>(obj))
+    }
+
+    fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
+        RefMut::map(self.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj))
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWithId<ObjectType> {
@@ -151,42 +187,3 @@ impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWithId<O
         self.inner.checked_downcast_mut()
     }
 }
-
-impl<ObjectType: ObjectTypeEnum> Downcast<ObjectType> for dyn SceneObject<ObjectType> {
-    fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<&T> {
-        self.as_any().downcast_ref()
-    }
-    fn downcast_mut<T: SceneObject<ObjectType>>(&mut self) -> Option<&mut T> {
-        self.as_any_mut().downcast_mut()
-    }
-    fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> &T {
-        ObjectType::checked_downcast(self)
-    }
-    fn checked_downcast_mut<T: SceneObject<ObjectType>>(&mut self) -> &mut T {
-        ObjectType::checked_downcast_mut(self)
-    }
-}
-
-impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for Rc<RefCell<AnySceneObject<ObjectType>>> {
-    fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
-        Ref::filter_map(self.borrow(), |obj| {
-            obj.as_any().downcast_ref::<T>()
-        }).ok()
-    }
-
-    fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
-        RefMut::filter_map(self.borrow_mut(), |obj| {
-            obj.as_any_mut().downcast_mut::<T>()
-        }).ok()
-    }
-
-    fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
-        Ref::map(self.borrow(), |obj| ObjectType::checked_downcast::<T>(obj.as_ref()))
-    }
-
-    fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
-        RefMut::map(self.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj.as_mut()))
-    }
-}
-
-pub type AnySceneObject<ObjectType> = Box<dyn SceneObject<ObjectType>>;

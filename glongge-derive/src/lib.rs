@@ -24,7 +24,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
         #input
 
         impl glongge::core::ObjectTypeEnum for #name {
-            fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_code }
+            fn as_default(self) -> glongge::core::AnySceneObject<Self> { #as_default_code }
             fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
             fn all_values() -> Vec<Self> { #all_values_code }
             fn gg_sprite() -> Self { Self::GgInternalSprite }
@@ -145,28 +145,12 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
         });
     }
 
-    let has_new = item_impl.items.iter().any(|item| {
-        if let ImplItem::Fn(ImplItemFn { sig, .. }) = item {
-            if sig.ident == "new" {
-                return true;
-            }
-        }
-        return false;
-    });
-    if !has_new {
-        item_impl.items.push(syn::parse_quote! {
-            fn new() -> Box<Self> where Self: Sized {
-                Box::new(Self::default())
-            }
-        });
-    }
-
     proc_macro::TokenStream::from(quote! { #item_impl })
 }
 
 fn has_object_type_param(name: &proc_macro2::Ident) -> bool {
     match name.to_string().as_str() {
-        "GgInternalSprite" => true,
+        // "GgInternalSprite" => true,
         _ => false,
     }
 }
@@ -178,11 +162,11 @@ fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
                 let name = &variant.ident;
                 if has_object_type_param(name) {
                     quote_spanned! {variant.span()=>
-                        Self::#name => Box::new(#name::<Self>::default())
+                        Self::#name => glongge::core::AnySceneObject::new(#name::<Self>::default())
                     }
                 } else {
                     quote_spanned! {variant.span()=>
-                        Self::#name => Box::new(#name::default())
+                        Self::#name => glongge::core::AnySceneObject::new(#name::default())
                     }
                 }
             });

@@ -11,12 +11,12 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Hill1 {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 }
 
 impl Hill1 {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self { top_left: top_left.into(), ..Default::default() })
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self { top_left: top_left.into(), ..Default::default() })
     }
 }
 

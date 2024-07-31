@@ -17,13 +17,13 @@ pub struct Goomba {
     top_left: Vec2,
     vel: Vec2,
     v_accel: f64,
-    sprite: Sprite<ObjectType>,
-    die_sprite: Sprite<ObjectType>,
+    sprite: Sprite,
+    die_sprite: Sprite,
 }
 
 impl Goomba {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             initial_coord: top_left,
             dead: false,
             started_death: false,
@@ -66,7 +66,7 @@ impl SceneObject<ObjectType> for Goomba {
         if !data.write().is_alive(self.initial_coord) {
             ctx.object().remove_this();
         } else {
-            ctx.object().add_child(CollisionShape::new(
+            ctx.object().add_child(CollisionShape::from_collider(
                 self.sprite.as_box_collider(),
                 &self.emitting_tags(),
                 &self.listening_tags()

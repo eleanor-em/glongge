@@ -611,12 +611,12 @@ pub struct GgInternalCollisionShape {
 }
 
 impl GgInternalCollisionShape {
-    pub fn new<C: Collider>(
+    pub fn from_collider<C: Collider, O: ObjectTypeEnum>(
         collider: C,
         emitting_tags: &[&'static str],
         listening_tags: &[&'static str]
-    ) -> Box<Self> {
-        Box::new(Self {
+    ) -> AnySceneObject<O> {
+        AnySceneObject::new(Self {
             collider: collider.into_generic(),
             emitting_tags: emitting_tags.to_vec(),
             listening_tags: listening_tags.to_vec(),
@@ -626,11 +626,13 @@ impl GgInternalCollisionShape {
     pub fn from_object<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>, C: Collider>(
         object: &O,
         collider: C,
-    ) -> Box<Self> { Self::new(collider, &object.emitting_tags(), &object.listening_tags()) }
+    ) -> AnySceneObject<ObjectType> { Self::from_collider(collider, &object.emitting_tags(), &object.listening_tags()) }
     pub fn from_object_sprite<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>>(
         object: &O,
-        sprite: &Sprite<ObjectType>
-    ) -> Box<Self> { Self::new(sprite.as_box_collider(), &object.emitting_tags(), &object.listening_tags()) }
+        sprite: &Sprite
+    ) -> AnySceneObject<ObjectType> { Self::from_collider(sprite.as_box_collider(), &object.emitting_tags(), &object.listening_tags()) }
+
+    pub fn collider(&self) -> &GenericCollider { &self.collider }
 }
 
 #[partially_derive_scene_object]
@@ -640,7 +642,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     }
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
 
-    fn collider(&self) -> GenericCollider { self.collider.clone() }
     fn emitting_tags(&self) -> Vec<&'static str> {
         self.emitting_tags.clone()
     }

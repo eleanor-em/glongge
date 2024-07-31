@@ -1,8 +1,6 @@
 use std::{
-    rc::Rc,
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Formatter},
-    cell::RefCell
 };
 use itertools::Itertools;
 use crate::core::{
@@ -18,6 +16,7 @@ use crate::core::{
         collision::Collider
     }
 };
+use crate::core::util::collision::GgInternalCollisionShape;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {
@@ -128,7 +127,7 @@ impl CollisionHandler {
         &self,
         absolute_transforms: &BTreeMap<ObjectId, Transform>,
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
+        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>
     ) -> Vec<CollisionNotification<ObjectType>> {
         let collisions = self.get_collisions_inner(absolute_transforms, objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
@@ -169,16 +168,16 @@ impl CollisionHandler {
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
         absolute_transforms: &BTreeMap<ObjectId, Transform>,
-        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
+        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions.iter()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].borrow().collider()
+                let this = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>().collider()
                     .translated(absolute_transforms
                         .get(&ids.fst())
                         .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.fst()))
                         .centre);
-                let other = objects[&ids.snd()].borrow().collider()
+                let other = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>().collider()
                     .translated(absolute_transforms
                         .get(&ids.snd())
                         .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.snd()))

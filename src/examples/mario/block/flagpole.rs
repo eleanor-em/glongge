@@ -9,12 +9,12 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Flagpole {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 }
 
 impl Flagpole {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             top_left: top_left.into(),
             ..Default::default()
         })
@@ -42,7 +42,7 @@ impl SceneObject<ObjectType> for Flagpole {
         Some(self)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(CollisionShape::new(
+        ctx.object().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags()

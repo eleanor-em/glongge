@@ -6,7 +6,6 @@ use glongge::{
     core::{
         prelude::*,
         scene::{Scene, SceneName},
-        util::collision::BoxCollider,
     },
     resource::sprite::Sprite
 };
@@ -54,7 +53,7 @@ impl SceneObject<ObjectType> for RectangleSpawner {
             .map(|(((x, y), vx), vy)|  {
                 let pos = Vec2 { x, y };
                 let vel = Vec2 { x: vx, y: vy };
-                Box::new(SpinningRectangle::new(pos, vel.normed())).into()
+                SpinningRectangle::new(pos, vel.normed()).into()
             })
             .collect();
         ctx.object().add_vec(objects);
@@ -70,11 +69,11 @@ impl SceneObject<ObjectType> for RectangleSpawner {
 pub struct RectanglePlayer {
     pos: Vec2,
     vel: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 }
 
 impl RectanglePlayer {
-    const SIZE: f64 = 100.;
+    // const SIZE: f64 = 100.;
     const SPEED: f64 = 300.;
 }
 
@@ -114,9 +113,6 @@ impl SceneObject<ObjectType> for RectanglePlayer {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> GenericCollider {
-        BoxCollider::square(self.transform(), Self::SIZE).as_generic()
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }
@@ -134,16 +130,16 @@ pub struct SpinningRectangle {
     velocity: Vec2,
     t: f64,
     col: Colour,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
     alive_since: Instant,
 }
 
 impl SpinningRectangle {
-    const SIZE: f64 = 8.;
+    // const SIZE: f64 = 8.;
     const VELOCITY: f64 = 220.;
     const ANGULAR_VELOCITY: f64 = 2.;
 
-    pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
+    pub fn new(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
         let mut rng = rand::thread_rng();
         let col = match rng.gen_range(0..6) {
             0 => Colour::red(),
@@ -154,12 +150,12 @@ impl SpinningRectangle {
             5 => Colour::yellow(),
             _ => unreachable!(),
         };
-        Self {
+        AnySceneObject::new(Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             col,
             ..Default::default()
-        }
+        })
     }
 
     fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
@@ -194,10 +190,10 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));
-            ctx.object().add_child(Box::new(SpinningRectangle::new(
+            ctx.object().add_child(SpinningRectangle::new(
                 self.pos,
                 Vec2::one().rotated(angle)
-            )));
+            ));
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
@@ -224,9 +220,6 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
-    }
-    fn collider(&self) -> GenericCollider {
-        BoxCollider::square(self.transform(), Self::SIZE).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()

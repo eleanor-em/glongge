@@ -16,8 +16,8 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct QuestionBlock {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
-    empty_sprite: Sprite<ObjectType>,
+    sprite: Sprite,
+    empty_sprite: Sprite,
     is_empty: bool,
 
     initial_y: f64,
@@ -26,8 +26,8 @@ pub struct QuestionBlock {
 }
 
 impl QuestionBlock {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             top_left: top_left.into(),
             is_empty: false,
             initial_y: top_left.y as f64,
@@ -35,7 +35,7 @@ impl QuestionBlock {
         })
     }
 
-    fn current_sprite(&self) -> &Sprite<ObjectType> {
+    fn current_sprite(&self) -> &Sprite {
         if self.is_empty {
             &self.empty_sprite
         } else {
@@ -65,7 +65,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(CollisionShape::new(
+        ctx.object().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags()

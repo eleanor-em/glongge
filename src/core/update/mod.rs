@@ -1,9 +1,8 @@
 pub mod collision;
 
 use std::{
-    rc::Rc,
     collections::{BTreeMap, BTreeSet},
-    cell::{RefCell, RefMut},
+    cell::RefMut,
     sync::{
         Arc,
         mpsc,
@@ -46,9 +45,10 @@ use crate::{
     },
     resource::ResourceHandler,
 };
+use crate::core::util::collision::GgInternalCollisionShape;
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
-    objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+    objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
     parents: BTreeMap<ObjectId, ObjectId>,
     absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
@@ -214,7 +214,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             objects.into_iter()
                 .map(|obj| {
                     PendingAddObject {
-                        inner: Rc::new(RefCell::new(obj)),
+                        inner: obj,
                         parent_id: ObjectId(0)
                     }
                 })
@@ -455,7 +455,7 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                               input_handler: &InputHandler,
                               object_tracker: &mut ObjectTracker<ObjectType>,
                               call_obj_event: F)
-    where F: Fn(RefMut<AnySceneObject<ObjectType>>, Duration, &mut UpdateContext<ObjectType>) {
+    where F: Fn(RefMut<dyn SceneObject<ObjectType>>, Duration, &mut UpdateContext<ObjectType>) {
         for (this_id, this) in self.object_handler.objects.clone() {
             let this = SceneObjectWithId::new(this_id, this.clone());
             let mut ctx = UpdateContext::new(
@@ -721,12 +721,12 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
 
 #[derive(Clone)]
 pub(crate) struct PendingAddObject<ObjectType: ObjectTypeEnum> {
-    inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
+    inner: AnySceneObject<ObjectType>,
     parent_id: ObjectId,
 }
 
 struct ObjectTracker<ObjectType: ObjectTypeEnum> {
-    last: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+    last: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
     pending_add: Vec<PendingAddObject<ObjectType>>,
     pending_remove: BTreeSet<ObjectId>,
 }
@@ -740,7 +740,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
         }
     }
 
-    fn get(&self, object_id: ObjectId) -> Option<&Rc<RefCell<AnySceneObject<ObjectType>>>> {
+    fn get(&self, object_id: ObjectId) -> Option<&AnySceneObject<ObjectType>> {
         self.last.get(&object_id)
     }
 }
@@ -783,17 +783,19 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
     pub fn extents(&self) -> Rect {
         self.collider_of(self.this_id)
+            .unwrap_or_default()
             .translated(self.absolute_transform().centre)
             .as_rect()
     }
     pub fn extents_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
         // Should not be possible to get an invalid object_id here if called from public.
         self.collider_of(other.object_id)
+            .unwrap_or_default()
             .translated(self.absolute_transform_of(other.object_id).centre)
             .as_rect()
     }
     pub fn this_id(&self) -> ObjectId { self.this_id }
-    fn collider_of(&self, object_id: ObjectId) -> GenericCollider {
+    fn collider_of(&self, object_id: ObjectId) -> Option<GenericCollider> {
         let children = if object_id == self.this_id {
             &self.children
         } else {
@@ -801,30 +803,34 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             self.all_children.get(&object_id)
                 .unwrap_or_else(|| panic!("missing object_id in children: {object_id:?}"))
         };
-        children.iter().find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider())
-            .map(SceneObjectWithId::collider)
-            .unwrap_or_default()
+        children.iter()
+            .find_map(|obj| {
+                obj.downcast::<GgInternalCollisionShape>()
+                    .map(|inner| (obj.object_id, inner))
+            })
+            .map(|(collision_shape_id, collision_shape)| {
+                let centre = self.all_absolute_transforms
+                    .get(&collision_shape_id)
+                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {collision_shape_id:?}"))
+                    .centre;
+                collision_shape.collider().translated(centre)
+            })
     }
 
-    pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) -> Vec<Rc<RefCell<AnySceneObject<ObjectType>>>> {
+    pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
         let pending_add = &mut self.object_tracker.pending_add;
-        let begin = pending_add.len();
         pending_add.extend(objects.into_iter().map(|inner| {
             PendingAddObject {
-                inner: Rc::new(RefCell::new(inner)),
+                inner: inner.clone(),
                 parent_id: self.this_id,
             }
         }));
-        let end = pending_add.len();
-        pending_add[begin..end].iter().map(|obj| obj.inner.clone()).collect()
     }
-    pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) -> Rc<RefCell<AnySceneObject<ObjectType>>> {
-        let object = PendingAddObject {
-            inner: Rc::new(RefCell::new(object)),
+    pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) {
+        self.object_tracker.pending_add.push(PendingAddObject {
+            inner: object,
             parent_id: self.this_id,
-        };
-        self.object_tracker.pending_add.push(object.clone());
-        object.inner
+        });
     }
     pub fn remove(&mut self, obj: &SceneObjectWithId<ObjectType>) {
         self.object_tracker.pending_remove.insert(obj.object_id);
@@ -841,30 +847,27 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn test_collision(&self,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        if let Some(collider) = self.children.iter()
-            .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
-            let collider = collider.collider()
-                .translated(self.all_absolute_transforms
-                    .get(&collider.object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}",collider.object_id))
-                    .centre
-                );
-            self.test_collision_inner(&collider, listening_tags)
-        } else {
-            None
-        }
+        self.collider_of(self.this_id)
+            .and_then(|collider| {
+                self.test_collision_inner(&collider, listening_tags)
+            })
+    }
+    pub fn test_collision_along(&self,
+                                axis: Vec2,
+                                distance: f64,
+                                listening_tags: Vec<&'static str>,
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.collider_of(self.this_id)
+            .and_then(|collider| {
+                self.test_collision_inner(&collider.translated(distance * axis), listening_tags)
+            })
+            .and_then(|vec| {
+                NonemptyVec::try_from_iter(vec
+                    .into_iter()
+                    .filter(|coll| !coll.mtv.dot(axis).is_zero()))
+            })
     }
 
-    fn lookup_parent(&self, object_id: ObjectId) -> Option<SceneObjectWithId<ObjectType>> {
-        let parent_id = self.all_parents.get(&object_id)?;
-        if parent_id.0 == 0 {
-            None
-        } else {
-            let parent = self.object_tracker.get(*parent_id)
-                .unwrap_or_else(|| panic!("missing object_id in parents: {parent_id:?}"));
-            Some(SceneObjectWithId::new(*parent_id, parent.clone()))
-        }
-    }
     fn test_collision_inner(
         &self,
         collider: &GenericCollider,
@@ -873,46 +876,32 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         let mut rv = Vec::new();
         for tag in listening_tags {
             for other_id in self.collision_handler.get_object_ids_by_emitting_tag(tag) {
-                if let Some(other) = self.object_tracker.get(*other_id) {
-                    let other_collider = other.borrow().collider().translated(
+                let other = self.object_tracker.get(*other_id)
+                    .unwrap_or_else(|| panic!("missing object_id in objects: {other_id:?}"));
+                let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
+                    .collider()
+                    .translated(
                         self.all_absolute_transforms.get(other_id)
                             .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {other_id:?}"))
                             .centre
                     );
-                    if let Some(mtv) = collider.collides_with(&other_collider) {
-                        let other = self.lookup_parent(*other_id)
-                            .unwrap_or_else(|| panic!("orphaned GgInternalCollisionShape: {other_id:?}"));
-                        rv.push(Collision {
-                            other,
-                            mtv,
-                        });
-                    }
+                if let Some(mtv) = collider.collides_with(&other_collider) {
+                    let other = self.lookup_parent(*other_id)
+                        .unwrap_or_else(|| panic!("orphaned GgInternalCollisionShape: {other_id:?}"));
+                    rv.push(Collision { other, mtv });
                 }
             }
         }
         NonemptyVec::try_from_vec(rv)
     }
-    pub fn test_collision_along(&self,
-                                axis: Vec2,
-                                distance: f64,
-                                tags: Vec<&'static str>,
-    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        if let Some(collider) = self.children.iter()
-            .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
-            let collider = collider.collider()
-                .translated(self.all_absolute_transforms
-                    .get(&collider.object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", collider.object_id))
-                    .centre + distance * axis
-                );
-            self.test_collision_inner(&collider, tags)
-                .and_then(|vec| {
-                    NonemptyVec::try_from_iter(vec
-                        .into_iter()
-                        .filter(|coll| !coll.mtv.dot(axis).is_zero()))
-                })
-        } else {
+    fn lookup_parent(&self, object_id: ObjectId) -> Option<SceneObjectWithId<ObjectType>> {
+        let parent_id = self.all_parents.get(&object_id)?;
+        if parent_id.0 == 0 {
             None
+        } else {
+            let parent = self.object_tracker.get(*parent_id)
+                .unwrap_or_else(|| panic!("missing object_id in parents: {parent_id:?}"));
+            Some(SceneObjectWithId::new(*parent_id, parent.clone()))
         }
     }
 }

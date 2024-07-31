@@ -89,7 +89,7 @@ impl Font {
         text: &str,
         max_width: f64,
         text_wrap_mode: TextWrapMode
-    ) -> Result<Sprite<ObjectType>> {
+    ) -> Result<Sprite> {
         let glyphs = self.layout(text, max_width * SAMPLE_RATIO, text_wrap_mode);
         let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
         let width = reader.width();

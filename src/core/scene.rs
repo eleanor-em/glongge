@@ -7,13 +7,12 @@ use std::{
         mpsc::{Receiver, Sender},
         Mutex
     },
-    time::Duration
+    time::Duration,
 };
 use crate::{
     resource::ResourceHandler,
     core::{
         util::{
-            collision::GenericCollider,
             linalg::{Transform, Vec2}
         },
         update::{
@@ -211,7 +210,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn new() -> Box<Self> where Self: Sized;
+    #[allow(clippy::new_ret_no_self)]
+    fn new() -> AnySceneObject<ObjectType> where Self: Default { AnySceneObject::new(Self::default()) }
 
     #[allow(unused_variables)]
     fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }
@@ -236,7 +236,6 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }
-    fn collider(&self) -> GenericCollider { GenericCollider::default() }
     fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }

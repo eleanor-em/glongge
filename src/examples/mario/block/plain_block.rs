@@ -9,7 +9,7 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Block {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 
     initial_y: f64,
     v_speed: f64,
@@ -17,8 +17,8 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             top_left: top_left.into(),
             initial_y: top_left.y as f64,
             ..Default::default()
@@ -38,7 +38,7 @@ impl SceneObject<ObjectType> for Block {
         Ok(self.sprite.create_vertices())
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(CollisionShape::new(
+        ctx.object().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags()

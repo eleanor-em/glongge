@@ -15,12 +15,12 @@ use crate::object_type::ObjectType;
 pub struct WinTextDisplay {
     centre: Vec2,
     font: Option<Font>,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 }
 
 impl WinTextDisplay {
-    pub fn new(centre: Vec2) -> Box<Self> {
-        Box::new(Self { centre, ..Default::default() })
+    pub fn new(centre: Vec2) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self { centre, ..Default::default() })
     }
 }
 

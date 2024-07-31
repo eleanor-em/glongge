@@ -17,7 +17,7 @@ impl Scene<ObjectType> for TriangleScene {
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![
-            Box::new(TriangleSpawner{}),
+            AnySceneObject::new(TriangleSpawner{}),
         ]
     }
 }
@@ -60,7 +60,7 @@ impl SceneObject<ObjectType> for TriangleSpawner {
                     x: vxs[i],
                     y: vys[i],
                 };
-                Box::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() }) as Box<dyn SceneObject<ObjectType>>
+                AnySceneObject::new(SpinningTriangle { pos, velocity: vel.normed(), t: 0., alive_since: Instant::now() })
             })
             .collect();
         ctx.object().add_vec(objects);
@@ -141,11 +141,11 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
                 };
-                ctx.object().add_child(Box::new(SpinningTriangle::new(
+                ctx.object().add_child(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity - vel).normed(),
                 )));
-                ctx.object().add_child(Box::new(SpinningTriangle::new(
+                ctx.object().add_child(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity + vel).normed(),
                 )));

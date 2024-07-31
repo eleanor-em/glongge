@@ -14,14 +14,14 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct Pipe {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
     orientation: Vec2,
     destination: Option<SceneDestination>,
 }
 
 impl Pipe {
-    pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> Box<Self> {
-        Box::new(Self {
+    pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
             top_left: top_left.into(),
             orientation,
             destination,

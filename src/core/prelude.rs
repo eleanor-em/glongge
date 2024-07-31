@@ -30,7 +30,6 @@ pub use crate::{
             linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2Int},
         },
         AnySceneObject,
-        Downcast,
         DowncastRef,
         SceneObjectWithId,
     },

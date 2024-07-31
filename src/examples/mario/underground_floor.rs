@@ -9,12 +9,12 @@ use crate::object_type::ObjectType;
 #[register_scene_object]
 pub struct UndergroundFloor {
     top_left: Vec2,
-    sprite: Sprite<ObjectType>,
+    sprite: Sprite,
 }
 
 impl UndergroundFloor {
-    pub fn new(top_left: Vec2Int) -> Box<Self> {
-        Box::new(Self { top_left: top_left.into(), ..Default::default() })
+    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self { top_left: top_left.into(), ..Default::default() })
     }
 }
 
@@ -33,9 +33,9 @@ impl SceneObject<ObjectType> for UndergroundFloor {
 
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().add_child(
-            CollisionShape::new(self.sprite.as_box_collider(),
-            &self.emitting_tags(),
-            &self.listening_tags()
+            CollisionShape::from_collider(self.sprite.as_box_collider(),
+                                          &self.emitting_tags(),
+                                          &self.listening_tags()
         ));
     }
 
