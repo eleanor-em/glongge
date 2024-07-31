@@ -50,7 +50,7 @@ use crate::{
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     parents: BTreeMap<ObjectId, ObjectId>,
-    children: BTreeMap<ObjectId, BTreeSet<ObjectId>>,
+    children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
 
     collision_handler: CollisionHandler,
 
@@ -75,19 +75,19 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .unwrap_or_else(|| panic!("missing object_id in parents: {remove_id:?}"));
         self.children.get_mut(parent)
             .unwrap_or_else(|| panic!("missing object_id in children: {remove_id:?}"))
-            .remove(&remove_id);
+            .retain(|obj| obj.object_id != remove_id);
         self.parents.remove(&remove_id);
     }
     fn add_object(&mut self, new_id: ObjectId, new_obj: PendingAddObject<ObjectType>) {
         if self.children.is_empty() {
-            self.children.insert(ObjectId(0), BTreeSet::new());
+            self.children.insert(ObjectId(0), Vec::new());
         }
-        self.objects.insert(new_id, new_obj.inner);
+        self.objects.insert(new_id, new_obj.inner.clone());
         self.parents.insert(new_id, new_obj.parent_id);
-        self.children.insert(new_id, BTreeSet::new());
+        self.children.insert(new_id, Vec::new());
         self.children.get_mut(&new_obj.parent_id)
             .unwrap_or_else(|| panic!("missing object_id in children: {:?}", new_obj.parent_id))
-            .insert(new_id);
+            .push(SceneObjectWithId::new(new_id, new_obj.inner));
     }
 
     fn get_collisions(&self) -> Vec<CollisionNotification<ObjectType>> {
@@ -113,12 +113,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.children
             .get(&this_id)
             .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
-            .iter().map(|child_id| {
-            let child = self.objects.get(child_id)
-                .unwrap_or_else(|| panic!("missing object_id in objects: {child_id:?}"));
-            SceneObjectWithId::new(*child_id, child.clone())
-        })
-            .collect()
+            .clone()
     }
 
     fn update_transforms(
@@ -127,15 +122,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         parent_id: ObjectId,
         absolute_transform: Transform,
     ) {
-        for child_id in self.children.get(&parent_id)
+        for child in self.children.get(&parent_id)
             .unwrap_or_else(|| panic!("missing object_id in children: {parent_id:?}")) {
+            let child_id = child.object_id;
             // Check for cycles:
-            check_false!(transforms.contains_key(child_id));
-            let child_transform = self.objects.get(child_id)
-                .unwrap_or_else(|| panic!("missing object_id in objects: {child_id:?}"))
-                .borrow()
-                .transform() * absolute_transform;
-            self.update_transforms(transforms, *child_id, child_transform);
+            check_false!(transforms.contains_key(&child_id));
+            self.update_transforms(transforms,
+                                   child_id,
+                                   child.transform() * absolute_transform);
         }
         transforms.insert(parent_id, absolute_transform);
     }
@@ -542,7 +536,6 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
-    #[inline(never)]
     fn new<R: RenderInfoReceiver>(
         caller: &'a mut UpdateHandler<ObjectType, R>,
         input_handler: &'a InputHandler,
