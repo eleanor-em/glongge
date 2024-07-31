@@ -178,11 +178,11 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                                           self.objects.get(&item.object_id).unwrap().borrow().get_type()))
                 .translated(-viewport.translation);
 
-            let end = start + item.len();
+            let end = start + item.len() as u32;
             render_infos.push(RenderInfoFull {
                 vertex_indices: start..end,
                 inner: render_info,
-                transform,
+                transform: transform.as_f32_lossy(),
                 depth: item.render_item.depth,
             });
             start = end;

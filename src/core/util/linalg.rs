@@ -521,6 +521,12 @@ impl Neg for &Vec2 {
     }
 }
 
+#[derive(Default, Debug, Copy, Clone, PartialOrd, PartialEq)]
+pub struct Vec2Small {
+    pub x: f32,
+    pub y: f32,
+}
+
 #[derive(Copy, Clone, PartialEq)]
 #[must_use]
 pub struct Mat3x3 {
@@ -818,6 +824,14 @@ impl Transform {
             scale: self.scale,
         }
     }
+
+    pub fn as_f32_lossy(&self) -> TransformF32 {
+        TransformF32 {
+            centre: self.centre.into(),
+            rotation: self.rotation as f32,
+            scale: self.scale.into(),
+        }
+    }
 }
 
 impl Default for Transform {
@@ -841,6 +855,13 @@ impl MulAssign<Transform> for Transform {
     fn mul_assign(&mut self, rhs: Transform) {
         *self = *self * rhs;
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct TransformF32 {
+    pub centre: [f32; 2],
+    pub rotation: f32,
+    pub scale: [f32; 2],
 }
 
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {

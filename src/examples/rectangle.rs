@@ -15,7 +15,7 @@ use crate::object_type::ObjectType;
 #[derive(Copy, Clone)]
 pub struct RectangleScene;
 impl Scene<ObjectType> for RectangleScene {
-    fn name(&self) -> SceneName { "rectangle".into() }
+    fn name(&self) -> SceneName { SceneName::new("rectangle") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![

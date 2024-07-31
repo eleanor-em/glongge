@@ -40,15 +40,17 @@ use crate::core::{
     vk::VulkanoContext,
 };
 
+type TextureId = u16;
+
 #[derive(Debug)]
 pub struct Texture {
-    id: usize,
+    id: TextureId,
     extent: Vec2,
     ref_count: Arc<AtomicUsize>,
 }
 
 impl Texture {
-    pub(crate) fn id(&self) -> usize { self.id }
+    pub(crate) fn id(&self) -> TextureId { self.id }
 }
 
 impl AxisAlignedExtent for Texture {
@@ -96,8 +98,7 @@ impl Drop for Texture {
 
 impl From<Texture> for u32 {
     fn from(value: Texture) -> Self {
-        u32::try_from(value.id)
-            .expect("texture IDs should stay small")
+        u32::from(value.id)
     }
 }
 
@@ -163,7 +164,7 @@ impl<R: Read> Read for WrappedPngReader<R> {
 
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Texture>,
-    textures: BTreeMap<usize, InternalTexture>,
+    textures: BTreeMap<TextureId, InternalTexture>,
 }
 
 impl TextureHandlerInner {
@@ -258,7 +259,7 @@ impl TextureHandlerInner {
 pub struct TextureHandler {
     ctx: VulkanoContext,
     inner: Arc<Mutex<TextureHandlerInner>>,
-    cached_textures: Arc<RwLock<BTreeMap<usize, CachedTexture>>>,
+    cached_textures: Arc<RwLock<BTreeMap<TextureId, CachedTexture>>>,
 }
 
 impl TextureHandler {
@@ -426,8 +427,8 @@ impl TextureHandler {
     }
 
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub(crate) fn get(&self, texture: &Texture) -> Option<CachedTexture> {
-        self.cached_textures.read().unwrap().get(&texture.id()).cloned()
+    pub(crate) fn get(&self, texture_id: TextureId) -> Option<CachedTexture> {
+        self.cached_textures.read().unwrap().get(&texture_id).cloned()
     }
 }
 

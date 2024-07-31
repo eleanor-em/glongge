@@ -130,7 +130,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         }
         self.elapsed_us += FIXED_UPDATE_INTERVAL_US;
         let elapsed_ms = self.elapsed_us / 1000;
-        let total_animation_time_ms = self.frame_time_ms.iter().sum::<u32>() as u128;
+        let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
         let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
         self.frame = self.frame_time_ms.iter().copied()
             .cumsum()
@@ -171,7 +171,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
     fn render_info(&self) -> RenderInfo {
         check_eq!(self.state, SpriteState::Show);
         RenderInfo {
-            texture: Some(self.texture.clone()),
+            texture_id: self.texture.id(),
             texture_sub_area: self.current_frame(),
             ..Default::default()
         }

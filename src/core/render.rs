@@ -20,39 +20,36 @@ use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndI
 use crate::{
     core::{
         prelude::*,
-        util::{
-            colour::Colour,
-            linalg::{Transform, Vec2}
-        },
         vk::{
             AdjustedViewport,
             VulkanoContext,
         },
         ObjectId,
     },
-    resource::texture::{Texture, TextureSubArea},
+    resource::texture::TextureSubArea,
 };
+use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
 use crate::shader::Shader;
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
-    pub col: Colour,
-    pub texture: Option<Texture>,
+    pub col: [f32; 4],
+    pub texture_id: u16,
     pub texture_sub_area: TextureSubArea,
 }
 
 impl Default for RenderInfo {
     fn default() -> Self {
-        Self { col: Colour::white(), texture: None, texture_sub_area: TextureSubArea::default() }
+        Self { col: Colour::white().into(), texture_id: 0, texture_sub_area: TextureSubArea::default() }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct RenderInfoFull {
     pub inner: RenderInfo,
-    pub transform: Transform,
-    pub vertex_indices: Range<usize>,
+    pub transform: TransformF32,
+    pub vertex_indices: Range<u32>,
     pub depth: VertexDepth,
 }
 
@@ -141,11 +138,10 @@ impl RenderHandler {
         &mut self,
         _ctx: &VulkanoContext,
         window: &Arc<Window>,
-    ) -> Result<()> {
+    ) {
         self.viewport.get().update_from_window(window);
         self.command_buffer = None;
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
-        Ok(())
     }
 
     pub(crate) fn on_render(
@@ -188,12 +184,17 @@ impl RenderHandler {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub enum VertexDepth {
-    Back(u64),
+    Back(u16),
     #[default]
     Middle,
-    Front(u64),
+    Front(u16),
+}
+
+impl VertexDepth {
+    pub fn min_value() -> Self { Self::Back(0) }
+    pub fn max_value() -> Self { Self::Front(u16::MAX) }
 }
 
 impl PartialOrd for VertexDepth {
@@ -230,13 +231,13 @@ impl Ord for VertexDepth {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct VertexWithUV {
-    pub xy: Vec2,
-    pub uv: Vec2,
+    pub xy: [f32; 2],
+    pub uv: [f32; 2],
 }
 
 impl VertexWithUV {
     pub fn from_vertex(vertex: Vec2) -> Self {
-        Self { xy: vertex, uv: Vec2::zero() }
+        Self { xy: vertex.into(), uv: Vec2::zero().into() }
     }
 
     pub fn from_vec2s<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
@@ -244,7 +245,7 @@ impl VertexWithUV {
     }
     pub fn zip_from_vec2s<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
         vertices.into_iter().zip(uvs)
-            .map(|(vertex, uv)| Self { xy: vertex, uv })
+            .map(|(vertex, uv)| Self { xy: vertex.into(), uv: uv.into() })
             .collect()
     }
 }

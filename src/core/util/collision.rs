@@ -763,7 +763,7 @@ impl GgInternalCollisionShape {
                 .into_iter()
                 .map(VertexWithUV::from_vertex)
                 .collect()
-        ).with_depth(VertexDepth::Front(u64::MAX))
+        ).with_depth(VertexDepth::max_value())
     }
     fn normals(&self) -> RenderItem {
         let polygon = ConvexCollider::convex_hull_of(self.collider.as_polygon());
@@ -820,7 +820,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     fn render_info(&self) -> RenderInfo {
         check!(self.show_wireframe);
         RenderInfo {
-            col: Colour::cyan().with_alpha(0.5),
+            col: Colour::cyan().with_alpha(0.5).into(),
             ..Default::default()
         }
     }

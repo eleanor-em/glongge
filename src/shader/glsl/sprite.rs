@@ -22,8 +22,8 @@ pub struct Vertex {
     pub scale: [f32; 2],
     #[format(R32G32_SFLOAT)]
     pub uv: [f32; 2],
-    #[format(R32_UINT)]
-    pub texture_id: u32,
+    #[format(R16_UINT)]
+    pub texture_id: u16,
     #[format(R32G32B32A32_SFLOAT)]
     pub blend_col: [f32; 4],
 }

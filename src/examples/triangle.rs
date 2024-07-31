@@ -13,7 +13,7 @@ use crate::object_type::ObjectType;
 #[derive(Copy, Clone)]
 pub struct TriangleScene;
 impl Scene<ObjectType> for TriangleScene {
-    fn name(&self) -> SceneName { "triangle".into() }
+    fn name(&self) -> SceneName { SceneName::new("triangle") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         vec![
@@ -181,7 +181,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
 impl RenderableObject<ObjectType> for SpinningTriangle {
     fn render_info(&self) -> RenderInfo {
         RenderInfo {
-            col: Colour::red(),
+            col: Colour::red().into(),
             ..Default::default()
         }
     }

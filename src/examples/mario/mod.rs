@@ -76,7 +76,7 @@ impl AliveEnemyMap {
 pub struct MarioOverworldScene;
 
 impl Scene<ObjectType> for MarioOverworldScene {
-    fn name(&self) -> SceneName { "mario-overworld".into() }
+    fn name(&self) -> SceneName { SceneName::new("mario-overworld") }
 
     fn initial_data(&self) -> Vec<u8> {
         bincode::serialize(&AliveEnemyMap::default()).unwrap()
@@ -356,7 +356,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
 #[derive(Copy, Clone)]
 pub struct MarioUndergroundScene;
 impl Scene<ObjectType> for MarioUndergroundScene {
-    fn name(&self) -> SceneName { "mario-underground".into() }
+    fn name(&self) -> SceneName { SceneName::new("mario-underground") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         let mut initial_objects = vec![

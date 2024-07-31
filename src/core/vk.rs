@@ -658,11 +658,9 @@ impl WindowEventHandler {
         &mut self
     ) -> Result<()> {
         self.fences = DataPerImage::new_with_generator(&self.ctx, || Rc::new(RefCell::new(None)));
-        self.ctx
-            .recreate_swapchain(&self.window)
+        self.ctx.recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;
-        self.render_handler
-            .on_resize(&self.ctx, &self.window)?;
+        self.render_handler.on_resize(&self.ctx, &self.window);
         Ok(())
     }
 

@@ -37,7 +37,14 @@ pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 pub mod vertex;
 pub mod glsl;
 
-pub type ShaderName = &'static str;
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct ShaderName(&'static str);
+
+impl ShaderName {
+    pub fn new(text: &'static str) -> Self {
+        Self(text)
+    }
+}
 
 pub trait Shader: Send {
     fn name() -> ShaderName where Self: Sized;
@@ -267,7 +274,7 @@ impl Shader for SpriteShader {
     where
         Self: Sized
     {
-        "basic"
+        ShaderName::new("sprite")
     }
 
     fn on_render(
@@ -281,32 +288,30 @@ impl Shader for SpriteShader {
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
-                let texture = render_info.inner.texture.clone().unwrap_or_default();
                 // TODO: better way to switch shaders.
-                let final_vertex = if texture.id() != 0 {
-                    let vertex = render_frame.vertices[vertex_index];
+                let final_vertex = if render_info.inner.texture_id != 0 {
+                    let vertex = render_frame.vertices[vertex_index as usize];
                     let mut blend_col = render_info.inner.col;
                     let mut uv = vertex.uv;
-                    if let Some(tex) = self.resource_handler.texture.get(&texture) {
+                    if let Some(tex) = self.resource_handler.texture.get(render_info.inner.texture_id) {
                         if let Some(tex) = tex.ready() {
-                            uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                            uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
                         } else {
-                            warn!("texture not ready: {}", texture);
-                            blend_col = Colour::empty();
+                            warn!("texture not ready: {}", render_info.inner.texture_id);
+                            blend_col = Colour::empty().into();
                         }
                     } else {
-                        error!("missing texture: {}", texture);
-                        blend_col = Colour::magenta();
+                        error!("missing texture: {}", render_info.inner.texture_id);
+                        blend_col = Colour::magenta().into();
                     }
                     sprite::Vertex {
-                        position: vertex.xy.into(),
-                        uv: uv.into(),
-                        texture_id: texture.into(),
-                        translation: render_info.transform.centre.into(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        rotation: render_info.transform.rotation as f32,
-                        scale: render_info.transform.scale.into(),
-                        blend_col: blend_col.into(),
+                        position: vertex.xy,
+                        uv,
+                        texture_id: render_info.inner.texture_id,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col,
                     }
                 } else {
                     sprite::Vertex {
@@ -466,7 +471,7 @@ impl Shader for WireframeShader {
     where
         Self: Sized
     {
-        "basic"
+        ShaderName::new("wireframe")
     }
 
     fn on_render(
@@ -477,16 +482,14 @@ impl Shader for WireframeShader {
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
-                let texture = render_info.inner.texture.clone().unwrap_or_default();
                 // TODO: better way to switch shaders.
-                let vertex = if texture.id() == 0 {
+                let vertex = if render_info.inner.texture_id == 0 {
                     wireframe::Vertex {
-                        position: render_frame.vertices[vertex_index].xy.into(),
-                        translation: render_info.transform.centre.into(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        rotation: render_info.transform.rotation as f32,
-                        scale: render_info.transform.scale.into(),
-                        blend_col: render_info.inner.col.into(),
+                        position: render_frame.vertices[vertex_index as usize].xy,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col: render_info.inner.col,
                     }
                 } else {
                     wireframe::Vertex {

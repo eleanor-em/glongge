@@ -99,9 +99,9 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct SceneName(&'static str);
 
-impl From<&'static str> for SceneName {
-    fn from(value: &'static str) -> Self {
-        Self(value)
+impl SceneName {
+    pub fn new(text: &'static str) -> Self {
+        Self(text)
     }
 }
 

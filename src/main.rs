@@ -12,6 +12,7 @@ use glongge::core::{
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
     ObjectTypeEnum,
 };
+use glongge::core::render::RenderInfoFull;
 use glongge::core::util::UniqueShared;
 use glongge::shader::{SpriteShader, WireframeShader};
 
@@ -69,6 +70,8 @@ fn main() -> Result<()> {
             scene_handler.consume_with_scene(name, 0);
         });
     }
+
+    println!("{}", std::mem::size_of::<RenderInfoFull>());
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
         .consume(event_loop);
