@@ -845,8 +845,8 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
             let collider = collider.collider()
                 .translated(self.all_absolute_transforms
-                    .get(&self.this_id)
-                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", self.this_id))
+                    .get(&collider.object_id)
+                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}",collider.object_id))
                     .centre
                 );
             self.test_collision_inner(&collider, listening_tags)
@@ -901,8 +901,8 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
             let collider = collider.collider()
                 .translated(self.all_absolute_transforms
-                    .get(&self.this_id)
-                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", self.this_id))
+                    .get(&collider.object_id)
+                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", collider.object_id))
                     .centre + distance * axis
                 );
             self.test_collision_inner(&collider, tags)

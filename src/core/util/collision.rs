@@ -422,7 +422,7 @@ impl Collider for BoxCollider {
     fn translated(&self, by: Vec2) -> GenericCollider {
         let mut rv = self.clone();
         rv.centre += by;
-        rv.as_generic()
+        rv.into_generic()
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -523,7 +523,7 @@ impl Collider for ConvexCollider {
         for vertex in &mut rv.vertices {
             *vertex += by;
         }
-        rv.as_generic()
+        rv.into_generic()
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -583,7 +583,7 @@ impl Collider for GenericCollider {
     }
 
     fn translated(&self, by: Vec2) -> GenericCollider {
-        self.inner.translated(by).as_generic()
+        self.inner.translated(by).into_generic()
     }
 
     fn as_generic(&self) -> GenericCollider

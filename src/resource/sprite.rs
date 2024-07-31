@@ -187,12 +187,12 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
     }
 
     pub fn current_frame(&self) -> TextureSubArea {
-        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
+        let inner = self.inner.checked_downcast::<GgInternalSprite<ObjectType>>();
         inner.areas[inner.frame]
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {
-        self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>()
+        self.inner.checked_downcast::<GgInternalSprite<ObjectType>>()
             .collider
             .clone()
     }
@@ -201,7 +201,7 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
         self.render_info_from(RenderInfo::default())
     }
     pub fn render_info_from(&self, mut render_info: RenderInfo) -> RenderInfo {
-        let inner = self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>();
+        let inner = self.inner.checked_downcast::<GgInternalSprite<ObjectType>>();
         if inner.ready() {
             render_info.texture = Some(inner.texture.clone());
             render_info.texture_sub_area = self.current_frame();
