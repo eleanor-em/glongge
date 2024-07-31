@@ -25,28 +25,28 @@ use crate::{
         input::InputHandler,
         ObjectTypeEnum,
         prelude::*,
-        vk::RenderEventHandler,
         SceneObjectWithId,
         render::{RenderInfo, RenderInfoReceiver, RenderItem},
     }
 };
+use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
 
 #[derive(Clone)]
-struct InternalScene<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> {
+struct InternalScene<ObjectType: ObjectTypeEnum> {
     scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<InfoReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
     tx: Sender<SceneHandlerInstruction>,
 }
 
-impl<ObjectType: ObjectTypeEnum, InfoReceiver: RenderInfoReceiver + 'static> InternalScene<ObjectType, InfoReceiver> {
+impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
     fn new(scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
            input_handler: Arc<Mutex<InputHandler>>,
            resource_handler: ResourceHandler,
-           render_info_receiver: Arc<Mutex<InfoReceiver>>,
+           render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
            tx: Sender<SceneHandlerInstruction>) -> Self {
         let name = scene.try_lock()
             .expect("scene locked in InternalScene::new(), could not get scene name")
@@ -138,11 +138,11 @@ pub(crate) enum SceneHandlerInstruction {
 }
 
 #[allow(private_bounds)]
-pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> {
+pub struct SceneHandler<ObjectType: ObjectTypeEnum> {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
-    scenes: BTreeMap<SceneName, InternalScene<ObjectType, RenderHandler::InfoReceiver>>,
+    scenes: BTreeMap<SceneName, InternalScene<ObjectType>>,
     scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
     current_scene_name: Arc<Mutex<Option<SceneName>>>,
     tx: Sender<SceneHandlerInstruction>,
@@ -150,7 +150,7 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHa
 }
 
 #[allow(private_bounds)]
-impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler<ObjectType, RenderHandler> {
+impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
     pub fn new(input_handler: Arc<Mutex<InputHandler>>,
                resource_handler: ResourceHandler,
                render_handler: RenderHandler) -> Self {

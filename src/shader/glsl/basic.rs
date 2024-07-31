@@ -1,4 +1,33 @@
-pub mod basic_vertex_shader {
+use vulkano::buffer::BufferContents;
+use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
+
+#[derive(BufferContents, Clone, Copy)]
+#[repr(C)]
+pub struct UniformData {
+    pub window_width: f32,
+    pub window_height: f32,
+    pub scale_factor: f32,
+}
+#[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct Vertex {
+    #[format(R32G32_SFLOAT)]
+    pub position: [f32; 2],
+    #[format(R32G32_SFLOAT)]
+    pub translation: [f32; 2],
+    #[format(R32_SFLOAT)]
+    pub rotation: f32,
+    #[format(R32G32_SFLOAT)]
+    pub scale: [f32; 2],
+    #[format(R32G32_SFLOAT)]
+    pub uv: [f32; 2],
+    #[format(R32_UINT)]
+    pub texture_id: u32,
+    #[format(R32G32B32A32_SFLOAT)]
+    pub blend_col: [f32; 4],
+}
+
+pub mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: r"
@@ -60,7 +89,7 @@ pub mod basic_vertex_shader {
         ",
     }
 }
-pub mod basic_fragment_shader {
+pub mod fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
         src: r"

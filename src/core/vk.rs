@@ -1,4 +1,4 @@
-use std::{cell::RefCell, env, marker::PhantomData, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
 use num_traits::Zero;
 
 use vulkano::{
@@ -7,7 +7,6 @@ use vulkano::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
         CommandBufferExecFuture,
         PrimaryAutoCommandBuffer,
-        PrimaryCommandBufferAbstract
     },
     descriptor_set::allocator::{
         StandardDescriptorSetAllocator,
@@ -56,7 +55,6 @@ use winit::{
 
 use crate::{
     core::{
-        render::RenderInfoReceiver,
         input::InputHandler,
         util::{
             linalg::{
@@ -69,6 +67,7 @@ use crate::{
     },
     resource::ResourceHandler,
 };
+use crate::core::render::RenderHandler;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -596,36 +595,10 @@ impl PerImageContext {
     }
 }
 
-pub(crate) trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract = PrimaryAutoCommandBuffer>
-    : Clone + Send + Sync
-{
-    type InfoReceiver: RenderInfoReceiver + 'static;
-
-    fn on_resize(
-        &mut self,
-        ctx: &VulkanoContext,
-        window: &Arc<Window>,
-    ) -> Result<()>;
-    fn on_render(
-        &mut self,
-        ctx: &VulkanoContext,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
-    ) -> Result<DataPerImage<Arc<CommandBuffer>>>;
-    fn on_reload_textures(
-        &mut self,
-        ctx: &VulkanoContext
-    ) -> Result<()>;
-
-    fn get_receiver(&self) -> Arc<Mutex<Self::InfoReceiver>>;
-}
-
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;
 type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<SwapchainJoinFuture>>>;
 
-pub struct WindowEventHandler<CommandBuffer, RenderHandler>
-where
-    CommandBuffer: PrimaryCommandBufferAbstract,
-{
+pub struct WindowEventHandler {
     window: Arc<Window>,
     scale_factor: f64,
     ctx: VulkanoContext,
@@ -635,7 +608,6 @@ where
 
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
-    command_buffer_type: PhantomData<CommandBuffer>,
 
     is_ready: bool,
     last_ready_poll: Instant,
@@ -644,11 +616,7 @@ where
 }
 
 #[allow(private_bounds)]
-impl<CommandBuffer, RenderHandler> WindowEventHandler<CommandBuffer, RenderHandler>
-where
-    CommandBuffer: PrimaryCommandBufferAbstract + 'static,
-    RenderHandler: RenderEventHandler<CommandBuffer> + 'static,
-{
+impl WindowEventHandler {
     pub fn new(
         window: Arc<Window>,
         ctx: VulkanoContext,
@@ -667,7 +635,6 @@ where
             resource_handler,
             fences,
             render_stats: RenderPerfStats::new(),
-            command_buffer_type: PhantomData,
             is_ready: false,
             last_ready_poll: Instant::now(),
             report_stats: false,
@@ -706,9 +673,9 @@ where
         self.render_stats.begin_acquire_and_sync();
         let ready_future = self.acquire_and_synchronise(per_image_ctx, acquire_future)?;
         self.render_stats.begin_on_render();
-        let command_buffers = self.render_handler.on_render(&self.ctx, per_image_ctx)?;
+        let command_buffer = self.render_handler.on_render(&self.ctx, self.ctx.framebuffers.current_value(per_image_ctx))?;
         self.render_stats.begin_submit_command_buffers();
-        self.submit_command_buffers(per_image_ctx, &command_buffers, ready_future)?;
+        self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.end_render();
         Ok(())
     }
@@ -743,10 +710,10 @@ where
         Ok(last_fence.join(acquire_future))
     }
 
-    fn submit_command_buffers(
+    fn submit_command_buffer(
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
-        command_buffers: &DataPerImage<Arc<CommandBuffer>>,
+        command_buffer: Arc<PrimaryAutoCommandBuffer>,
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
         let image_idx = per_image_ctx.current.expect("no current image?");
@@ -757,7 +724,7 @@ where
                 ready_future
                     .then_execute(
                         self.ctx.queue(),
-                        command_buffers.current_value(per_image_ctx).clone(),
+                        command_buffer
                     )?
                     .then_swapchain_present(
                         self.ctx.queue(),

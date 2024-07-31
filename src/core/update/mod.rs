@@ -189,14 +189,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
 }
 
-pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
+pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     input_handler: Arc<Mutex<InputHandler>>,
     object_handler: ObjectHandler<ObjectType>,
 
     vertex_map: VertexMap,
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderReceiver>>,
+    render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
     clear_col: Colour,
 
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
@@ -208,12 +208,12 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: Rend
     perf_stats: UpdatePerfStats,
 }
 
-impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandler<ObjectType, RenderReceiver> {
+impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     pub(crate) fn new(
         objects: Vec<AnySceneObject<ObjectType>>,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
-        render_info_receiver: Arc<Mutex<RenderReceiver>>,
+        render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>
     ) -> Result<Self> {
@@ -590,8 +590,8 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
-    fn new<R: RenderInfoReceiver>(
-        caller: &'a mut UpdateHandler<ObjectType, R>,
+    fn new(
+        caller: &'a mut UpdateHandler<ObjectType>,
         input_handler: &'a InputHandler,
         this_id: ObjectId,
         object_tracker: &'a mut ObjectTracker<ObjectType>

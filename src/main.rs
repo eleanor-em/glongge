@@ -6,7 +6,7 @@ use num_traits::{Float, One};
 use glongge::core::{
     input::InputHandler,
     prelude::*,
-    render::BasicRenderHandler,
+    render::RenderHandler,
     scene::SceneHandler,
     scene::Scene,
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     let mut resource_handler = ResourceHandler::new(&ctx)?;
     ObjectType::preload_all(&mut resource_handler)?;
 
-    let render_handler = BasicRenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
+    let render_handler = RenderHandler::new(&window_ctx, &ctx, resource_handler.clone())?
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();
     {
