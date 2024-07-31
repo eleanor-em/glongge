@@ -41,6 +41,7 @@ use crate::{
     },
     shader::glsl::*,
 };
+use crate::core::util::UniqueShared;
 
 pub mod vertex;
 mod glsl;
@@ -65,7 +66,7 @@ pub struct SpriteShader {
     ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    viewport: Arc<Mutex<AdjustedViewport>>,
+    viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[sprite::Vertex]>>,
     clear_col: Colour,
@@ -75,7 +76,7 @@ pub struct SpriteShader {
 impl SpriteShader {
     pub fn new(
         ctx: VulkanoContext,
-        viewport: Arc<Mutex<AdjustedViewport>>,
+        viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler
     ) -> Result<Arc<Mutex<dyn Shader>>> {
         let device = ctx.device();
@@ -168,7 +169,7 @@ impl SpriteShader {
                         vertex_input_state: Some(vertex_input_state),
                         input_assembly_state: Some(InputAssemblyState::default()),
                         viewport_state: Some(ViewportState {
-                            viewports: [self.viewport.try_lock().unwrap().inner()].into_iter().collect(),
+                            viewports: [self.viewport.get().inner()].into_iter().collect(),
                             ..Default::default()
                         }),
                         rasterization_state: Some(RasterizationState::default()),
@@ -235,7 +236,7 @@ impl SpriteShader {
         ).map_err(Validated::unwrap)?;
 
         let uniform_data = {
-            let viewport = self.viewport.try_lock().unwrap();
+            let viewport = self.viewport.get();
             sprite::UniformData {
                 #[allow(clippy::cast_possible_truncation)]
                 window_width: viewport.physical_width() as f32,
@@ -331,7 +332,7 @@ pub struct WireframeShader {
     ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    viewport: Arc<Mutex<AdjustedViewport>>,
+    viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[wireframe::Vertex]>>,
     clear_col: Colour,
@@ -340,7 +341,7 @@ pub struct WireframeShader {
 impl WireframeShader {
     pub fn new(
         ctx: VulkanoContext,
-        viewport: Arc<Mutex<AdjustedViewport>>
+        viewport: UniqueShared<AdjustedViewport>
     ) -> Result<Arc<Mutex<dyn Shader>>> {
         let device = ctx.device();
         Ok(Arc::new(Mutex::new(Self {
@@ -417,7 +418,7 @@ impl WireframeShader {
                         vertex_input_state: Some(vertex_input_state),
                         input_assembly_state: Some(InputAssemblyState::default()),
                         viewport_state: Some(ViewportState {
-                            viewports: [self.viewport.try_lock().unwrap().inner()].into_iter().collect(),
+                            viewports: [self.viewport.get().inner()].into_iter().collect(),
                             ..Default::default()
                         }),
                         rasterization_state: Some(RasterizationState::default()),
@@ -481,7 +482,7 @@ impl WireframeShader {
         ).map_err(Validated::unwrap)?;
 
         let uniform_data = {
-            let viewport = self.viewport.try_lock().unwrap();
+            let viewport = self.viewport.get();
             sprite::UniformData {
                 #[allow(clippy::cast_possible_truncation)]
                 window_width: viewport.physical_width() as f32,

@@ -32,6 +32,7 @@ use crate::{
     },
     resource::texture::{Texture, TextureSubArea},
 };
+use crate::core::util::UniqueShared;
 use crate::shader::Shader;
 
 #[derive(Clone, Debug)]
@@ -95,17 +96,17 @@ impl RenderInfoReceiver {
 #[derive(Clone)]
 pub struct RenderHandler {
     render_info_receiver: Arc<Mutex<RenderInfoReceiver>>,
-    viewport: Arc<Mutex<AdjustedViewport>>,
+    viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<Arc<Mutex<dyn Shader>>>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
     pub fn new(
-        viewport: Arc<Mutex<AdjustedViewport>>,
+        viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<Arc<Mutex<dyn Shader>>>,
     ) -> Self {
-        let render_info_receiver = RenderInfoReceiver::new(viewport.try_lock().unwrap().clone());
+        let render_info_receiver = RenderInfoReceiver::new(viewport.clone_inner());
         Self {
             shaders,
             viewport,
@@ -116,7 +117,7 @@ impl RenderHandler {
 
     #[must_use]
     pub fn with_global_scale_factor(self, global_scale_factor: f64) -> Self {
-        self.viewport.try_lock().unwrap().set_global_scale_factor(global_scale_factor);
+        self.viewport.get().set_global_scale_factor(global_scale_factor);
         self
     }
 }
@@ -127,9 +128,9 @@ impl RenderHandler {
         _ctx: &VulkanoContext,
         window: &Arc<Window>,
     ) -> Result<()> {
-        self.viewport.try_lock().unwrap().update_from_window(window);
+        self.viewport.get().update_from_window(window);
         self.command_buffer = None;
-        self.render_info_receiver.lock().unwrap().viewport = self.viewport.try_lock().unwrap().clone();
+        self.render_info_receiver.lock().unwrap().viewport = self.viewport.get().clone();
         Ok(())
     }
 

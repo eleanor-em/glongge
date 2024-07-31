@@ -5,6 +5,8 @@ use std::{
     ops::Deref,
     vec::IntoIter
 };
+use std::fmt::{Debug, Display, Formatter};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub mod linalg;
 pub mod colour;
@@ -341,4 +343,36 @@ impl<'a, T> Deref for NonemptyVecRefMut<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target { self.inner }
+}
+
+#[derive(Clone)]
+pub struct UniqueShared<T> {
+    inner: Arc<Mutex<T>>,
+}
+
+impl<T> UniqueShared<T> {
+    pub fn new(value: T) -> Self {
+        Self { inner: Arc::new(Mutex::new(value)) }
+    }
+
+    pub fn get(&self) -> MutexGuard<T> {
+        self.inner.try_lock()
+            .expect("attempted to acquire UniqueShared but it was already in use")
+    }
+}
+
+impl<T: Clone> UniqueShared<T> {
+    pub fn clone_inner(&self) -> T { self.get().clone() }
+}
+
+impl<T: Debug> Debug for UniqueShared<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UniqueShared[{:?}]", self.get())
+    }
+}
+
+impl<T: Display> Display for UniqueShared<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UniqueShared[{}]", self.get())
+    }
 }
