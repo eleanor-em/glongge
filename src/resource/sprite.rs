@@ -68,7 +68,7 @@ impl GgInternalSprite {
             show: true,
             elapsed_us: 0,
             frame: 0,
-            collider: BoxCollider::from_top_left(Vec2::zero(), tile_size.into()),
+            collider: BoxCollider::from_centre(Vec2::zero(), (tile_size / 2).into()),
         }));
         object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
         Sprite { inner }

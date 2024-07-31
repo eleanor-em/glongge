@@ -764,7 +764,11 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn parent(&self) -> Option<&BorrowedSceneObjectWithId<'a, ObjectType>> { self.parent.as_ref() }
-    pub fn children(&self) -> &[SceneObjectWithId<ObjectType>] { &self.children }
+    pub fn children(&self) -> Vec<SceneObjectWithId<ObjectType>> {
+        self.children.iter()
+            .map(SceneObjectWithId::clone)
+            .collect()
+    }
     pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.object_tracker.last.iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
@@ -776,30 +780,44 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         *self.all_absolute_transforms.get(&self.this_id)
             .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: this={:?}", self.this_id))
     }
-    pub fn absolute_transform_of(&self, object_id: ObjectId) -> Transform {
+    pub fn absolute_transform_of(&self, other: &SceneObjectWithId<ObjectType>) -> Transform {
         // Should not be possible to get an invalid object_id here if called from public.
-        *self.all_absolute_transforms.get(&object_id)
-            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {object_id:?}"))
+        *self.all_absolute_transforms.get(&other.object_id)
+            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", other.object_id))
     }
-    pub fn extents(&self) -> Rect {
-        self.collider_of(self.this_id)
+    pub fn rect(&self) -> Rect {
+        self.collider()
             .unwrap_or_default()
             .translated(self.absolute_transform().centre)
             .as_rect()
     }
-    pub fn extents_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
-        // Should not be possible to get an invalid object_id here if called from public.
-        self.collider_of(other.object_id)
+    pub fn rect_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
+        self.collider_of(other)
             .unwrap_or_default()
-            .translated(self.absolute_transform_of(other.object_id).centre)
+            .translated(self.absolute_transform_of(other).centre)
             .as_rect()
     }
-    pub fn this_id(&self) -> ObjectId { self.this_id }
-    fn collider_of(&self, object_id: ObjectId) -> Option<GenericCollider> {
+    pub fn extent(&self) -> Vec2 {
+        self.collider()
+            .unwrap_or_default()
+            .aa_extent()
+    }
+    pub fn extent_of(&self, other: &SceneObjectWithId<ObjectType>) -> Vec2 {
+        // Should not be possible to get an invalid object_id here if called from public.
+        self.collider_of(other)
+            .unwrap_or_default()
+            .aa_extent()
+    }
+    pub fn collider(&self) -> Option<GenericCollider> {
+        self.collider_of_inner(self.this_id)
+    }
+    pub fn collider_of(&self, other: &SceneObjectWithId<ObjectType>) -> Option<GenericCollider> {
+        self.collider_of_inner(other.object_id)
+    }
+    fn collider_of_inner(&self, object_id: ObjectId) -> Option<GenericCollider> {
         let children = if object_id == self.this_id {
             &self.children
         } else {
-            // Should not be possible to get an invalid object_id here if called from public.
             self.all_children.get(&object_id)
                 .unwrap_or_else(|| panic!("missing object_id in children: {object_id:?}"))
         };
@@ -839,7 +857,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         }
     }
     pub fn remove_this(&mut self) {
-        self.object_tracker.pending_remove.insert(self.this_id());
+        self.object_tracker.pending_remove.insert(self.this_id);
         for child in &self.children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
@@ -847,7 +865,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn test_collision(&self,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.collider_of(self.this_id)
+        self.collider()
             .and_then(|collider| {
                 self.test_collision_inner(&collider, listening_tags)
             })
@@ -857,7 +875,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                                 distance: f64,
                                 listening_tags: Vec<&'static str>,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.collider_of(self.this_id)
+        self.collider()
             .and_then(|collider| {
                 self.test_collision_inner(&collider.translated(distance * axis), listening_tags)
             })

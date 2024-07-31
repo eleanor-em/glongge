@@ -628,10 +628,10 @@ impl SceneObject<ObjectType> for Player {
             return CollisionResponse::Done;
         }
         {
-            let bottom = ctx.object().extents_of(&other).bottom();
+            let bottom = ctx.object().rect_of(&other).bottom();
             if let Some(mut stompable) = downcast_stompable_mut(&mut other) {
                 if !stompable.dead() {
-                    if ctx.object().extents().bottom() < bottom {
+                    if ctx.object().rect().bottom() < bottom {
                         stompable.stomp();
                         self.stomp_sound.play();
                         self.v_speed = self.initial_vspeed();
