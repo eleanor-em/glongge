@@ -413,6 +413,7 @@ fn macos_instance<T>(
     };
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
 }
+// TODO: more flexible approach here.
 fn features() -> Features {
     Features {
         // Required for extra texture samplers on macOS:

@@ -13,7 +13,7 @@ use glongge::core::{
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
     ObjectTypeEnum,
 };
-use glongge::shader::SpriteShader;
+use glongge::shader::{SpriteShader, WireframeShader};
 
 use crate::object_type::ObjectType;
 
@@ -44,7 +44,8 @@ fn main() -> Result<()> {
 
     let viewport = Arc::new(Mutex::new(window_ctx.create_default_viewport()));
     let shaders = vec![
-        SpriteShader::new(ctx.device(), viewport.clone(), resource_handler.clone())?
+        SpriteShader::new(ctx.clone(), viewport.clone(), resource_handler.clone())?,
+        WireframeShader::new(ctx.clone(), viewport.clone())?,
     ];
     let render_handler = RenderHandler::new(viewport.clone(), shaders)
         .with_global_scale_factor(2.);

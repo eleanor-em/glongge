@@ -105,25 +105,8 @@ pub mod fragment_shader {
             layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
-                if (f_texture_id == 0) {
-                    // from: https://wunkolo.github.io/post/2022/07/gl_ext_fragment_shader_barycentric-wireframe/
-                    const vec3 BaryCoord = gl_BaryCoordEXT;
-                    const vec3 dBaryCoordX = dFdx(BaryCoord);
-                    const vec3 dBaryCoordY = dFdy(BaryCoord);
-                    const vec3 dBaryCoord  = sqrt(dBaryCoordX*dBaryCoordX + dBaryCoordY*dBaryCoordY);
-                    const float Thickness = 2.5; // In pixels
-                    const vec3 Remap = smoothstep(
-                        vec3(0.0),
-                        dBaryCoord * Thickness,
-                        BaryCoord
-                    );
-                    const float Wireframe = min(Remap.x, min(Remap.y, Remap.z));;
-
-                    f_col = vec4(Wireframe.xxx, 1) * f_blend_col;
-                } else {
-                    const vec4 tex_col = texture(tex[f_texture_id], f_uv);
-                    f_col = tex_col * f_blend_col;
-                }
+                const vec4 tex_col = texture(tex[f_texture_id], f_uv);
+                f_col = tex_col * f_blend_col;
             }
         ",
     }

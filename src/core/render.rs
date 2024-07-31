@@ -15,6 +15,7 @@ use vulkano::{
 };
 use winit::window::Window;
 use num_traits::Zero;
+use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
 use crate::{
     core::{
@@ -137,20 +138,36 @@ impl RenderHandler {
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
-        {
+        let clear_col = {
             let mut receiver = self.render_info_receiver.lock().unwrap();
             for shader in &mut self.shaders {
-                shader.try_lock().unwrap().on_render(ctx, &mut receiver)?;
+                shader.try_lock().unwrap().on_render(&mut receiver)?;
             }
-        }
+            receiver.clear_col
+        };
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
             ctx.queue().queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )?;
+        // TODO: will be useful for adding the gui console.
+        // let top_left = [framebuffer.extent()[0] / 8, framebuffer.extent()[1] / 8];
+        // let extent = [6 * framebuffer.extent()[0] / 8, 6 * framebuffer.extent()[1] / 8];
+        let top_left = [0, 0];
+        let extent = framebuffer.extent();
+        builder.begin_render_pass(
+            RenderPassBeginInfo {
+                render_area_offset: top_left,
+                render_area_extent: extent,
+                clear_values: vec![Some(clear_col.as_f32().into())],
+                ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+            },
+            SubpassBeginInfo::default(),
+        )?;
         for shader in &mut self.shaders {
-            shader.try_lock().unwrap().build_render_pass(ctx, framebuffer.clone(), &mut builder)?;
+            shader.try_lock().unwrap().build_render_pass(&mut builder)?;
         }
+        builder.end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
 

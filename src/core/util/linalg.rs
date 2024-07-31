@@ -87,6 +87,12 @@ impl From<Vec2Int> for [i32; 2] {
     }
 }
 
+impl From<Vec2Int> for [u32; 2] {
+    fn from(value: Vec2Int) -> Self {
+        [value.x.abs().try_into().unwrap(), value.y.abs().try_into().unwrap()]
+    }
+}
+
 impl fmt::Display for Vec2Int {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "vec({}, {})", self.x, self.y)
