@@ -148,6 +148,21 @@ macro_rules! check_eq {
             );
         }
     }};
+    ($lhs:expr, $rhs:expr, $extra:expr) => {{
+        $crate::core::util::assert::assert_same_type(&$lhs, &$rhs);
+        $crate::core::util::assert::assert_partial_eq(&$lhs);
+        if !($lhs == $rhs) {
+            panic!(
+                "check failed: {}: {} == {}: {:?} vs. {:?}: {}",
+                $crate::core::util::assert::current_location!(),
+                stringify!($lhs),
+                stringify!($rhs),
+                $lhs,
+                $rhs,
+                $extra
+            );
+        }
+    }};
 }
 #[allow(unused_imports)]
 pub use check_eq;

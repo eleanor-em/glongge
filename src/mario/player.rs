@@ -25,6 +25,7 @@ use glongge::core::render::{RenderInfo, RenderItem, VertexDepth};
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::core::util::collision::GenericCollider;
 use glongge::core::util::linalg;
 use glongge::resource::Loader;
 use glongge::resource::sprite::Sprite;
@@ -287,7 +288,7 @@ impl Player {
             }
         }
 
-        if ctx.object().test_collision_along(self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision_along(&self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
                 ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
@@ -318,7 +319,7 @@ impl Player {
                     _ => {}
                 }
                 // TODO: replace this with some sort of cached collision feature (from end of last update).
-                if ctx.object().test_collision(this.collider().as_ref(), vec![PIPE_COLLISION_TAG]).is_none() {
+                if ctx.object().test_collision(&this.collider(), vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;
                     // Snap to top of pipe.
@@ -334,7 +335,7 @@ impl Player {
     fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().down(KeyCode::Down) {
             if let Some(collisions) = ctx.object().test_collision_along(
-                self.collider(), Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
+                &self.collider(), Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.downcast::<Pipe>()
                     .expect("non-pipe with pipe collision tag?");
                 if !pipe.orientation().dot(Vec2::down()).is_zero() {
@@ -345,7 +346,7 @@ impl Player {
             }
         } else if ctx.input().down(KeyCode::Right) {
             if let Some(collisions) = ctx.object().test_collision_along(
-                self.collider(), Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
+                &self.collider(), Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.downcast::<Pipe>()
                     .expect("non-pipe with pipe collision tag?");
                 if let Some(instruction) = pipe.destination() {
@@ -576,7 +577,7 @@ impl SceneObject<ObjectType> for Player {
         }
 
         self.maybe_start_pipe(ctx);
-        match ctx.object().test_collision_along(self.collider(), self.dir, self.speed, vec![BLOCK_COLLISION_TAG]) {
+        match ctx.object().test_collision_along(&self.collider(), self.dir, self.speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 self.centre += self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
@@ -584,7 +585,7 @@ impl SceneObject<ObjectType> for Player {
             None => self.centre += self.speed * self.dir,
         }
 
-        match ctx.object().test_collision_along(self.collider(), Vec2::down(), self.v_speed, vec![BLOCK_COLLISION_TAG]) {
+        match ctx.object().test_collision_along(&self.collider(), Vec2::down(), self.v_speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 let mut coll = collisions.into_iter()
                     .min_by(|a, b| {
@@ -653,7 +654,7 @@ impl SceneObject<ObjectType> for Player {
                 this.speed = 0.;
                 this.v_speed = Self::MAX_VSPEED / 3.;
                 if let Some(collisions) = ctx.object().test_collision(
-                        this.collider().as_ref(), vec![BLOCK_COLLISION_TAG]) {
+                        &this.collider(), vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
                     ctx.object().add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
@@ -691,8 +692,8 @@ impl SceneObject<ObjectType> for Player {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Box<dyn Collider> {
-        self.current_sprite().as_box_collider(self.transform())
+    fn collider(&self) -> GenericCollider {
+        self.current_sprite().as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()

@@ -250,13 +250,12 @@ impl BasicRenderHandler {
             per_image_ctx.replace_current_value(
                 &mut self.vertex_buffers,
                 Self::create_single_vertex_buffer(ctx, &receiver.vertices)?);
-            let pipeline = self.get_or_create_pipeline(ctx)?;
             let command_buffer = Self::create_single_command_buffer(
                 ctx,
                 receiver,
-                pipeline,
-                per_image_ctx.current_value_cloned(&ctx.framebuffers()),
-                per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets).clone(),
+                self.get_or_create_pipeline(ctx)?,
+                per_image_ctx.current_value_as_ref(&Some(ctx.framebuffers())),
+                per_image_ctx.current_value_as_ref(&self.uniform_buffer_sets),
                 per_image_ctx.current_value_as_ref(&self.vertex_buffers),
             )?;
             per_image_ctx.replace_current_value(&mut self.command_buffers, command_buffer);
@@ -363,8 +362,8 @@ impl BasicRenderHandler {
         ctx: &VulkanoContext,
         receiver: &MutexGuard<BasicRenderInfoReceiver>,
         pipeline: Arc<GraphicsPipeline>,
-        framebuffer: Arc<Framebuffer>,
-        uniform_buffer_set: Arc<PersistentDescriptorSet>,
+        framebuffer: &Arc<Framebuffer>,
+        uniform_buffer_set: &Arc<PersistentDescriptorSet>,
         vertex_buffer: &Subbuffer<[BasicVertex]>,
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let mut builder = AutoCommandBufferBuilder::primary(
@@ -417,7 +416,7 @@ impl BasicRenderHandler {
                 let uniform_buffers = self.get_or_create_uniform_buffers(ctx)?;
                 let uniform_buffer_sets = self.get_or_create_uniform_buffer_sets(
                     ctx,
-                    pipeline.clone(),
+                    &pipeline,
                     &uniform_buffers)?;
                 let command_buffers = ctx.framebuffers().try_map_with_3(
                     &uniform_buffer_sets,
@@ -427,8 +426,8 @@ impl BasicRenderHandler {
                             ctx,
                             receiver,
                             pipeline.clone(),
-                            framebuffer.clone(),
-                            uniform_buffer_set.clone(),
+                            framebuffer,
+                            uniform_buffer_set,
                             vertex_buffer,
                         )
                     },
@@ -442,7 +441,7 @@ impl BasicRenderHandler {
 
     fn get_or_create_uniform_buffer_sets(&mut self,
                                          ctx: &VulkanoContext,
-                                         pipeline: Arc<GraphicsPipeline>,
+                                         pipeline: &Arc<GraphicsPipeline>,
                                          uniform_buffers: &DataPerImage<Subbuffer<UniformData>>
     ) -> Result<DataPerImage<Arc<PersistentDescriptorSet>>> {
         Ok(match self.uniform_buffer_sets.clone() {
@@ -529,9 +528,9 @@ impl RenderEventHandler<PrimaryAutoCommandBuffer> for BasicRenderHandler {
     fn on_resize(
         &mut self,
         _ctx: &VulkanoContext,
-        window: Arc<Window>,
+        window: &Arc<Window>,
     ) -> Result<()> {
-        self.viewport.update_from_window(window.clone());
+        self.viewport.update_from_window(window);
         self.vertex_buffers = None;
         self.command_buffers = None;
         self.pipeline = None;

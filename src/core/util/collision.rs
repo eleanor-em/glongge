@@ -3,7 +3,10 @@ use std::{
     fmt::Debug,
     ops::Range
 };
+use std::marker::PhantomData;
+use std::sync::Arc;
 use num_traits::{Float, Zero};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         prelude::*,
@@ -18,6 +21,8 @@ use crate::{
         util::linalg::Transform,
     }
 };
+use crate::core::ObjectTypeEnum;
+use crate::core::scene::SceneObject;
 
 pub enum ColliderType {
     Null,
@@ -26,7 +31,7 @@ pub enum ColliderType {
     Convex,
 }
 
-pub trait Collider: AxisAlignedExtent + Debug {
+pub trait Collider: AxisAlignedExtent + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn get_type(&self) -> ColliderType;
 
@@ -34,7 +39,7 @@ pub trait Collider: AxisAlignedExtent + Debug {
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2>;
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2>;
 
-    fn collides_with(&self, other: &dyn Collider) -> Option<Vec2> {
+    fn collides_with(&self, other: &GenericCollider) -> Option<Vec2> {
         match other.get_type() {
             ColliderType::Null => None,
             ColliderType::Box => self.collides_with_box(other.as_any().downcast_ref().unwrap()),
@@ -43,10 +48,17 @@ pub trait Collider: AxisAlignedExtent + Debug {
         }
     }
 
-    fn translate(&mut self, by: Vec2) -> &mut dyn Collider;
+    fn as_generic(&self) -> GenericCollider where Self: Clone + Send + Sync + 'static {
+        GenericCollider::new(self.clone())
+    }
+    fn into_generic(self) -> GenericCollider where Self: Sized + Send + Sync + 'static {
+        GenericCollider::new(self)
+    }
+
+    fn translated(&self, by: Vec2) -> GenericCollider;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct NullCollider;
 impl AxisAlignedExtent for NullCollider {
     fn aa_extent(&self) -> Vec2 { Vec2::zero() }
@@ -61,7 +73,7 @@ impl Collider for NullCollider {
     fn collides_with_oriented_box(&self, _other: &OrientedBoxCollider) -> Option<Vec2> { None }
     fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
 
-    fn translate(&mut self, _by: Vec2) -> &mut dyn Collider { self }
+    fn translated(&self, _by: Vec2) -> GenericCollider { Self.as_generic() }
 }
 
 trait Polygonal {
@@ -272,29 +284,33 @@ impl Collider for OrientedBoxCollider {
         self.polygon_collision(other)
     }
 
-    fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
-        self.centre += by.rotated(self.rotation);
-        self
+    fn translated(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        rv.centre += by.rotated(self.rotation);
+        rv.as_generic()
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct BoxCollider {
     centre: Vec2,
     extent: Vec2,
 }
 impl BoxCollider {
+    #[must_use]
     pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
         Self {
             centre,
             extent: half_widths.abs() * 2,
         }
     }
+    #[must_use]
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
         Self {
             centre: top_left + extent.abs() / 2,
             extent: extent.abs(),
         }
     }
+    #[must_use]
     pub fn from_transform(transform: Transform, extent: Vec2) -> Self {
         check_eq!(transform.rotation, 0.);
         Self {
@@ -302,8 +318,17 @@ impl BoxCollider {
             extent: transform.scale.component_wise(extent).abs(),
         }
     }
+
+    #[must_use]
     pub fn square(transform: Transform, width: f64) -> Self {
         Self::from_transform(transform, width.abs() * Vec2::one())
+    }
+    #[must_use]
+    pub fn transformed(&self, by: Transform) -> Self {
+        Self {
+            centre: self.centre + by.centre - self.half_widths(),
+            extent: self.extent.component_wise(by.scale.abs()),
+        }
     }
 }
 
@@ -381,9 +406,10 @@ impl Collider for BoxCollider {
         self.polygon_collision(other)
     }
 
-    fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
-        self.centre += by;
-        self
+    fn translated(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        rv.centre += by;
+        rv.as_generic()
     }
 }
 
@@ -475,10 +501,79 @@ impl Collider for ConvexCollider {
         self.polygon_collision(other)
     }
 
-    fn translate(&mut self, by: Vec2) -> &mut dyn Collider {
-        for vertex in &mut self.vertices {
+    fn translated(&self, by: Vec2) -> GenericCollider {
+        let mut rv = self.clone();
+        for vertex in &mut rv.vertices {
             *vertex += by;
         }
-        self
+        rv.as_generic()
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct GenericCollider {
+    inner: Arc<dyn Collider>,
+}
+
+impl GenericCollider {
+    pub fn new<C: Collider + 'static>(inner: C) -> Self {
+        let extent = inner.aa_extent();
+        check_eq!(extent, extent.abs());
+        Self { inner: Arc::new(inner) as Arc<dyn Collider> }
+    }
+}
+
+impl Default for GenericCollider {
+    fn default() -> Self {
+        Self { inner: Arc::new(NullCollider) }
+    }
+}
+
+impl AxisAlignedExtent for GenericCollider {
+    fn aa_extent(&self) -> Vec2 {
+        self.inner.aa_extent()
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.inner.centre()
+    }
+}
+
+impl Collider for GenericCollider {
+    fn as_any(&self) -> &dyn Any {
+        self.inner.as_any()
+    }
+
+    fn get_type(&self) -> ColliderType {
+        self.inner.get_type()
+    }
+
+    fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
+        self.inner.collides_with_box(other)
+    }
+
+    fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
+        self.inner.collides_with_oriented_box(other)
+    }
+
+    fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
+        self.inner.collides_with_convex(other)
+    }
+
+    fn translated(&self, by: Vec2) -> GenericCollider {
+        self.inner.translated(by).as_generic()
+    }
+}
+
+#[register_scene_object]
+pub struct GgInternalColliderObject<ObjectType> {
+    collider: GenericCollider,
+    object_type: PhantomData<ObjectType>,
+}
+
+#[partially_derive_scene_object]
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalColliderObject<ObjectType> {
+    fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
+
+    fn collider(&self) -> GenericCollider { self.collider.clone() }
 }

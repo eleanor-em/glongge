@@ -65,13 +65,13 @@ fn main() -> Result<()> {
             scene_handler.create_scene(MarioOverworldScene);
             scene_handler.create_scene(MarioUndergroundScene);
             let name = MarioOverworldScene.name();
-            // let name = MarioUndergroundScene{}.name();
+            // let name = MarioUndergroundScene.name();
             scene_handler.consume_with_scene(name, 0);
         });
     }
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
-        .consume(event_loop, true);
+        .consume(event_loop, false);
     Ok(())
 }
 

@@ -18,6 +18,7 @@ use crate::{
     }
 };
 use crate::core::update::PendingAddObject;
+use crate::core::util::collision::Collider;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {
@@ -149,9 +150,9 @@ impl CollisionHandler {
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions.iter()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].borrow().collider();
-                let other = objects[&ids.snd()].borrow().collider();
-                this.collides_with(other.as_ref()).map(|mtv| (*ids, mtv))
+                let this = objects[&ids.fst()].borrow();
+                let other = objects[&ids.snd()].borrow();
+                this.collider().collides_with(&other.collider()).map(|mtv| (*ids, mtv))
             })
             .collect()
     }

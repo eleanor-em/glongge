@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex}
 };
+use std::thread::JoinHandle;
 
 use fyrox_sound::{
     buffer::{
@@ -112,6 +113,7 @@ pub struct SoundHandler {
     _engine: SoundEngine,
     ctx: SoundContext,
     inner: Arc<Mutex<SoundHandlerInner>>,
+    join_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl SoundHandler {
@@ -126,11 +128,12 @@ impl SoundHandler {
             ctx,
             inner: Arc::new(Mutex::new(SoundHandlerInner {
                 loaded_files: BTreeMap::new(),
-            }))
+            })),
+            join_handles: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
-    fn load_file_inner(inner: Arc<Mutex<SoundHandlerInner>>, ctx: SoundContext, filename: String) -> Result<Sound> {
+    fn load_file_inner(inner: &Arc<Mutex<SoundHandlerInner>>, ctx: SoundContext, filename: String) -> Result<Sound> {
         let sound_buffer = {
             let maybe_buffer = inner.lock().unwrap()
                 .loaded_files.get(&filename)
@@ -153,10 +156,8 @@ impl SoundHandler {
             // Ensure that no spatial effects will be applied.
             .with_spatial_blend_factor(0.0)
             .build()?;
-        let inner = Some(SoundInner {
-            ctx: ctx.clone(),
-            handle: ctx.state().add_source(source),
-        });
+        let handle = ctx.state().add_source(source);
+        let inner = Some(SoundInner { ctx, handle });
         Ok(Sound { inner, is_looping: false })
     }
 }
@@ -165,10 +166,27 @@ impl Loader<Sound> for SoundHandler {
     fn spawn_load_file(&self, filename: String) {
         let inner = self.inner.clone();
         let ctx = self.ctx.clone();
-        std::thread::spawn(move || Self::load_file_inner(inner, ctx, filename).unwrap());
+        let handle = std::thread::spawn(move || {
+            Self::load_file_inner(&inner, ctx, filename).unwrap();
+        });
+        self.join_handles.try_lock().expect("join_handles should only be locked after calling wait()")
+            .push(handle);
     }
 
     fn wait_load_file(&self, filename: String) -> Result<Sound> {
-        Self::load_file_inner(self.inner.clone(), self.ctx.clone(), filename)
+        Self::load_file_inner(&self.inner, self.ctx.clone(), filename)
+    }
+
+    fn wait(&self) -> Result<()> {
+        let handles = self.join_handles
+            .try_lock().expect("join_handles should not be locked when calling wait()")
+            .drain(..)
+            .collect_vec();
+        for handle in handles {
+            handle.join()
+                // XXX: not sure why this is needed.
+                .map_err(|e| anyhow!("join error: {:?}", e))?;
+        }
+        Ok(())
     }
 }

@@ -4,7 +4,6 @@ use crate::{
     core::{
         prelude::*,
         util::{
-            collision::Collider,
             linalg::Transform
         }
     },
@@ -27,11 +26,13 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
     fn gg_sprite() -> Self;
+    fn gg_collider() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
             value.as_default().on_preload(resource_handler)?;
         }
+        resource_handler.wait_all()?;
         Ok(())
     }
     fn checked_downcast<T: SceneObject<Self> + 'static>(obj: &dyn SceneObject<Self>) -> &T {
@@ -82,7 +83,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
-    pub fn collider(&self) -> Box<dyn Collider> { self.inner.borrow().collider() }
+    // pub fn collider(&self) -> GenericCollider { self.inner.borrow().collider() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }

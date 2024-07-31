@@ -34,6 +34,7 @@ use crate::{
     },
     resource::ResourceHandler
 };
+use crate::core::util::collision::GenericCollider;
 use crate::core::util::linalg::Transform;
 
 pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
@@ -485,8 +486,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         let parent = caller.objects.get(parent_id)
             .map(|parent| SceneObjectWithId::new(*parent_id, parent.clone()));
         if parent.is_none() {
-            // The only missing parent should be the root node.
-            check_eq!(parent_id.0, 0);
+            check_eq!(parent_id.0, 0, "the only missing parent should be the root node");
         }
         let children = caller.children.get(&this_id)
             .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
@@ -726,19 +726,21 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         }
     }
     pub fn test_collision(&self,
-                          collider: &dyn Collider,
+                          collider: &GenericCollider,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
         for tag in listening_tags {
-            for other_id in self.collision_handler.get_object_ids_by_emitting_tag(tag).unwrap() {
-                if let Some(other) = self.object_tracker.last
-                    .get(other_id) {
-                    if let Some(mtv) = collider.collides_with(other.borrow().collider().as_ref()) {
-                        rv.push(Collision {
-                            other: SceneObjectWithId::new(*other_id, other.clone()),
-                            mtv,
-                        });
+            if let Some(others) = self.collision_handler.get_object_ids_by_emitting_tag(tag) {
+                for other_id in others {
+                    if let Some(other) = self.object_tracker.last
+                        .get(other_id) {
+                        if let Some(mtv) = collider.collides_with(&other.borrow().collider()) {
+                            rv.push(Collision {
+                                other: SceneObjectWithId::new(*other_id, other.clone()),
+                                mtv,
+                            });
+                        }
                     }
                 }
             }
@@ -746,12 +748,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         NonemptyVec::try_from_vec(rv)
     }
     pub fn test_collision_along(&self,
-                                mut collider: Box<dyn Collider>,
+                                collider: &GenericCollider,
                                 axis: Vec2,
                                 distance: f64,
                                 tags: Vec<&'static str>,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.test_collision(collider.translate(distance * axis), tags)
+        let new_collider = collider.translated(distance * axis).as_generic();
+        self.test_collision(&new_collider, tags)
             .and_then(|vec| {
                 NonemptyVec::try_from_iter(vec
                     .into_iter()

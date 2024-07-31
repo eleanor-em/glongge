@@ -121,7 +121,7 @@ impl AdjustedViewport {
     pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
         self.global_scale_factor = global_scale_factor;
     }
-    pub fn update_from_window(&mut self, window: Arc<Window>) {
+    pub fn update_from_window(&mut self, window: &Arc<Window>) {
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
     }
@@ -313,7 +313,7 @@ impl VulkanoContext {
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
         let instance = macos_instance(window_ctx.event_loop(), library)?;
         let surface = Surface::from_window(instance.clone(), window_ctx.window())?;
-        let physical_device = any_physical_device(instance.clone(), surface.clone())?;
+        let physical_device = any_physical_device(&instance, &surface)?;
         let (device, queue) = any_graphical_queue_family(physical_device.clone())?;
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
@@ -328,14 +328,14 @@ impl VulkanoContext {
             }
         ));
         let (swapchain, images) = create_swapchain(
-            window_ctx.window(),
+            &window_ctx.window(),
             surface.clone(),
-            physical_device.clone(),
+            &physical_device,
             device.clone(),
         )?;
         let images = DataPerImage { data: images };
-        let render_pass = create_render_pass(device.clone(), swapchain.clone())?;
-        let framebuffers = create_framebuffers(images.as_slice(), render_pass.clone())?;
+        let render_pass = create_render_pass(device.clone(), &swapchain)?;
+        let framebuffers = create_framebuffers(images.as_slice(), &render_pass)?;
 
         check_eq!(swapchain.image_count() as usize, images.len());
 
@@ -384,14 +384,14 @@ impl VulkanoContext {
         self.framebuffers.clone()
     }
 
-    fn recreate_swapchain(&mut self, window: Arc<Window>) -> Result<()> {
+    fn recreate_swapchain(&mut self, window: &Arc<Window>) -> Result<()> {
         let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
             ..self.swapchain.create_info()
         }).map_err(Validated::unwrap)?;
         self.swapchain = new_swapchain;
         self.images = DataPerImage { data: new_images };
-        self.framebuffers = create_framebuffers(self.images.as_slice(), self.render_pass.clone())?;
+        self.framebuffers = create_framebuffers(self.images.as_slice(), &self.render_pass)?;
         Ok(())
     }
 }
@@ -412,8 +412,8 @@ fn macos_instance<T>(
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
 }
 fn any_physical_device(
-    instance: Arc<Instance>,
-    surface: Arc<Surface>,
+    instance: &Arc<Instance>,
+    surface: &Arc<Surface>,
 ) -> Result<Arc<PhysicalDevice>> {
     Ok(instance
         .enumerate_physical_devices()?
@@ -431,7 +431,7 @@ fn any_physical_device(
                     #[allow(clippy::cast_possible_truncation)]
                     let i = i as u32;
                     q.queue_flags.contains(QueueFlags::GRAPHICS)
-                        && p.surface_support(i, &surface).unwrap_or(false)
+                        && p.surface_support(i, surface).unwrap_or(false)
                 })
                 .map(|q| {
                     #[allow(clippy::cast_possible_truncation)]
@@ -481,9 +481,9 @@ fn any_graphical_queue_family(
 }
 
 fn create_swapchain(
-    window: Arc<Window>,
+    window: &Arc<Window>,
     surface: Arc<Surface>,
-    physical_device: Arc<PhysicalDevice>,
+    physical_device: &Arc<PhysicalDevice>,
     device: Arc<Device>,
 ) -> Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
     let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
@@ -499,8 +499,8 @@ fn create_swapchain(
         error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
     }
     Ok(Swapchain::new(
-        device.clone(),
-        surface.clone(),
+        device,
+        surface,
         SwapchainCreateInfo {
             min_image_count: caps.min_image_count + 1,
             image_format: Format::B8G8R8A8_SRGB,
@@ -513,9 +513,9 @@ fn create_swapchain(
     )?)
 }
 
-fn create_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Result<Arc<RenderPass>> {
+fn create_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Result<Arc<RenderPass>> {
     Ok(vulkano::single_pass_renderpass!(
-        device.clone(),
+        device,
         attachments: {
             color: {
                 // Set the format the same as the swapchain.
@@ -534,7 +534,7 @@ fn create_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Result<
 
 fn create_framebuffers(
     images: &[Arc<Image>],
-    render_pass: Arc<RenderPass>,
+    render_pass: &Arc<RenderPass>,
 ) -> Result<DataPerImage<Arc<Framebuffer>>> {
     Ok(DataPerImage {
         data: images
@@ -596,7 +596,7 @@ pub(crate) trait RenderEventHandler<CommandBuffer: PrimaryCommandBufferAbstract 
     fn on_resize(
         &mut self,
         ctx: &VulkanoContext,
-        window: Arc<Window>,
+        window: &Arc<Window>,
     ) -> Result<()>;
     fn on_render(
         &mut self,
@@ -665,7 +665,7 @@ where
 
     pub fn consume(mut self, event_loop: EventLoop<()>, report_stats: bool) {
         event_loop.run(move |event, _, control_flow| {
-            self.run_inner(event, control_flow, report_stats).expect("error running event loop");
+            self.run_inner(&event, control_flow, report_stats).expect("error running event loop");
         });
     }
 
@@ -674,10 +674,10 @@ where
     ) -> Result<()> {
         self.fences = DataPerImage::new_with_generator(&self.ctx, || Rc::new(RefCell::new(None)));
         self.ctx
-            .recreate_swapchain(self.window.clone())
+            .recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;
         self.render_handler
-            .on_resize(&self.ctx, self.window.clone())?;
+            .on_resize(&self.ctx, &self.window)?;
         Ok(())
     }
 
@@ -763,7 +763,7 @@ where
         self.is_ready
     }
 
-    fn run_inner(&mut self, event: Event<()>, control_flow: &mut ControlFlow, report_stats: bool) -> Result<()> {
+    fn run_inner(&mut self, event: &Event<()>, control_flow: &mut ControlFlow, report_stats: bool) -> Result<()> {
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -776,14 +776,14 @@ where
                 state, virtual_keycode, ..
             }, .. }, .. } => {
                 if let Some(virtual_keycode) = virtual_keycode {
-                    self.input_handler.lock().unwrap().queue_event(virtual_keycode, state);
+                    self.input_handler.lock().unwrap().queue_event(*virtual_keycode, *state);
                 }
                 Ok(())
             }
             Event::WindowEvent { event: WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
             }, .. } => {
-                self.scale_factor = scale_factor;
+                self.scale_factor = *scale_factor;
                 self.recreate_swapchain()
             }
             Event::WindowEvent {

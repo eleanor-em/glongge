@@ -29,9 +29,16 @@ impl ResourceHandler {
             sound: Arc::new(SoundHandler::new()?),
         })
     }
+
+    pub fn wait_all(&self) -> Result<()>{
+        self.sound.wait()?;
+        Ok(())
+    }
 }
 
 pub trait Loader<T> {
     fn spawn_load_file(&self, filename: String);
     fn wait_load_file(&self, filename: String) -> Result<T>;
+
+    fn wait(&self) -> Result<()>;
 }

@@ -139,7 +139,7 @@ pub(crate) enum CachedTexture {
 }
 
 impl CachedTexture {
-    pub fn ready<'a>(self) -> Option<Arc<InternalTexture>> {
+    pub fn ready(self) -> Option<Arc<InternalTexture>> {
         match self {
             Self::Loading => None,
             Self::Ready(tex) => Some(tex)

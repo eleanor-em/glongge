@@ -14,6 +14,7 @@ use glongge::core::render::RenderInfo;
 use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::ObjectContext;
+use glongge::core::util::collision::GenericCollider;
 use glongge::resource::sprite::Sprite;
 use crate::mario::{FLAG_COLLISION_TAG};
 use crate::object_type::ObjectType;
@@ -53,8 +54,8 @@ impl SceneObject<ObjectType> for Flagpole {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Box<dyn Collider> {
-        self.sprite.as_box_collider(self.transform())
+    fn collider(&self) -> GenericCollider {
+        self.sprite.as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [FLAG_COLLISION_TAG].into()

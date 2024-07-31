@@ -23,7 +23,7 @@ use crate::core::SceneObjectWithId;
 use crate::core::render::{RenderInfo, RenderInfoReceiver, RenderItem};
 use crate::core::update::{ObjectContext, UpdateContext, UpdateHandler};
 use crate::core::update::collision::CollisionResponse;
-use crate::core::util::collision::{Collider, NullCollider};
+use crate::core::util::collision::GenericCollider;
 use crate::core::util::linalg::{Transform, Vec2};
 
 #[derive(Clone)]
@@ -230,7 +230,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum> {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         None
     }
-    fn collider(&self) -> Box<dyn Collider> { Box::new(NullCollider) }
+    fn collider(&self) -> GenericCollider { GenericCollider::default() }
     fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }

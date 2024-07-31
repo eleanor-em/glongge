@@ -102,7 +102,9 @@ impl Font {
 
 }
 
+#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
 pub enum TextWrapMode {
+    #[default]
     WrapAnywhere,
 }
 

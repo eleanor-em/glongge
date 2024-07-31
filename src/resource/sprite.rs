@@ -6,7 +6,7 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         prelude::*,
-        util::collision::{BoxCollider, Collider},
+        util::collision::BoxCollider,
         util::linalg::{AxisAlignedExtent, Vec2},
         util::linalg::Vec2Int
     },
@@ -29,6 +29,7 @@ pub struct GgInternalSprite<ObjectType> {
     frame_time_ms: Vec<u32>,
     frame: usize,
     object_type: PhantomData<ObjectType>,
+    collider: BoxCollider,
 }
 
 pub struct Sprite<ObjectType> {
@@ -65,6 +66,7 @@ impl<ObjectType: ObjectTypeEnum> GgInternalSprite<ObjectType> {
             elapsed_us: 0,
             frame: 0,
             object_type: PhantomData,
+            collider: BoxCollider::from_top_left(Vec2::zero(), tile_size.into()),
         });
         let inner = object_ctx.add_child(inner);
         Sprite { inner }
@@ -189,8 +191,10 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
         inner.areas[inner.frame]
     }
 
-    pub fn as_box_collider(&self, transform: Transform) -> Box<dyn Collider> {
-        Box::new(BoxCollider::from_transform(transform, self.aa_extent()))
+    pub fn as_box_collider(&self, transform: Transform) -> BoxCollider {
+        let inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
+        // TODO: clean up below
+        inner.collider.transformed(transform)
     }
 
     pub fn render_info_default(&self) -> RenderInfo {

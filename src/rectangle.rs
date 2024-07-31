@@ -26,6 +26,7 @@ use glongge::core::render::RenderItem;
 use glongge::core::scene::{RenderableObject, SceneObject};
 use glongge::core::update::collision::CollisionResponse;
 use glongge::core::update::{ObjectContext, UpdateContext};
+use glongge::core::util::collision::GenericCollider;
 use glongge::resource::sprite::Sprite;
 use crate::object_type::ObjectType;
 
@@ -131,8 +132,8 @@ impl SceneObject<ObjectType> for RectanglePlayer {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::square(self.transform(), Self::SIZE))
+    fn collider(&self) -> GenericCollider {
+        BoxCollider::square(self.transform(), Self::SIZE).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
@@ -242,8 +243,8 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> Box<dyn Collider> {
-        Box::new(BoxCollider::square(self.transform(), Self::SIZE))
+    fn collider(&self) -> GenericCollider {
+        BoxCollider::square(self.transform(), Self::SIZE).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
