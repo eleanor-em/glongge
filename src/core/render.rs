@@ -145,10 +145,14 @@ impl RenderHandler {
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
-        let render_info_receiver = self.render_info_receiver.clone();
-        let mut receiver = render_info_receiver.lock().unwrap();
-        if !receiver.vertices_up_to_date {
-            self.shaders.values_mut().for_each(ShaderWithPipeline::reset_vertex_buffer);
+        {
+            let mut receiver = self.render_info_receiver.lock().unwrap();
+            for shader in self.shaders.values_mut() {
+                if !receiver.vertices_up_to_date {
+                    shader.reset_vertex_buffer();
+                }
+                shader.on_render(ctx, &mut receiver)?;
+            }
             receiver.vertices_up_to_date = true;
         }
         let mut builder = AutoCommandBufferBuilder::primary(
@@ -157,14 +161,9 @@ impl RenderHandler {
             CommandBufferUsage::OneTimeSubmit,
         )?;
         for shader in self.shaders.values_mut() {
-            shader.build_render_pass(ctx, framebuffer.clone(), &mut receiver, &mut builder)?;
+            shader.build_render_pass(ctx, framebuffer.clone(), &mut builder)?;
         }
         Ok(builder.build().map_err(Validated::unwrap)?)
-    }
-
-    pub(crate) fn on_reload_textures(&mut self, _ctx: &VulkanoContext) -> Result<()> {
-        self.shaders.values_mut().for_each(ShaderWithPipeline::reset_uniform_buffer);
-        Ok(())
     }
 
     pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderInfoReceiver>> {

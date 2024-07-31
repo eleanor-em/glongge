@@ -689,7 +689,6 @@ impl WindowEventHandler {
         if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.ctx)? {
             uploads.flush()?;
             info!("loaded textures");
-            self.render_handler.on_reload_textures(&self.ctx)?;
         }
         // TODO: if below step takes >16.67 ms, expect that the next instance will be faster.
         if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {

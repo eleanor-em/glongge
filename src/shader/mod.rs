@@ -80,8 +80,7 @@ pub(crate) struct ShaderWithPipeline {
     viewport: Arc<Mutex<AdjustedViewport>>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer: Option<Subbuffer<[basic::Vertex]>>,
-    uniform_buffer: Option<Subbuffer<basic::UniformData>>,
-    uniform_buffer_set: Option<Arc<PersistentDescriptorSet>>,
+    clear_col: Colour,
     resource_handler: ResourceHandler,
 }
 
@@ -92,8 +91,7 @@ impl ShaderWithPipeline {
             viewport,
             pipeline: None,
             vertex_buffer: None,
-            uniform_buffer: None,
-            uniform_buffer_set: None,
+            clear_col: Colour::default(),
             resource_handler,
         }
     }
@@ -102,6 +100,7 @@ impl ShaderWithPipeline {
         ctx: &VulkanoContext,
         receiver: &mut MutexGuard<RenderInfoReceiver>,
     ) -> Result<()> {
+        self.clear_col = receiver.get_clear_col();
         let vertex_buffer = self.get_or_create_vertex_buffer(ctx, receiver)?;
         let mut writer = vertex_buffer.write()?;
         for render_info in &receiver.render_info {
@@ -114,8 +113,7 @@ impl ShaderWithPipeline {
                     if let Some(tex) = tex.ready() {
                         uv = render_info.inner.texture_sub_area.uv(&tex, uv);
                     } else {
-                        // blend_col = Colour::new(0., 0., 0., 0.);
-                        blend_col = Colour::magenta();
+                        blend_col = Colour::new(0., 0., 0., 0.);
                     }
                 } else {
                     error!("missing texture: {}", texture);
@@ -139,19 +137,16 @@ impl ShaderWithPipeline {
         &mut self,
         ctx: &VulkanoContext,
         framebuffer: Arc<Framebuffer>,
-        receiver: &mut MutexGuard<RenderInfoReceiver>,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        self.on_render(ctx, receiver)?;
-
         let pipeline = self.get_or_create_pipeline(ctx)?;
-        let uniform_buffer_set = self.get_or_create_uniform_buffer_set(ctx)?;
-        let vertex_buffer = self.get_or_create_vertex_buffer(ctx, receiver)?;
+        let uniform_buffer_set = self.create_uniform_buffer_set(ctx)?;
+        let vertex_buffer = self.vertex_buffer.as_ref().unwrap();
         let layout = pipeline.layout().clone();
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some(receiver.get_clear_col().as_f32().into())],
+                    clear_values: vec![Some(self.clear_col.as_f32().into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer)
                 },
                 SubpassBeginInfo {
@@ -172,9 +167,6 @@ impl ShaderWithPipeline {
                   1, 0, 0)?
             .end_render_pass(SubpassEndInfo::default())?;
         Ok(())
-    }
-    pub(crate) fn reset_uniform_buffer(&mut self) {
-        self.uniform_buffer = None;
     }
     pub(crate) fn reset_vertex_buffer(&mut self) {
         self.vertex_buffer = None;
@@ -260,82 +252,67 @@ impl ShaderWithPipeline {
             Some(vertex_buffer) => Ok(vertex_buffer)
         }
     }
-    fn get_or_create_uniform_buffer(&mut self, ctx: &VulkanoContext) -> Result<Subbuffer<basic::UniformData>> {
-        Ok(match self.uniform_buffer.clone() {
-            None => {
-                let uniform_buffer= Buffer::new_sized(
-                    ctx.memory_allocator(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::UNIFORM_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                ).map_err(Validated::unwrap)?;
-
-                let uniform_data = {
-                    let viewport = self.viewport.try_lock().unwrap();
-                    basic::UniformData {
-                        #[allow(clippy::cast_possible_truncation)]
-                        window_width: viewport.physical_width() as f32,
-                        #[allow(clippy::cast_possible_truncation)]
-                        window_height: viewport.physical_height() as f32,
-                        #[allow(clippy::cast_possible_truncation)]
-                        scale_factor: viewport.scale_factor() as f32,
-                    }
-                };
-                *uniform_buffer.write()? = uniform_data;
-                self.uniform_buffer = Some(uniform_buffer.clone());
-                uniform_buffer
+    fn create_uniform_buffer(&mut self, ctx: &VulkanoContext) -> Result<Subbuffer<basic::UniformData>> {
+        let uniform_buffer= Buffer::new_sized(
+            ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
             },
-            Some(uniform_buffer) => uniform_buffer,
-        })
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        ).map_err(Validated::unwrap)?;
+
+        let uniform_data = {
+            let viewport = self.viewport.try_lock().unwrap();
+            basic::UniformData {
+                #[allow(clippy::cast_possible_truncation)]
+                window_width: viewport.physical_width() as f32,
+                #[allow(clippy::cast_possible_truncation)]
+                window_height: viewport.physical_height() as f32,
+                #[allow(clippy::cast_possible_truncation)]
+                scale_factor: viewport.scale_factor() as f32,
+            }
+        };
+        *uniform_buffer.write()? = uniform_data;
+        Ok(uniform_buffer)
     }
 
-    fn get_or_create_uniform_buffer_set(&mut self,
-                                        ctx: &VulkanoContext,
-    ) -> Result<Arc<PersistentDescriptorSet>> {
+    fn create_uniform_buffer_set(&mut self, ctx: &VulkanoContext) -> Result<Arc<PersistentDescriptorSet>> {
         let pipeline = self.get_or_create_pipeline(ctx)?;
-        Ok(match self.uniform_buffer_set.clone() {
-            None => {
-                let sampler = Sampler::new(
-                    ctx.device(),
-                    SamplerCreateInfo {
-                        mag_filter: Filter::Nearest,
-                        min_filter: Filter::Nearest,
-                        address_mode: [SamplerAddressMode::ClampToBorder; 3],
-                        border_color: BorderColor::FloatTransparentBlack,
-                        ..Default::default()
-                    }).map_err(Validated::unwrap)?;
-                let mut textures = self.resource_handler.texture.ready_values()
-                    .into_iter()
-                    .filter_map(|tex| tex.image_view())
-                    .collect_vec();
-                check_le!(textures.len(), MAX_TEXTURE_COUNT);
-                let blank = textures.first()
-                    .expect("textures.first() should always contain a blank texture")
-                    .clone();
-                textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
-                let uniform_buffer_set = PersistentDescriptorSet::new(
-                    &ctx.descriptor_set_allocator(),
-                    pipeline.layout().set_layouts()[0].clone(),
-                    [
-                        WriteDescriptorSet::buffer(0, self.get_or_create_uniform_buffer(ctx)?),
-                        WriteDescriptorSet::image_view_sampler_array(
-                            1,
-                            0,
-                            textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
-                        ),
-                    ],
-                    [],
-                ).map_err(Validated::unwrap)?;
-                self.uniform_buffer_set = Some(uniform_buffer_set.clone());
-                uniform_buffer_set
-            },
-            Some(uniform_buffer_set) => uniform_buffer_set,
-        })
+        let sampler = Sampler::new(
+            ctx.device(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Nearest,
+                min_filter: Filter::Nearest,
+                address_mode: [SamplerAddressMode::ClampToBorder; 3],
+                border_color: BorderColor::FloatTransparentBlack,
+                ..Default::default()
+            }).map_err(Validated::unwrap)?;
+        let mut textures = self.resource_handler.texture.ready_values()
+            .into_iter()
+            .filter_map(|tex| tex.image_view())
+            .collect_vec();
+        check_le!(textures.len(), MAX_TEXTURE_COUNT);
+        let blank = textures.first()
+            .expect("textures.first() should always contain a blank texture")
+            .clone();
+        textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
+        Ok(PersistentDescriptorSet::new(
+            &ctx.descriptor_set_allocator(),
+            pipeline.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::buffer(0, self.create_uniform_buffer(ctx)?),
+                WriteDescriptorSet::image_view_sampler_array(
+                    1,
+                    0,
+                    textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
+                ),
+            ],
+            [],
+        ).map_err(Validated::unwrap)?)
     }
 }

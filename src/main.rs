@@ -64,6 +64,7 @@ fn main() -> Result<()> {
     }
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
+        .with_report_stats()
         .consume(event_loop);
     Ok(())
 }
