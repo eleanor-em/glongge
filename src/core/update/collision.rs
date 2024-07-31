@@ -58,7 +58,7 @@ impl CollisionHandler {
             possible_collisions: BTreeSet::new()
         }
     }
-    pub(crate) fn update_with_added_objects<ObjectType: ObjectTypeEnum>(
+    pub(crate) fn add_objects<ObjectType: ObjectTypeEnum>(
         &mut self,
         added_objects: &BTreeMap<ObjectId, PendingAddObject<ObjectType>>
     ) {
@@ -100,7 +100,7 @@ impl CollisionHandler {
             self.possible_collisions.extend(new_possible_collisions);
         }
     }
-    pub(crate) fn update_with_removed_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
+    pub(crate) fn remove_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
         for ids in self.object_ids_by_emitting_tag.values_mut() {
             ids.retain(|id| !removed_ids.contains(id));
         }
