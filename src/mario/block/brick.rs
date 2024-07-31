@@ -44,6 +44,13 @@ impl SceneObject<ObjectType> for Brick {
             Vec2Int { x: 17, y: 16 });
         Ok(self.sprite.create_vertices())
     }
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().add_child(CollisionShape::new(
+            self.sprite.as_box_collider(),
+            &self.emitting_tags(),
+            &self.listening_tags()
+        ));
+    }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;
@@ -62,9 +69,6 @@ impl SceneObject<ObjectType> for Brick {
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
-    }
-    fn collider(&self) -> GenericCollider {
-        self.sprite.as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

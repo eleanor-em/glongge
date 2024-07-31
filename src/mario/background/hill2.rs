@@ -1,3 +1,4 @@
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
         prelude::*,
@@ -5,7 +6,6 @@ use glongge::{
     },
     resource::sprite::Sprite
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::object_type::ObjectType;
 
 #[register_scene_object]

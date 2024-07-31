@@ -28,7 +28,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
             fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
             fn all_values() -> Vec<Self> { #all_values_code }
             fn gg_sprite() -> Self { Self::GgInternalSprite }
-            fn gg_collider() -> Self { Self::GgInternalColliderObject }
+            fn gg_collider() -> Self { Self::GgInternalCollisionShape }
         }
     };
 

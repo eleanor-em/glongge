@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use crate::core::prelude::*;
 
 use std::{
@@ -209,7 +208,7 @@ pub mod gg_range {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash>(T, T);
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T> {
     pub fn new(a: T, b: T) -> Self {

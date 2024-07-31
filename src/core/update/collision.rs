@@ -6,6 +6,7 @@ use std::{
 };
 use itertools::Itertools;
 use crate::core::{
+    prelude::*,
     update::PendingAddObject,
     AnySceneObject,
     ObjectId,
@@ -24,13 +25,13 @@ pub enum CollisionResponse {
     Done,
 }
 
+#[derive(Debug)]
 pub(crate) struct CollisionNotification<ObjectType: ObjectTypeEnum> {
     pub(crate) this: SceneObjectWithId<ObjectType>,
     pub(crate) other: SceneObjectWithId<ObjectType>,
     pub(crate) mtv: Vec2,
 }
 
-#[derive(Clone)]
 pub struct Collision<ObjectType: ObjectTypeEnum> {
     pub other: SceneObjectWithId<ObjectType>,
     pub mtv: Vec2,
@@ -60,6 +61,20 @@ impl CollisionHandler {
         &mut self,
         added_objects: &BTreeMap<ObjectId, PendingAddObject<ObjectType>>
     ) {
+        for obj in added_objects.values() {
+            let obj = obj.inner.borrow();
+            for tag in obj.emitting_tags() {
+                self.object_ids_by_emitting_tag.entry(tag).or_default();
+                self.object_ids_by_listening_tag.entry(tag).or_default();
+            }
+            for tag in obj.listening_tags() {
+                self.object_ids_by_emitting_tag.entry(tag).or_default();
+                self.object_ids_by_listening_tag.entry(tag).or_default();
+            }
+        }
+        let added_objects = added_objects.iter()
+            .filter(|(_, obj)| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider())
+            .collect::<BTreeMap<_, _>>();
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
 
@@ -111,17 +126,24 @@ impl CollisionHandler {
     }
     pub(crate) fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
+        absolute_transforms: &BTreeMap<ObjectId, Transform>,
+        parents: &BTreeMap<ObjectId, ObjectId>,
         objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
     ) -> Vec<CollisionNotification<ObjectType>> {
-        let collisions = self.get_collisions_inner(objects);
+        let collisions = self.get_collisions_inner(absolute_transforms, objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
-            let this = SceneObjectWithId::new(ids.fst(), objects[&ids.fst()].clone());
+            let this_id = parents.get(&ids.fst())
+                .unwrap_or_else(|| panic!("missing object_id in parents: {:?}", ids.fst()));
+            let other_id = parents.get(&ids.snd())
+                .unwrap_or_else(|| panic!("missing object_id in parents: {:?}", ids.snd()));
+
+            let this = SceneObjectWithId::new(*this_id, objects[this_id].clone());
             let (this_listening, this_emitting) = {
                 let this = this.inner.borrow();
                 (this.listening_tags(), this.emitting_tags())
             };
-            let other = SceneObjectWithId::new(ids.snd(), objects[&ids.snd()].clone());
+            let other = SceneObjectWithId::new(*other_id, objects[other_id].clone());
             let (other_listening, other_emitting) = {
                 let other = other.inner.borrow();
                 (other.listening_tags(), other.emitting_tags())
@@ -146,19 +168,28 @@ impl CollisionHandler {
 
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
+        absolute_transforms: &BTreeMap<ObjectId, Transform>,
         objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions.iter()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].borrow();
-                let other = objects[&ids.snd()].borrow();
-                this.collider().collides_with(&other.collider()).map(|mtv| (*ids, mtv))
+                let this = objects[&ids.fst()].borrow().collider()
+                    .translated(absolute_transforms
+                        .get(&ids.fst())
+                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.fst()))
+                        .centre);
+                let other = objects[&ids.snd()].borrow().collider()
+                    .translated(absolute_transforms
+                        .get(&ids.snd())
+                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.snd()))
+                        .centre);
+                this.collides_with(&other).map(|mtv| (*ids, mtv))
             })
             .collect()
     }
 
     pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> &BTreeSet<ObjectId> {
         self.object_ids_by_emitting_tag.get(tag)
-            .expect("missing tag in object_ids_by_emitting_tag: {tag}")
+            .unwrap_or_else(|| panic!("missing tag in object_ids_by_emitting_tag: {tag}"))
     }
 }

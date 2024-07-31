@@ -401,26 +401,4 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         }));
         initial_objects
     }
-
 }
-
-// #[register_object_type]
-// pub enum ObjectType {
-//     Player,
-//     Floor,
-//     UndergroundFloor,
-//     QuestionBlock,
-//     Brick,
-//     Block,
-//     Flagpole,
-//     UndergroundBrick,
-//     Goomba,
-//     Hill1,
-//     Hill2,
-//     Hill3,
-//     Hill4,
-//     Castle,
-//     Pipe,
-//     DecorativePipe,
-//     WinTextDisplay,
-// }

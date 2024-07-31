@@ -50,6 +50,7 @@ use crate::{
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
     parents: BTreeMap<ObjectId, ObjectId>,
+    absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
 
     collision_handler: CollisionHandler,
@@ -62,6 +63,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         Self {
             objects: BTreeMap::new(),
             parents: BTreeMap::new(),
+            absolute_transforms: BTreeMap::new(),
             children: BTreeMap::new(),
             collision_handler: CollisionHandler::new(),
             render_infos: BTreeMap::new()
@@ -81,6 +83,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     fn add_object(&mut self, new_id: ObjectId, new_obj: PendingAddObject<ObjectType>) {
         if self.children.is_empty() {
             self.children.insert(ObjectId(0), Vec::new());
+            self.absolute_transforms.insert(ObjectId(0), Transform::default());
         }
         self.objects.insert(new_id, new_obj.inner.clone());
         self.parents.insert(new_id, new_obj.parent_id);
@@ -90,8 +93,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .push(SceneObjectWithId::new(new_id, new_obj.inner));
     }
 
-    fn get_collisions(&self) -> Vec<CollisionNotification<ObjectType>> {
-        self.collision_handler.get_collisions(&self.objects)
+    fn get_collisions(&mut self) -> Vec<CollisionNotification<ObjectType>> {
+        self.update_all_transforms();
+        self.collision_handler.get_collisions(&self.absolute_transforms, &self.parents, &self.objects)
     }
 
     fn get_parent(&self, this_id: ObjectId) -> Option<BorrowedSceneObjectWithId<ObjectType>> {
@@ -113,43 +117,45 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.children
             .get(&this_id)
             .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
-            .clone()
+            .iter()
+            .map(SceneObjectWithId::clone)
+            .collect()
     }
 
+    fn update_all_transforms(&mut self) {
+        self.update_transforms(ObjectId(0), Transform::default());
+    }
     fn update_transforms(
-        &self,
-        transforms: &mut BTreeMap<ObjectId, Transform>,
+        &mut self,
         parent_id: ObjectId,
-        absolute_transform: Transform,
+        parent_transform: Transform,
     ) {
-        for child in self.children.get(&parent_id)
-            .unwrap_or_else(|| panic!("missing object_id in children: {parent_id:?}")) {
-            let child_id = child.object_id;
-            // Check for cycles:
-            check_false!(transforms.contains_key(&child_id));
-            self.update_transforms(transforms,
-                                   child_id,
-                                   child.transform() * absolute_transform);
+        let mut child_stack = Vec::with_capacity(self.objects.len());
+        child_stack.push((parent_id, parent_transform));
+        while let Some((parent_id, parent_transform)) = child_stack.pop() {
+            self.absolute_transforms.insert(parent_id, parent_transform);
+            for child in self.children.get(&parent_id)
+                .unwrap_or_else(|| panic!("missing object_id in children: {parent_id:?}")) {
+                let child_id = child.object_id;
+                let child_transform = child.transform() * parent_transform;
+                child_stack.push((child_id, child_transform));
+            }
         }
-        transforms.insert(parent_id, absolute_transform);
     }
 
     fn update_render_infos(&mut self, vertex_map: &VertexMap, viewport: &AdjustedViewport) {
-        let mut transforms = BTreeMap::new();
-        self.update_transforms(&mut transforms, ObjectId(0), Transform {
-            centre: -viewport.translation,
-            ..Default::default()
-        });
+        self.update_all_transforms();
         for (object_id, obj) in &self.objects {
             if let Some(obj) = obj.borrow().as_renderable_object() {
                 let (indices, _) = vertex_map.get(*object_id)
                     .unwrap_or_else(|| panic!("missing object_id in vertex_map: {object_id:?}"));
-                let transform = transforms.get(object_id)
-                    .unwrap_or_else(|| panic!("missing object_id in transforms: {object_id:?}"));
+                let transform = self.absolute_transforms.get(object_id)
+                    .unwrap_or_else(|| panic!("missing object_id in transforms: {object_id:?}"))
+                    .translated(-viewport.translation);
                 self.render_infos.insert(*object_id, RenderInfoFull {
                     vertex_indices: indices.clone(),
                     inner: obj.render_info(),
-                    transform: *transform,
+                    transform,
                 });
             }
         }
@@ -331,6 +337,9 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
                     parent,
                     children: Vec::new(),
                     object_tracker,
+                    all_absolute_transforms: &self.object_handler.absolute_transforms,
+                    all_parents: &self.object_handler.parents,
+                    all_children: &self.object_handler.children,
                 };
                 new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?
             };
@@ -572,6 +581,9 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 parent,
                 children,
                 object_tracker,
+                all_absolute_transforms: &caller.object_handler.absolute_transforms,
+                all_parents: &caller.object_handler.parents,
+                all_children: &caller.object_handler.children,
             },
             viewport: ViewportContext {
                 viewport: &mut caller.viewport,
@@ -745,6 +757,9 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     parent: Option<BorrowedSceneObjectWithId<'a, ObjectType>>,
     children: Vec<SceneObjectWithId<ObjectType>>,
     object_tracker: &'a mut ObjectTracker<ObjectType>,
+    all_absolute_transforms: &'a BTreeMap<ObjectId, Transform>,
+    all_parents: &'a BTreeMap<ObjectId, ObjectId>,
+    all_children: &'a BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
@@ -757,7 +772,39 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .map(|(object_id, obj)| SceneObjectWithId::new(*object_id, obj.clone()))
             .collect()
     }
+    pub fn absolute_transform(&self) -> Transform {
+        *self.all_absolute_transforms.get(&self.this_id)
+            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: this={:?}", self.this_id))
+    }
+    pub fn absolute_transform_of(&self, object_id: ObjectId) -> Transform {
+        // Should not be possible to get an invalid object_id here if called from public.
+        *self.all_absolute_transforms.get(&object_id)
+            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {object_id:?}"))
+    }
+    pub fn extents(&self) -> Rect {
+        self.collider_of(self.this_id)
+            .translated(self.absolute_transform().centre)
+            .as_rect()
+    }
+    pub fn extents_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
+        // Should not be possible to get an invalid object_id here if called from public.
+        self.collider_of(other.object_id)
+            .translated(self.absolute_transform_of(other.object_id).centre)
+            .as_rect()
+    }
     pub fn this_id(&self) -> ObjectId { self.this_id }
+    fn collider_of(&self, object_id: ObjectId) -> GenericCollider {
+        let children = if object_id == self.this_id {
+            &self.children
+        } else {
+            // Should not be possible to get an invalid object_id here if called from public.
+            self.all_children.get(&object_id)
+                .unwrap_or_else(|| panic!("missing object_id in children: {object_id:?}"))
+        };
+        children.iter().find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider())
+            .map(SceneObjectWithId::collider)
+            .unwrap_or_default()
+    }
 
     pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) -> Vec<Rc<RefCell<AnySceneObject<ObjectType>>>> {
         let pending_add = &mut self.object_tracker.pending_add;
@@ -792,16 +839,51 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         }
     }
     pub fn test_collision(&self,
-                          collider: &GenericCollider,
                           listening_tags: Vec<&'static str>
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        if let Some(collider) = self.children.iter()
+            .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
+            let collider = collider.collider()
+                .translated(self.all_absolute_transforms
+                    .get(&self.this_id)
+                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", self.this_id))
+                    .centre
+                );
+            self.test_collision_inner(&collider, listening_tags)
+        } else {
+            None
+        }
+    }
+
+    fn lookup_parent(&self, object_id: ObjectId) -> Option<SceneObjectWithId<ObjectType>> {
+        let parent_id = self.all_parents.get(&object_id)?;
+        if parent_id.0 == 0 {
+            None
+        } else {
+            let parent = self.object_tracker.get(*parent_id)
+                .unwrap_or_else(|| panic!("missing object_id in parents: {parent_id:?}"));
+            Some(SceneObjectWithId::new(*parent_id, parent.clone()))
+        }
+    }
+    fn test_collision_inner(
+        &self,
+        collider: &GenericCollider,
+        listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
         for tag in listening_tags {
             for other_id in self.collision_handler.get_object_ids_by_emitting_tag(tag) {
                 if let Some(other) = self.object_tracker.get(*other_id) {
-                    if let Some(mtv) = collider.collides_with(&other.borrow().collider()) {
+                    let other_collider = other.borrow().collider().translated(
+                        self.all_absolute_transforms.get(other_id)
+                            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {other_id:?}"))
+                            .centre
+                    );
+                    if let Some(mtv) = collider.collides_with(&other_collider) {
+                        let other = self.lookup_parent(*other_id)
+                            .unwrap_or_else(|| panic!("orphaned GgInternalCollisionShape: {other_id:?}"));
                         rv.push(Collision {
-                            other: SceneObjectWithId::new(*other_id, other.clone()),
+                            other,
                             mtv,
                         });
                     }
@@ -811,18 +893,27 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         NonemptyVec::try_from_vec(rv)
     }
     pub fn test_collision_along(&self,
-                                collider: &GenericCollider,
                                 axis: Vec2,
                                 distance: f64,
                                 tags: Vec<&'static str>,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        let new_collider = collider.translated(distance * axis).as_generic();
-        self.test_collision(&new_collider, tags)
-            .and_then(|vec| {
-                NonemptyVec::try_from_iter(vec
-                    .into_iter()
-                    .filter(|coll| !coll.mtv.dot(axis).is_zero()))
-            })
+        if let Some(collider) = self.children.iter()
+            .find(|obj| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
+            let collider = collider.collider()
+                .translated(self.all_absolute_transforms
+                    .get(&self.this_id)
+                    .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", self.this_id))
+                    .centre + distance * axis
+                );
+            self.test_collision_inner(&collider, tags)
+                .and_then(|vec| {
+                    NonemptyVec::try_from_iter(vec
+                        .into_iter()
+                        .filter(|coll| !coll.mtv.dot(axis).is_zero()))
+                })
+        } else {
+            None
+        }
     }
 }
 

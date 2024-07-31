@@ -65,11 +65,17 @@ impl SceneObject<ObjectType> for Goomba {
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
             ctx.object().remove_this();
+        } else {
+            ctx.object().add_child(CollisionShape::new(
+                self.sprite.as_box_collider(),
+                &self.emitting_tags(),
+                &self.listening_tags()
+            ));
         }
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
         self.v_accel = 0.;
-        if ctx.object().test_collision_along(&self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.v_accel = BASE_GRAVITY;
         }
     }
@@ -116,9 +122,6 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
-    }
-    fn collider(&self) -> GenericCollider {
-        self.sprite.as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG].into()

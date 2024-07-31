@@ -36,7 +36,8 @@ use vulkano::{
         SwapchainAcquireFuture,
         SwapchainCreateInfo,
         SwapchainPresentInfo,
-        ColorSpace
+        ColorSpace,
+        SurfaceInfo
     },
     sync::{
         future::{FenceSignalFuture, JoinFuture},
@@ -46,7 +47,6 @@ use vulkano::{
     VulkanError,
     VulkanLibrary,
 };
-use vulkano::swapchain::SurfaceInfo;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},

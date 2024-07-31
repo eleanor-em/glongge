@@ -8,7 +8,6 @@ use glongge::{
 };
 use crate::object_type::ObjectType;
 
-
 #[register_scene_object]
 pub struct Hill1 {
     top_left: Vec2,

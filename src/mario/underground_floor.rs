@@ -31,6 +31,14 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         Ok(self.sprite.create_vertices())
     }
 
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().add_child(
+            CollisionShape::new(self.sprite.as_box_collider(),
+            &self.emitting_tags(),
+            &self.listening_tags()
+        ));
+    }
+
     fn transform(&self) -> Transform {
         Transform {
             centre: self.top_left + self.sprite.half_widths(),
@@ -39,9 +47,6 @@ impl SceneObject<ObjectType> for UndergroundFloor {
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
-    }
-    fn collider(&self) -> GenericCollider {
-        self.sprite.as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

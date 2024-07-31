@@ -21,7 +21,8 @@ use crate::{
         },
         ObjectTypeEnum,
         scene::SceneObject
-    }
+    },
+    resource::sprite::Sprite
 };
 
 pub enum ColliderType {
@@ -31,7 +32,7 @@ pub enum ColliderType {
     Convex,
 }
 
-pub trait Collider: AxisAlignedExtent + Debug + Send + Sync {
+pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     fn as_any(&self) -> &dyn Any;
     fn get_type(&self) -> ColliderType;
 
@@ -56,6 +57,9 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync {
     }
 
     fn translated(&self, by: Vec2) -> GenericCollider;
+    // TODO: scaled/rotated/transformed
+
+    fn as_polygon(&self) -> Vec<Vec2>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +78,11 @@ impl Collider for NullCollider {
     fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
 
     fn translated(&self, _by: Vec2) -> GenericCollider { Self.as_generic() }
+
+    // By convention, clockwise edges starting from the top-leftmost vertex.
+    fn as_polygon(&self) -> Vec<Vec2> {
+        Vec::new()
+    }
 }
 
 trait Polygonal {
@@ -246,7 +255,7 @@ impl OrientedBoxCollider {
 impl Polygonal for OrientedBoxCollider {
     fn vertices(&self) -> Vec<Vec2> {
         vec![
-            self.bottom_right_rotated(), self.top_right_rotated(), self.top_left_rotated(), self.bottom_left_rotated()
+            self.top_left_rotated(), self.top_right_rotated(), self.bottom_right_rotated(), self.bottom_left_rotated()
         ]
     }
     fn normals(&self) -> Vec<Vec2> {
@@ -288,6 +297,10 @@ impl Collider for OrientedBoxCollider {
         let mut rv = self.clone();
         rv.centre += by.rotated(self.rotation);
         rv.as_generic()
+    }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        self.vertices()
     }
 }
 #[derive(Debug, Default, Clone)]
@@ -335,7 +348,7 @@ impl BoxCollider {
 impl Polygonal for BoxCollider {
     fn vertices(&self) -> Vec<Vec2> {
         vec![
-            self.bottom_right(), self.top_right(), self.top_left(), self.bottom_left()
+            self.top_left(), self.top_right(), self.bottom_right(), self.bottom_left()
         ]
     }
     fn normals(&self) -> Vec<Vec2> {
@@ -410,6 +423,10 @@ impl Collider for BoxCollider {
         let mut rv = self.clone();
         rv.centre += by;
         rv.as_generic()
+    }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        self.vertices()
     }
 }
 
@@ -508,6 +525,11 @@ impl Collider for ConvexCollider {
         }
         rv.as_generic()
     }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        // TODO: check that this conforms to the spec
+        self.vertices.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -516,7 +538,7 @@ pub struct GenericCollider {
 }
 
 impl GenericCollider {
-    pub fn new<C: Collider + 'static>(inner: C) -> Self {
+    pub fn new<C: Collider>(inner: C) -> Self {
         let extent = inner.aa_extent();
         check_eq!(extent, extent.abs());
         Self { inner: Arc::new(inner) as Arc<dyn Collider> }
@@ -563,17 +585,71 @@ impl Collider for GenericCollider {
     fn translated(&self, by: Vec2) -> GenericCollider {
         self.inner.translated(by).as_generic()
     }
+
+    fn as_generic(&self) -> GenericCollider
+    where
+        Self: Clone + Send + Sync + 'static
+    {
+        self.clone()
+    }
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        self
+    }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        self.inner.as_polygon()
+    }
 }
 
 #[register_scene_object]
-pub struct GgInternalColliderObject<ObjectType> {
+pub struct GgInternalCollisionShape<ObjectType> {
     collider: GenericCollider,
+    emitting_tags: Vec<&'static str>,
+    listening_tags: Vec<&'static str>,
     object_type: PhantomData<ObjectType>,
 }
 
+impl<ObjectType: ObjectTypeEnum> GgInternalCollisionShape<ObjectType> {
+    pub fn new<C: Collider>(
+        collider: C,
+        emitting_tags: &[&'static str],
+        listening_tags: &[&'static str]
+    ) -> Box<Self> {
+        Box::new(Self {
+            collider: collider.into_generic(),
+            emitting_tags: emitting_tags.to_vec(),
+            listening_tags: listening_tags.to_vec(),
+            object_type: PhantomData,
+        })
+    }
+
+    pub fn from_object<O: SceneObject<ObjectType>, C: Collider>(
+        object: &O,
+        collider: C,
+    ) -> Box<Self> { Self::new(collider, &object.emitting_tags(), &object.listening_tags()) }
+    pub fn from_object_sprite<O: SceneObject<ObjectType>>(
+        object: &O,
+        sprite: &Sprite<ObjectType>
+    ) -> Box<Self> { Self::new(sprite.as_box_collider(), &object.emitting_tags(), &object.listening_tags()) }
+}
+
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalColliderObject<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape<ObjectType> {
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        check!(ctx.object().parent().is_some(), "CollisionShapes must have a parent");
+    }
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
 
     fn collider(&self) -> GenericCollider { self.collider.clone() }
+    fn emitting_tags(&self) -> Vec<&'static str> {
+        self.emitting_tags.clone()
+    }
+    fn listening_tags(&self) -> Vec<&'static str> {
+        self.listening_tags.clone()
+    }
 }
+
+pub use GgInternalCollisionShape as CollisionShape;

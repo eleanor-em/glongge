@@ -1,10 +1,13 @@
 use std::{
     any::{TypeId},
     cell::{Ref, RefCell, RefMut},
-    fmt::Debug,
+    fmt::{
+        Debug,
+        Formatter
+    },
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
-    ops::Deref
+    ops::Deref,
 };
 use scene::SceneObject;
 use crate::{
@@ -91,7 +94,6 @@ impl<'a, ObjectType: ObjectTypeEnum> Deref for BorrowedSceneObjectWithId<'a, Obj
     fn deref(&self) -> &Self::Target { &self.inner }
 }
 
-#[derive(Clone)]
 pub struct SceneObjectWithId<ObjectType> {
     object_id: ObjectId,
     inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
@@ -102,12 +104,23 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
         Self { object_id, inner: obj }
     }
 
+    // Do not allow public cloning.
+    fn clone(&self) -> SceneObjectWithId<ObjectType> {
+        Self::new(self.object_id, self.inner.clone())
+    }
+
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
 
     pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
     pub fn collider(&self) -> GenericCollider { self.inner.borrow().collider() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
+}
+
+impl<ObjectType: ObjectTypeEnum> Debug for SceneObjectWithId<ObjectType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} ({:?})", self.object_id, self.get_type())
+    }
 }
 
 pub trait Downcast<ObjectType: ObjectTypeEnum> {

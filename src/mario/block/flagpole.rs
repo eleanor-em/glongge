@@ -41,8 +41,12 @@ impl SceneObject<ObjectType> for Flagpole {
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn collider(&self) -> GenericCollider {
-        self.sprite.as_box_collider(self.transform()).as_generic()
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().add_child(CollisionShape::new(
+            self.sprite.as_box_collider(),
+            &self.emitting_tags(),
+            &self.listening_tags()
+        ));
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [FLAG_COLLISION_TAG].into()

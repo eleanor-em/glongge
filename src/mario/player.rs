@@ -286,7 +286,7 @@ impl Player {
             }
         }
 
-        if ctx.object().test_collision_along(&self.collider(), Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
+        if ctx.object().test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
                 ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
@@ -317,7 +317,7 @@ impl Player {
                     _ => {}
                 }
                 // TODO: replace this with some sort of cached collision feature (from end of last update).
-                if ctx.object().test_collision(&this.collider(), vec![PIPE_COLLISION_TAG]).is_none() {
+                if ctx.object().test_collision(vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;
                     // Snap to top of pipe.
@@ -332,24 +332,23 @@ impl Player {
     }
     fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().down(KeyCode::Down) {
-            if let Some(collisions) = ctx.object().test_collision_along(
-                &self.collider(), Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
-                let pipe = collisions.first().other.downcast::<Pipe>()
-                    .expect("non-pipe with pipe collision tag?");
+            if let Some(collisions) = ctx.object()
+                .test_collision_along(Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
+                let pipe = collisions.first().other.checked_downcast::<Pipe>();
                 if !pipe.orientation().dot(Vec2::down()).is_zero() {
                     if let Some(instruction) = pipe.destination() {
+                        info!("start pipe travel");
                         self.start_pipe(ctx, Vec2::down(), pipe.transform().centre, instruction);
                     }
                 }
             }
         } else if ctx.input().down(KeyCode::Right) {
-            if let Some(collisions) = ctx.object().test_collision_along(
-                &self.collider(), Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
-                let pipe = collisions.first().other.downcast::<Pipe>()
-                    .expect("non-pipe with pipe collision tag?");
+            if let Some(collisions) = ctx.object()
+                .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
+                let pipe = collisions.first().other.checked_downcast::<Pipe>();
                 if let Some(instruction) = pipe.destination() {
                     if !pipe.orientation().dot(Vec2::right()).is_zero() &&
-                            self.collider().top() >= pipe.top() {
+                            !collisions.first().mtv.dot(Vec2::right()).is_zero() {
                         self.start_pipe(ctx, Vec2::right(), pipe.transform().centre, instruction);
                     }
                 }
@@ -524,6 +523,9 @@ impl SceneObject<ObjectType> for Player {
         }
         self.music.play_loop();
         self.last_nonzero_dir = Vec2::right();
+        ctx.object().add_child(
+            CollisionShape::from_object_sprite(self, self.current_sprite())
+        );
     }
 
     fn on_update_begin(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
@@ -575,7 +577,7 @@ impl SceneObject<ObjectType> for Player {
         }
 
         self.maybe_start_pipe(ctx);
-        match ctx.object().test_collision_along(&self.collider(), self.dir, self.speed, vec![BLOCK_COLLISION_TAG]) {
+        match ctx.object().test_collision_along(self.dir, self.speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 self.centre += self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
@@ -583,7 +585,7 @@ impl SceneObject<ObjectType> for Player {
             None => self.centre += self.speed * self.dir,
         }
 
-        match ctx.object().test_collision_along(&self.collider(), Vec2::down(), self.v_speed, vec![BLOCK_COLLISION_TAG]) {
+        match ctx.object().test_collision_along(Vec2::down(), self.v_speed, vec![BLOCK_COLLISION_TAG]) {
             Some(collisions) => {
                 let mut coll = collisions.into_iter()
                     .min_by(|a, b| {
@@ -628,10 +630,11 @@ impl SceneObject<ObjectType> for Player {
             return CollisionResponse::Done;
         }
         {
-            if let Some(mut other) = downcast_stompable_mut(&mut other) {
-                if !other.dead() {
-                    if self.collider().bottom() < other.collider().bottom() {
-                        other.stomp();
+            let bottom = ctx.object().extents_of(&other).bottom();
+            if let Some(mut stompable) = downcast_stompable_mut(&mut other) {
+                if !stompable.dead() {
+                    if ctx.object().extents().bottom() < bottom {
+                        stompable.stomp();
                         self.stomp_sound.play();
                         self.v_speed = self.initial_vspeed();
                         self.state = PlayerState::Falling;
@@ -651,8 +654,8 @@ impl SceneObject<ObjectType> for Player {
                 this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
                 this.speed = 0.;
                 this.v_speed = Self::MAX_VSPEED / 3.;
-                if let Some(collisions) = ctx.object().test_collision(
-                        &this.collider(), vec![BLOCK_COLLISION_TAG]) {
+                if let Some(collisions) = ctx.object()
+                    .test_collision(vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
                     ctx.object().add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
@@ -689,9 +692,6 @@ impl SceneObject<ObjectType> for Player {
     }
     fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
         Some(self)
-    }
-    fn collider(&self) -> GenericCollider {
-        self.current_sprite().as_box_collider(self.transform()).as_generic()
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()

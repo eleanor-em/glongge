@@ -191,10 +191,10 @@ impl<ObjectType: ObjectTypeEnum> Sprite<ObjectType> {
         inner.areas[inner.frame]
     }
 
-    pub fn as_box_collider(&self, transform: Transform) -> BoxCollider {
-        let inner = self.inner.checked_downcast_mut::<GgInternalSprite::<ObjectType>>();
-        // TODO: clean up below
-        inner.collider.transformed(transform)
+    pub fn as_box_collider(&self) -> BoxCollider {
+        self.inner.checked_downcast::<GgInternalSprite::<ObjectType>>()
+            .collider
+            .clone()
     }
 
     pub fn render_info_default(&self) -> RenderInfo {

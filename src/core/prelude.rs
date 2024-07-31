@@ -22,6 +22,7 @@ pub use crate::{
             assert::*,
             collision::{
                 Collider,
+                CollisionShape,
                 GenericCollider,
             },
             colour::Colour,
