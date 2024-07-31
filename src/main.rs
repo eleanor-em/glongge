@@ -71,7 +71,6 @@ fn main() -> Result<()> {
     }
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
-        .with_report_stats()
         .consume(event_loop);
     Ok(())
 }
@@ -98,12 +97,12 @@ fn run_test_cases() {
     check_almost_eq!(Vec2::right().rotated(360_f64.to_radians()), Vec2::right());
 
     for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
-        check_almost_eq!(vec.rotated(45_f64.to_radians()), vec.rotated(-315_f64.to_radians()));
-        check_almost_eq!(vec.rotated(90_f64.to_radians()), vec.rotated(-270_f64.to_radians()));
-        check_almost_eq!(vec.rotated(135_f64.to_radians()), vec.rotated(-225_f64.to_radians()));
-        check_almost_eq!(vec.rotated(180_f64.to_radians()), vec.rotated(-180_f64.to_radians()));
-        check_almost_eq!(vec.rotated(225_f64.to_radians()), vec.rotated(-135_f64.to_radians()));
-        check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated(-90_f64.to_radians()));
-        check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated(-45_f64.to_radians()));
+        check_almost_eq!(vec.rotated(45_f64.to_radians()), vec.rotated((-315_f64).to_radians()));
+        check_almost_eq!(vec.rotated(90_f64.to_radians()), vec.rotated((-270_f64).to_radians()));
+        check_almost_eq!(vec.rotated(135_f64.to_radians()), vec.rotated((-225_f64).to_radians()));
+        check_almost_eq!(vec.rotated(180_f64.to_radians()), vec.rotated((-180_f64).to_radians()));
+        check_almost_eq!(vec.rotated(225_f64.to_radians()), vec.rotated((-135_f64).to_radians()));
+        check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated((-90_f64).to_radians()));
+        check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated((-45_f64).to_radians()));
     }
 }

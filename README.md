@@ -13,5 +13,5 @@ When run as a binary, it plays a demo game (see `src/mario`).
 - `#![feature(iterator_try_collect)]`
 - `#![feature(arbitrary_self_types)]`
 - `#![feature(duration_millis_float)]`
-- `#![feature(stmt_expr_attributes)]`
+- `#![feature(trait_upcasting)]`
 - `#![feature(const_fn_floating_point_arithmetic)]`
