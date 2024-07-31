@@ -11,6 +11,7 @@ use std::{
     },
     time::{Duration, Instant}
 };
+use std::cell::Ref;
 use std::ops::RangeInclusive;
 use tracing::{warn};
 use serde::{
@@ -41,7 +42,6 @@ use crate::{
             NonemptyVec,
             linalg::Transform
         },
-        BorrowedSceneObjectWithId
     },
     resource::ResourceHandler,
 };
@@ -98,7 +98,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.collision_handler.get_collisions(&self.absolute_transforms, &self.parents, &self.objects)
     }
 
-    fn get_parent(&self, this_id: ObjectId) -> Option<BorrowedSceneObjectWithId<ObjectType>> {
+    fn get_parent(&self, this_id: ObjectId) -> Option<SceneObjectWithId<ObjectType>> {
         if this_id.0 == 0 {
             return None;
         }
@@ -110,7 +110,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         } else {
             let parent = self.objects.get(parent_id)
                 .unwrap_or_else(|| panic!("the only missing parent should be the root node: {parent_id:?}"));
-            Some(BorrowedSceneObjectWithId::new(*parent_id, parent))
+            Some(SceneObjectWithId::new(*parent_id, parent.clone()))
         }
     }
     fn get_children(&self, this_id: ObjectId) -> Vec<SceneObjectWithId<ObjectType>> {
@@ -592,6 +592,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
             render: RenderContext {
                 this_id,
                 vertex_map: &mut caller.vertex_map,
+                render_infos: &mut caller.object_handler.render_infos,
             }
         }
     }
@@ -754,7 +755,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
 pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     collision_handler: &'a CollisionHandler,
     this_id: ObjectId,
-    parent: Option<BorrowedSceneObjectWithId<'a, ObjectType>>,
+    parent: Option<SceneObjectWithId<ObjectType>>,
     children: Vec<SceneObjectWithId<ObjectType>>,
     object_tracker: &'a mut ObjectTracker<ObjectType>,
     all_absolute_transforms: &'a BTreeMap<ObjectId, Transform>,
@@ -763,19 +764,38 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
-    pub fn parent(&self) -> Option<&BorrowedSceneObjectWithId<'a, ObjectType>> { self.parent.as_ref() }
+    pub fn parent(&self) -> Option<&SceneObjectWithId<ObjectType>> { self.parent.as_ref() }
     pub fn children(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.children.iter()
             .map(SceneObjectWithId::clone)
             .collect()
     }
-    pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
+    fn others_inner(&self) -> Vec<(ObjectId, &AnySceneObject<ObjectType>)> {
         self.object_tracker.last.iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
             .filter(|(object_id, _)| self.this_id != **object_id)
-            .map(|(object_id, obj)| SceneObjectWithId::new(*object_id, obj.clone()))
+            .map(|(object_id, obj)| (*object_id, obj))
             .collect()
     }
+    pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
+        self.others_inner()
+            .into_iter()
+            .map(|(object_id, obj)| SceneObjectWithId::new(object_id, obj.clone()))
+            .collect()
+    }
+    pub fn others_as_ref<T: SceneObject<ObjectType>>(&self) -> Vec<Ref<T>> {
+        self.others_inner()
+            .into_iter()
+            .filter_map(|(_, obj)| obj.downcast())
+            .collect()
+    }
+    pub fn others_as_mut<T: SceneObject<ObjectType>>(&self) -> Vec<RefMut<T>> {
+        self.others_inner()
+            .into_iter()
+            .filter_map(|(_, obj)| obj.downcast_mut())
+            .collect()
+    }
+
     pub fn absolute_transform(&self) -> Transform {
         *self.all_absolute_transforms.get(&self.this_id)
             .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: this={:?}", self.this_id))
@@ -980,9 +1000,14 @@ impl<'a> RenderContext<'a> {
         self.vertex_map.remove(self.this_id);
         self.vertex_map.insert(self.this_id, new_vertices);
     }
+    pub fn remove_vertices(&mut self) {
+        self.vertex_map.remove(self.this_id);
+        self.render_infos.remove(&self.this_id);
+    }
 }
 
 pub struct RenderContext<'a> {
     this_id: ObjectId,
     vertex_map: &'a mut VertexMap,
+    render_infos: &'a mut BTreeMap<ObjectId, RenderInfoFull>,
 }

@@ -4,6 +4,7 @@ use std::{
     ops::Range,
     sync::Arc
 };
+use std::time::Duration;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -59,6 +60,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     // TODO: scaled/rotated/transformed
 
     fn as_polygon(&self) -> Vec<Vec2>;
+    fn as_triangles(&self) -> Vec<[Vec2; 3]>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +82,9 @@ impl Collider for NullCollider {
 
     // By convention, clockwise edges starting from the top-leftmost vertex.
     fn as_polygon(&self) -> Vec<Vec2> {
+        Vec::new()
+    }
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
         Vec::new()
     }
 }
@@ -301,6 +306,13 @@ impl Collider for OrientedBoxCollider {
     fn as_polygon(&self) -> Vec<Vec2> {
         self.vertices()
     }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        vec![
+            [self.top_left_rotated(), self.top_right_rotated(), self.bottom_left_rotated()],
+            [self.top_right_rotated(), self.bottom_right_rotated(), self.bottom_left_rotated()],
+        ]
+    }
 }
 #[derive(Debug, Default, Clone)]
 pub struct BoxCollider {
@@ -427,6 +439,13 @@ impl Collider for BoxCollider {
     fn as_polygon(&self) -> Vec<Vec2> {
         self.vertices()
     }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        vec![
+            [self.top_left(), self.top_right(), self.bottom_left()],
+            [self.top_right(), self.bottom_right(), self.bottom_left()],
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -529,6 +548,10 @@ impl Collider for ConvexCollider {
         // TODO: check that this conforms to the spec
         self.vertices.clone()
     }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        todo!()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -601,6 +624,10 @@ impl Collider for GenericCollider {
     fn as_polygon(&self) -> Vec<Vec2> {
         self.inner.as_polygon()
     }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        self.inner.as_triangles()
+    }
 }
 
 #[register_scene_object]
@@ -608,6 +635,8 @@ pub struct GgInternalCollisionShape {
     collider: GenericCollider,
     emitting_tags: Vec<&'static str>,
     listening_tags: Vec<&'static str>,
+    show_wireframe: bool,
+    last_show_wireframe: bool,
 }
 
 impl GgInternalCollisionShape {
@@ -620,6 +649,8 @@ impl GgInternalCollisionShape {
             collider: collider.into_generic(),
             emitting_tags: emitting_tags.to_vec(),
             listening_tags: listening_tags.to_vec(),
+            show_wireframe: false,
+            last_show_wireframe: false,
         })
     }
 
@@ -633,10 +664,25 @@ impl GgInternalCollisionShape {
     ) -> AnySceneObject<ObjectType> { Self::from_collider(sprite.as_box_collider(), &object.emitting_tags(), &object.listening_tags()) }
 
     pub fn collider(&self) -> &GenericCollider { &self.collider }
+
+    fn wireframe(&self) -> RenderItem {
+        RenderItem::new(
+            self.collider.as_triangles().into_flattened()
+                .into_iter()
+                .map(VertexWithUV::from_vertex)
+                .collect()
+        ).with_depth(VertexDepth::Front(u64::MAX))
+    }
+
+    pub fn show_wireframe(&mut self) { self.show_wireframe = true; }
+    pub fn hide_wireframe(&mut self) { self.show_wireframe = false; }
 }
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape {
+    fn on_load(&mut self, _object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+        Ok(None)
+    }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         check!(ctx.object().parent().is_some(), "CollisionShapes must have a parent");
     }
@@ -648,6 +694,34 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn listening_tags(&self) -> Vec<&'static str> {
         self.listening_tags.clone()
     }
+
+    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+        if self.show_wireframe && !self.last_show_wireframe {
+            ctx.render().update_vertices(self.wireframe());
+        }
+        if !self.show_wireframe && self.last_show_wireframe {
+            ctx.render().remove_vertices();
+        }
+        self.last_show_wireframe = self.show_wireframe;
+    }
+
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+        if self.show_wireframe {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
+    fn render_info(&self) -> RenderInfo {
+        RenderInfo {
+            col: Colour::cyan().with_alpha(0.5),
+            ..Default::default()
+        }
+    }
 }
 
 pub use GgInternalCollisionShape as CollisionShape;
+use crate::core::render::{VertexDepth, VertexWithUV};

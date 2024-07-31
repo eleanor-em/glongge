@@ -339,24 +339,24 @@ impl BasicRenderHandler {
                     ctx.device(),
                     /* cache= */ None,
                     GraphicsPipelineCreateInfo {
-                    stages: stages.into_iter().collect(),
-                    vertex_input_state: Some(vertex_input_state),
-                    input_assembly_state: Some(InputAssemblyState::default()),
-                    viewport_state: Some(ViewportState {
-                    viewports: [self.viewport.inner()].into_iter().collect(),
-                    ..Default::default()
-                    }),
-                    rasterization_state: Some(RasterizationState::default()),
-                    multisample_state: Some(MultisampleState::default()),
-                    color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    subpass.num_color_attachments(),
-                    ColorBlendAttachmentState {
-                    blend: Some(AttachmentBlend::alpha()),
-                    ..Default::default()
-                    },
-                )),
-                    subpass: Some(subpass.into()),
-                    ..GraphicsPipelineCreateInfo::layout(layout)
+                        stages: stages.into_iter().collect(),
+                        vertex_input_state: Some(vertex_input_state),
+                        input_assembly_state: Some(InputAssemblyState::default()),
+                        viewport_state: Some(ViewportState {
+                            viewports: [self.viewport.inner()].into_iter().collect(),
+                            ..Default::default()
+                        }),
+                        rasterization_state: Some(RasterizationState::default()),
+                        multisample_state: Some(MultisampleState::default()),
+                        color_blend_state: Some(ColorBlendState::with_attachment_states(
+                            subpass.num_color_attachments(),
+                            ColorBlendAttachmentState {
+                                blend: Some(AttachmentBlend::alpha()),
+                                ..Default::default()
+                            },
+                        )),
+                        subpass: Some(subpass.into()),
+                        ..GraphicsPipelineCreateInfo::layout(layout)
                     },
                 )?;
                 self.pipeline = Some(pipeline.clone());

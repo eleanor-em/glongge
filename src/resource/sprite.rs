@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -25,6 +26,7 @@ pub struct GgInternalSprite {
     elapsed_us: u128,
     paused: bool,
     show: bool,
+    last_show: bool,
     frame_time_ms: Vec<u32>,
     frame: usize,
     collider: BoxCollider,
@@ -66,16 +68,13 @@ impl GgInternalSprite {
             texture, areas, frame_time_ms, render_item,
             paused: false,
             show: true,
+            last_show: true,
             elapsed_us: 0,
             frame: 0,
             collider: BoxCollider::from_centre(Vec2::zero(), (tile_size / 2).into()),
         }));
         object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
         Sprite { inner }
-    }
-
-    fn ready(&self) -> bool {
-        !self.areas.is_empty()
     }
 
     fn current_frame(&self) -> TextureSubArea {
@@ -96,7 +95,11 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         _object_ctx: &mut ObjectContext<ObjectType>,
         _resource_handler: &mut ResourceHandler
     ) -> Result<Option<RenderItem>> {
-        Ok(Some(self.render_item.clone()))
+        Ok(if self.show {
+            Some(self.render_item.clone())
+        } else {
+            None
+        })
     }
 
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
@@ -104,7 +107,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
             return;
         }
         self.elapsed_us += FIXED_UPDATE_INTERVAL_US;
-        check!(self.ready());
         let elapsed_ms = self.elapsed_us / 1000;
         let total_animation_time_ms = self.frame_time_ms.iter().sum::<u32>() as u128;
         let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
@@ -115,13 +117,30 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         check_lt!(self.frame, self.areas.len());
     }
 
-    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> { Some(self) }
+    fn on_update_end(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+        if self.show && !self.last_show {
+            ctx.render().update_vertices(self.render_item.clone());
+        }
+        if !self.show && self.last_show {
+            ctx.render().remove_vertices();
+        }
+        self.last_show = self.show;
+    }
+
+    fn as_renderable_object(&self) -> Option<&dyn RenderableObject<ObjectType>> {
+        if self.show {
+            Some(self)
+        } else {
+            None
+        }
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSprite {
     fn render_info(&self) -> RenderInfo {
+        check!(self.show);
         let mut render_info = RenderInfo::default();
-        if self.show && self.ready() {
+        if self.show {
             render_info.texture = Some(self.texture.clone());
             render_info.texture_sub_area = self.current_frame();
         } else {
@@ -181,8 +200,7 @@ impl Sprite {
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
         {
-            let mut inner = self.inner.borrow_mut();
-            inner.render_item.depth = depth;
+            self.inner.borrow_mut().render_item.depth = depth;
         }
         self
     }
@@ -212,30 +230,20 @@ impl Sprite {
         self
     }
 
-    pub fn ready(&self) -> bool {
-        let inner = self.inner.borrow();
-        inner.ready()
-    }
-
     pub fn reset(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.elapsed_us = 0;
+        self.inner.borrow_mut().elapsed_us = 0;
     }
     pub fn pause(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.paused = true;
+        self.inner.borrow_mut().paused = true;
     }
     pub fn play(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.paused = false;
+        self.inner.borrow_mut().paused = false;
     }
     pub fn hide(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.show = false;
+        self.inner.borrow_mut().show = false;
     }
     pub fn show(&mut self) {
-        let mut inner = self.inner.borrow_mut();
-        inner.show = true;
+        self.inner.borrow_mut().show = true;
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {

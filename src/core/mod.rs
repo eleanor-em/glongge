@@ -101,21 +101,6 @@ impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
     }
 }
 
-pub struct BorrowedSceneObjectWithId<'a, ObjectType> {
-    _object_id: ObjectId,
-    inner: Ref<'a, dyn SceneObject<ObjectType>>,
-}
-impl<'a, ObjectType: ObjectTypeEnum> BorrowedSceneObjectWithId<'a, ObjectType> {
-    fn new(object_id: ObjectId, obj: &'a AnySceneObject<ObjectType>) -> Self {
-        Self { _object_id: object_id, inner: obj.borrow() }
-    }
-}
-
-impl<'a, ObjectType: ObjectTypeEnum> Deref for BorrowedSceneObjectWithId<'a, ObjectType> {
-    type Target = dyn SceneObject<ObjectType>;
-    fn deref(&self) -> &Self::Target { &*self.inner }
-}
-
 pub struct SceneObjectWithId<ObjectType> {
     object_id: ObjectId,
     inner: AnySceneObject<ObjectType>,

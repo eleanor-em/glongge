@@ -305,6 +305,7 @@ pub struct VulkanoContext {
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
+        khr_fragment_shader_barycentric: true,
         ..DeviceExtensions::empty()
     }
 }
@@ -413,6 +414,14 @@ fn macos_instance<T>(
     };
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
 }
+fn features() -> Features {
+    Features {
+        // Required for extra texture samplers on macOS:
+        descriptor_indexing: true,
+        fragment_shader_barycentric: true,
+        ..Default::default()
+    }
+}
 fn any_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
@@ -420,11 +429,7 @@ fn any_physical_device(
     Ok(instance
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
-        .filter(|p| p.supported_features().contains(&Features {
-            // Required for extra texture samplers on macOS:
-            descriptor_indexing: true,
-            ..Default::default()
-        }))
+        .filter(|p| p.supported_features().contains(&features()))
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -472,6 +477,7 @@ fn any_graphical_queue_family(
                 ..Default::default()
             }],
             enabled_extensions: device_extensions(),
+            enabled_features: features(),
             ..Default::default()
         },
     )?;

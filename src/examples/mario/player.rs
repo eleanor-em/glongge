@@ -337,7 +337,6 @@ impl Player {
                 let pipe = collisions.first().other.checked_downcast::<Pipe>();
                 if !pipe.orientation().dot(Vec2::down()).is_zero() {
                     if let Some(instruction) = pipe.destination() {
-                        info!("start pipe travel");
                         self.start_pipe(ctx, Vec2::down(), pipe.transform().centre, instruction);
                     }
                 }
@@ -532,6 +531,17 @@ impl SceneObject<ObjectType> for Player {
         self.maybe_start_exit_pipe(ctx);
     }
     fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+        if ctx.input().pressed(KeyCode::W) {
+            ctx.object().others_as_mut::<CollisionShape>()
+                .into_iter()
+                .for_each(|mut shape| shape.show_wireframe());
+        }
+        if ctx.input().released(KeyCode::W) {
+            ctx.object().others_as_mut::<CollisionShape>()
+                .into_iter()
+                .for_each(|mut shape| shape.hide_wireframe());
+        }
+
         if self.state == PlayerState::Dying {
             self.speed = 0.;
             self.v_accel = BASE_GRAVITY;

@@ -24,30 +24,30 @@ pub mod basic_vertex_shader {
 
             void main() {
                 // map ([0, window_width], [0, window_height]) to ([0, 1], [0, 1])
-                mat4 window_pixel_scale = mat4(
+                const mat4 window_pixel_scale = mat4(
                     vec4(scale_factor / window_width, 0, 0, 0),
                     vec4(0, scale_factor / window_height, 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
                 // map ([0, 1], [0, 1]) to ([-1, 1], [-1, 1])
-                mat4 window_translation = mat4(
+                const mat4 window_translation = mat4(
                     vec4( 2,  0, 0, 0),
                     vec4( 0,  2, 0, 0),
                     vec4( 0,  0, 1, 0),
                     vec4(-1, -1, 0, 1));
-                mat4 projection =  window_translation * window_pixel_scale;
+                const mat4 projection =  window_translation * window_pixel_scale;
 
-                mat4 scale_mat = mat4(
+                const mat4 scale_mat = mat4(
                     vec4(scale.x, 0, 0, 0),
                     vec4(0, scale.y, 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
-                mat4 rotation_mat = mat4(
+                const mat4 rotation_mat = mat4(
                     vec4(cos(rotation), sin(rotation), 0, 0),
                     vec4(-sin(rotation), cos(rotation), 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
-                mat4 translation_mat = mat4(
+                const mat4 translation_mat = mat4(
                     vec4(1, 0, 0, 0),
                     vec4(0, 1, 0, 0),
                     vec4(0, 0, 1, 0),
@@ -65,6 +65,7 @@ pub mod basic_fragment_shader {
         ty: "fragment",
         src: r"
             #version 460
+            #extension GL_EXT_fragment_shader_barycentric  : require
 
             layout(location = 0) in vec2 f_uv;
             layout(location = 1) flat in uint f_texture_id;
@@ -75,8 +76,25 @@ pub mod basic_fragment_shader {
             layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
-                vec4 tex_col = texture(tex[f_texture_id], f_uv);
-                f_col = tex_col * f_blend_col;
+                if (f_texture_id == 0) {
+                    // from: https://wunkolo.github.io/post/2022/07/gl_ext_fragment_shader_barycentric-wireframe/
+                    const vec3 BaryCoord = gl_BaryCoordEXT;
+                    const vec3 dBaryCoordX = dFdx(BaryCoord);
+                    const vec3 dBaryCoordY = dFdy(BaryCoord);
+                    const vec3 dBaryCoord  = sqrt(dBaryCoordX*dBaryCoordX + dBaryCoordY*dBaryCoordY);
+                    const float Thickness = 2.5; // In pixels
+                    const vec3 Remap = smoothstep(
+                        vec3(0.0),
+                        dBaryCoord * Thickness,
+                        BaryCoord
+                    );
+                    const float Wireframe = min(Remap.x, min(Remap.y, Remap.z));;
+
+                    f_col = vec4(Wireframe.xxx, 1) * f_blend_col;
+                } else {
+                    const vec4 tex_col = texture(tex[f_texture_id], f_uv);
+                    f_col = tex_col * f_blend_col;
+                }
             }
         ",
     }
