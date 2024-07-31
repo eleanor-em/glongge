@@ -138,47 +138,15 @@ pub fn derive_object_type_enum(input: proc_macro::TokenStream) -> proc_macro::To
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
-    let as_default_exp = as_default_impl(&input.data);
-    let match_exp = as_typeid_impl(&input.data);
-    let vec = all_values_impl(&input.data);
+    let as_default_code = as_default_impl(&input.data);
+    let as_typeid_code = as_typeid_impl(&input.data);
+    let all_values_code = all_values_impl(&input.data);
 
     let expanded = quote! {
         impl glongge::core::ObjectTypeEnum for #name {
-            fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_exp }
-            fn as_typeid(self) -> std::any::TypeId { #match_exp }
-            fn all_values() -> Vec<Self> { #vec }
-            fn preload_all(mut resource_handler: &mut glongge::resource::ResourceHandler) -> anyhow::Result<()> {
-                for value in Self::all_values() {
-                    value.as_default().on_load(resource_handler)?;
-                }
-                Ok(())
-            }
-            fn checked_downcast<T: glongge::core::scene::SceneObject<Self> + 'static>(obj: &dyn glongge::core::scene::SceneObject<Self>) -> &T {
-                let actual = obj.get_type().as_typeid();
-                let expected = obj.as_any().type_id();
-                if actual != expected {
-                    for value in Self::all_values() {
-                        if value.as_typeid() == actual {
-                            panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
-                        }
-                    }
-                    panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
-                }
-                obj.as_any().downcast_ref::<T>().unwrap()
-            }
-            fn checked_downcast_mut<T: glongge::core::scene::SceneObject<Self> + 'static>(obj: &mut dyn glongge::core::scene::SceneObject<Self>) -> &mut T {
-                let actual = obj.get_type().as_typeid();
-                let expected = obj.as_any().type_id();
-                if actual != expected {
-                    for value in Self::all_values() {
-                        if value.as_typeid() == actual {
-                            panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
-                        }
-                    }
-                    panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
-                }
-                obj.as_any_mut().downcast_mut::<T>().unwrap()
-            }
+            fn as_default(self) -> Box<dyn glongge::core::scene::SceneObject<Self>> { #as_default_code }
+            fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
+            fn all_values() -> Vec<Self> { #all_values_code }
         }
     };
 

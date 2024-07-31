@@ -25,9 +25,39 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn as_default(self) -> AnySceneObject<Self>;
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
-    fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()>;
-    fn checked_downcast<T: SceneObject<Self> + 'static>(obj: &dyn SceneObject<Self>) -> &T;
-    fn checked_downcast_mut<T: SceneObject<Self> + 'static>(obj: &mut dyn SceneObject<Self>) -> &mut T;
+
+    fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
+        for value in Self::all_values() {
+            value.as_default().on_load(resource_handler)?;
+        }
+        Ok(())
+    }
+    fn checked_downcast<T: SceneObject<Self> + 'static>(obj: &dyn SceneObject<Self>) -> &T {
+        let actual = obj.get_type().as_typeid();
+        let expected = obj.as_any().type_id();
+        if actual != expected {
+            for value in Self::all_values() {
+                if value.as_typeid() == actual {
+                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                }
+            }
+            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
+        }
+        obj.as_any().downcast_ref::<T>().unwrap()
+    }
+    fn checked_downcast_mut<T: SceneObject<Self> + 'static>(obj: &mut dyn SceneObject<Self>) -> &mut T {
+        let actual = obj.get_type().as_typeid();
+        let expected = obj.as_any().type_id();
+        if actual != expected {
+            for value in Self::all_values() {
+                if value.as_typeid() == actual {
+                    panic!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                }
+            }
+            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
+        }
+        obj.as_any_mut().downcast_mut::<T>().unwrap()
+    }
 }
 
 static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(0);
