@@ -1,5 +1,5 @@
 use vulkano::buffer::BufferContents;
-use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
+use crate::shader::VkVertex;
 
 #[derive(BufferContents, Clone, Copy)]
 #[repr(C)]
@@ -11,6 +11,7 @@ pub struct UniformData {
 #[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Vertex {
+    // (2+2+1+2+2+1+4) * 4 = 56 bytes = 1 (x86) or 2 (Apple) vertices per cache line
     #[format(R32G32_SFLOAT)]
     pub position: [f32; 2],
     #[format(R32G32_SFLOAT)]

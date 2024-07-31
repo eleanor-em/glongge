@@ -11,6 +11,7 @@ pub struct UniformData {
 #[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Vertex {
+    // (2+2+1+2+4) * 4 = 44 bytes = 1 (x86) or 3 (Apple) vertices per cache line
     #[format(R32G32_SFLOAT)]
     pub position: [f32; 2],
     #[format(R32G32_SFLOAT)]

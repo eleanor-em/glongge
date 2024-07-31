@@ -25,18 +25,17 @@ use vulkano::{pipeline::{
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
 use crate::{
     core::{
+        render::RenderFrame,
         prelude::*,
-        render::RenderDataChannel,
-        vk::{AdjustedViewport, VulkanoContext}
+        vk::{AdjustedViewport, VulkanoContext},
+        util::UniqueShared
     },
     shader::glsl::*,
 };
-use crate::core::render::{RenderFrame, RenderInfoFull, VertexWithUV};
-use crate::core::util::UniqueShared;
+pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 
 pub mod vertex;
-mod glsl;
-
+pub mod glsl;
 
 pub type ShaderName = &'static str;
 
@@ -53,13 +52,77 @@ pub trait Shader: Send {
 }
 
 #[derive(Clone)]
+struct CachedVertexBuffer<T: VkVertex> {
+    ctx: VulkanoContext,
+    inner: Subbuffer<[T]>,
+    vertex_count: usize,
+    begin: usize,
+}
+
+impl<T: VkVertex> CachedVertexBuffer<T> {
+    fn new(ctx: VulkanoContext, size: usize) -> Result<Self> {
+        let inner = Self::create_vertex_buffer(
+            &ctx,
+            (size * ctx.framebuffers().len()) as DeviceSize
+        )?;
+        Ok(Self { ctx, inner, vertex_count: 0, begin: 0 })
+    }
+
+    fn len(&self) -> usize { self.inner.len() as usize / self.ctx.framebuffers().len() }
+
+    fn write(&mut self, mut data: Vec<T>) -> Result<()> {
+        let buf_len = usize::try_from(self.inner.len())
+            .unwrap_or_else(|_| panic!("inexplicable: self.inner.len() = {}", self.inner.len()));
+        check_le!(self.begin, buf_len);
+        self.begin += self.len();
+        if self.begin == buf_len {
+            self.begin = 0;
+        }
+        let begin = self.begin as u64;
+        let end = (self.begin + self.len()) as u64;
+        let slice = self.inner.clone().slice(begin..end);
+        slice.write()?[..data.len()].swap_with_slice(&mut data);
+
+        self.vertex_count = data.len();
+        Ok(())
+    }
+
+    fn create_vertex_buffer(ctx: &VulkanoContext, size: DeviceSize) -> Result<Subbuffer<[T]>> {
+        Ok(Buffer::new_unsized(
+            ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            size
+        ).map_err(Validated::unwrap)?)
+    }
+
+    fn draw(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
+        let vertex_count = u32::try_from(self.vertex_count)
+            .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", self.vertex_count));
+        let begin = u32::try_from(self.begin)
+            .unwrap_or_else(|_| panic!("inexplicable: self.begin = {}", self.begin));
+        check_le!(begin + vertex_count, self.inner.len() as u32);
+        builder.bind_vertex_buffers(0, self.inner.clone())?
+            .draw(vertex_count, 1, begin, 0)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct SpriteShader {
     ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
-    vertex_buffer: Option<Subbuffer<[sprite::Vertex]>>,
+    vertex_buffer: CachedVertexBuffer<sprite::Vertex>,
     resource_handler: ResourceHandler,
 }
 
@@ -70,71 +133,17 @@ impl SpriteShader {
         resource_handler: ResourceHandler
     ) -> Result<Arc<Mutex<dyn Shader>>> {
         let device = ctx.device();
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
         Ok(Arc::new(Mutex::new(Self {
             ctx,
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
-            vertex_buffer: None,
+            vertex_buffer,
             resource_handler,
         })) as Arc<Mutex<dyn Shader>>)
     }
-
-    fn write_vertices(
-        &self,
-        render_frame: &RenderFrame,
-        buf: &mut [sprite::Vertex]
-    ) {
-        check_gt!(buf.len(), 0);
-        check_eq!(render_frame.vertices.len(), buf.len());
-        let render_infos = render_frame.render_infos
-            .iter()
-            .sorted_unstable_by_key(|item| item.depth);
-        let mut write_index = 0;
-        for render_info in render_infos {
-            for vertex_index in render_info.vertex_indices.clone() {
-                // Calculate transformed UVs.
-                let texture = render_info.inner.texture.clone().unwrap_or_default();
-                // TODO: better way to switch shaders.
-                let final_vertex = if texture.id() != 0 {
-                    let vertex = render_frame.vertices[vertex_index];
-                    let mut blend_col = render_info.inner.col;
-                    let mut uv = vertex.uv;
-                    if let Some(tex) = self.resource_handler.texture.get(&texture) {
-                        if let Some(tex) = tex.ready() {
-                            uv = render_info.inner.texture_sub_area.uv(&tex, uv);
-                        } else {
-                            warn!("texture not ready: {}", texture);
-                            blend_col = Colour::empty();
-                        }
-                    } else {
-                        error!("missing texture: {}", texture);
-                        blend_col = Colour::magenta();
-                    }
-                    sprite::Vertex {
-                        position: vertex.xy.into(),
-                        uv: uv.into(),
-                        texture_id: texture.into(),
-                        translation: render_info.transform.centre.into(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        rotation: render_info.transform.rotation as f32,
-                        scale: render_info.transform.scale.into(),
-                        blend_col: blend_col.into(),
-                    }
-                } else {
-                    sprite::Vertex {
-                        blend_col: Colour::empty().into(),
-                        ..Default::default()
-                    }
-                };
-                buf[write_index] = final_vertex;
-                write_index += 1;
-            }
-        }
-        check_eq!(write_index, buf.len());
-    }
-
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
         match self.pipeline.clone() {
@@ -187,39 +196,6 @@ impl SpriteShader {
             },
             Some(pipeline) => Ok(pipeline)
         }
-    }
-    fn get_or_create_vertex_buffer(
-        &mut self,
-        len: usize
-    ) -> Result<Subbuffer<[sprite::Vertex]>> {
-        if let Some(vertex_buffer) = &self.vertex_buffer {
-            if vertex_buffer.len() as usize == len {
-                return Ok(vertex_buffer.clone());
-            }
-        }
-        // XXX: needed to prevent flickering. No idea why.
-        self.vertex_buffer.take();
-        self.create_vertex_buffer(len)
-    }
-    fn create_vertex_buffer(
-        &mut self,
-        len: usize
-    ) -> Result<Subbuffer<[sprite::Vertex]>> {
-        let vertex_buffer = Buffer::new_unsized(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            len as DeviceSize
-        ).map_err(Validated::unwrap)?;
-        self.vertex_buffer.replace(vertex_buffer.clone());
-        Ok(vertex_buffer)
     }
     fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
         let uniform_buffer= Buffer::new_sized(
@@ -298,8 +274,50 @@ impl Shader for SpriteShader {
         &mut self,
         render_frame: &RenderFrame
     ) -> Result<()> {
-        let vertex_buffer = self.get_or_create_vertex_buffer(render_frame.vertices.len())?;
-        self.write_vertices(render_frame, &mut vertex_buffer.write()?);
+        let render_infos = render_frame.render_infos
+            .iter()
+            .sorted_unstable_by_key(|item| item.depth);
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        for render_info in render_infos {
+            for vertex_index in render_info.vertex_indices.clone() {
+                // Calculate transformed UVs.
+                let texture = render_info.inner.texture.clone().unwrap_or_default();
+                // TODO: better way to switch shaders.
+                let final_vertex = if texture.id() != 0 {
+                    let vertex = render_frame.vertices[vertex_index];
+                    let mut blend_col = render_info.inner.col;
+                    let mut uv = vertex.uv;
+                    if let Some(tex) = self.resource_handler.texture.get(&texture) {
+                        if let Some(tex) = tex.ready() {
+                            uv = render_info.inner.texture_sub_area.uv(&tex, uv);
+                        } else {
+                            warn!("texture not ready: {}", texture);
+                            blend_col = Colour::empty();
+                        }
+                    } else {
+                        error!("missing texture: {}", texture);
+                        blend_col = Colour::magenta();
+                    }
+                    sprite::Vertex {
+                        position: vertex.xy.into(),
+                        uv: uv.into(),
+                        texture_id: texture.into(),
+                        translation: render_info.transform.centre.into(),
+                        #[allow(clippy::cast_possible_truncation)]
+                        rotation: render_info.transform.rotation as f32,
+                        scale: render_info.transform.scale.into(),
+                        blend_col: blend_col.into(),
+                    }
+                } else {
+                    sprite::Vertex {
+                        blend_col: Colour::empty().into(),
+                        ..Default::default()
+                    }
+                };
+                vertices.push(final_vertex);
+            }
+        }
+        self.vertex_buffer.write(vertices)?;
         Ok(())
     }
     fn build_render_pass(
@@ -308,7 +326,6 @@ impl Shader for SpriteShader {
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
         let uniform_buffer_set = self.create_uniform_buffer_set()?;
-        let vertex_buffer = self.vertex_buffer.as_ref().unwrap();
         let layout = pipeline.layout().clone();
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -317,11 +334,8 @@ impl Shader for SpriteShader {
                 layout,
                 0,
                 uniform_buffer_set.clone(),
-            )?
-            .bind_vertex_buffers(0, vertex_buffer.clone())?
-            .draw(u32::try_from(vertex_buffer.len())
-                      .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", vertex_buffer.len())),
-                  1, 0, 0)?;
+            )?;
+        self.vertex_buffer.draw(builder)?;
         Ok(())
     }
 }
@@ -333,7 +347,7 @@ pub struct WireframeShader {
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
-    vertex_buffer: Option<Subbuffer<[wireframe::Vertex]>>,
+    vertex_buffer: CachedVertexBuffer<wireframe::Vertex>,
 }
 
 impl WireframeShader {
@@ -342,45 +356,15 @@ impl WireframeShader {
         viewport: UniqueShared<AdjustedViewport>
     ) -> Result<Arc<Mutex<dyn Shader>>> {
         let device = ctx.device();
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
         Ok(Arc::new(Mutex::new(Self {
             ctx,
             vs: wireframe::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: wireframe::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
-            vertex_buffer: None,
+            vertex_buffer,
         })) as Arc<Mutex<dyn Shader>>)
-    }
-
-    fn write_vertices(
-        &self,
-        render_frame: &RenderFrame,
-        buf: &mut [wireframe::Vertex]
-    ) {
-        check_le!(render_frame.vertices.len(), buf.len());
-        for render_info in &render_frame.render_infos {
-            for vertex_index in render_info.vertex_indices.clone() {
-                // Calculate transformed UVs.
-                let texture = render_info.inner.texture.clone().unwrap_or_default();
-                // TODO: better way to switch shaders.
-                let vertex = if texture.id() == 0 {
-                    wireframe::Vertex {
-                        position: render_frame.vertices[vertex_index].xy.into(),
-                        translation: render_info.transform.centre.into(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        rotation: render_info.transform.rotation as f32,
-                        scale: render_info.transform.scale.into(),
-                        blend_col: render_info.inner.col.into(),
-                    }
-                } else {
-                    wireframe::Vertex {
-                        blend_col: Colour::empty().into(),
-                        ..Default::default()
-                    }
-                };
-                buf[vertex_index] = vertex;
-            }
-        }
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -434,39 +418,6 @@ impl WireframeShader {
             },
             Some(pipeline) => Ok(pipeline)
         }
-    }
-    fn get_or_create_vertex_buffer(
-        &mut self,
-        len: usize
-    ) -> Result<Subbuffer<[wireframe::Vertex]>> {
-        if let Some(vertex_buffer) = &self.vertex_buffer {
-            if vertex_buffer.len() as usize == len {
-                return Ok(vertex_buffer.clone());
-            }
-        }
-        // XXX: needed to prevent flickering. No idea why.
-        self.vertex_buffer.take();
-        self.create_vertex_buffer(len)
-    }
-    fn create_vertex_buffer(
-        &mut self,
-        len: usize
-    ) -> Result<Subbuffer<[wireframe::Vertex]>> {
-        let vertex_buffer = Buffer::new_unsized(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            len as DeviceSize
-        ).map_err(Validated::unwrap)?;
-        self.vertex_buffer.replace(vertex_buffer.clone());
-        Ok(vertex_buffer)
     }
     fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
         let uniform_buffer= Buffer::new_sized(
@@ -522,8 +473,31 @@ impl Shader for WireframeShader {
         &mut self,
         render_frame: &RenderFrame,
     ) -> Result<()> {
-        let vertex_buffer = self.get_or_create_vertex_buffer(render_frame.vertices.len())?;
-        self.write_vertices(render_frame, &mut vertex_buffer.write()?);
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        for render_info in &render_frame.render_infos {
+            for vertex_index in render_info.vertex_indices.clone() {
+                // Calculate transformed UVs.
+                let texture = render_info.inner.texture.clone().unwrap_or_default();
+                // TODO: better way to switch shaders.
+                let vertex = if texture.id() == 0 {
+                    wireframe::Vertex {
+                        position: render_frame.vertices[vertex_index].xy.into(),
+                        translation: render_info.transform.centre.into(),
+                        #[allow(clippy::cast_possible_truncation)]
+                        rotation: render_info.transform.rotation as f32,
+                        scale: render_info.transform.scale.into(),
+                        blend_col: render_info.inner.col.into(),
+                    }
+                } else {
+                    wireframe::Vertex {
+                        blend_col: Colour::empty().into(),
+                        ..Default::default()
+                    }
+                };
+                vertices.push(vertex);
+            }
+        }
+        self.vertex_buffer.write(vertices)?;
         Ok(())
     }
     fn build_render_pass(
@@ -532,7 +506,6 @@ impl Shader for WireframeShader {
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
         let uniform_buffer_set = self.create_uniform_buffer_set()?;
-        let vertex_buffer = self.vertex_buffer.as_ref().unwrap();
         let layout = pipeline.layout().clone();
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -541,11 +514,8 @@ impl Shader for WireframeShader {
                 layout,
                 0,
                 uniform_buffer_set.clone(),
-            )?
-            .bind_vertex_buffers(0, vertex_buffer.clone())?
-            .draw(u32::try_from(vertex_buffer.len())
-                      .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", vertex_buffer.len())),
-                  1, 0, 0)?;
+            )?;
+        self.vertex_buffer.draw(builder)?;
         Ok(())
     }
 }
