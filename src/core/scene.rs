@@ -206,7 +206,7 @@ impl<ObjectType: ObjectTypeEnum, RenderHandler: RenderEventHandler> SceneHandler
     }
 }
 
-pub trait SceneObject<ObjectType: ObjectTypeEnum> {
+pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn get_type(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -248,7 +248,7 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
 impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>
 where
     ObjectType: ObjectTypeEnum,
-    T: SceneObject<ObjectType> + 'static
+    T: SceneObject<ObjectType>
 {
     fn from(value: Box<T>) -> Self { value }
 }

@@ -5,18 +5,16 @@ use std::{
     cell::RefCell
 };
 use itertools::Itertools;
-use crate::{
-    core::{
-        update::PendingAddObject,
-        AnySceneObject,
-        ObjectId,
-        ObjectTypeEnum,
-        SceneObjectWithId,
-        util::{
-            linalg::Vec2,
-            UnorderedPair,
-            collision::Collider
-        }
+use crate::core::{
+    update::PendingAddObject,
+    AnySceneObject,
+    ObjectId,
+    ObjectTypeEnum,
+    SceneObjectWithId,
+    util::{
+        linalg::Vec2,
+        UnorderedPair,
+        collision::Collider
     }
 };
 
@@ -79,8 +77,10 @@ impl CollisionHandler {
         for tag in new_object_ids_by_emitting_tag.keys() {
             self.object_ids_by_emitting_tag.entry(tag).or_default().extend(
                 new_object_ids_by_emitting_tag.get(tag).unwrap());
+            self.object_ids_by_listening_tag.entry(tag).or_default();
         }
         for tag in new_object_ids_by_listening_tag.keys() {
+            self.object_ids_by_emitting_tag.entry(tag).or_default();
             self.object_ids_by_listening_tag.entry(tag).or_default().extend(
                 new_object_ids_by_listening_tag.get(tag).unwrap());
         }
@@ -157,7 +157,8 @@ impl CollisionHandler {
             .collect()
     }
 
-    pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> Option<&BTreeSet<ObjectId>> {
+    pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> &BTreeSet<ObjectId> {
         self.object_ids_by_emitting_tag.get(tag)
+            .expect("missing tag in object_ids_by_emitting_tag: {tag}")
     }
 }

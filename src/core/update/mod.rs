@@ -714,6 +714,10 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
             pending_remove: BTreeSet::new(),
         }
     }
+
+    fn get(&self, object_id: ObjectId) -> Option<&Rc<RefCell<AnySceneObject<ObjectType>>>> {
+        self.last.get(&object_id)
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
@@ -779,16 +783,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         let mut rv = Vec::new();
         for tag in listening_tags {
-            if let Some(others) = self.collision_handler.get_object_ids_by_emitting_tag(tag) {
-                for other_id in others {
-                    if let Some(other) = self.object_tracker.last
-                        .get(other_id) {
-                        if let Some(mtv) = collider.collides_with(&other.borrow().collider()) {
-                            rv.push(Collision {
-                                other: SceneObjectWithId::new(*other_id, other.clone()),
-                                mtv,
-                            });
-                        }
+            for other_id in self.collision_handler.get_object_ids_by_emitting_tag(tag) {
+                if let Some(other) = self.object_tracker.get(*other_id) {
+                    if let Some(mtv) = collider.collides_with(&other.borrow().collider()) {
+                        rv.push(Collision {
+                            other: SceneObjectWithId::new(*other_id, other.clone()),
+                            mtv,
+                        });
                     }
                 }
             }
