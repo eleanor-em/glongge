@@ -44,6 +44,7 @@ use crate::{
     },
     resource::ResourceHandler,
 };
+use crate::core::BorrowedSceneObjectWithId;
 
 pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> {
     input_handler: Arc<Mutex<InputHandler>>,
@@ -211,19 +212,21 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             // Call on_load().
             let mut object_tracker = ObjectTracker::new(self);
             for (new_id, new_obj) in pending_add {
-                let parent = self.objects.get(&new_obj.parent)
-                    .map(|parent| SceneObjectWithId::new(new_obj.parent, parent.clone()));
-                let mut object_ctx = ObjectContext {
-                    collision_handler: &self.collision_handler,
-                    this: SceneObjectWithId {
-                        object_id: new_id,
-                        inner: new_obj.inner.clone(),
-                    },
-                    parent,
-                    children: Vec::new(),
-                    object_tracker: &mut object_tracker,
+                let new_vertices = {
+                    let parent = self.objects.get(&new_obj.parent)
+                        .map(|parent| BorrowedSceneObjectWithId::new(new_obj.parent, parent));
+                    let mut object_ctx = ObjectContext {
+                        collision_handler: &self.collision_handler,
+                        this: SceneObjectWithId {
+                            object_id: new_id,
+                            inner: new_obj.inner.clone(),
+                        },
+                        parent,
+                        children: Vec::new(),
+                        object_tracker: &mut object_tracker,
+                    };
+                    new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?
                 };
-                let new_vertices = new_obj.inner.borrow_mut().on_load(&mut object_ctx, &mut self.resource_handler)?;
                 self.vertex_map.insert(new_id, new_vertices);
                 self.objects.insert(new_id, new_obj.inner);
                 self.parents.insert(new_id, new_obj.parent);
@@ -482,6 +485,40 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
+    #[inline(never)]
+    fn get_parent(
+        objects: &'a BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+        parents: &'a BTreeMap<ObjectId, ObjectId>,
+        this_id: ObjectId
+    ) -> Option<BorrowedSceneObjectWithId<'a, ObjectType>> {
+        let parent_id = parents.get(&this_id)
+            .unwrap_or_else(|| panic!("missing object_id in parents: {this_id:?}"));
+        if parent_id.0 == 0 {
+            None
+        } else {
+            let parent = objects.get(parent_id)
+                .unwrap_or_else(|| panic!("the only missing parent should be the root node: {parent_id:?}"));
+            Some(BorrowedSceneObjectWithId::new(*parent_id, parent))
+        }
+    }
+    #[inline(never)]
+    fn get_children(
+        objects: &BTreeMap<ObjectId, Rc<RefCell<AnySceneObject<ObjectType>>>>,
+        children: &BTreeMap<ObjectId, BTreeSet<ObjectId>>,
+        this_id: ObjectId
+    ) -> Vec<SceneObjectWithId<ObjectType>> {
+        children
+            .get(&this_id)
+                .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
+                .iter().map(|child_id| {
+                let child = objects.get(child_id)
+                    .unwrap_or_else(|| panic!("missing object_id in objects: {child_id:?}"));
+                SceneObjectWithId::new(*child_id, child.clone())
+            })
+            .collect()
+    }
+
+    #[inline(never)]
     fn new<R: RenderInfoReceiver>(
         caller: &'a mut UpdateHandler<ObjectType, R>,
         input_handler: &'a InputHandler,
@@ -489,21 +526,8 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         object_tracker: &'a mut ObjectTracker<ObjectType>
     ) -> Self {
         let this_id = this.object_id;
-        let parent_id = caller.parents.get(&this_id)
-            .unwrap_or_else(|| panic!("missing object_id in parents: {this_id:?}"));
-        let parent = caller.objects.get(parent_id)
-            .map(|parent| SceneObjectWithId::new(*parent_id, parent.clone()));
-        if parent.is_none() {
-            check_eq!(parent_id.0, 0, "the only missing parent should be the root node");
-        }
-        let children = caller.children.get(&this_id)
-            .unwrap_or_else(|| panic!("missing object_id in children: {this_id:?}"))
-            .iter().map(|child_id| {
-                let child = caller.objects.get(child_id)
-                    .unwrap_or_else(|| panic!("missing object_id in objects: {child_id:?}"));
-                SceneObjectWithId::new(*child_id, child.clone())
-            })
-            .collect();
+        let parent = Self::get_parent(&caller.objects, &caller.parents, this_id);
+        let children = Self::get_children(&caller.objects, &caller.children, this_id);
         Self {
             input: input_handler,
             scene: SceneContext {
@@ -685,13 +709,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
 pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     collision_handler: &'a CollisionHandler,
     this: SceneObjectWithId<ObjectType>,
-    parent: Option<SceneObjectWithId<ObjectType>>,
+    parent: Option<BorrowedSceneObjectWithId<'a, ObjectType>>,
     children: Vec<SceneObjectWithId<ObjectType>>,
     object_tracker: &'a mut ObjectTracker<ObjectType>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
-    pub fn parent(&self) -> Option<SceneObjectWithId<ObjectType>> { self.parent.clone() }
+    pub fn parent(&self) -> Option<&BorrowedSceneObjectWithId<'a, ObjectType>> { self.parent.as_ref() }
     pub fn others(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.object_tracker.last.iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))

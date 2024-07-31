@@ -1,4 +1,5 @@
 use std::{any::{TypeId}, cell::{Ref, RefCell, RefMut}, fmt::Debug, rc::Rc, sync::atomic::{AtomicUsize, Ordering}};
+use std::ops::Deref;
 use scene::SceneObject;
 use crate::{
     core::{
@@ -67,6 +68,21 @@ pub struct ObjectId(usize);
 
 impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
+}
+
+pub struct BorrowedSceneObjectWithId<'a, ObjectType> {
+    _object_id: ObjectId,
+    inner: Ref<'a, AnySceneObject<ObjectType>>,
+}
+impl<'a, ObjectType: ObjectTypeEnum> BorrowedSceneObjectWithId<'a, ObjectType> {
+    fn new(object_id: ObjectId, obj: &'a Rc<RefCell<AnySceneObject<ObjectType>>>) -> Self {
+        Self { _object_id: object_id, inner: obj.borrow() }
+    }
+}
+
+impl<'a, ObjectType: ObjectTypeEnum> Deref for BorrowedSceneObjectWithId<'a, ObjectType> {
+    type Target = AnySceneObject<ObjectType>;
+    fn deref(&self) -> &Self::Target { &self.inner }
 }
 
 #[derive(Clone)]
