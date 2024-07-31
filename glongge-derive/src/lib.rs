@@ -52,8 +52,9 @@ fn get_initializer_for(field_name: proc_macro2::Ident, ty: Type) -> proc_macro2:
 #[proc_macro_attribute]
 pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+
     let struct_name = input.ident.clone();
-    let maybe_template = if struct_name.to_string().starts_with("GgInternal") {
+    let maybe_template = if input.generics.lt_token.is_some() {
         quote! {
             <ObjectType>
         }
@@ -163,12 +164,19 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
     proc_macro::TokenStream::from(quote! { #item_impl })
 }
 
+fn has_object_type_param(name: &proc_macro2::Ident) -> bool {
+    match name.to_string().as_str() {
+        "GgInternalSprite" => true,
+        _ => false,
+    }
+}
+
 fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
     match *data {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                if name.to_string().starts_with("GgInternal") {
+                if has_object_type_param(name) {
                     quote_spanned! {variant.span()=>
                         Self::#name => Box::new(#name::<Self>::default())
                     }
@@ -192,7 +200,7 @@ fn as_typeid_impl(data: &Data) -> proc_macro2::TokenStream {
         Data::Enum(ref data) => {
             let recurse = data.variants.iter().map(|variant| {
                 let name = &variant.ident;
-                if name.to_string().starts_with("GgInternal") {
+                if has_object_type_param(name) {
                     quote_spanned! {variant.span()=>
                         Self::#name => std::any::TypeId::of::<#name::<Self>>()
                     }

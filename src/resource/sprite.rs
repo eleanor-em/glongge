@@ -32,6 +32,7 @@ pub struct GgInternalSprite<ObjectType> {
     collider: BoxCollider,
 }
 
+// TODO: can maybe eliminate ObjectType using idea from CollisionShape.
 pub struct Sprite<ObjectType> {
     inner: Rc<RefCell<AnySceneObject<ObjectType>>>,
 }

@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     any::Any,
     fmt::Debug,
     ops::Range,
@@ -605,14 +604,13 @@ impl Collider for GenericCollider {
 }
 
 #[register_scene_object]
-pub struct GgInternalCollisionShape<ObjectType> {
+pub struct GgInternalCollisionShape {
     collider: GenericCollider,
     emitting_tags: Vec<&'static str>,
     listening_tags: Vec<&'static str>,
-    object_type: PhantomData<ObjectType>,
 }
 
-impl<ObjectType: ObjectTypeEnum> GgInternalCollisionShape<ObjectType> {
+impl GgInternalCollisionShape {
     pub fn new<C: Collider>(
         collider: C,
         emitting_tags: &[&'static str],
@@ -622,22 +620,21 @@ impl<ObjectType: ObjectTypeEnum> GgInternalCollisionShape<ObjectType> {
             collider: collider.into_generic(),
             emitting_tags: emitting_tags.to_vec(),
             listening_tags: listening_tags.to_vec(),
-            object_type: PhantomData,
         })
     }
 
-    pub fn from_object<O: SceneObject<ObjectType>, C: Collider>(
+    pub fn from_object<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>, C: Collider>(
         object: &O,
         collider: C,
     ) -> Box<Self> { Self::new(collider, &object.emitting_tags(), &object.listening_tags()) }
-    pub fn from_object_sprite<O: SceneObject<ObjectType>>(
+    pub fn from_object_sprite<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>>(
         object: &O,
         sprite: &Sprite<ObjectType>
     ) -> Box<Self> { Self::new(sprite.as_box_collider(), &object.emitting_tags(), &object.listening_tags()) }
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         check!(ctx.object().parent().is_some(), "CollisionShapes must have a parent");
     }
