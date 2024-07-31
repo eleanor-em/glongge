@@ -14,6 +14,7 @@ pub mod linalg;
 pub mod colour;
 pub mod assert;
 pub mod collision;
+pub mod canvas;
 
 #[allow(dead_code)]
 pub mod gg_time {

@@ -386,7 +386,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler.collision_handler.remove_objects(&pending_remove_objects);
-        for remove_id in pending_remove_objects {
+        for remove_id in pending_remove_objects.into_iter() {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);
@@ -818,6 +818,11 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .filter_map(|(_, obj)| obj.downcast_mut())
             .collect()
     }
+    pub fn first_other_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
+        self.others_inner()
+            .filter_map(|(_, obj)| obj.downcast_mut())
+            .next()
+    }
 
     pub fn absolute_transform(&self) -> Transform {
         *self.all_absolute_transforms.get(&self.this_id)
@@ -901,6 +906,9 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
     pub fn remove_this(&mut self) {
         self.object_tracker.pending_remove.insert(self.this_id);
+        self.remove_children();
+    }
+    pub fn remove_children(&mut self) {
         for child in &self.children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
@@ -1005,6 +1013,7 @@ impl<'a> ViewportContext<'a> {
         self
     }
     pub fn clear_col(&mut self) -> &mut Colour { self.clear_col }
+    pub fn inner(&self) -> AdjustedViewport { self.viewport.clone() }
 }
 
 impl AxisAlignedExtent for ViewportContext<'_> {

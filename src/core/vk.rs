@@ -110,7 +110,7 @@ impl WindowContext {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AdjustedViewport {
     inner: Viewport,
     scale_factor: f64,

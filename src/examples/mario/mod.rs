@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use glongge::{
-    core::{
-        prelude::*,
-        scene::{Scene, SceneName},
-    }
+use glongge::core::{
+    prelude::*,
+    scene::{Scene, SceneName},
 };
 
 pub mod player;
@@ -32,6 +30,7 @@ use background::hill2::*;
 use background::hill3::*;
 use background::hill4::*;
 use background::castle::*;
+use glongge::core::util::canvas::Canvas;
 use crate::object_type::ObjectType;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
@@ -115,7 +114,8 @@ impl Scene<ObjectType> for MarioOverworldScene {
             Castle::new(Vec2Int {
                 x: 202*16,
                 y: 384 - 7*16,
-            })
+            }),
+            Canvas::new(),
         ];
 
         initial_objects.push(QuestionBlock::new(Vec2Int { x: 17 * 16, y: 384 - 6 * 16 }));
@@ -363,7 +363,8 @@ impl Scene<ObjectType> for MarioUndergroundScene {
             Player::new(Vec2Int {
                 x: 2*16 + 8,
                 y: 8,
-            }, false)
+            }, false),
+            Canvas::new(),
         ];
         // left wall
         for (tile_x, tile_y) in Vec2Int::range_from_zero([1, 24].into()) {

@@ -15,6 +15,8 @@ fn main() -> Result<()> {
     let builtins = vec![
         "GgInternalSprite,".to_string(),
         "GgInternalCollisionShape,".to_string(),
+        "GgInternalCanvas,".to_string(),
+        "GgInternalCanvasItem,".to_string(),
     ];
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {

@@ -17,7 +17,7 @@ use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
 use crate::object_type::ObjectType;
 
-mod examples;
+pub mod examples;
 
 #[allow(unused_imports)]
 use crate::examples::{

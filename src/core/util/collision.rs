@@ -4,6 +4,7 @@ use std::{
     ops::Range,
 };
 use std::ops::Deref;
+use std::time::Duration;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -742,7 +743,7 @@ impl GgInternalCollisionShape {
             show_wireframe: false,
             last_show_wireframe: false,
         };
-        rv.wireframe = rv.triangles().concat(rv.normals());
+        rv.wireframe = rv.triangles();
         AnySceneObject::new(rv)
     }
 
@@ -765,7 +766,7 @@ impl GgInternalCollisionShape {
                 .collect()
         ).with_depth(VertexDepth::max_value())
     }
-    fn normals(&self) -> RenderItem {
+    fn normals(&self) -> Vec<(Vec2, Vec2)> {
         let polygon = ConvexCollider::convex_hull_of(self.collider.as_polygon());
         polygon.normals().into_iter().zip(polygon.vertices().into_iter().circular_tuple_windows())
             .map(|(normal, (u, v))| {
@@ -776,9 +777,7 @@ impl GgInternalCollisionShape {
                 let end = start + (start - self.collider.centre());
                 (start, end)
             })
-            .fold(RenderItem::default(), |acc, (start, end)| {
-                acc.concat(vertex::line(start, end, 1.))
-            })
+            .collect_vec()
     }
 
     pub fn show_wireframe(&mut self) { self.show_wireframe = true; }
@@ -793,6 +792,16 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
+    fn on_update(&mut self, _delta: Duration, ctx: &mut UpdateContext<ObjectType>) {
+        if self.show_wireframe {
+            let centre = ctx.object().absolute_transform().centre;
+            let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();
+            for (start, end) in self.normals() {
+                canvas.line(centre + start, centre + end, 1., Colour::green());
+            }
+        }
+    }
+
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
 
     fn emitting_tags(&self) -> Vec<&'static str> {
@@ -830,4 +839,5 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
-use crate::shader::{get_shader, Shader, vertex, WireframeShader};
+use crate::core::util::canvas::Canvas;
+use crate::shader::{get_shader, Shader, WireframeShader};
