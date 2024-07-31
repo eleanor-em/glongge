@@ -10,9 +10,7 @@ use std::{
     sync::{
         Arc,
         Mutex,
-        MappedRwLockReadGuard,
         RwLock,
-        RwLockReadGuard,
         atomic::{AtomicUsize, Ordering}
     }
 };
@@ -141,11 +139,11 @@ pub(crate) enum CachedTexture {
 }
 
 impl CachedTexture {
-    pub fn ready<'a>(self: MappedRwLockReadGuard<'a, CachedTexture>) -> Option<MappedRwLockReadGuard<'a, Arc<InternalTexture>>> {
-        MappedRwLockReadGuard::try_map(self, |inner| match inner {
+    pub fn ready<'a>(self) -> Option<Arc<InternalTexture>> {
+        match self {
             Self::Loading => None,
             Self::Ready(tex) => Some(tex)
-        }).ok()
+        }
     }
 }
 
@@ -423,10 +421,8 @@ impl TextureHandler {
     }
 
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub(crate) fn get(&self, texture: &Texture) -> Option<MappedRwLockReadGuard<CachedTexture>> {
-        RwLockReadGuard::try_map(self.cached_textures.read().unwrap(), |textures| {
-            textures.get(&texture.id())
-        }).ok()
+    pub(crate) fn get(&self, texture: &Texture) -> Option<CachedTexture> {
+        self.cached_textures.read().unwrap().get(&texture.id()).cloned()
     }
 }
 
