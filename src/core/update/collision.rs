@@ -56,38 +56,25 @@ impl CollisionHandler {
             possible_collisions: BTreeSet::new()
         }
     }
-    pub(crate) fn add_objects<ObjectType: ObjectTypeEnum>(
-        &mut self,
-        added_objects: &BTreeMap<ObjectId, PendingAddObject<ObjectType>>
-    ) {
-        for obj in added_objects.values() {
-            let obj = obj.inner.borrow();
-            for tag in obj.emitting_tags() {
-                self.object_ids_by_emitting_tag.entry(tag).or_default();
-                self.object_ids_by_listening_tag.entry(tag).or_default();
-            }
-            for tag in obj.listening_tags() {
-                self.object_ids_by_emitting_tag.entry(tag).or_default();
-                self.object_ids_by_listening_tag.entry(tag).or_default();
-            }
-        }
-        let added_objects = added_objects.iter()
-            .filter(|(_, obj)| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider())
-            .collect::<BTreeMap<_, _>>();
+    pub(crate) fn add_objects<'a, ObjectType: ObjectTypeEnum, I>(
+        &'a mut self,
+        added_objects: I
+    )
+    where I: Iterator<Item=&'a (ObjectId, PendingAddObject<ObjectType>)>
+    {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
-
-        for (id, obj) in added_objects {
+        for (id, obj) in added_objects
+            .filter(|(_, obj)| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider()) {
             let obj = obj.inner.borrow();
             for tag in obj.emitting_tags() {
                 new_object_ids_by_emitting_tag.entry(tag).or_default().push(*id);
-                new_object_ids_by_listening_tag.entry(tag).or_default();
             }
             for tag in obj.listening_tags() {
-                new_object_ids_by_emitting_tag.entry(tag).or_default();
                 new_object_ids_by_listening_tag.entry(tag).or_default().push(*id);
             }
         }
+
         for tag in new_object_ids_by_emitting_tag.keys() {
             self.object_ids_by_emitting_tag.entry(tag).or_default().extend(
                 new_object_ids_by_emitting_tag.get(tag).unwrap());

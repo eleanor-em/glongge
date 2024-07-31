@@ -1,18 +1,20 @@
 pub mod collision;
 
 use std::{
+    cell::{
+        Ref,
+        RefMut
+    },
     collections::{BTreeMap, BTreeSet},
-    cell::RefMut,
     sync::{
         Arc,
         mpsc,
         Mutex,
         mpsc::{Receiver, Sender}
     },
-    time::{Duration, Instant}
+    time::{Duration, Instant},
+    ops::RangeInclusive
 };
-use std::cell::Ref;
-use std::ops::RangeInclusive;
 use tracing::{warn};
 use serde::{
     Serialize,
@@ -34,18 +36,20 @@ use crate::{
         scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
         vk::AdjustedViewport,
         util::{
-            collision::GenericCollider,
+            collision::{
+                GenericCollider,
+                Collider,
+                GgInternalCollisionShape
+            },
             gg_time::TimeIt,
             linalg::{AxisAlignedExtent, Vec2},
             colour::Colour,
-            collision::Collider,
             NonemptyVec,
-            linalg::Transform
-        },
+            linalg::Transform,
+        }
     },
     resource::ResourceHandler,
 };
-use crate::core::util::collision::GgInternalCollisionShape;
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
@@ -318,18 +322,18 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
             });
             let pending_add = pending_add_objects.drain(..)
                 .map(|obj| (ObjectId::next(), obj))
-                .collect::<BTreeMap<_, _>>();
-            let first_new_id = *pending_add.first_key_value().expect("inexplicable").0;
-            let last_new_id = *pending_add.last_key_value().expect("inexplicable").0;
-            let new_ids = first_new_id.0..=last_new_id.0;
-            self.object_handler.collision_handler.add_objects(&pending_add);
+                .collect_vec();
+            let first_new_id = pending_add[0].0.0;
+            let last_new_id = pending_add.last().unwrap().0.0;
 
             let mut object_tracker = ObjectTracker::new(&self.object_handler);
+            self.object_handler.collision_handler.add_objects(pending_add.iter());
             self.load_new_objects(&mut object_tracker, pending_add)?;
-            self.call_on_ready(&mut object_tracker, input_handler, new_ids);
+            self.call_on_ready(&mut object_tracker, input_handler, first_new_id..=last_new_id);
+
             let (pending_add, pending_remove) = object_tracker.into_pending();
-            self.update_with_removed_objects(pending_remove);
             pending_add_objects = pending_add;
+            self.update_with_removed_objects(pending_remove);
         }
         Ok(())
     }
@@ -349,7 +353,13 @@ impl<ObjectType: ObjectTypeEnum, RenderReceiver: RenderInfoReceiver> UpdateHandl
         }
     }
 
-    fn load_new_objects(&mut self, object_tracker: &mut ObjectTracker<ObjectType>, pending_add: BTreeMap<ObjectId, PendingAddObject<ObjectType>>) -> Result<()> {
+    fn load_new_objects<I>(
+        &mut self,
+        object_tracker: &mut ObjectTracker<ObjectType>,
+        pending_add: I
+    ) -> Result<()>
+    where I: IntoIterator<Item=(ObjectId, PendingAddObject<ObjectType>)>
+    {
         for (new_id, new_obj) in pending_add {
             self.object_handler.add_object(new_id, new_obj.clone());
             let parent = self.object_handler.get_parent(new_obj.parent_id);
