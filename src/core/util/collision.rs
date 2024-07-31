@@ -2,8 +2,8 @@ use std::{
     any::Any,
     fmt::Debug,
     ops::Range,
-    sync::Arc
 };
+use std::ops::Deref;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -48,12 +48,8 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
         }
     }
 
-    fn as_generic(&self) -> GenericCollider where Self: Clone + Send + Sync + 'static {
-        GenericCollider::new(self.clone())
-    }
-    fn into_generic(self) -> GenericCollider where Self: Sized + Send + Sync + 'static {
-        GenericCollider::new(self)
-    }
+    fn as_generic(&self) -> GenericCollider where Self: Clone { self.clone().into_generic() }
+    fn into_generic(self) -> GenericCollider where Self: Sized + 'static;
 
     fn translated(&self, by: Vec2) -> GenericCollider;
     fn scaled(&self, by: Vec2) -> GenericCollider;
@@ -82,6 +78,13 @@ impl Collider for NullCollider {
     fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> { None }
     fn collides_with_oriented_box(&self, _other: &OrientedBoxCollider) -> Option<Vec2> { None }
     fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> { None }
+
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + Send + Sync + 'static
+    {
+        GenericCollider::Null
+    }
 
     fn translated(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
     fn scaled(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
@@ -305,6 +308,13 @@ impl Collider for OrientedBoxCollider {
         self.polygon_collision(other)
     }
 
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + 'static
+    {
+        GenericCollider::OrientedBox(self)
+    }
+
     fn translated(&self, by: Vec2) -> GenericCollider {
         let mut rv = self.clone();
         rv.centre += by.rotated(self.rotation);
@@ -450,6 +460,13 @@ impl Collider for BoxCollider {
         self.polygon_collision(other)
     }
 
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + 'static
+    {
+        GenericCollider::Box(self)
+    }
+
     fn translated(&self, by: Vec2) -> GenericCollider {
         let mut rv = self.clone();
         rv.centre += by;
@@ -573,6 +590,13 @@ impl Collider for ConvexCollider {
         self.polygon_collision(other)
     }
 
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + 'static
+    {
+        GenericCollider::Convex(self)
+    }
+
     fn translated(&self, by: Vec2) -> GenericCollider {
         let mut rv = self.clone();
         for vertex in &mut rv.vertices {
@@ -610,86 +634,86 @@ impl Collider for ConvexCollider {
 }
 
 #[derive(Clone, Debug)]
-pub struct GenericCollider {
-    inner: Arc<dyn Collider>,
+pub enum GenericCollider {
+    Null,
+    Box(BoxCollider),
+    OrientedBox(OrientedBoxCollider),
+    Convex(ConvexCollider),
 }
 
-impl GenericCollider {
-    pub fn new<C: Collider>(inner: C) -> Self {
-        let extent = inner.aa_extent();
-        check_eq!(extent, extent.abs());
-        Self { inner: Arc::new(inner) as Arc<dyn Collider> }
+impl Deref for GenericCollider {
+    type Target = dyn Collider;
+
+    fn deref(&self) -> &dyn Collider {
+        match self {
+            GenericCollider::Null => &NullCollider,
+            GenericCollider::Box(c) => c,
+            GenericCollider::OrientedBox(c) => c,
+            GenericCollider::Convex(c) => c,
+        }
     }
 }
 
 impl Default for GenericCollider {
-    fn default() -> Self {
-        Self { inner: Arc::new(NullCollider) }
-    }
+    fn default() -> Self { Self::Null }
 }
 
 impl AxisAlignedExtent for GenericCollider {
     fn aa_extent(&self) -> Vec2 {
-        self.inner.aa_extent()
+        self.deref().aa_extent()
     }
 
     fn centre(&self) -> Vec2 {
-        self.inner.centre()
+        self.deref().centre()
     }
 }
 
 impl Collider for GenericCollider {
     fn as_any(&self) -> &dyn Any {
-        self.inner.as_any()
+        self.deref().as_any()
     }
 
     fn get_type(&self) -> ColliderType {
-        self.inner.get_type()
+        self.deref().get_type()
     }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.inner.collides_with_box(other)
+        self.deref().collides_with_box(other)
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
-        self.inner.collides_with_oriented_box(other)
+        self.deref().collides_with_oriented_box(other)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.inner.collides_with_convex(other)
+        self.deref().collides_with_convex(other)
     }
 
-    fn translated(&self, by: Vec2) -> GenericCollider {
-        self.inner.translated(by).into_generic()
-    }
-
-    fn as_generic(&self) -> GenericCollider
-    where
-        Self: Clone + Send + Sync + 'static
-    {
-        self.clone()
-    }
     fn into_generic(self) -> GenericCollider
     where
-        Self: Sized + Send + Sync + 'static,
+        Self: Sized + 'static
     {
         self
     }
 
-    fn as_polygon(&self) -> Vec<Vec2> {
-        self.inner.as_polygon()
-    }
-
-    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
-        self.inner.as_triangles()
+    fn translated(&self, by: Vec2) -> GenericCollider {
+        self.deref().translated(by)
     }
 
     fn scaled(&self, by: Vec2) -> GenericCollider {
-        self.inner.scaled(by)
+        self.deref().scaled(by)
     }
 
     fn rotated(&self, by: f64) -> GenericCollider {
-        self.inner.rotated(by)
+        self.deref().rotated(by)
+    }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        self.deref().as_polygon()
+    }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        self.deref().as_triangles()
     }
 }
 
@@ -742,7 +766,7 @@ impl GgInternalCollisionShape {
         ).with_depth(VertexDepth::Front(u64::MAX))
     }
     fn normals(&self) -> RenderItem {
-        let polygon = ConvexCollider::convex_hull_of(self.collider.inner.as_polygon());
+        let polygon = ConvexCollider::convex_hull_of(self.collider.as_polygon());
         polygon.normals().into_iter().zip(polygon.vertices().into_iter().circular_tuple_windows())
             .map(|(normal, (u, v))| {
                 let start = Vec2::intersect(
