@@ -309,7 +309,7 @@ impl Polygonal for OrientedBoxCollider {
         ]
     }
     fn normals(&self) -> Vec<Vec2> {
-        vec![Vec2::right().rotated(self.rotation), Vec2::down().rotated(self.rotation)]
+        vec![Vec2::up().rotated(self.rotation), Vec2::right().rotated(self.rotation)]
     }
 
     fn polygon_centre(&self) -> Vec2 {
@@ -432,7 +432,7 @@ impl Polygonal for BoxCollider {
         ]
     }
     fn normals(&self) -> Vec<Vec2> {
-        vec![Vec2::right(), Vec2::down()]
+        vec![Vec2::up(), Vec2::right()]
     }
 
     fn polygon_centre(&self) -> Vec2 {
@@ -692,61 +692,38 @@ impl CompoundCollider {
         Self { inner }
     }
 
-    fn get_new_vertex(vertices: &[Vec2], prev: Vec2, origin: Vec2, next: Vec2) -> Option<Vec2> {
-        let filtered_edges = vertices.iter()
-            .circular_tuple_windows()
-            .filter(|(a, b)| **a != origin && **b != origin)
+    fn get_new_vertex(edges: &[(Vec2, Vec2)], prev: Vec2, origin: Vec2, next: Vec2) -> Option<Vec2> {
+        let filtered_edges = edges.iter()
+            .filter(|(a, b)| *a != origin && *b != origin)
             .collect_vec();
-        println!("filtered:");
-        for edge in &filtered_edges { println!("\t{edge:?}") }
 
         let intersections_1 = filtered_edges.iter()
-            .filter_map(|(&a, &b)| {
-                Vec2::intersect(origin, (origin - prev).normed(), a, (b - a).normed())
-                    .map(|x| (a, b, x))
+            .filter_map(|(a, b)| {
+                Vec2::intersect(origin, (origin - prev).normed(), *a, (*b - *a).normed())
             })
-            .collect_vec();
-        println!("intersections_1:");
-        for intersect in &intersections_1 { println!("\t{intersect:?}") }
-        let intersections_1 = intersections_1.into_iter()
-            .min_by(|(_, _, a), (_, _, b)| {
+            .min_by(|a, b| {
                 a.len_squared().partial_cmp(&b.len_squared()).unwrap()
             });
 
         let intersections_2 = filtered_edges.iter()
-            .filter_map(|(&a, &b)| {
-                Vec2::intersect(origin, (origin - next).normed(), a, (b - a).normed())
-                    .map(|x| (a, b, x))
+            .filter_map(|(a, b)| {
+                Vec2::intersect(origin, (origin - next).normed(), *a, (*b - *a).normed())
             })
-            .collect_vec();
-        println!("intersections_2:");
-        for intersect in &intersections_2 { println!("\t{intersect:?}") }
-        let intersections_2 = intersections_2.into_iter()
-            .min_by(|(_, _, a), (_, _, b)| {
+            .min_by(|a, b| {
                 a.len_squared().partial_cmp(&b.len_squared()).unwrap()
             });
 
-        if let (Some((_, _, start)), Some((_, _, end))) = (intersections_1, intersections_2) {
+        if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
             let centre: Vec2 = (start + end) / 2;
-            println!("test intersections between {start} and {end}, centre={centre}");
-            let intersections = filtered_edges.iter()
-                .filter_map(|(&a, &b)| {
-                    Vec2::intersect(origin, (centre - origin).normed(), a, (b - a).normed())
-                        .map(|x| (a, b, x))
+            filtered_edges.iter()
+                .filter_map(|(a, b)| {
+                    Vec2::intersect(origin, (centre - origin).normed(), *a, (*b - *a).normed())
                 })
-                .collect_vec();
-            println!("intersections:");
-            for intersect in &intersections {
-                println!("\t{intersect:?}");
-            }
-            Some(intersections.into_iter()
-                .min_by(|(_, _, a), (_, _, b)| {
+                .min_by(|a, b| {
                     let da = origin.dist_squared(*a);
                     let db = origin.dist_squared(*b);
                     da.partial_cmp(&db).unwrap()
                 })
-                .unwrap()
-                .2)
         } else {
             None
         }
@@ -755,53 +732,20 @@ impl CompoundCollider {
         // Sanity checks:
         check_ge!(vertices.len(), 3);
         if polygon::is_convex(&vertices) {
-            println!("already convex");
             return Self { inner: vec![ConvexCollider::from_vertices_unchecked(vertices)] };
         }
 
-        println!();
-        let mut cycled_vertices = vertices.clone();
-        cycled_vertices.insert(0, *cycled_vertices.last().unwrap());
-        cycled_vertices.push(cycled_vertices[1]);
-        let edges = cycled_vertices.iter().copied().tuple_windows()
-            .collect::<Vec<(Vec2, Vec2)>>();
-        let angles = cycled_vertices.iter().copied().triple_windows()
-            .collect::<Vec<(Vec2, Vec2, Vec2)>>();
-
-        for (i, vertex) in vertices.iter().enumerate() {
-            println!("{i}: {vertex:?}");
-        }
-
-        println!("cycled_vertices:");
-        for v in &cycled_vertices {
-            println!("\t{v:?}");
-        }
-        println!("edges:");
-        for e in &edges {
-            println!("\t{e:?}");
-        }
-        println!("angles:");
-        for a in &angles {
-            println!("\t{a:?}");
-        }
-
-        // Find a reflex vertex:
-        let (prev, origin, next) = (1..=(vertices.len() as i16)).into_iter()
-            .map(|i| {
-                let prev = cycled_vertices[i as usize - 1];
-                let origin = cycled_vertices[i as usize];
-                let next = cycled_vertices[i as usize + 1];
-                (prev, origin, next)
-            })
+        let cycled_vertices = vertices.iter().cycle().take(vertices.len() + 2).copied().collect_vec();
+        let edges = cycled_vertices.iter().copied().tuple_windows().collect_vec();
+        let angles = cycled_vertices.iter().copied().triple_windows().collect_vec();
+        let (prev, origin, next) = angles.into_iter()
             .find(|(prev, origin, next)| {
                 (*origin - *prev).cross(*origin - *next) > 0.
             })
             .expect("no reflex vertex found");
-
-        println!("reflex vertex: {prev}-{origin}-{next}");
-        let new_vertex = Self::get_new_vertex(&vertices, prev, origin, next)
+        let new_vertex = Self::get_new_vertex(&edges, prev, origin, next)
             .expect("could not find new vertex");
-        println!("new vertex: {new_vertex}");
+
         let mut left_vertices = vec![origin, new_vertex];
         let mut changed = true;
         while changed {
@@ -820,6 +764,7 @@ impl CompoundCollider {
                 }
             }
         }
+
         let mut right_vertices = vec![origin, new_vertex];
         let mut changed = true;
         while changed {
@@ -835,17 +780,7 @@ impl CompoundCollider {
             }
         }
 
-        println!("left:");
-        for v in &left_vertices {
-            println!("\t{v:?}");
-        }
-        println!("right:");
-        for v in &right_vertices {
-            println!("\t{v:?}");
-        }
-        println!("Recursing left: {left_vertices:?}");
         let mut rv = Self::decompose(left_vertices);
-        println!("Recursing right: {right_vertices:?}");
         rv.extend(Self::decompose(right_vertices));
         rv
     }
@@ -863,7 +798,7 @@ impl Polygonal for CompoundCollider {
     }
 
     fn normals(&self) -> Vec<Vec2> {
-        self.inner.iter().flat_map(ConvexCollider::normals).collect()
+        polygon::normals_of(self.vertices())
     }
 
     fn polygon_centre(&self) -> Vec2 {
@@ -1103,10 +1038,33 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         if self.show_wireframe {
             let centre = ctx.object().absolute_transform().centre;
             let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();
-            for (start, end) in self.normals() {
-                canvas.line(centre + start, centre + end, 1., Colour::green());
-                canvas.rect(centre + self.collider.centre() - Vec2::one(),
-                            centre + self.collider.centre() + Vec2::one(), Colour::red());
+            if let GenericCollider::Compound(compound) = &self.collider {
+                let mut colours = vec![Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
+                colours.reverse();
+                for inner in &compound.inner {
+                    let col = colours.pop().unwrap();
+                    let normals = inner.normals();
+                    let vertices = inner.vertices();
+                    for (start, end) in normals.into_iter().zip(vertices.iter().circular_tuple_windows())
+                        .map(|(normal, (u, v))| {
+                            let start = (*u + *v) / 2;
+                            let end = start + normal.normed() * 8;
+                            (start, end)
+                        }) {
+                        canvas.line(centre + start, centre + end, 1., col);
+                        canvas.rect(centre + inner.centre() - Vec2::one(),
+                                    centre + inner.centre() + Vec2::one(), col);
+                    }
+                    for (a, b) in vertices.into_iter().circular_tuple_windows() {
+                        canvas.line(centre + a, centre + b, 0.5, col);
+                    }
+                }
+            } else {
+                for (start, end) in self.normals() {
+                    canvas.line(centre + start, centre + end, 1., Colour::green());
+                    canvas.rect(centre + self.collider.centre() - Vec2::one(),
+                                centre + self.collider.centre() + Vec2::one(), Colour::red());
+                }
             }
         }
     }
