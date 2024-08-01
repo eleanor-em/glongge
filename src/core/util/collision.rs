@@ -3,6 +3,7 @@ use std::{
     fmt::Debug,
     ops::Range,
 };
+use std::cmp::Ordering;
 use std::ops::Deref;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -29,6 +30,7 @@ pub enum ColliderType {
     Box,
     OrientedBox,
     Convex,
+    Compound,
 }
 
 pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
@@ -44,7 +46,12 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
             ColliderType::Null => None,
             ColliderType::Box => self.collides_with_box(other.as_any().downcast_ref().unwrap()),
             ColliderType::OrientedBox => self.collides_with_oriented_box(other.as_any().downcast_ref().unwrap()),
-            ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref().unwrap())
+            ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref().unwrap()),
+            ColliderType::Compound => {
+                other.as_any().downcast_ref::<CompoundCollider>().unwrap().inner.iter()
+                    .filter_map(|other| self.collides_with(&other.as_generic()))
+                    .next()
+            },
         }
     }
 
@@ -99,7 +106,7 @@ impl Collider for NullCollider {
     }
 }
 
-trait Polygonal {
+pub trait Polygonal {
     fn vertices(&self) -> Vec<Vec2>;
     fn normals(&self) -> Vec<Vec2>;
     fn polygon_centre(&self) -> Vec2;
@@ -166,10 +173,8 @@ trait Polygonal {
     fn centre_of(mut vertices: Vec<Vec2>) -> Vec2 {
         if let Some(vertex) = vertices.first() {
             vertices.push(*vertex);
-            let (area, x, y) = vertices.windows(2)
-                .map(|vs| {
-                    let u = vs[0];
-                    let v = vs[1];
+            let (area, x, y) = vertices.iter().tuple_windows()
+                .map(|(&u, &v)| {
                     let area = u.cross(v);
                     (area, (u.x + v.x) * area, (u.y + v.y) * area)
                 })
@@ -384,6 +389,10 @@ impl BoxCollider {
             extent: self.extent.component_wise(by.scale.abs()),
         }
     }
+
+    pub fn as_convex(&self) -> ConvexCollider {
+        ConvexCollider::from_vertices_unchecked(self.vertices())
+    }
 }
 
 impl Polygonal for BoxCollider {
@@ -536,7 +545,22 @@ impl ConvexCollider {
     }
 
     pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Self {
-        vertices.sort_unstable_by(gg_iter::cmp_vec2);
+        check_false!(vertices.is_empty());
+        let centre = Self::centre_of(vertices.clone());
+        vertices.sort_unstable_by(|&a, &b| {
+            if a == b {
+                panic!("duplicate vertices: {a}");
+            } else {
+                let det = (a - centre).cross(b - centre);
+                if det > 0. {
+                    Ordering::Less
+                } else if det < 0. {
+                    Ordering::Greater
+                } else {
+                    a.len_squared().partial_cmp(&b.len_squared()).unwrap()
+                }
+            }
+        });
         if vertices.len() <= 1 {
             return Self::from_vertices_unchecked(vertices);
         }
@@ -550,6 +574,16 @@ impl ConvexCollider {
 
         let vertices = lower.into_iter().chain(upper).collect_vec();
         Self::from_vertices_unchecked(vertices)
+    }
+
+    pub fn is_convex(vertices: &[Vec2]) -> Option<ConvexCollider> {
+        let hull = Self::convex_hull_of(vertices.to_vec());
+        if hull.vertices.iter().sorted_unstable_by(|a, b| a.partial_cmp(b).unwrap()).collect_vec()
+                == vertices.iter().sorted_unstable_by(|a, b| a.partial_cmp(b).unwrap()).collect_vec() {
+            Some(hull)
+        } else {
+            None
+        }
     }
 }
 
@@ -642,6 +676,100 @@ impl CompoundCollider {
     pub fn new(inner: Vec<ConvexCollider>) -> Self {
         Self { inner }
     }
+
+    pub fn decompose(vertices: Vec<Vec2>) -> Self {
+        // Sanity checks:
+        check_ge!(vertices.len(), 3);
+        if let Some(hull) = ConvexCollider::is_convex(&vertices) {
+            println!("already convex");
+            return Self { inner: vec![hull] };
+        }
+
+        println!();
+        let mut cycled_vertices = vertices.clone();
+        cycled_vertices.insert(0, *cycled_vertices.last().unwrap());
+        cycled_vertices.push(cycled_vertices[1]);
+        let edges = cycled_vertices.iter().copied().tuple_windows()
+            .collect::<Vec<(Vec2, Vec2)>>();
+        let angles = cycled_vertices.iter().copied().triple_windows()
+            .collect::<Vec<(Vec2, Vec2, Vec2)>>();
+
+        for (i, vertex) in vertices.iter().enumerate() {
+            println!("{i}: {vertex:?}");
+        }
+
+        println!("cycled_vertices:\n\t{cycled_vertices:?}");
+        println!("edges:\n\t{edges:?}");
+        println!("angles:\n\t{angles:?}");
+
+
+        // Find a reflex vertex:
+        for i in 1..=(vertices.len() as i16) {
+            let u = cycled_vertices[i as usize - 1];
+            let v = cycled_vertices[i as usize];
+            let w = cycled_vertices[i as usize + 1];
+            let det = (v - u).cross(w - v);
+            if det < 0. {
+                println!("reflex vertex: {}-{}-{}", (i - 2) % (vertices.len() as i16), (i - 1) % (vertices.len() as i16), (i) % (vertices.len() as i16));
+                println!("{u} - {v} - {w}");
+                println!("{vertices:?}");
+                let filtered = vertices.iter()
+                    .circular_tuple_windows()
+                    .filter(|(a, b)| **a != u && **a != v && **a != w && **b != u && **b != v && **b != w)
+                    .collect_vec();
+                println!("{filtered:?}");
+                let intersections_1 = filtered.iter()
+                    .filter_map(|(&a, &b)| Vec2::intersect(v, (v - w).normed(), a, (b - a).normed()))
+                    .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap());
+                let intersections_2 = filtered.iter()
+                    .filter_map(|(&a, &b)| Vec2::intersect(v, (v - u).normed(), a, (b - a).normed()))
+                    .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap());
+
+                if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
+                    let centre: Vec2 = (start + end) / 2;
+                    println!("test intersections between {start} and {end}, centre={centre}");
+                    let centre = filtered.iter()
+                        .filter_map(|(&a, &b)| Vec2::intersect(v, (centre - v).normed(), a, (b - a).normed()))
+                        .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap())
+                        .unwrap();
+                    println!("new centre={centre}");
+                    let left_vertices = vertices.iter()
+                        .copied()
+                        .filter(|&vtx| vtx != v && vtx != centre)
+                        .filter(|&vtx| vtx.cross(centre - v) > 0.)
+                        .chain(vec![v, centre].into_iter())
+                        .collect_vec();
+                    let right_vertices  = vertices.iter()
+                        .copied()
+                        .filter(|&vtx| vtx != v && vtx != centre)
+                        .filter(|&vtx| vtx.cross(centre - v) <= 0.)
+                        .chain(vec![v, centre].into_iter())
+                        .collect_vec();
+                    println!("{left_vertices:?}");
+                    if vertices.contains(&centre) {
+                        check_eq!(left_vertices.len() + right_vertices.len(), vertices.len() + 2);
+                    } else {
+                        check_eq!(left_vertices.len() + right_vertices.len(), vertices.len() + 3);
+                    }
+                    println!("Recursing left: {left_vertices:?}");
+                    let mut left = Self::decompose(left_vertices);
+                    println!("Recursing right: {right_vertices:?}");
+                    let right = Self::decompose(right_vertices);
+                    left.extend(right);
+                    return left;
+                }
+            }
+        }
+
+        // Already convex.
+        Self { inner: vec![ConvexCollider::from_vertices_unchecked(vertices)] }
+    }
+
+    pub fn len(&self) -> usize { self.inner.len() }
+
+    fn extend(&mut self, mut other: CompoundCollider) {
+        self.inner.append(&mut other.inner);
+    }
 }
 
 impl Polygonal for CompoundCollider {
@@ -658,6 +786,70 @@ impl Polygonal for CompoundCollider {
     }
 }
 
+impl AxisAlignedExtent for CompoundCollider {
+    fn aa_extent(&self) -> Vec2 {
+        let mut max = Vec2::zero();
+        for extent in self.inner.iter().map(ConvexCollider::aa_extent) {
+            max.x = max.x.max(extent.x);
+            max.y = max.y.max(extent.y);
+        }
+        max
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.polygon_centre()
+    }
+}
+
+impl Collider for CompoundCollider {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn get_type(&self) -> ColliderType {
+        ColliderType::Compound
+    }
+
+    fn collides_with_box(&self, _other: &BoxCollider) -> Option<Vec2> {
+        todo!()
+    }
+
+    fn collides_with_oriented_box(&self, _other: &OrientedBoxCollider) -> Option<Vec2> {
+        todo!()
+    }
+
+    fn collides_with_convex(&self, _other: &ConvexCollider) -> Option<Vec2> {
+        todo!()
+    }
+
+    fn into_generic(self) -> GenericCollider
+    where
+        Self: Sized + 'static
+    {
+        GenericCollider::Compound(self)
+    }
+
+    fn translated(&self, _by: Vec2) -> GenericCollider {
+        todo!()
+    }
+
+    fn scaled(&self, _by: Vec2) -> GenericCollider {
+        todo!()
+    }
+
+    fn rotated(&self, _by: f64) -> GenericCollider {
+        todo!()
+    }
+
+    fn as_polygon(&self) -> Vec<Vec2> {
+        self.inner.iter().flat_map(ConvexCollider::as_polygon).collect()
+    }
+
+    fn as_triangles(&self) -> Vec<[Vec2; 3]> {
+        self.inner.iter().flat_map(ConvexCollider::as_triangles).collect()
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub enum GenericCollider {
@@ -665,6 +857,7 @@ pub enum GenericCollider {
     Box(BoxCollider),
     OrientedBox(OrientedBoxCollider),
     Convex(ConvexCollider),
+    Compound(CompoundCollider),
 }
 
 impl Deref for GenericCollider {
@@ -676,6 +869,7 @@ impl Deref for GenericCollider {
             GenericCollider::Box(c) => c,
             GenericCollider::OrientedBox(c) => c,
             GenericCollider::Convex(c) => c,
+            GenericCollider::Compound(c) => c,
         }
     }
 }
@@ -792,8 +986,14 @@ impl GgInternalCollisionShape {
         ).with_depth(VertexDepth::max_value())
     }
     fn normals(&self) -> Vec<(Vec2, Vec2)> {
-        let polygon = ConvexCollider::convex_hull_of(self.collider.as_polygon());
-        polygon.normals().into_iter().zip(polygon.vertices().into_iter().circular_tuple_windows())
+        let (normals, vertices) = match &self.collider {
+            GenericCollider::Convex(c) => (c.normals(), c.vertices()),
+            GenericCollider::Compound(c) => (c.normals(), c.vertices()),
+            GenericCollider::Null => (Vec::new(), Vec::new()),
+            GenericCollider::Box(c) => (c.normals(), c.vertices()),
+            GenericCollider::OrientedBox(c) => (c.normals(), c.vertices()),
+        };
+        normals.into_iter().zip(vertices.into_iter().circular_tuple_windows())
             .map(|(normal, (u, v))| {
                 let start = Vec2::intersect(
                     self.collider.centre(), normal,
@@ -865,4 +1065,5 @@ pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
 use crate::core::util::canvas::Canvas;
+use crate::core::util::gg_iter::GgIter;
 use crate::shader::{get_shader, Shader, WireframeShader};
