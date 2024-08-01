@@ -12,7 +12,6 @@ use crate::{
         prelude::*,
         util::{
             gg_range,
-            gg_iter,
             linalg::{
                 Vec2,
                 AxisAlignedExtent,
@@ -106,25 +105,31 @@ impl Collider for NullCollider {
     }
 }
 
-pub trait Polygonal {
-    fn vertices(&self) -> Vec<Vec2>;
-    fn normals(&self) -> Vec<Vec2>;
-    fn polygon_centre(&self) -> Vec2;
+mod polygon {
+    use std::ops::Range;
+    use itertools::Itertools;
+    use num_traits::Zero;
+    use crate::core::prelude::Vec2;
+    use crate::core::util::{gg_iter, gg_range};
 
-    fn project(&self, axis: Vec2) -> Range<f64> {
-        let mut start = f64::max_value();
-        let mut end = f64::min_value();
-        for vertex in self.vertices() {
-            let projection = axis.dot(vertex);
-            start = start.min(projection);
-            end = end.max(projection);
+    pub fn hull<I: Iterator<Item=Vec2>>(vertices: I) -> Vec<Vec2> {
+        let mut hull: Vec<Vec2> = Vec::new();
+        for vertex in vertices {
+            while hull.len() >= 2 {
+                let last = hull[hull.len() - 1];
+                let snd_last = hull[hull.len() - 2];
+                if (last - snd_last).cross(vertex - snd_last) > 0. {
+                    break;
+                }
+                hull.pop();
+            }
+            hull.push(vertex);
         }
-        start..end
+        hull
     }
-
-    fn adjust_for_containment(self_proj: &Range<f64>, other_proj: &Range<f64>) -> f64 {
+    pub fn adjust_for_containment(self_proj: &Range<f64>, other_proj: &Range<f64>) -> f64 {
         if gg_range::contains_f64(self_proj, other_proj) ||
-                gg_range::contains_f64(other_proj, self_proj) {
+            gg_range::contains_f64(other_proj, self_proj) {
             let starts = (self_proj.start - other_proj.start).abs();
             let ends = (self_proj.end - other_proj.end).abs();
             f64::min(starts, ends)
@@ -132,34 +137,7 @@ pub trait Polygonal {
             0.
         }
     }
-    fn polygon_collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
-        let mut min_axis = Vec2::zero();
-        let mut min_dist = f64::max_value();
-
-        for axis in self.normals().into_iter().chain(other.normals()) {
-            let self_proj = self.project(axis);
-            let other_proj = other.project(axis);
-            match gg_range::overlap_len_f64(&self_proj, &other_proj) {
-                None | Some(0.) => return None,
-                Some(mut dist) => {
-                    dist += Self::adjust_for_containment(&self_proj, &other_proj);
-                    if dist < min_dist {
-                        min_dist = dist;
-                        min_axis = axis;
-                    }
-                },
-            }
-        }
-
-        let mtv = min_dist * min_axis;
-        if self.polygon_centre().dot(min_axis) < other.polygon_centre().dot(min_axis) {
-            Some(-mtv)
-        } else {
-            Some(mtv)
-        }
-    }
-
-    fn normals_of(mut vertices: Vec<Vec2>) -> Vec<Vec2> {
+    pub fn normals_of(mut vertices: Vec<Vec2>) -> Vec<Vec2> {
         vertices.push(*vertices.first().unwrap());
         vertices.windows(2)
             .map(|vs| {
@@ -170,7 +148,7 @@ pub trait Polygonal {
             })
             .collect()
     }
-    fn centre_of(mut vertices: Vec<Vec2>) -> Vec2 {
+    pub fn centre_of(mut vertices: Vec<Vec2>) -> Vec2 {
         if let Some(vertex) = vertices.first() {
             vertices.push(*vertex);
             let (area, x, y) = vertices.iter().tuple_windows()
@@ -188,7 +166,7 @@ pub trait Polygonal {
             Vec2::zero()
         }
     }
-    fn extent_of(vertices: Vec<Vec2>) -> Vec2 {
+    pub fn extent_of(vertices: Vec<Vec2>) -> Vec2 {
         let mut min_x = f64::MAX;
         let mut min_y = f64::MAX;
         let mut max_x = f64::MIN;
@@ -200,6 +178,50 @@ pub trait Polygonal {
             max_y = vertex.y.max(max_y);
         }
         Vec2 { x: max_x - min_x, y: max_y - min_y }
+    }
+}
+
+pub trait Polygonal {
+    fn vertices(&self) -> Vec<Vec2>;
+    fn normals(&self) -> Vec<Vec2>;
+    fn polygon_centre(&self) -> Vec2;
+
+    fn project(&self, axis: Vec2) -> Range<f64> {
+        let mut start = f64::max_value();
+        let mut end = f64::min_value();
+        for vertex in self.vertices() {
+            let projection = axis.dot(vertex);
+            start = start.min(projection);
+            end = end.max(projection);
+        }
+        start..end
+    }
+
+    fn polygon_collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
+        let mut min_axis = Vec2::zero();
+        let mut min_dist = f64::max_value();
+
+        for axis in self.normals().into_iter().chain(other.normals()) {
+            let self_proj = self.project(axis);
+            let other_proj = other.project(axis);
+            match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+                None | Some(0.) => return None,
+                Some(mut dist) => {
+                    dist += polygon::adjust_for_containment(&self_proj, &other_proj);
+                    if dist < min_dist {
+                        min_dist = dist;
+                        min_axis = axis;
+                    }
+                },
+            }
+        }
+
+        let mtv = min_dist * min_axis;
+        if self.polygon_centre().dot(min_axis) < other.polygon_centre().dot(min_axis) {
+            Some(-mtv)
+        } else {
+            Some(mtv)
+        }
     }
 }
 
@@ -232,7 +254,7 @@ impl OrientedBoxCollider {
             axis_aligned_half_widths: half_widths,
             extent: Vec2::zero()
         };
-        rv.extent = Self::extent_of(rv.vertices());
+        rv.extent = polygon::extent_of(rv.vertices());
         rv
     }
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
@@ -242,7 +264,7 @@ impl OrientedBoxCollider {
             axis_aligned_half_widths: extent.abs() / 2,
             extent: Vec2::zero()
         };
-        rv.extent = Self::extent_of(rv.vertices());
+        rv.extent = polygon::extent_of(rv.vertices());
         rv
     }
     pub fn from_transform(transform: Transform, half_widths: Vec2) -> Self {
@@ -252,7 +274,7 @@ impl OrientedBoxCollider {
             axis_aligned_half_widths: transform.scale.component_wise(half_widths).abs(),
             extent: Vec2::zero()
         };
-        rv.extent = Self::extent_of(rv.vertices());
+        rv.extent = polygon::extent_of(rv.vertices());
         rv
     }
     pub fn square(transform: Transform, width: f64) -> Self {
@@ -430,7 +452,7 @@ impl Collider for BoxCollider {
         let right_dist = match gg_range::overlap_len_f64(&self_proj, &other_proj) {
             None | Some(0.) => return None,
             Some(dist) => {
-                dist + Self::adjust_for_containment(&self_proj, &other_proj)
+                dist + polygon::adjust_for_containment(&self_proj, &other_proj)
             },
         };
 
@@ -439,7 +461,7 @@ impl Collider for BoxCollider {
         match gg_range::overlap_len_f64(&self_proj, &other_proj) {
             None | Some(0.) => None,
             Some(mut dist) => {
-                dist += Self::adjust_for_containment(&self_proj, &other_proj);
+                dist += polygon::adjust_for_containment(&self_proj, &other_proj);
                 if dist < right_dist {
                     // Collision along vertical axis.
                     let mtv = dist * Vec2::down();
@@ -520,33 +542,17 @@ pub struct ConvexCollider {
 }
 
 impl ConvexCollider {
-    fn hull<I: Iterator<Item=Vec2>>(vertices: I) -> Vec<Vec2> {
-        let mut hull: Vec<Vec2> = Vec::new();
-        for vertex in vertices {
-            while hull.len() >= 2 {
-                let last = hull[hull.len() - 1];
-                let snd_last = hull[hull.len() - 2];
-                if (last - snd_last).cross(vertex - snd_last) > 0. {
-                    break;
-                }
-                hull.pop();
-            }
-            hull.push(vertex);
-        }
-        hull
-    }
-
     fn from_vertices_unchecked(vertices: Vec<Vec2>) -> Self {
         // Does not check that the vertices are convex.
-        let normals = Self::normals_of(vertices.clone());
-        let centre = Self::centre_of(vertices.clone());
-        let extent = Self::extent_of(vertices.clone());
+        let normals = polygon::normals_of(vertices.clone());
+        let centre = polygon::centre_of(vertices.clone());
+        let extent = polygon::extent_of(vertices.clone());
         Self { vertices, normals, centre, extent }
     }
 
     pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Self {
         check_false!(vertices.is_empty());
-        let centre = Self::centre_of(vertices.clone());
+        let centre = polygon::centre_of(vertices.clone());
         vertices.sort_unstable_by(|&a, &b| {
             if a == b {
                 panic!("duplicate vertices: {a}");
@@ -565,8 +571,8 @@ impl ConvexCollider {
             return Self::from_vertices_unchecked(vertices);
         }
 
-        let mut lower = Self::hull(vertices.iter().copied());
-        let mut upper = Self::hull(vertices.into_iter().rev());
+        let mut lower = polygon::hull(vertices.iter().copied());
+        let mut upper = polygon::hull(vertices.into_iter().rev());
         check_eq!(lower.last().unwrap(), upper.first().unwrap());
         check_eq!(lower.first().unwrap(), upper.last().unwrap());
         lower.pop();
@@ -782,7 +788,7 @@ impl Polygonal for CompoundCollider {
     }
 
     fn polygon_centre(&self) -> Vec2 {
-        self.inner.iter().map(ConvexCollider::centre).sum::<Vec2>() / self.inner.len() as u32
+        polygon::centre_of(self.vertices())
     }
 }
 
@@ -995,11 +1001,8 @@ impl GgInternalCollisionShape {
         };
         normals.into_iter().zip(vertices.into_iter().circular_tuple_windows())
             .map(|(normal, (u, v))| {
-                let start = Vec2::intersect(
-                    self.collider.centre(), normal,
-                    v, (v - u).normed()
-                ).unwrap();
-                let end = start + (start - self.collider.centre());
+                let start = (u + v) / 2;
+                let end = start + normal.normed() * 8;
                 (start, end)
             })
             .collect_vec()
@@ -1023,6 +1026,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
             let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();
             for (start, end) in self.normals() {
                 canvas.line(centre + start, centre + end, 1., Colour::green());
+                canvas.rect(centre - Vec2::one(), centre + Vec2::one(), Colour::red());
             }
         }
     }
@@ -1035,6 +1039,13 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn listening_tags(&self) -> Vec<&'static str> {
         self.listening_tags.clone()
     }
+
+    // fn transform(&self) -> Transform {
+    //     Transform {
+    //         centre: self.collider.centre(),
+    //         ..Default::default()
+    //     }
+    // }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)

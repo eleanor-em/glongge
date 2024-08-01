@@ -146,12 +146,12 @@ pub struct DecomposedCorner {}
 impl SceneObject<ObjectType> for DecomposedCorner {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let compound = CompoundCollider::decompose(vec![
+            Vec2 { x: 0., y: 2. },
             Vec2 { x: 0., y: 1. },
-            Vec2 { x: 0., y: 0. },
+            Vec2 { x: 1., y: 1. },
             Vec2 { x: 1., y: 0. },
-            Vec2 { x: 1., y: -1. },
-            Vec2 { x: 2., y: -1. },
-            Vec2 { x: 2., y: 1. },
+            Vec2 { x: 2., y: 0. },
+            Vec2 { x: 2., y: 2. },
         ]);
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);

@@ -128,10 +128,8 @@ pub mod gg_time {
 pub mod gg_iter {
     use std::cmp;
     use std::cmp::Ordering;
-    use std::fmt::Debug;
     use std::ops::Add;
     use itertools::Itertools;
-    use crate::check_eq;
     use crate::core::prelude::Vec2;
 
     pub fn sum_tuple3<T: Add<Output=T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
@@ -198,12 +196,9 @@ pub mod gg_iter {
         fn triple_windows(self) -> impl Iterator<Item=(<Self as Iterator>::Item, <Self as Iterator>::Item, <Self as Iterator>::Item)>
         where
             Self: Sized,
-            <Self as Iterator>::Item: Clone + PartialEq + Debug,
+            <Self as Iterator>::Item: Clone,
         {
-            self.tuple_windows().tuple_windows().map(|((a, b1), (b2, c))| {
-                check_eq!(&b1, &b2);
-                (a, b1, c)
-            })
+            self.tuple_windows()
         }
     }
 
