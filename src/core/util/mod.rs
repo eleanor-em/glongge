@@ -140,6 +140,17 @@ pub mod gg_iter {
         u.partial_cmp(v).unwrap()
     }
 
+    pub fn index_of<T: Eq>(slice: &[T], value: &T) -> Option<usize> {
+        let mut i = 0;
+        for x in slice {
+            if x == value {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+
     pub fn partition_point_by<T, F>(slice: &[T], mut comparator: F) -> usize
     where F: FnMut(&T) -> cmp::Ordering
     {

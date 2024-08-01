@@ -4,6 +4,7 @@ use std::{
     ops::Range,
 };
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::ops::Deref;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -178,6 +179,13 @@ mod polygon {
             max_y = vertex.y.max(max_y);
         }
         Vec2 { x: max_x - min_x, y: max_y - min_y }
+    }
+    pub fn is_convex(vertices: &[Vec2]) -> bool {
+        vertices.iter().circular_tuple_windows().map(|(&u, &v, &w)| {
+            let d1 = v - u;
+            let d2 = w - v;
+            d1.cross(d2).signum()
+        }).all_equal()
     }
 }
 
@@ -584,8 +592,9 @@ impl ConvexCollider {
 
     pub fn is_convex(vertices: &[Vec2]) -> Option<ConvexCollider> {
         let hull = Self::convex_hull_of(vertices.to_vec());
-        if hull.vertices.iter().sorted_unstable_by(|a, b| a.partial_cmp(b).unwrap()).collect_vec()
-                == vertices.iter().sorted_unstable_by(|a, b| a.partial_cmp(b).unwrap()).collect_vec() {
+        let hull_sorted = hull.vertices.iter().collect::<BTreeSet<_>>();
+        let vertices_sorted = vertices.iter().collect::<BTreeSet<_>>();
+        if hull_sorted.is_subset(&vertices_sorted) {
             Some(hull)
         } else {
             None
@@ -683,12 +692,71 @@ impl CompoundCollider {
         Self { inner }
     }
 
+    fn get_new_vertex(vertices: &[Vec2], prev: Vec2, origin: Vec2, next: Vec2) -> Option<Vec2> {
+        let filtered_edges = vertices.iter()
+            .circular_tuple_windows()
+            .filter(|(a, b)| **a != origin && **b != origin)
+            .collect_vec();
+        println!("filtered:");
+        for edge in &filtered_edges { println!("\t{edge:?}") }
+
+        let intersections_1 = filtered_edges.iter()
+            .filter_map(|(&a, &b)| {
+                Vec2::intersect(origin, (origin - prev).normed(), a, (b - a).normed())
+                    .map(|x| (a, b, x))
+            })
+            .collect_vec();
+        println!("intersections_1:");
+        for intersect in &intersections_1 { println!("\t{intersect:?}") }
+        let intersections_1 = intersections_1.into_iter()
+            .min_by(|(_, _, a), (_, _, b)| {
+                a.len_squared().partial_cmp(&b.len_squared()).unwrap()
+            });
+
+        let intersections_2 = filtered_edges.iter()
+            .filter_map(|(&a, &b)| {
+                Vec2::intersect(origin, (origin - next).normed(), a, (b - a).normed())
+                    .map(|x| (a, b, x))
+            })
+            .collect_vec();
+        println!("intersections_2:");
+        for intersect in &intersections_2 { println!("\t{intersect:?}") }
+        let intersections_2 = intersections_2.into_iter()
+            .min_by(|(_, _, a), (_, _, b)| {
+                a.len_squared().partial_cmp(&b.len_squared()).unwrap()
+            });
+
+        if let (Some((_, _, start)), Some((_, _, end))) = (intersections_1, intersections_2) {
+            let centre: Vec2 = (start + end) / 2;
+            println!("test intersections between {start} and {end}, centre={centre}");
+            let intersections = filtered_edges.iter()
+                .filter_map(|(&a, &b)| {
+                    Vec2::intersect(origin, (centre - origin).normed(), a, (b - a).normed())
+                        .map(|x| (a, b, x))
+                })
+                .collect_vec();
+            println!("intersections:");
+            for intersect in &intersections {
+                println!("\t{intersect:?}");
+            }
+            Some(intersections.into_iter()
+                .min_by(|(_, _, a), (_, _, b)| {
+                    let da = origin.dist_squared(*a);
+                    let db = origin.dist_squared(*b);
+                    da.partial_cmp(&db).unwrap()
+                })
+                .unwrap()
+                .2)
+        } else {
+            None
+        }
+    }
     pub fn decompose(vertices: Vec<Vec2>) -> Self {
         // Sanity checks:
         check_ge!(vertices.len(), 3);
-        if let Some(hull) = ConvexCollider::is_convex(&vertices) {
+        if polygon::is_convex(&vertices) {
             println!("already convex");
-            return Self { inner: vec![hull] };
+            return Self { inner: vec![ConvexCollider::from_vertices_unchecked(vertices)] };
         }
 
         println!();
@@ -704,71 +772,82 @@ impl CompoundCollider {
             println!("{i}: {vertex:?}");
         }
 
-        println!("cycled_vertices:\n\t{cycled_vertices:?}");
-        println!("edges:\n\t{edges:?}");
-        println!("angles:\n\t{angles:?}");
-
+        println!("cycled_vertices:");
+        for v in &cycled_vertices {
+            println!("\t{v:?}");
+        }
+        println!("edges:");
+        for e in &edges {
+            println!("\t{e:?}");
+        }
+        println!("angles:");
+        for a in &angles {
+            println!("\t{a:?}");
+        }
 
         // Find a reflex vertex:
-        for i in 1..=(vertices.len() as i16) {
-            let u = cycled_vertices[i as usize - 1];
-            let v = cycled_vertices[i as usize];
-            let w = cycled_vertices[i as usize + 1];
-            let det = (v - u).cross(w - v);
-            if det < 0. {
-                println!("reflex vertex: {}-{}-{}", (i - 2) % (vertices.len() as i16), (i - 1) % (vertices.len() as i16), (i) % (vertices.len() as i16));
-                println!("{u} - {v} - {w}");
-                println!("{vertices:?}");
-                let filtered = vertices.iter()
-                    .circular_tuple_windows()
-                    .filter(|(a, b)| **a != u && **a != v && **a != w && **b != u && **b != v && **b != w)
-                    .collect_vec();
-                println!("{filtered:?}");
-                let intersections_1 = filtered.iter()
-                    .filter_map(|(&a, &b)| Vec2::intersect(v, (v - w).normed(), a, (b - a).normed()))
-                    .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap());
-                let intersections_2 = filtered.iter()
-                    .filter_map(|(&a, &b)| Vec2::intersect(v, (v - u).normed(), a, (b - a).normed()))
-                    .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap());
+        let (prev, origin, next) = (1..=(vertices.len() as i16)).into_iter()
+            .map(|i| {
+                let prev = cycled_vertices[i as usize - 1];
+                let origin = cycled_vertices[i as usize];
+                let next = cycled_vertices[i as usize + 1];
+                (prev, origin, next)
+            })
+            .find(|(prev, origin, next)| {
+                (*origin - *prev).cross(*origin - *next) > 0.
+            })
+            .expect("no reflex vertex found");
 
-                if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
-                    let centre: Vec2 = (start + end) / 2;
-                    println!("test intersections between {start} and {end}, centre={centre}");
-                    let centre = filtered.iter()
-                        .filter_map(|(&a, &b)| Vec2::intersect(v, (centre - v).normed(), a, (b - a).normed()))
-                        .min_by(|a, b| a.len_squared().partial_cmp(&b.len_squared()).unwrap())
-                        .unwrap();
-                    println!("new centre={centre}");
-                    let left_vertices = vertices.iter()
-                        .copied()
-                        .filter(|&vtx| vtx != v && vtx != centre)
-                        .filter(|&vtx| vtx.cross(centre - v) > 0.)
-                        .chain(vec![v, centre].into_iter())
-                        .collect_vec();
-                    let right_vertices  = vertices.iter()
-                        .copied()
-                        .filter(|&vtx| vtx != v && vtx != centre)
-                        .filter(|&vtx| vtx.cross(centre - v) <= 0.)
-                        .chain(vec![v, centre].into_iter())
-                        .collect_vec();
-                    println!("{left_vertices:?}");
-                    if vertices.contains(&centre) {
-                        check_eq!(left_vertices.len() + right_vertices.len(), vertices.len() + 2);
-                    } else {
-                        check_eq!(left_vertices.len() + right_vertices.len(), vertices.len() + 3);
+        println!("reflex vertex: {prev}-{origin}-{next}");
+        let new_vertex = Self::get_new_vertex(&vertices, prev, origin, next)
+            .expect("could not find new vertex");
+        println!("new vertex: {new_vertex}");
+        let mut left_vertices = vec![origin, new_vertex];
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (start, end) in &edges {
+                if left_vertices.contains(start) && !left_vertices.contains(end) {
+                    if (*end - origin).cross(new_vertex - origin) < 0. {
+                        left_vertices.insert(gg_iter::index_of(&left_vertices, start).unwrap() + 1, *end);
+                        changed = true;
                     }
-                    println!("Recursing left: {left_vertices:?}");
-                    let mut left = Self::decompose(left_vertices);
-                    println!("Recursing right: {right_vertices:?}");
-                    let right = Self::decompose(right_vertices);
-                    left.extend(right);
-                    return left;
+                } else if left_vertices.contains(end) && !left_vertices.contains(start) {
+                    if (*start - origin).cross(new_vertex - origin) < 0. {
+                        left_vertices.insert(gg_iter::index_of(&left_vertices, end).unwrap(), *start);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        let mut right_vertices = vec![origin, new_vertex];
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (start, end) in &edges {
+                if right_vertices.contains(start) && !right_vertices.contains(end) && !left_vertices.contains(end) {
+                    right_vertices.insert(gg_iter::index_of(&right_vertices, start).unwrap() + 1, *end);
+                    changed = true;
+                } else if right_vertices.contains(end) && !right_vertices.contains(start) && !left_vertices.contains(start) {
+                    right_vertices.insert(gg_iter::index_of(&right_vertices, end).unwrap(), *start);
+                    changed = true;
                 }
             }
         }
 
-        // Already convex.
-        Self { inner: vec![ConvexCollider::from_vertices_unchecked(vertices)] }
+        println!("left:");
+        for v in &left_vertices {
+            println!("\t{v:?}");
+        }
+        println!("right:");
+        for v in &right_vertices {
+            println!("\t{v:?}");
+        }
+        println!("Recursing left: {left_vertices:?}");
+        let mut rv = Self::decompose(left_vertices);
+        println!("Recursing right: {right_vertices:?}");
+        rv.extend(Self::decompose(right_vertices));
+        rv
     }
 
     pub fn len(&self) -> usize { self.inner.len() }
@@ -1026,7 +1105,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
             let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();
             for (start, end) in self.normals() {
                 canvas.line(centre + start, centre + end, 1., Colour::green());
-                canvas.rect(centre - Vec2::one(), centre + Vec2::one(), Colour::red());
+                canvas.rect(centre + self.collider.centre() - Vec2::one(),
+                            centre + self.collider.centre() + Vec2::one(), Colour::red());
             }
         }
     }
@@ -1040,12 +1120,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         self.listening_tags.clone()
     }
 
-    // fn transform(&self) -> Transform {
-    //     Transform {
-    //         centre: self.collider.centre(),
-    //         ..Default::default()
-    //     }
-    // }
+    fn transform(&self) -> Transform {
+        Transform {
+            centre: self.collider.centre(),
+            ..Default::default()
+        }
+    }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
@@ -1076,5 +1156,6 @@ pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
 use crate::core::util::canvas::Canvas;
+use crate::core::util::gg_iter;
 use crate::core::util::gg_iter::GgIter;
 use crate::shader::{get_shader, Shader, WireframeShader};

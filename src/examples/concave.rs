@@ -18,12 +18,13 @@ impl Scene<ObjectType> for ConcaveScene {
             Canvas::new(),
             ConvexHull::new(),
             Compound::new(),
-            // TrivialDecomposed::new(),
-            // Decomposed::new(),
+            TrivialDecomposed::new(),
+            Decomposed::new(),
             DecomposedCorner::new(),
-            // DecomposedTee::new(),
-            // DecomposedU::new(),
-            // DecomposedCompound::new(),
+            DecomposedTee::new(),
+            DecomposedU::new(),
+            DecomposedBigU::new(),
+            DecomposedCompound::new(),
         ]
     }
 }
@@ -145,13 +146,14 @@ pub struct DecomposedCorner {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecomposedCorner {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let size = 16;
         let compound = CompoundCollider::decompose(vec![
-            Vec2 { x: 0., y: 2. },
-            Vec2 { x: 0., y: 1. },
-            Vec2 { x: 1., y: 1. },
-            Vec2 { x: 1., y: 0. },
-            Vec2 { x: 2., y: 0. },
-            Vec2 { x: 2., y: 2. },
+            Vec2 { x: 0., y: 2. } * size,
+            Vec2 { x: 0., y: 1. } * size,
+            Vec2 { x: 1., y: 1. } * size,
+            Vec2 { x: 1., y: 0. } * size,
+            Vec2 { x: 2., y: 0. } * size,
+            Vec2 { x: 2., y: 2. } * size,
         ]);
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);
@@ -161,7 +163,7 @@ impl SceneObject<ObjectType> for DecomposedCorner {
 
     fn transform(&self) -> Transform {
         Transform {
-            centre: [200., 200.].into(),
+            centre: [200., 300.].into(),
             ..Default::default()
         }
     }
@@ -172,16 +174,16 @@ pub struct DecomposedTee {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecomposedTee {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let size = 16.;
         let compound = CompoundCollider::decompose(vec![
-            Vec2 { x: 0., y: 16. },
-            Vec2 { x: 0., y: 0. },
-            Vec2 { x: 16., y: 0. },
-            Vec2 { x: 16., y: -16. },
-            Vec2 { x: 32., y: -16. },
-            // Vec2 { x: 32., y: 16. },
-            Vec2 { x: 32., y: 0. },
-            Vec2 { x: 48., y: 0. },
-            Vec2 { x: 48., y: 16. },
+            Vec2 { x: 0., y: 1. } * size,
+            Vec2 { x: 0., y: 0. } * size,
+            Vec2 { x: 1., y: 0. } * size,
+            Vec2 { x: 1., y: -1. } * size,
+            Vec2 { x: 2., y: -1. } * size,
+            Vec2 { x: 2., y: 0. } * size,
+            Vec2 { x: 3., y: 0. } * size,
+            Vec2 { x: 3., y: 1. } * size,
         ]);
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);
@@ -202,15 +204,16 @@ pub struct DecomposedU {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecomposedU {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let size = 16;
         let compound = CompoundCollider::decompose(vec![
-            Vec2 { x: 0., y: 0. },
-            Vec2 { x: 16., y: 0. },
-            Vec2 { x: 16., y: 16. },
-            Vec2 { x: 32., y: 16. },
-            Vec2 { x: 32., y: 0. },
-            Vec2 { x: 48., y: 0. },
-            Vec2 { x: 48., y: 32. },
-            Vec2 { x: 0., y: 32. },
+            Vec2 { x: 0., y: 0. } * size,
+            Vec2 { x: 1., y: 0. } * size,
+            Vec2 { x: 1., y: 1. } * size,
+            Vec2 { x: 2., y: 1. } * size,
+            Vec2 { x: 2., y: 0. } * size,
+            Vec2 { x: 3., y: 0. } * size,
+            Vec2 { x: 3., y: 2. } * size,
+            Vec2 { x: 0., y: 2. } * size,
         ]);
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);
@@ -233,12 +236,14 @@ impl SceneObject<ObjectType> for DecomposedCompound {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: 8. },
+            Vec2 { x: 4., y: 0. },
+            Vec2 { x: 8., y: 8. },
+            Vec2 { x: 24., y: 8. },
+            Vec2 { x: 28., y: 0. },
             Vec2 { x: 32., y: 8. },
             Vec2 { x: 32., y: 40. },
             Vec2 { x: 8., y: 40. },
-            Vec2 { x: 4., y: 0. },
-            Vec2 { x: 24., y: 8. },
-            Vec2 { x: 28., y: 0. },
+            Vec2 { x: 0., y: 40. },
         ]);
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);
@@ -248,7 +253,37 @@ impl SceneObject<ObjectType> for DecomposedCompound {
 
     fn transform(&self) -> Transform {
         Transform {
-            centre: [200., 200.].into(),
+            centre: [200., 250.].into(),
+            ..Default::default()
+        }
+    }
+}
+
+#[register_scene_object]
+pub struct DecomposedBigU {}
+#[partially_derive_scene_object]
+impl SceneObject<ObjectType> for DecomposedBigU {
+    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let size = 16;
+        let compound = CompoundCollider::decompose(vec![
+            Vec2 { x: 0., y: -2. } * size,
+            Vec2 { x: 1., y: -2. } * size,
+            Vec2 { x: 1., y: 1. } * size,
+            Vec2 { x: 2., y: 1. } * size,
+            Vec2 { x: 2., y: -2. } * size,
+            Vec2 { x: 3., y: -2. } * size,
+            Vec2 { x: 3., y: 2. } * size,
+            Vec2 { x: 0., y: 2. } * size,
+        ]);
+        println!("pieces: {}", compound.len());
+        let collider = CollisionShape::from_collider(compound, &vec![], &vec![]);
+        collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
+        ctx.object().add_child(collider);
+    }
+
+    fn transform(&self) -> Transform {
+        Transform {
+            centre: [300., 300.].into(),
             ..Default::default()
         }
     }

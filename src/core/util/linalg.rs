@@ -17,6 +17,7 @@ use std::{
         Range
     }
 };
+use std::cmp::Ordering;
 use std::iter::Sum;
 use itertools::Product;
 use num_traits::{float::Float, One, Zero};
@@ -212,6 +213,14 @@ pub struct Vec2 {
     pub y: f64,
 }
 
+impl Eq for Vec2 {}
+
+impl Ord for Vec2 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
 // TODO: make const functions
 #[allow(clippy::return_self_not_must_use)]
 impl Vec2 {
@@ -252,13 +261,19 @@ impl Vec2 {
         *self - 2. * self.dot(normal) * normal
     }
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
+    pub fn dist(&self, other: Vec2) -> f64 { (other - *self).len() }
+    pub fn dist_squared(&self, other: Vec2) -> f64 { (other - *self).len_squared() }
     pub fn intersect(p1: Vec2, ax1: Vec2, p2: Vec2, ax2: Vec2) -> Option<Vec2> {
         let denom = ax1.cross(ax2);
         if denom.is_zero() {
             None
         } else {
             let t = (p2 - p1).cross(ax2) / denom;
-            Some(p1 + t * ax1)
+            if t > 0. {
+                Some(p1 + t * ax1)
+            } else {
+                None
+            }
         }
     }
     pub fn orthog(&self) -> Vec2 { Vec2 { x: self.y, y: -self.x } }
