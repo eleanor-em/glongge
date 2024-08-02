@@ -13,6 +13,7 @@ use glongge::core::{
     ObjectTypeEnum,
 };
 use glongge::core::util::UniqueShared;
+use glongge::gui::ImGuiContext;
 use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
 use crate::object_type::ObjectType;
@@ -39,17 +40,24 @@ fn main() -> Result<()> {
     run_test_cases();
 
     let window_ctx = WindowContext::new()?;
-    let ctx = VulkanoContext::new(&window_ctx)?;
-    let mut resource_handler = ResourceHandler::new(&ctx)?;
+    let imgui = UniqueShared::new(ImGuiContext::new());
+    let vk_ctx = VulkanoContext::new(&window_ctx)?;
+    let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
     ObjectType::preload_all(&mut resource_handler)?;
 
     let viewport = UniqueShared::new(window_ctx.create_default_viewport());
     let shaders: Vec<UniqueShared<dyn Shader>> = vec![
-        SpriteShader::new(ctx.clone(), viewport.clone(), resource_handler.clone())?,
-        WireframeShader::new(ctx.clone(), viewport.clone())?,
-        BasicShader::new(ctx.clone(), viewport.clone())?,
+        SpriteShader::new(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
+        WireframeShader::new(vk_ctx.clone(), viewport.clone())?,
+        BasicShader::new(vk_ctx.clone(), viewport.clone())?,
     ];
-    let render_handler = RenderHandler::new(viewport.clone(), shaders)
+    let render_handler = RenderHandler::new(
+        vk_ctx.clone(),
+        imgui.clone(),
+        viewport.clone(),
+        shaders,
+        resource_handler.clone()
+    )?
         // .with_global_scale_factor(1.);
         .with_global_scale_factor(2.);
     let input_handler = InputHandler::new();
@@ -78,7 +86,8 @@ fn main() -> Result<()> {
     }
 
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, ctx, render_handler, input_handler, resource_handler)
+    WindowEventHandler::new(window, vk_ctx, imgui.clone(), render_handler, input_handler, resource_handler)
+        .with_report_stats()
         .consume(event_loop);
     Ok(())
 }

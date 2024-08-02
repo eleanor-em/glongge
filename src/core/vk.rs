@@ -1,4 +1,5 @@
 use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use imgui::Condition;
 use num_traits::Zero;
 
 use vulkano::{
@@ -68,6 +69,9 @@ use crate::{
     resource::ResourceHandler,
 };
 use crate::core::render::RenderHandler;
+use crate::core::util::UniqueShared;
+use crate::gui::ImGuiContext;
+use crate::gui::render::window::{HiDpiMode, WinitPlatform};
 use crate::shader::ensure_shaders_locked;
 
 pub struct WindowContext {
@@ -603,7 +607,8 @@ type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<Swapc
 pub struct WindowEventHandler {
     window: Arc<Window>,
     scale_factor: f64,
-    ctx: VulkanoContext,
+    vk_ctx: VulkanoContext,
+    imgui: UniqueShared<ImGuiContext>,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -621,17 +626,19 @@ pub struct WindowEventHandler {
 impl WindowEventHandler {
     pub fn new(
         window: Arc<Window>,
-        ctx: VulkanoContext,
+        vk_ctx: VulkanoContext,
+        imgui: UniqueShared<ImGuiContext>,
         render_handler: RenderHandler,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
     ) -> Self {
-        let fences = DataPerImage::new_with_generator(&ctx, || Rc::new(RefCell::new(None)));
+        let fences = DataPerImage::new_with_generator(&vk_ctx, || Rc::new(RefCell::new(None)));
         let scale_factor = window.scale_factor();
         Self {
             window,
             scale_factor,
-            ctx,
+            vk_ctx,
+            imgui,
             render_handler,
             input_handler,
             resource_handler,
@@ -650,19 +657,26 @@ impl WindowEventHandler {
     }
 
     pub fn consume(mut self, event_loop: EventLoop<()>) {
+        let mut imgui = self.imgui.get();
+
+        let mut platform = WinitPlatform::init(&mut imgui);
+        platform.attach_window(imgui.io_mut(), &self.window, HiDpiMode::Rounded);
+        drop(imgui);
+
         ensure_shaders_locked();
         event_loop.run(move |event, _, control_flow| {
-            self.run_inner(&event, control_flow).expect("error running event loop");
+            self.run_inner(platform.clone(), &event, control_flow)
+                .expect("error running event loop");
         });
     }
 
     fn recreate_swapchain(
         &mut self
     ) -> Result<()> {
-        self.fences = DataPerImage::new_with_generator(&self.ctx, || Rc::new(RefCell::new(None)));
-        self.ctx.recreate_swapchain(&self.window)
+        self.fences = DataPerImage::new_with_generator(&self.vk_ctx, || Rc::new(RefCell::new(None)));
+        self.vk_ctx.recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;
-        self.render_handler.on_resize(&self.ctx, &self.window);
+        self.render_handler.on_resize(&self.vk_ctx, &self.window);
         Ok(())
     }
 
@@ -674,7 +688,10 @@ impl WindowEventHandler {
         self.render_stats.begin_acquire_and_sync();
         let ready_future = self.acquire_and_synchronise(per_image_ctx, acquire_future)?;
         self.render_stats.begin_on_render();
-        let command_buffer = self.render_handler.on_render(&self.ctx, self.ctx.framebuffers.current_value(per_image_ctx))?;
+        let command_buffer = self.render_handler.on_render(
+            &self.vk_ctx,
+            self.vk_ctx.framebuffers.current_value(per_image_ctx)
+        )?;
         self.render_stats.begin_submit_command_buffers();
         self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.end_render();
@@ -687,7 +704,7 @@ impl WindowEventHandler {
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
         self.render_stats.pause_render_active();
-        if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.ctx)? {
+        if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.vk_ctx)? {
             uploads.flush()?;
             info!("loaded textures");
         }
@@ -702,7 +719,7 @@ impl WindowEventHandler {
         let last_fence = if let Some(fence) = self.fences.current_value(per_image_ctx).take() {
             fence.boxed()
         } else {
-            let mut now = vulkano::sync::now(self.ctx.device());
+            let mut now = vulkano::sync::now(self.vk_ctx.device());
             now.cleanup_finished();
             now.boxed()
         };
@@ -722,13 +739,13 @@ impl WindowEventHandler {
             .replace(
                 ready_future
                     .then_execute(
-                        self.ctx.queue(),
+                        self.vk_ctx.queue(),
                         command_buffer
                     )?
                     .then_swapchain_present(
-                        self.ctx.queue(),
+                        self.vk_ctx.queue(),
                         SwapchainPresentInfo::swapchain_image_index(
-                            self.ctx.swapchain(),
+                            self.vk_ctx.swapchain(),
                             u32::try_from(image_idx)
                                 .unwrap_or_else(|_| panic!("too large image_idx: {image_idx}"))
                         ),
@@ -746,7 +763,11 @@ impl WindowEventHandler {
         self.is_ready
     }
 
-    fn run_inner(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
+    fn run_inner(&mut self, mut platform: WinitPlatform, event: &Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
+        {
+            let mut imgui = self.imgui.get();
+            platform.handle_event(imgui.io_mut(), &self.window, event);
+        }
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -778,13 +799,32 @@ impl WindowEventHandler {
             Event::MainEventsCleared => {
                 if !self.poll_ready() { return Ok(()); }
                 self.render_stats.begin_handle_swapchain();
-                let per_image_ctx = self.ctx.per_image_ctx.clone();
+                let per_image_ctx = self.vk_ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();
                 // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                let rv = match swapchain::acquire_next_image(self.ctx.swapchain(), None)
+                let rv = match swapchain::acquire_next_image(self.vk_ctx.swapchain(), None)
                     .map_err(Validated::unwrap)
                 {
                     Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
+                        {
+                            let mut imgui = self.imgui.get();
+                            platform.prepare_frame(imgui.io_mut(), &self.window)?;
+                            let ui = imgui.frame();
+                            ui.window("Hello world")
+                                .size([300.0, 110.0], Condition::FirstUseEver)
+                                .build(|| {
+                                    ui.text_wrapped("Hello world!");
+
+                                    ui.button("This...is...imgui-rs!");
+                                    ui.separator();
+                                    let mouse_pos = ui.io().mouse_pos;
+                                    ui.text(format!(
+                                        "Mouse Position: ({:.1},{:.1})",
+                                        mouse_pos[0], mouse_pos[1]
+                                    ));
+                                });
+                            platform.prepare_render(ui, &self.window);
+                        }
                         per_image_ctx.current.replace(image_idx as usize);
                         self.idle(&mut per_image_ctx, acquire_future)?;
                         let image_idx = per_image_ctx.current.expect("no current image?");

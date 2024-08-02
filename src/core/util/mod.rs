@@ -370,6 +370,10 @@ pub struct UniqueShared<T: ?Sized> {
     inner: Arc<Mutex<T>>,
 }
 
+
+unsafe impl<T: ?Sized + Send> Send for UniqueShared<T> {}
+unsafe impl<T: ?Sized + Send> Sync for UniqueShared<T> {}
+
 // #[derive(Clone)] does not respect ?Sized.
 impl<T: ?Sized> Clone for UniqueShared<T> {
     fn clone(&self) -> Self {

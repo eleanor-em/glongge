@@ -30,6 +30,8 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
+use crate::gui::ImGuiContext;
+use crate::gui::render::shader::ImGuiShader;
 use crate::shader::{Shader, ShaderId};
 
 #[derive(Clone, Debug)]
@@ -130,29 +132,37 @@ pub struct ShaderRenderFrame<'a> {
 
 #[derive(Clone)]
 pub struct RenderHandler {
+    imgui: UniqueShared<ImGuiContext>,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<dyn Shader>>,
+    gui_shader: UniqueShared<ImGuiShader>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
     pub fn new(
+        vk_ctx: VulkanoContext,
+        imgui: UniqueShared<ImGuiContext>,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<dyn Shader>>,
-    ) -> Self {
+        resource_handler: ResourceHandler,
+    ) -> Result<Self> {
         let render_info_receiver = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {
             check_ne!(a.get().name_concrete(),
                       b.get().name_concrete(),
                       "duplicate shader name");
         }
-        Self {
+        let gui_shader = ImGuiShader::new(vk_ctx.clone(), imgui.clone(), viewport.clone(), resource_handler)?;
+        Ok(Self {
+            imgui,
+            gui_shader,
             shaders,
             viewport,
             command_buffer: None,
             render_data_channel: render_info_receiver,
-        }
+        })
     }
 
     #[must_use]
@@ -186,6 +196,7 @@ impl RenderHandler {
             ctx.queue().queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )?;
+
         // TODO: will be useful for adding the gui console.
         // let top_left = [framebuffer.extent()[0] / 8, framebuffer.extent()[1] / 8];
         // let extent = [6 * framebuffer.extent()[0] / 8, 6 * framebuffer.extent()[1] / 8];
@@ -203,6 +214,11 @@ impl RenderHandler {
         for shader in &mut self.shaders {
             shader.get().build_render_pass(&mut builder)?;
         }
+
+        let mut imgui = self.imgui.get();
+        let draw_data = imgui.render();
+        self.gui_shader.get().build_render_pass(&mut builder, draw_data)?;
+
         builder.end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)
     }

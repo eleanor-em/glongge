@@ -8,3 +8,4 @@
 pub mod core;
 pub mod resource;
 pub mod shader;
+pub mod gui;
