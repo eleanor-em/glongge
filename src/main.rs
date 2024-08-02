@@ -78,8 +78,8 @@ fn main() -> Result<()> {
             scene_handler.create_scene(MarioUndergroundScene);
             // let name = TriangleScene.name();
             // let name = RectangleScene.name();
-            let name = ConcaveScene.name();
-            // let name = MarioOverworldScene.name();
+            // let name = ConcaveScene.name();
+            let name = MarioOverworldScene.name();
             // let name = MarioUndergroundScene.name();
             scene_handler.consume_with_scene(name, 0);
         });
@@ -87,7 +87,6 @@ fn main() -> Result<()> {
 
     let (event_loop, window) = window_ctx.consume();
     WindowEventHandler::new(window, vk_ctx, imgui.clone(), render_handler, input_handler, resource_handler)
-        .with_report_stats()
         .consume(event_loop);
     Ok(())
 }

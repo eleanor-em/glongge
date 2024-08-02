@@ -146,7 +146,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(
+        ctx.object_mut().add_child(
             CollisionShape::from_object_sprite(self, &self.sprite)
         );
     }
@@ -154,7 +154,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));
-            ctx.object().add_sibling(SpinningRectangle::create(
+            ctx.object_mut().add_sibling(SpinningRectangle::create(
                 self.pos,
                 Vec2::one().rotated(angle)
             ));

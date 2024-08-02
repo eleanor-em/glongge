@@ -210,10 +210,10 @@ impl Player {
 
     fn update_as_running(&mut self, ctx: &mut UpdateContext<ObjectType>, new_dir: Vec2, hold_run: bool) {
         if hold_run {
-            ctx.scene().maybe_cancel_coroutine(&mut self.cancel_run_crt);
+            ctx.scene_mut().maybe_cancel_coroutine(&mut self.cancel_run_crt);
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
+                ctx.scene_mut().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if !this.has_control() {
                         return CoroutineResponse::Complete;
@@ -291,7 +291,7 @@ impl Player {
 
         if ctx.object().test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
             self.coyote_crt.get_or_insert_with(|| {
-                ctx.scene().start_coroutine_after(|this, _ctx, _last_state| {
+                ctx.scene_mut().start_coroutine_after(|this, _ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     if !this.has_control() {
                         return CoroutineResponse::Complete;
@@ -302,7 +302,7 @@ impl Player {
                 }, Duration::from_millis(60))
             });
         } else {
-            ctx.scene().maybe_cancel_coroutine(&mut self.coyote_crt);
+            ctx.scene_mut().maybe_cancel_coroutine(&mut self.coyote_crt);
         }
 
         if self.coyote_crt.is_none() && self.state != PlayerState::Falling {
@@ -312,7 +312,7 @@ impl Player {
 
     fn maybe_start_exit_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.state == PlayerState::ExitingPipe && self.exit_pipe_crt.is_none() {
-            self.exit_pipe_crt.replace(ctx.scene().start_coroutine(|this, ctx, last_state| {
+            self.exit_pipe_crt.replace(ctx.scene_mut().start_coroutine(|this, ctx, last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 match last_state {
                     CoroutineState::Starting => return CoroutineResponse::Wait(Duration::from_millis(500)),
@@ -365,7 +365,7 @@ impl Player {
         self.music.stop();
         self.pipe_sound.play();
         self.state = PlayerState::EnteringPipe;
-        ctx.scene().start_coroutine(move |this, ctx, last_state| {
+        ctx.scene_mut().start_coroutine(move |this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             if direction.x.is_zero() {
                 // Vertical travel through pipe.
@@ -391,7 +391,7 @@ impl Player {
                     CoroutineResponse::Wait(Duration::from_millis(600))
                 }
                 CoroutineState::Waiting => {
-                    ctx.scene().goto(pipe_instruction);
+                    ctx.scene_mut().goto(pipe_instruction);
                     CoroutineResponse::Complete
                 }
             }
@@ -407,7 +407,7 @@ impl Player {
     fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.music.stop();
         self.die_sprite.set_depth(VertexDepth::Front(10000));
-        ctx.scene().start_coroutine(|this, ctx, last_state| {
+        ctx.scene_mut().start_coroutine(|this, ctx, last_state| {
             let mut this = this.downcast_mut::<Self>().unwrap();
             match last_state {
                 CoroutineState::Starting => {
@@ -423,9 +423,9 @@ impl Player {
                 }
                 CoroutineState::Waiting => {
                     if ctx.scene().name() == MarioOverworldScene.name() {
-                        ctx.scene().data::<AliveEnemyMap>().unwrap().reset();
+                        ctx.scene_mut().data::<AliveEnemyMap>().unwrap().reset();
                     }
-                    ctx.scene().goto(MarioOverworldScene.at_entrance(0));
+                    ctx.scene_mut().goto(MarioOverworldScene.at_entrance(0));
                     CoroutineResponse::Complete
                 }
             }
@@ -522,16 +522,16 @@ impl SceneObject<ObjectType> for Player {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.scene().name() == MarioOverworldScene.name() {
-            *ctx.viewport().clear_col() = Colour::from_bytes(92, 148, 252, 255);
+        if ctx.scene_mut().name() == MarioOverworldScene.name() {
+            *ctx.viewport_mut().clear_col() = Colour::from_bytes(92, 148, 252, 255);
             self.music = self.overworld_music.clone();
         } else {
-            *ctx.viewport().clear_col() = Colour::black();
+            *ctx.viewport_mut().clear_col() = Colour::black();
             self.music = self.underground_music.clone();
         }
         self.music.play_loop();
         self.last_nonzero_dir = Vec2::right();
-        ctx.object().add_child(
+        ctx.object_mut().add_child(
             CollisionShape::from_object_sprite(self, self.current_sprite())
         );
     }
@@ -544,12 +544,12 @@ impl SceneObject<ObjectType> for Player {
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::W) {
             if self.show_wireframes {
-                ctx.object().others_as_mut::<CollisionShape>()
+                ctx.object_mut().others_as_mut::<CollisionShape>()
                     .into_iter()
                     .for_each(|mut shape| shape.hide_wireframe());
                 self.show_wireframes = false;
             } else {
-                ctx.object().others_as_mut::<CollisionShape>()
+                ctx.object_mut().others_as_mut::<CollisionShape>()
                     .into_iter()
                     .for_each(|mut shape| shape.show_wireframe());
                 self.show_wireframes = true;
@@ -671,7 +671,7 @@ impl SceneObject<ObjectType> for Player {
             self.music.stop();
             self.flagpole_sound.play();
             let dest_x = other.transform().centre.x - self.current_sprite().half_widths().x;
-            ctx.scene().start_coroutine(move |this, ctx, _last_state| {
+            ctx.scene_mut().start_coroutine(move |this, ctx, _last_state| {
                 let mut this = this.downcast_mut::<Self>().unwrap();
                 this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
                 this.speed = 0.;
@@ -680,7 +680,7 @@ impl SceneObject<ObjectType> for Player {
                     .test_collision(vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
-                    ctx.object().add_child(WinTextDisplay::create(Vec2 { x: 8., y: -200. }));
+                    ctx.object_mut().add_child(WinTextDisplay::create(Vec2 { x: 8., y: -200. }));
                     this.clear_sound.play();
                     CoroutineResponse::Complete
                 } else {
@@ -693,9 +693,9 @@ impl SceneObject<ObjectType> for Player {
         CollisionResponse::Done
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.viewport().clamp_to_left(None, Some(self.centre.x - 200.));
-        ctx.viewport().clamp_to_right(Some(self.centre.x + 200.), None);
-        ctx.viewport().clamp_to_left(Some(0.), None);
+        ctx.viewport_mut().clamp_to_left(None, Some(self.centre.x - 200.));
+        ctx.viewport_mut().clamp_to_right(Some(self.centre.x + 200.), None);
+        ctx.viewport_mut().clamp_to_left(Some(0.), None);
 
         let death_y = ctx.viewport().bottom() + self.current_sprite_mut().aa_extent().y;
         if self.has_control() && self.centre.y > death_y {

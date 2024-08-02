@@ -38,7 +38,7 @@ impl SceneObject<ObjectType> for Block {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(CollisionShape::from_collider(
+        ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags()

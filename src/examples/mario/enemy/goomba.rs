@@ -62,12 +62,12 @@ impl SceneObject<ObjectType> for Goomba {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let mut data = ctx.scene().data::<AliveEnemyMap>().unwrap();
+        let mut data = ctx.scene_mut().data::<AliveEnemyMap>().unwrap();
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
-            ctx.object().remove_this();
+            ctx.object_mut().remove_this();
         } else {
-            ctx.object().add_child(CollisionShape::from_collider(
+            ctx.object_mut().add_child(CollisionShape::from_collider(
                 self.sprite.as_box_collider(),
                 &self.emitting_tags(),
                 &self.listening_tags()
@@ -105,12 +105,12 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.dead && !self.started_death {
-            ctx.scene().start_coroutine_after(|_this, ctx, _action| {
-                ctx.object().remove_this();
+            ctx.scene_mut().start_coroutine_after(|_this, ctx, _action| {
+                ctx.object_mut().remove_this();
                 CoroutineResponse::Complete
             }, Duration::from_millis(300));
             self.started_death = true;
-            ctx.scene().data::<AliveEnemyMap>().unwrap().write()
+            ctx.scene_mut().data::<AliveEnemyMap>().unwrap().write()
                 .set_dead(self.initial_coord);
             self.sprite.hide();
             self.die_sprite.show();

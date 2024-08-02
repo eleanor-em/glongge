@@ -51,6 +51,7 @@ use crate::{
     resource::ResourceHandler,
 };
 use crate::core::render::StoredRenderItem;
+use crate::gui::command::ImGuiCommandChain;
 use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -206,6 +207,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     input_handler: Arc<Mutex<InputHandler>>,
     object_handler: ObjectHandler<ObjectType>,
 
+    gui_cmd: ImGuiCommandChain,
     vertex_map: VertexMap,
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
@@ -234,6 +236,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         let mut rv = Self {
             input_handler,
             object_handler: ObjectHandler::new(),
+            gui_cmd: ImGuiCommandChain::new(),
             vertex_map: VertexMap::new(),
             viewport: render_info_receiver.clone().lock().unwrap().current_viewport(),
             resource_handler,
@@ -418,6 +421,22 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             pending_remove: BTreeSet::new()
         };
 
+        let mut cmd = ImGuiCommandChain::new();
+        let gui_objects = self.object_handler.objects.iter()
+            .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
+            .map(|(id, obj)| (*id, obj.clone()))
+            .collect_vec();
+        for (id, obj) in gui_objects {
+            let ctx = UpdateContext::new(
+                self,
+                input_handler,
+                id,
+                &mut object_tracker
+            );
+            cmd.extend(obj.borrow().as_gui_object().unwrap().on_gui(&ctx));
+        }
+        self.gui_cmd = cmd;
+
         self.iter_with_other_map(input_handler, &mut object_tracker,
                                  |mut obj, ctx| {
                                      obj.on_update_begin(ctx);
@@ -533,10 +552,11 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             None
         };
         let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
+        render_info_receiver.gui_commands = self.gui_cmd.clone();
         if let Some(vertices) = maybe_vertices {
-            render_info_receiver.update_vertices(vertices);
+            render_info_receiver.vertices = vertices;
         }
-        render_info_receiver.update_render_info(render_infos);
+        render_info_receiver.render_infos = render_infos;
         render_info_receiver.set_clear_col(self.clear_col);
         self.viewport = render_info_receiver.current_viewport()
             .translated(self.viewport.translation);
@@ -637,9 +657,12 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         }
     }
 
-    pub fn object(&mut self) -> &mut ObjectContext<'a, ObjectType> { &mut self.object }
-    pub fn scene(&mut self) -> &mut SceneContext<'a, ObjectType> { &mut self.scene }
-    pub fn viewport(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
+    pub fn object_mut(&mut self) -> &mut ObjectContext<'a, ObjectType> { &mut self.object }
+    pub fn object(&self) -> &ObjectContext<'a, ObjectType> { &self.object }
+    pub fn scene_mut(&mut self) -> &mut SceneContext<'a, ObjectType> { &mut self.scene }
+    pub fn scene(&self) -> &SceneContext<'a, ObjectType> { &self.scene }
+    pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
+    pub fn viewport(&self) -> &ViewportContext<'a> { &self.viewport }
     pub fn input(&self) -> &InputHandler { self.input }
 }
 

@@ -1036,7 +1036,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.show_wireframe {
             let centre = ctx.object().absolute_transform().centre;
-            let mut canvas = ctx.object().first_other_as_mut::<Canvas>().unwrap();
+            let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
             if let GenericCollider::Compound(compound) = &self.collider {
                 let mut colours = vec![Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
                 colours.reverse();

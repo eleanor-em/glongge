@@ -288,6 +288,10 @@ impl Vec2 {
     pub fn as_vec2int_lossy(&self) -> Vec2Int {
         Vec2Int { x: self.x as i32, y: self.y as i32 }
     }
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn as_f32_lossy(&self) -> [f32; 2] {
+        (*self).into()
+    }
 }
 
 impl Zero for Vec2 {

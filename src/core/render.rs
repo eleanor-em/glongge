@@ -30,6 +30,7 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
+use crate::gui::command::ImGuiCommandChain;
 use crate::gui::ImGuiContext;
 use crate::gui::render::ImGuiRenderer;
 use crate::shader::{Shader, ShaderId};
@@ -65,6 +66,7 @@ pub struct RenderInfoFull {
 pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
+    pub(crate) gui_commands: ImGuiCommandChain,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
@@ -73,6 +75,7 @@ impl RenderDataChannel {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
             render_infos: Vec::new(),
+            gui_commands: ImGuiCommandChain::new(),
             viewport,
             clear_col: Colour::black(),
         }))
@@ -84,14 +87,6 @@ impl RenderDataChannel {
             render_infos: self.render_infos.clone(),
             clear_col: self.clear_col
         }
-    }
-
-    pub(crate) fn update_vertices(&mut self, vertices: Vec<VertexWithUV>) {
-        self.vertices = vertices;
-    }
-
-    pub(crate) fn update_render_info(&mut self, render_info: Vec<RenderInfoFull>) {
-        self.render_infos = render_info;
     }
 
     pub(crate) fn current_viewport(&self) -> AdjustedViewport {
@@ -179,6 +174,13 @@ impl RenderHandler {
         self.viewport.get().update_from_window(window);
         self.command_buffer = None;
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
+    }
+
+    pub(crate) fn on_gui(
+        &mut self, ui: &imgui::Ui
+    ) {
+        let cmd = self.render_data_channel.lock().unwrap().gui_commands.drain();
+        cmd.build(ui);
     }
 
     pub(crate) fn on_render(

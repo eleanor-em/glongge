@@ -43,7 +43,7 @@ impl SceneObject<ObjectType> for ConvexHull {
             Vec2 { x: -8., y: 14. } * 2,
         ]), &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -75,7 +75,7 @@ impl SceneObject<ObjectType> for Compound {
             ]),
         ]), &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -101,7 +101,7 @@ impl SceneObject<ObjectType> for TrivialDecomposed {
         ]).vertices());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -130,7 +130,7 @@ impl SceneObject<ObjectType> for Decomposed {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -158,7 +158,7 @@ impl SceneObject<ObjectType> for DecomposedCorner {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -188,7 +188,7 @@ impl SceneObject<ObjectType> for DecomposedTee {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -218,7 +218,7 @@ impl SceneObject<ObjectType> for DecomposedU {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -248,7 +248,7 @@ impl SceneObject<ObjectType> for DecomposedCompound {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {
@@ -278,7 +278,7 @@ impl SceneObject<ObjectType> for DecomposedBigU {
         println!("pieces: {}", compound.len());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
-        ctx.object().add_child(collider);
+        ctx.object_mut().add_child(collider);
     }
 
     fn transform(&self) -> Transform {

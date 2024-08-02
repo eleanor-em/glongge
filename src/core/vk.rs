@@ -1,5 +1,4 @@
 use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
-use imgui::Condition;
 use num_traits::Zero;
 
 use vulkano::{
@@ -809,20 +808,8 @@ impl WindowEventHandler {
                         {
                             let mut imgui = self.imgui.get();
                             platform.prepare_frame(imgui.io_mut(), &self.window)?;
-                            let ui = imgui.frame();
-                            ui.window("Hello world")
-                                .size([300.0, 110.0], Condition::FirstUseEver)
-                                .build(|| {
-                                    ui.text_wrapped("Hello world!");
-
-                                    ui.button("This...is...imgui-rs!");
-                                    ui.separator();
-                                    let mouse_pos = ui.io().mouse_pos;
-                                    ui.text(format!(
-                                        "Mouse Position: ({:.1},{:.1})",
-                                        mouse_pos[0], mouse_pos[1]
-                                    ));
-                                });
+                            let ui = imgui.new_frame();
+                            self.render_handler.on_gui(ui);
                             platform.prepare_render(ui, &self.window);
                         }
                         per_image_ctx.current.replace(image_idx as usize);

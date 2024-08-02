@@ -30,6 +30,7 @@ use crate::{
 };
 use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
+use crate::gui::command::ImGuiCommandChain;
 use crate::shader::ensure_shaders_locked;
 
 #[derive(Clone)]
@@ -38,7 +39,7 @@ struct InternalScene<ObjectType: ObjectTypeEnum> {
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderDataChannel>>,
+    render_data_channel: Arc<Mutex<RenderDataChannel>>,
     tx: Sender<SceneHandlerInstruction>,
 }
 
@@ -56,7 +57,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
             name,
             input_handler,
             resource_handler,
-            render_info_receiver,
+            render_data_channel: render_info_receiver,
             tx,
         }
     }
@@ -83,7 +84,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
                 initial_objects,
                 this.input_handler,
                 this.resource_handler,
-                this.render_info_receiver,
+                this.render_data_channel,
                 this_name,
                 data
             );
@@ -226,6 +227,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     }
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+
     #[allow(unused_variables)]
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
@@ -243,6 +245,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         None
     }
+    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> { None }
     fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }
@@ -251,6 +254,10 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
     #[allow(unused_variables)]
     fn on_render(&mut self, render_ctx: &mut RenderContext) {}
     fn render_info(&self) -> RenderInfo;
+}
+
+pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
+    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain;
 }
 
 impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>

@@ -56,7 +56,7 @@ impl SceneObject<ObjectType> for Pipe {
     }
 
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().add_child(CollisionShape::from_object_sprite(self, &self.sprite));
+        ctx.object_mut().add_child(CollisionShape::from_object_sprite(self, &self.sprite));
     }
 
     fn transform(&self) -> Transform {

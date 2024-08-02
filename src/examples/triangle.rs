@@ -109,15 +109,15 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                     x: rng.gen_range(-1.0..1.0),
                     y: rng.gen_range(-1.0..1.0),
                 };
-                ctx.object().add_sibling(AnySceneObject::new(SpinningTriangle::new(
+                ctx.object_mut().add_sibling(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity - vel).normed(),
                 )));
-                ctx.object().add_sibling(AnySceneObject::new(SpinningTriangle::new(
+                ctx.object_mut().add_sibling(AnySceneObject::new(SpinningTriangle::new(
                     self.pos,
                     (self.velocity + vel).normed(),
                 )));
-                ctx.object().remove_this();
+                ctx.object_mut().remove_this();
             }
         }
     }

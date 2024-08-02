@@ -1,3 +1,4 @@
+use imgui::Condition;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
@@ -40,14 +41,38 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
     fn get_type(&self) -> ObjectType { ObjectType::gg_canvas() }
 
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().remove_children();
+        ctx.object_mut().remove_children();
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         for (render_item, render_info) in self.render_items.drain(..).zip(self.render_infos.drain(..)) {
-            ctx.object().add_child(GgInternalCanvasItem::create(render_item, render_info));
+            ctx.object_mut().add_child(GgInternalCanvasItem::create(render_item, render_info));
         }
-        self.viewport = ctx.viewport().inner();
+        self.viewport = ctx.viewport_mut().inner();
+    }
+
+    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
+        Some(self)
+    }
+}
+
+impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCanvas {
+    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
+        ImGuiCommandChain::new()
+            .window(
+                format!("Hello world: {} canvas items", ctx.object().children().len()),
+                |win| win.size([300., 110.], Condition::FirstUseEver),
+                ImGuiCommandChain::new()
+                    .text_wrapped("Hello world!")
+                    .separator()
+                    .get_mouse_pos(|mouse_pos| {
+                        ImGuiCommandChain::new()
+                            .text(format!(
+                                "Mouse Position: ({:.1},{:.1})",
+                                mouse_pos.x, mouse_pos.y
+                            ))
+                    }),
+            )
     }
 }
 
@@ -82,4 +107,6 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanv
 }
 
 pub use GgInternalCanvas as Canvas;
+use crate::core::scene::GuiObject;
 use crate::core::vk::AdjustedViewport;
+use crate::gui::command::ImGuiCommandChain;
