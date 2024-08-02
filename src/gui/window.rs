@@ -5,6 +5,7 @@ use std::{
     cmp::Ordering,
     sync::Arc
 };
+use tracing::warn;
 
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
@@ -330,20 +331,23 @@ impl WinitPlatform {
                 //     }
                 // }
 
-                let key = input.virtual_keycode.unwrap();
-                let pressed = input.state == ElementState::Pressed;
+                if let Some(key) = input.virtual_keycode {
+                    let pressed = input.state == ElementState::Pressed;
 
-                // We map both left and right ctrl to `ModCtrl`, etc.
-                // imgui is told both "left control is pressed" and
-                // "consider the control key is pressed". Allows
-                // applications to use either general "ctrl" or a
-                // specific key. Same applies to other modifiers.
-                // https://github.com/ocornut/imgui/issues/5047
-                handle_key_modifier(io, key, pressed);
+                    // We map both left and right ctrl to `ModCtrl`, etc.
+                    // imgui is told both "left control is pressed" and
+                    // "consider the control key is pressed". Allows
+                    // applications to use either general "ctrl" or a
+                    // specific key. Same applies to other modifiers.
+                    // https://github.com/ocornut/imgui/issues/5047
+                    handle_key_modifier(io, key, pressed);
 
-                // Add main key event
-                if let Some(key) = to_imgui_key(key) {
-                    io.add_key_event(key, pressed);
+                    // Add main key event
+                    if let Some(key) = to_imgui_key(key) {
+                        io.add_key_event(key, pressed);
+                    }
+                } else {
+                    warn!("winit KeyboardInput event with no virtual_keycode? (happens sometimes on Windows)")
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

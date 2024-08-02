@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 use anyhow::Result;
 
 fn main() -> Result<()> {
+    let sep = std::path::MAIN_SEPARATOR;
     let mut imports = Vec::new();
     let mut decls = Vec::new();
     let builtins = vec![
@@ -26,11 +27,11 @@ fn main() -> Result<()> {
             .map_or(false, |ext| ext.eq_ignore_ascii_case("rs"));
         if is_rust_file && filename != "build.rs" && filename != "object_type.rs" {
             let path = entry.path().display().to_string();
-            let path = path.replace(&format!("{}/", current_dir.display()), "");
-            let parts = path.split("src/").collect::<Vec<_>>();
+            let path = path.replace(&format!("{}{sep}", current_dir.display()), "");
+            let parts = path.split(&format!("src{sep}")).collect::<Vec<_>>();
             if parts.len() == 2 {
                 let rest = parts[1].to_string();
-                let import = rest.replace(".rs", "").replace('/', "::");
+                let import = rest.replace(".rs", "").replace(sep, "::");
                 if import.contains("mod") || import == "main" || import == "lib" {
                     continue;
                 }
@@ -101,6 +102,6 @@ fn main() -> Result<()> {
     writer.write_all("}\n".as_bytes())?;
     writer.write_all("}\n".as_bytes())?;
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=src/");
+    println!("cargo::rerun-if-changed=src{sep}");
     Ok(())
 }
