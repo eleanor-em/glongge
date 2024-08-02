@@ -49,6 +49,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
             ctx.object_mut().add_child(GgInternalCanvasItem::create(render_item, render_info));
         }
         self.viewport = ctx.viewport_mut().inner();
+        if ctx.input().pressed(KeyCode::Grave) {
+            let is_debug_enabled = ctx.scene().is_debug_enabled();
+            ctx.scene_mut().set_debug_enabled(!is_debug_enabled);
+        }
     }
 
     fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
@@ -58,21 +62,25 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
 
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCanvas {
     fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
-        ImGuiCommandChain::new()
-            .window(
-                format!("Hello world: {} canvas items", ctx.object().children().len()),
-                |win| win.size([300., 110.], Condition::FirstUseEver),
-                ImGuiCommandChain::new()
-                    .text_wrapped("Hello world!")
-                    .separator()
-                    .get_mouse_pos(|mouse_pos| {
-                        ImGuiCommandChain::new()
-                            .text(format!(
-                                "Mouse Position: ({:.1},{:.1})",
-                                mouse_pos.x, mouse_pos.y
-                            ))
-                    }),
-            )
+        if ctx.scene().is_debug_enabled() {
+            ImGuiCommandChain::new()
+                .window(
+                    "Collision",
+                    |win| win.size([300., 110.], Condition::FirstUseEver),
+                    ImGuiCommandChain::new()
+                        .text_wrapped(format!("Hello world: {} canvas items", ctx.object().children().len()))
+                        .separator()
+                        .get_mouse_pos(|mouse_pos| {
+                            ImGuiCommandChain::new()
+                                .text(format!(
+                                    "Mouse Position: ({:.1},{:.1})",
+                                    mouse_pos.x, mouse_pos.y
+                                ))
+                        }),
+                )
+        } else {
+            ImGuiCommandChain::default()
+        }
     }
 }
 

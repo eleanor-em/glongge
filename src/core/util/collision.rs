@@ -5,7 +5,9 @@ use std::{
 };
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
+use imgui::Condition;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -25,6 +27,7 @@ use crate::{
     resource::sprite::Sprite
 };
 
+#[derive(Debug)]
 pub enum ColliderType {
     Null,
     Box,
@@ -956,6 +959,31 @@ impl Collider for GenericCollider {
     }
 }
 
+impl Display for GenericCollider {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            GenericCollider::Null => {
+                write!(f, "<null>")
+            },
+            GenericCollider::Box(_) => {
+                write!(f, "Box: extent ({:.1}, {:.1})",
+                       self.aa_extent().x, self.aa_extent().y)
+            },
+            GenericCollider::OrientedBox(inner) => {
+                write!(f, "OrientedBox: extent ({:.1}, {:.1}) at {} deg.",
+                       inner.extent.x, inner.extent.y, inner.rotation.to_degrees())
+            },
+            GenericCollider::Convex(inner) => {
+                write!(f, "Convex: {} edges", inner.normals.len())
+            },
+            GenericCollider::Compound(inner) => {
+                write!(f, "Compound: {} pieces, {:?} edges", inner.inner.len(),
+                       inner.inner.iter().map(|c| c.normals.len()).collect_vec())
+            },
+        }
+    }
+}
+
 #[register_scene_object]
 pub struct GgInternalCollisionShape {
     collider: GenericCollider,
@@ -1087,6 +1115,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
+    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
+        if self.show_wireframe { Some(self) } else { None }
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
@@ -1109,10 +1140,31 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     }
 }
 
+impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
+    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
+        if ctx.scene().is_debug_enabled() {
+            ImGuiCommandChain::new()
+                .window(
+                    "Collision",
+                    |win| win.size([300., 110.], Condition::FirstUseEver),
+                    ImGuiCommandChain::new()
+                        .text_wrapped(format!("\tCollisionShape at ({:.1}, {:.1}):\n\t\t{}",
+                                              ctx.object().absolute_transform().centre.x,
+                                              ctx.object().absolute_transform().centre.y,
+                                              self.collider))
+                )
+        } else {
+            ImGuiCommandChain::default()
+        }
+    }
+}
+
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
+use crate::core::scene::GuiObject;
 use crate::core::update::RenderContext;
 use crate::core::util::canvas::Canvas;
 use crate::core::util::gg_iter;
 use crate::core::util::gg_iter::GgIter;
+use crate::gui::command::ImGuiCommandChain;
 use crate::shader::{get_shader, Shader, WireframeShader};

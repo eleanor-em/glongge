@@ -130,11 +130,7 @@ impl ImGuiWindowCommand {
     fn build(self, ui: &imgui::Ui) -> bool {
         ui.window(self.name)
             .size(self.size.as_f32_lossy(), self.size_cond)
-            .build(|| {
-                for cmd in self.then.inner {
-                    cmd.build(ui);
-                }
-            })
+            .build(|| self.then.inner.into_iter().for_each(|cmd| cmd.build(ui)))
             .is_some()
     }
 }

@@ -219,6 +219,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     scene_instruction_rx: Receiver<SceneInstruction>,
     scene_name: SceneName,
     scene_data: Arc<Mutex<Vec<u8>>>,
+    debug_enabled: bool,
 
     perf_stats: UpdatePerfStats,
 }
@@ -247,6 +248,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             scene_instruction_rx,
             scene_name,
             scene_data,
+            debug_enabled: false,
             perf_stats: UpdatePerfStats::new(),
         };
 
@@ -639,6 +641,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
+                debug_enabled: &mut caller.debug_enabled,
             },
             object: ObjectContext {
                 collision_handler: &caller.object_handler.collision_handler,
@@ -735,6 +738,7 @@ pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     scene_data: Arc<Mutex<Vec<u8>>>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
     pending_removed_coroutines: BTreeSet<CoroutineId>,
+    debug_enabled: &'a mut bool,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
@@ -780,6 +784,9 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
     pub fn cancel_coroutine(&mut self, id: CoroutineId) {
         self.pending_removed_coroutines.insert(id);
     }
+
+    pub fn is_debug_enabled(&self) -> bool { *self.debug_enabled }
+    pub fn set_debug_enabled(&mut self, value: bool) { *self.debug_enabled = value; }
 }
 
 #[derive(Clone)]
