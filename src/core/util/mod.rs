@@ -141,12 +141,10 @@ pub mod gg_iter {
     }
 
     pub fn index_of<T: Eq>(slice: &[T], value: &T) -> Option<usize> {
-        let mut i = 0;
-        for x in slice {
+        for (i, x) in slice.iter().enumerate() {
             if x == value {
                 return Some(i);
             }
-            i += 1;
         }
         None
     }

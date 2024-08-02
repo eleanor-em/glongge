@@ -756,11 +756,10 @@ impl CompoundCollider {
                         left_vertices.insert(gg_iter::index_of(&left_vertices, start).unwrap() + 1, *end);
                         changed = true;
                     }
-                } else if left_vertices.contains(end) && !left_vertices.contains(start) {
-                    if (*start - origin).cross(new_vertex - origin) < 0. {
-                        left_vertices.insert(gg_iter::index_of(&left_vertices, end).unwrap(), *start);
-                        changed = true;
-                    }
+                } else if left_vertices.contains(end) && !left_vertices.contains(start) &&
+                        (*start - origin).cross(new_vertex - origin) < 0. {
+                    left_vertices.insert(gg_iter::index_of(&left_vertices, end).unwrap(), *start);
+                    changed = true;
                 }
             }
         }
@@ -1056,7 +1055,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
                                     centre + inner.centre() + Vec2::one(), col);
                     }
                     for (a, b) in vertices.into_iter().circular_tuple_windows() {
-                        canvas.line(centre + a, centre + b, 0.5, col);
+                        canvas.line(centre + a, centre + b, 1., col);
                     }
                 }
             } else {
