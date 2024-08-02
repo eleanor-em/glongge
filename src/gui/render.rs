@@ -2,15 +2,7 @@
 
 use std::sync::Arc;
 use anyhow::{Context, Result};
-use imgui::{
-    DrawCmd,
-    DrawCmdParams,
-    DrawVert,
-    FontConfig,
-    FontSource,
-    Textures,
-    internal::RawWrapper
-};
+use imgui::{DrawCmd, DrawCmdParams, DrawVert, FontConfig, FontSource, Textures, internal::RawWrapper, DrawList, DrawIdx};
 use num_traits::Zero;
 use tracing::warn;
 use vulkano::{
@@ -121,7 +113,10 @@ impl From<DrawVert> for ImGuiVertex {
     }
 }
 
-pub struct ImGuiShader {
+type ImGuiVertexBuffer = Subbuffer<[ImGuiVertex]>;
+type ImGuiIndexBuffer = Subbuffer<[DrawIdx]>;
+
+pub struct ImGuiRenderer {
     vk_ctx: VulkanoContext,
     _imgui: UniqueShared<ImGuiContext>,
     vs: Arc<ShaderModule>,
@@ -133,7 +128,7 @@ pub struct ImGuiShader {
     textures: Textures<Texture>,
 }
 
-impl ImGuiShader {
+impl ImGuiRenderer {
     pub fn new(
         vk_ctx: VulkanoContext,
         imgui: UniqueShared<ImGuiContext>,
@@ -154,7 +149,7 @@ impl ImGuiShader {
                 }),
             },
             FontSource::TtfData {
-                data: include_bytes!("../../../res/mplus-1p-regular.ttf"),
+                data: include_bytes!("../../res/mplus-1p-regular.ttf"),
                 size_pixels: font_size,
                 config: Some(FontConfig {
                     rasterizer_multiply: 1.75,
@@ -237,14 +232,43 @@ impl ImGuiShader {
             Some(pipeline) => Ok(pipeline)
         }
     }
-    fn lookup_texture(&self, texture_id: imgui::TextureId) -> Result<&Texture> {
+    fn lookup_texture(&self, texture_id: imgui::TextureId) -> &Texture {
         if texture_id.id() == usize::MAX {
-            Ok(&self.font_texture)
+            &self.font_texture
         } else if let Some(texture) = self.textures.get(texture_id) {
-            Ok(texture)
+            texture
         } else {
             panic!("bad texture_id: {texture_id:?}");
         }
+    }
+    fn create_vertex_index_buffers(&mut self, draw_list: &DrawList) -> Result<(ImGuiVertexBuffer, ImGuiIndexBuffer)> {
+        let vertex_buffer = Buffer::from_iter(
+            self.vk_ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            draw_list.vtx_buffer().iter().map(|&v| ImGuiVertex::from(v))
+        ).map_err(Validated::unwrap)?;
+        let index_buffer = Buffer::from_iter(
+            self.vk_ctx.memory_allocator(),
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            draw_list.idx_buffer().iter().copied()
+        ).map_err(Validated::unwrap)?;
+        Ok((vertex_buffer, index_buffer))
     }
     fn create_uniform_buffer(&mut self, pc: vs::VertPC) -> Result<Subbuffer<vs::VertPC>> {
         let uniform_buffer= Buffer::new_sized(
@@ -274,7 +298,7 @@ impl ImGuiShader {
                 border_color: BorderColor::FloatTransparentBlack,
                 ..Default::default()
             }).map_err(Validated::unwrap)?;
-        let texture_id = self.lookup_texture(texture_id)?.id();
+        let texture_id = self.lookup_texture(texture_id).id();
         let texture = self.resource_handler.texture
             .get(texture_id).unwrap()
             .ready().unwrap();
@@ -326,32 +350,7 @@ impl ImGuiShader {
         let clip_off = draw_data.display_pos;
         let clip_scale = draw_data.framebuffer_scale;
         for draw_list in draw_data.draw_lists() {
-            let vertex_buffer = Buffer::from_iter(
-                self.vk_ctx.memory_allocator(),
-                BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
-                AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                draw_list.vtx_buffer().iter().map(|&v| ImGuiVertex::from(v))
-                ).map_err(Validated::unwrap)?;
-            let index_buffer  = Buffer::from_iter(
-                self.vk_ctx.memory_allocator(),
-                BufferCreateInfo {
-                    usage: BufferUsage::INDEX_BUFFER,
-                    ..Default::default()
-                },
-                AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                    ..Default::default()
-                },
-                draw_list.idx_buffer().iter().copied()
-            ).map_err(Validated::unwrap)?;
+            let (vertex_buffer, index_buffer) = self.create_vertex_index_buffers(draw_list)?;
 
             for cmd in draw_list.commands() {
                 match cmd {
@@ -401,7 +400,7 @@ impl ImGuiShader {
                     }
                     DrawCmd::ResetRenderState => (), // TODO
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
-                        callback(draw_list.raw(), raw_cmd)
+                        callback(draw_list.raw(), raw_cmd);
                     },
                 }
             }

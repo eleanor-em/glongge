@@ -1,13 +1,21 @@
 use std::ops::{Deref, DerefMut};
 
 pub mod render;
+pub mod window;
 
+// imgui::Context does not implement Send, for some reason.
 pub struct ImGuiContext(imgui::Context);
 
 unsafe impl Send for ImGuiContext {}
 
 impl ImGuiContext {
     pub fn new() -> Self { Self(imgui::Context::create()) }
+}
+
+impl Default for ImGuiContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Deref for ImGuiContext {

@@ -32,7 +32,7 @@ use crate::{
         vk::{AdjustedViewport, VulkanoContext},
         util::UniqueShared
     },
-    shader::glsl::*,
+    shader::glsl::{basic, sprite, wireframe},
 };
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 use crate::core::render::ShaderRenderFrame;
@@ -66,17 +66,15 @@ static SHADER_IDS_INIT: LazyLock<Arc<Mutex<HashMap<ShaderName, ShaderId>>>> = La
 static SHADERS_LOCKED: AtomicBool = AtomicBool::new(false);
 
 static SHADER_IDS_FINAL: LazyLock<HashMap<ShaderName, ShaderId>> = LazyLock::new(|| {
-    if !SHADERS_LOCKED.load(Ordering::Acquire) {
-        panic!("attempted to load shader IDs too early");
-    }
+    check!(SHADERS_LOCKED.load(Ordering::Acquire),
+           "attempted to load shader IDs too early");
     let shader_ids = SHADER_IDS_INIT.lock().unwrap();
     shader_ids.clone()
 });
 
 pub fn register_shader<S: Shader + Sized>() -> ShaderId {
-    if SHADERS_LOCKED.load(Ordering::Acquire) {
-        panic!("attempted to register shader too late: {:?}", S::name());
-    }
+    check_false!(SHADERS_LOCKED.load(Ordering::Acquire),
+                 format!("attempted to register shader too late: {:?}", S::name()));
     let mut shader_ids = SHADER_IDS_INIT.lock().unwrap();
     *shader_ids.entry(S::name())
         .or_insert_with(ShaderId::next)

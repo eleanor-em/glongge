@@ -31,7 +31,7 @@ use crate::{
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
 use crate::gui::ImGuiContext;
-use crate::gui::render::shader::ImGuiShader;
+use crate::gui::render::ImGuiRenderer;
 use crate::shader::{Shader, ShaderId};
 
 #[derive(Clone, Debug)]
@@ -136,13 +136,13 @@ pub struct RenderHandler {
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<dyn Shader>>,
-    gui_shader: UniqueShared<ImGuiShader>,
+    gui_shader: UniqueShared<ImGuiRenderer>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
     pub fn new(
-        vk_ctx: VulkanoContext,
+        vk_ctx: &VulkanoContext,
         imgui: UniqueShared<ImGuiContext>,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<dyn Shader>>,
@@ -154,7 +154,7 @@ impl RenderHandler {
                       b.get().name_concrete(),
                       "duplicate shader name");
         }
-        let gui_shader = ImGuiShader::new(vk_ctx.clone(), imgui.clone(), viewport.clone(), resource_handler)?;
+        let gui_shader = ImGuiRenderer::new(vk_ctx.clone(), imgui.clone(), viewport.clone(), resource_handler)?;
         Ok(Self {
             imgui,
             gui_shader,

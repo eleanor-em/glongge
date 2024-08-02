@@ -31,10 +31,10 @@ impl Scene<ObjectType> for RectangleScene {
             .map(|(((x, y), vx), vy)|  {
                 let pos = Vec2 { x, y };
                 let vel = Vec2 { x: vx, y: vy };
-                SpinningRectangle::new(pos, vel.normed())
+                SpinningRectangle::create(pos, vel.normed())
             })
             .collect_vec();
-        objects.push(RectanglePlayer::new());
+        objects.push(RectanglePlayer::create());
         objects
     }
 }
@@ -109,7 +109,7 @@ impl SpinningRectangle {
     const VELOCITY: f64 = 2.;
     const ANGULAR_VELOCITY: f64 = 2.;
 
-    pub fn new(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
+    pub fn create(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
         let mut rng = rand::thread_rng();
         let col = match rng.gen_range(0..6) {
             0 => Colour::red(),
@@ -154,7 +154,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f64::PI()));
-            ctx.object().add_sibling(SpinningRectangle::new(
+            ctx.object().add_sibling(SpinningRectangle::create(
                 self.pos,
                 Vec2::one().rotated(angle)
             ));

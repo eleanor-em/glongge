@@ -20,7 +20,7 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub fn new(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             orientation,

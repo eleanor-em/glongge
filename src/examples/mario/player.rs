@@ -115,7 +115,7 @@ impl Player {
     const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
 
-    pub fn new(centre: Vec2Int, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
+    pub fn create(centre: Vec2Int, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             centre: centre.into(),
             // Prevents player getting "stuck" on ground when level starts in air.
@@ -680,7 +680,7 @@ impl SceneObject<ObjectType> for Player {
                     .test_collision(vec![BLOCK_COLLISION_TAG]) {
                     this.v_speed = 0.;
                     this.centre += collisions.first().mtv;
-                    ctx.object().add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
+                    ctx.object().add_child(WinTextDisplay::create(Vec2 { x: 8., y: -200. }));
                     this.clear_sound.play();
                     CoroutineResponse::Complete
                 } else {

@@ -13,7 +13,7 @@ pub struct Flagpole {
 }
 
 impl Flagpole {
-    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             ..Default::default()

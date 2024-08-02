@@ -13,6 +13,7 @@ use winit::{
     window::{CursorIcon as MouseCursor, Window},
     event::VirtualKeyCode
 };
+use winit::event::{DeviceEvent, KeyboardInput};
 
 /// winit backend platform state
 #[derive(Debug, Clone)]
@@ -43,7 +44,7 @@ fn to_winit_cursor(cursor: imgui::MouseCursor) -> MouseCursor {
 }
 
 impl CursorSettings {
-    fn apply(&self, window: &Window) {
+    fn apply(self, window: &Window) {
         match self.cursor {
             Some(mouse_cursor) if !self.draw_cursor => {
                 window.set_cursor_visible(true);
@@ -101,7 +102,7 @@ fn to_imgui_mouse_button(button: MouseButton) -> Option<imgui::MouseButton> {
         MouseButton::Middle | MouseButton::Other(2) => Some(imgui::MouseButton::Middle),
         MouseButton::Other(3) => Some(imgui::MouseButton::Extra1),
         MouseButton::Other(4) => Some(imgui::MouseButton::Extra2),
-        _ => None,
+        MouseButton::Other(_) => None,
     }
 }
 
@@ -150,7 +151,7 @@ fn to_imgui_key(key: VirtualKeyCode) -> Option<Key> {
     }
 }
 
-fn handle_key_modifier(io: &mut Io, key: &VirtualKeyCode, down: bool) {
+fn handle_key_modifier(io: &mut Io, key: VirtualKeyCode, down: bool) {
     match key {
         VirtualKeyCode::LShift | VirtualKeyCode::RShift => io.add_key_event(imgui::Key::ModShift, down),
         VirtualKeyCode::LControl | VirtualKeyCode::RControl => io.add_key_event(imgui::Key::ModCtrl, down),
@@ -268,18 +269,18 @@ impl WinitPlatform {
             }
             // Track key release events outside our window. If we don't do this,
             // we might never see the release event if some other window gets focus.
-            // Event::DeviceEvent {
-            //     event:
-            //         DeviceEvent::Key(RawKeyEvent {
-            //             physical_key,
-            //             state: ElementState::Released,
-            //         }),
-            //     ..
-            // } => {
-            //     if let Some(key) = to_imgui_key(key) {
-            //         io.add_key_event(key, false);
-            //     }
-            // }
+            Event::DeviceEvent {
+                event:
+                    DeviceEvent::Key(KeyboardInput {
+                        virtual_keycode: key,
+                        state: ElementState::Released, ..
+                    }),
+                ..
+            } => {
+                if let Some(key) = key.and_then(to_imgui_key) {
+                    io.add_key_event(key, false);
+                }
+            }
             _ => (),
         }
     }
@@ -294,7 +295,7 @@ impl WinitPlatform {
                 let hidpi_factor = match self.hidpi_mode {
                     ActiveHiDpiMode::Default => scale_factor,
                     ActiveHiDpiMode::Rounded => scale_factor.round(),
-                    _ => return,
+                    ActiveHiDpiMode::Locked => return,
                 };
                 // Mouse position needs to be changed while we still have both the old and the new
                 // values
@@ -338,7 +339,7 @@ impl WinitPlatform {
                 // applications to use either general "ctrl" or a
                 // specific key. Same applies to other modifiers.
                 // https://github.com/ocornut/imgui/issues/5047
-                handle_key_modifier(io, &key, pressed);
+                handle_key_modifier(io, key, pressed);
 
                 // Add main key event
                 if let Some(key) = to_imgui_key(key) {

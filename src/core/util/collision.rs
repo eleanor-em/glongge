@@ -49,8 +49,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
             ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref().unwrap()),
             ColliderType::Compound => {
                 other.as_any().downcast_ref::<CompoundCollider>().unwrap().inner.iter()
-                    .filter_map(|other| self.collides_with(&other.as_generic()))
-                    .next()
+                     .find_map(|other| self.collides_with(&other.as_generic()))
             },
         }
     }
@@ -785,6 +784,7 @@ impl CompoundCollider {
     }
 
     pub fn len(&self) -> usize { self.inner.len() }
+    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
 
     fn extend(&mut self, mut other: CompoundCollider) {
         self.inner.append(&mut other.inner);

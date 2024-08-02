@@ -400,7 +400,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler.collision_handler.remove_objects(&pending_remove_objects);
-        for remove_id in pending_remove_objects.into_iter() {
+        for remove_id in pending_remove_objects {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);
@@ -832,8 +832,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
     pub fn first_other_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         self.others_inner()
-            .filter_map(|(_, obj)| obj.downcast_mut())
-            .next()
+            .find_map(|(_, obj)| obj.downcast_mut())
     }
 
     pub fn absolute_transform(&self) -> Transform {
@@ -907,9 +906,9 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     pub fn add_sibling(&mut self, object: AnySceneObject<ObjectType>) {
         self.object_tracker.pending_add.push(PendingAddObject {
             inner: object,
-            parent_id: self.parent().map(|obj| {
+            parent_id: self.parent().map_or(ObjectId(0), |obj| {
                 obj.object_id
-            }).unwrap_or(ObjectId(0)),
+            })
         });
     }
     pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) {

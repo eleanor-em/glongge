@@ -52,7 +52,7 @@ fn main() -> Result<()> {
         BasicShader::new(vk_ctx.clone(), viewport.clone())?,
     ];
     let render_handler = RenderHandler::new(
-        vk_ctx.clone(),
+        &vk_ctx,
         imgui.clone(),
         viewport.clone(),
         shaders,

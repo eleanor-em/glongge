@@ -215,6 +215,8 @@ pub struct Vec2 {
 
 impl Eq for Vec2 {}
 
+// I'm sorry, clippy.
+#[allow(clippy::derive_ord_xor_partial_ord)]
 impl Ord for Vec2 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()

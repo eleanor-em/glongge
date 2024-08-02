@@ -216,7 +216,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn name(&self) -> String { format!("{:?}", self.get_type()) }
 
     #[allow(clippy::new_ret_no_self)]
-    fn new() -> AnySceneObject<ObjectType> where Self: Default { AnySceneObject::new(Self::default()) }
+    fn create() -> AnySceneObject<ObjectType> where Self: Default { AnySceneObject::new(Self::default()) }
 
     #[allow(unused_variables)]
     fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> { Ok(()) }

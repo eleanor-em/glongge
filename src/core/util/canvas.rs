@@ -45,7 +45,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         for (render_item, render_info) in self.render_items.drain(..).zip(self.render_infos.drain(..)) {
-            ctx.object().add_child(GgInternalCanvasItem::new(render_item, render_info));
+            ctx.object().add_child(GgInternalCanvasItem::create(render_item, render_info));
         }
         self.viewport = ctx.viewport().inner();
     }
@@ -58,7 +58,7 @@ pub struct GgInternalCanvasItem {
 }
 
 impl GgInternalCanvasItem {
-    pub fn new<ObjectType: ObjectTypeEnum>(render_item: RenderItem, render_info: RenderInfo) -> AnySceneObject<ObjectType> {
+    pub fn create<ObjectType: ObjectTypeEnum>(render_item: RenderItem, render_info: RenderInfo) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self { render_item, render_info })
     }
 }

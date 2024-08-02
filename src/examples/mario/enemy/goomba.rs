@@ -22,7 +22,7 @@ pub struct Goomba {
 }
 
 impl Goomba {
-    pub fn new(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             initial_coord: top_left,
             dead: false,

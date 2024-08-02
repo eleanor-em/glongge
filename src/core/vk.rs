@@ -71,7 +71,7 @@ use crate::{
 use crate::core::render::RenderHandler;
 use crate::core::util::UniqueShared;
 use crate::gui::ImGuiContext;
-use crate::gui::render::window::{HiDpiMode, WinitPlatform};
+use crate::gui::window::{HiDpiMode, WinitPlatform};
 use crate::shader::ensure_shaders_locked;
 
 pub struct WindowContext {
