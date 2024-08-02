@@ -320,6 +320,14 @@ impl From<[f32; 2]> for Vec2 {
         }
     }
 }
+impl From<[i32; 2]> for Vec2 {
+    fn from(value: [i32; 2]) -> Self {
+        Vec2 {
+            x: f64::from(value[0]),
+            y: f64::from(value[1]),
+        }
+    }
+}
 
 impl From<Vec2> for [f64; 2] {
     fn from(value: Vec2) -> Self {

@@ -1,4 +1,3 @@
-use imgui::Condition;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
@@ -48,39 +47,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
         for (render_item, render_info) in self.render_items.drain(..).zip(self.render_infos.drain(..)) {
             ctx.object_mut().add_child(GgInternalCanvasItem::create(render_item, render_info));
         }
-        self.viewport = ctx.viewport_mut().inner();
-        if ctx.input().pressed(KeyCode::Grave) {
-            let is_debug_enabled = ctx.scene().is_debug_enabled();
-            ctx.scene_mut().set_debug_enabled(!is_debug_enabled);
-        }
-    }
-
-    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
-        Some(self)
-    }
-}
-
-impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCanvas {
-    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
-        if ctx.scene().is_debug_enabled() {
-            ImGuiCommandChain::new()
-                .window(
-                    "Collision",
-                    |win| win.size([300., 110.], Condition::FirstUseEver),
-                    ImGuiCommandChain::new()
-                        .text_wrapped(format!("Hello world: {} canvas items", ctx.object().children().len()))
-                        .separator()
-                        .get_mouse_pos(|mouse_pos| {
-                            ImGuiCommandChain::new()
-                                .text(format!(
-                                    "Mouse Position: ({:.1},{:.1})",
-                                    mouse_pos.x, mouse_pos.y
-                                ))
-                        }),
-                )
-        } else {
-            ImGuiCommandChain::default()
-        }
+        self.viewport = ctx.viewport().inner();
     }
 }
 
@@ -115,6 +82,4 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanv
 }
 
 pub use GgInternalCanvas as Canvas;
-use crate::core::scene::GuiObject;
 use crate::core::vk::AdjustedViewport;
-use crate::gui::command::ImGuiCommandChain;

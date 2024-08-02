@@ -7,7 +7,6 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use imgui::Condition;
 use num_traits::{Float, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -1144,11 +1143,10 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
     fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
         if ctx.scene().is_debug_enabled() {
             ImGuiCommandChain::new()
-                .window(
+                .window_default(
                     "Collision",
-                    |win| win.size([300., 110.], Condition::FirstUseEver),
                     ImGuiCommandChain::new()
-                        .text_wrapped(format!("\tCollisionShape at ({:.1}, {:.1}):\n\t\t{}",
+                        .text_wrapped(format!("CollisionShape at ({:.1}, {:.1}):\n\t{}",
                                               ctx.object().absolute_transform().centre.x,
                                               ctx.object().absolute_transform().centre.y,
                                               self.collider))

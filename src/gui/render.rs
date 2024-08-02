@@ -4,7 +4,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use imgui::{DrawCmd, DrawCmdParams, DrawVert, FontConfig, FontSource, Textures, internal::RawWrapper, DrawList, DrawIdx};
 use num_traits::Zero;
-use tracing::warn;
 use vulkano::{
     descriptor_set::layout::DescriptorSetLayoutCreateFlags,
     command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer},
@@ -322,7 +321,7 @@ impl ImGuiRenderer {
         draw_data : &imgui::DrawData
     ) -> Result<()> {
         if draw_data.draw_lists_count().is_zero() {
-            warn!("attempted to draw gui, but nothing to draw");
+            // warn!("attempted to draw gui, but nothing to draw");
             return Ok(());
         }
         let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];

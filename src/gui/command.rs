@@ -26,6 +26,17 @@ impl ImGuiCommandChain {
         self
     }
     #[must_use]
+    pub fn window_default(
+        mut self,
+        name: impl AsRef<str>,
+        then: ImGuiCommandChain
+    ) -> Self
+    {
+        let cmd = ImGuiWindowCommand::new(name.as_ref().to_string(), then).into_command();
+        self.inner.push(cmd);
+        self
+    }
+    #[must_use]
     pub fn separator(mut self) -> Self {
         let cmd = ImGuiCommand::Separator;
         self.inner.push(cmd);
@@ -103,6 +114,8 @@ pub struct ImGuiWindowCommand {
     name: String,
     size: Vec2,
     size_cond: Condition,
+    pos: Vec2,
+    pos_cond: Condition,
     then: ImGuiCommandChain,
 }
 
@@ -116,6 +129,8 @@ impl ImGuiWindowCommand {
             name,
             size: Vec2::zero(),
             size_cond: Condition::Never,
+            pos: Vec2::zero(),
+            pos_cond: Condition::Never,
             then
         }
     }
@@ -127,9 +142,17 @@ impl ImGuiWindowCommand {
         self
     }
 
+    #[must_use]
+    pub fn position(mut self, position: impl Into<Vec2>, condition: Condition) -> Self {
+        self.pos = position.into();
+        self.pos_cond = condition;
+        self
+    }
+
     fn build(self, ui: &imgui::Ui) -> bool {
         ui.window(self.name)
             .size(self.size.as_f32_lossy(), self.size_cond)
+            .position(self.pos.as_f32_lossy(), self.pos_cond)
             .build(|| self.then.inner.into_iter().for_each(|cmd| cmd.build(ui)))
             .is_some()
     }

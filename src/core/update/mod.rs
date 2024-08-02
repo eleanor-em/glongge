@@ -1,4 +1,5 @@
 pub mod collision;
+mod debug_gui;
 
 use std::{
     cell::{
@@ -22,34 +23,31 @@ use serde::{
 };
 use num_traits::{FromPrimitive, Zero};
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
-use crate::{
-    core::{
-        prelude::*,
-        AnySceneObject,
-        ObjectId,
-        ObjectTypeEnum,
-        SceneObjectWithId,
-        config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
-        coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
-        input::InputHandler,
-        render::{RenderInfoFull, RenderDataChannel, RenderItem, VertexMap},
-        scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
-        vk::AdjustedViewport,
-        util::{
-            collision::{
-                GenericCollider,
-                Collider,
-                GgInternalCollisionShape
-            },
-            gg_time::TimeIt,
-            linalg::{AxisAlignedExtent, Vec2},
-            colour::Colour,
-            NonemptyVec,
-            linalg::Transform,
-        }
-    },
-    resource::ResourceHandler,
-};
+use crate::{core::{
+    prelude::*,
+    AnySceneObject,
+    ObjectId,
+    ObjectTypeEnum,
+    SceneObjectWithId,
+    config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
+    coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
+    input::InputHandler,
+    render::{RenderInfoFull, RenderDataChannel, RenderItem, VertexMap},
+    scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
+    vk::AdjustedViewport,
+    util::{
+        collision::{
+            GenericCollider,
+            Collider,
+            GgInternalCollisionShape
+        },
+        gg_time::TimeIt,
+        linalg::{AxisAlignedExtent, Vec2},
+        colour::Colour,
+        NonemptyVec,
+        linalg::Transform,
+    }
+}, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
 use crate::gui::command::ImGuiCommandChain;
 use crate::shader::{BasicShader, get_shader, Shader};
@@ -77,12 +75,16 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     fn get_object_or_panic(&self, id: ObjectId) -> &AnySceneObject<ObjectType> {
         self.objects.get(&id)
             .unwrap_or_else(|| panic!("missing object_id from objects: {:?} [{:?}]",
-                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+                                      id, self.objects.get(&id).unwrap_or_else(
+                    || panic!("missing object_id from objects: {id:?}")
+                ).borrow().get_type()))
     }
     fn get_parent_or_panic(&self, id: ObjectId) -> ObjectId {
         *self.parents.get(&id)
             .unwrap_or_else(|| panic!("missing object_id from parents: {:?} [{:?}]",
-                                      id, self.objects.get(&id).unwrap().borrow().get_type()))
+                                      id, self.objects.get(&id).unwrap_or_else(
+                    || panic!("missing object_id from objects: {id:?}")
+                ).borrow().get_type()))
     }
     fn get_children_or_panic(&self, id: ObjectId) -> &Vec<SceneObjectWithId<ObjectType>> {
         self.children.get(&id)
@@ -200,6 +202,42 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             start = end;
         }
         render_infos
+    }
+
+    #[allow(dead_code)]
+    fn breadth_first_with<T: Clone + Default, A, M>(&self, mut action: A, mut map: M)
+    where
+        A: FnMut(&AnySceneObject<ObjectType>, T),
+        M: FnMut(&SceneObjectWithId<ObjectType>, T) -> T,
+    {
+        let mut child_stack = Vec::with_capacity(self.objects.len());
+        child_stack.push((ObjectId::root(), T::default()));
+        while let Some((parent_id, value)) = child_stack.pop() {
+            if !parent_id.is_root() {
+                action(self.get_object_or_panic(parent_id), value.clone());
+            }
+            for child in self.get_children_or_panic(parent_id) {
+                child_stack.push((child.object_id, map(child, value.clone())));
+            }
+        }
+    }
+    fn depth_first_with<T: Clone + Default, A, M>(&self, mut action: A, mut map: M)
+    where
+        A: FnMut(&AnySceneObject<ObjectType>, T),
+        M: FnMut(&SceneObjectWithId<ObjectType>, T) -> T,
+    {
+        let mut visited = BTreeSet::new();
+        let mut child_stack = Vec::with_capacity(self.objects.len());
+        child_stack.push((ObjectId::root(), T::default()));
+        while let Some((parent_id, value)) = child_stack.pop() {
+            if visited.insert(parent_id) && !parent_id.is_root() {
+                action(self.get_object_or_panic(parent_id), value.clone());
+            }
+            for child in self.get_children_or_panic(parent_id)
+                    .iter().filter(|child| !visited.contains(&child.object_id)) {
+                child_stack.push((child.object_id, map(child, value.clone())));
+            }
+        }
     }
 }
 
@@ -423,21 +461,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             pending_remove: BTreeSet::new()
         };
 
-        let mut cmd = ImGuiCommandChain::new();
-        let gui_objects = self.object_handler.objects.iter()
-            .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
-            .map(|(id, obj)| (*id, obj.clone()))
-            .collect_vec();
-        for (id, obj) in gui_objects {
-            let ctx = UpdateContext::new(
-                self,
-                input_handler,
-                id,
-                &mut object_tracker
-            );
-            cmd.extend(obj.borrow().as_gui_object().unwrap().on_gui(&ctx));
-        }
-        self.gui_cmd = cmd;
+        self.update_gui(input_handler, &mut object_tracker);
 
         self.iter_with_other_map(input_handler, &mut object_tracker,
                                  |mut obj, ctx| {
@@ -475,6 +499,32 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                                  });
         self.perf_stats.on_update_end.stop();
         object_tracker
+    }
+
+    fn update_gui(&mut self, input_handler: &InputHandler, mut object_tracker: &mut ObjectTracker<ObjectType>) {
+        let mut cmd = ImGuiCommandChain::new();
+        // Add debug GUI:
+        if input_handler.pressed(KeyCode::Grave) {
+            self.debug_enabled = !self.debug_enabled;
+        }
+        if self.debug_enabled {
+            cmd.extend(debug_gui::build(&self.object_handler));
+        }
+
+        let gui_objects = self.object_handler.objects.iter()
+            .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
+            .map(|(id, obj)| (*id, obj.clone()))
+            .collect_vec();
+        for (id, obj) in gui_objects {
+            let ctx = UpdateContext::new(
+                self,
+                input_handler,
+                id,
+                &mut object_tracker
+            );
+            cmd.extend(obj.borrow().as_gui_object().unwrap().on_gui(&ctx));
+        }
+        self.gui_cmd = cmd;
     }
 
     fn handle_collisions(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
