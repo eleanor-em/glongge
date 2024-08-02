@@ -854,6 +854,7 @@ struct RenderPerfStats {
     total: TimeIt,
     on_time: u64,
     count: u64,
+    last_step: Instant,
     last_report: Instant,
     totals_ms: Vec<f64>,
 }
@@ -873,6 +874,7 @@ impl RenderPerfStats {
             total: TimeIt::new("total (render)"),
             on_time: 0,
             count: 0,
+            last_step: Instant::now(),
             last_report: Instant::now(),
             totals_ms: Vec::with_capacity(10),
         }
@@ -881,12 +883,8 @@ impl RenderPerfStats {
     fn begin_handle_swapchain(&mut self) {
         check_eq!(&self.state, &RenderState::BetweenRenders);
         self.state = RenderState::HandleSwapchain;
-        self.total.stop();
-        if self.totals_ms.len() == self.totals_ms.capacity() {
-            self.totals_ms.remove(0);
-        }
-        self.totals_ms.push(self.total.last_ms());
 
+        self.total.stop();
         self.total.start();
         self.between_renders.stop();
         self.render_active.start();
@@ -942,6 +940,21 @@ impl RenderPerfStats {
         } else {
             warn!("late frame: {active_ms:.2} ms");
         }
+
+        if self.totals_ms.len() == self.totals_ms.capacity() {
+            self.totals_ms.remove(0);
+        }
+        self.totals_ms.push(self.last_step.elapsed().as_millis_f64());
+        self.last_step = Instant::now();
+
+        let late_in_row = self.totals_ms.iter()
+            .rev()
+            .take_while(|&&t| t > 16.6)
+            .collect_vec()
+            .len();
+        if late_in_row > 1 {
+            warn!("{late_in_row} frames late in a row!");
+        }
         self.count += 1;
 
         // arbitrary; report every 5 seconds
@@ -965,15 +978,6 @@ impl RenderPerfStats {
             self.last_report = Instant::now();
             self.on_time = 0;
             self.count = 0;
-
-            let late_in_row = self.totals_ms.iter()
-                .rev()
-                .take_while(|&&t| t > 16.6)
-                .try_len()
-                .unwrap_or(0);
-            if late_in_row > 1 {
-                warn!("{late_in_row} frames late in a row!");
-            }
         }
 
         self.between_renders.start();
