@@ -1,8 +1,13 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::rc::Rc;
-use egui::{Color32, Id};
+use egui::{Align, Color32, FontSelection, Id, Style};
+use egui::scroll_area::ScrollBarVisibility;
+use egui::text::LayoutJob;
 use itertools::Itertools;
+use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
@@ -144,26 +149,83 @@ impl GuiObjectTreeBuilder {
 pub(crate) struct DebugGui {
     pub(crate) object_tree: GuiObjectTree,
     pub(crate) enabled: bool,
+    log_output: Vec<String>,
+    log_file: BufReader<File>,
 }
 
 impl DebugGui {
     pub fn new() -> Self {
+        let log_file = BufReader::new(std::fs::OpenOptions::new()
+            .read(true)
+            .open("run.log")
+            .unwrap());
         Self {
             object_tree: GuiObjectTree::new(),
             enabled: false,
+            log_output: Vec::new(),
+            log_file
         }
     }
 
-    pub fn build(&self) -> Box<GuiClosure> {
+    pub fn build(&mut self) -> Box<GuiClosure> {
         let enabled = self.enabled;
         let object_tree_builder = self.object_tree.as_builder();
+
+        let mut line = String::new();
+        if self.log_file.read_line(&mut line).unwrap() > 0 {
+            self.log_output.push(line);
+        }
+        let log_output = self.log_output.clone();
+
         Box::new(move |ctx| {
-            egui::SidePanel::left(Id::new("Object Tree"))
-                .frame(egui::Frame::default()
-                    .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
-                    .inner_margin(egui::Margin::same(6.)))
+            let frame = egui::Frame::default()
+                .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
+                .inner_margin(egui::Margin::same(6.));
+            egui::TopBottomPanel::top(Id::new("log"))
+                .frame(frame.clone())
+                .default_height(200.)
+                .resizable(true)
                 .show_animated(&ctx, enabled, |ui| {
-                    egui::ScrollArea::new([false, true])
+                    egui::ScrollArea::vertical()
+                        .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.separator();
+                            for line in log_output {
+                                let segments = line.trim().split("\x1b[");
+                                let style = Style::default();
+                                let mut layout_job = LayoutJob::default();
+                                for segment in segments.filter(|s| !s.is_empty()) {
+                                    let sep = segment.find('m').unwrap();
+                                    let colour_code = &segment[..sep];
+                                    let col = colour_code.parse::<i32>().unwrap();
+                                    let text = &segment[sep + 1..];
+                                    egui::RichText::new(text)
+                                        .color(match col {
+                                            2 => Color32::from_gray(120),
+                                            32 => Color32::from_rgb(0, 166, 0),
+                                            33 => Color32::from_rgb(153, 153, 0),
+                                            0 => Color32::from_gray(240),
+                                            _ => {
+                                                warn!("unrecognised colour code: {col}");
+                                                Color32::from_gray(240)
+                                            },
+                                        })
+                                        .monospace()
+                                        .append_to(&mut layout_job,
+                                                   &style,
+                                                   FontSelection::Default,
+                                                   Align::Center)
+                                }
+                                ui.add(egui::Label::new(layout_job)
+                                    .selectable(true));
+                            }
+                        })
+                });
+            egui::SidePanel::left(Id::new("object-tree"))
+                .frame(frame)
+                .show_animated(&ctx, enabled, |ui| {
+                    egui::ScrollArea::vertical()
                         .show(ui, |ui| {
                             ui.add(egui::Label::new("Object Tree 🌳")
                                .extend());

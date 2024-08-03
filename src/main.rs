@@ -2,6 +2,7 @@
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
 use num_traits::{Float, One};
+use tracing_subscriber::fmt::time::OffsetTime;
 
 use glongge::core::{
     input::InputHandler,
@@ -29,13 +30,25 @@ use crate::examples::{
 use crate::examples::concave::ConcaveScene;
 
 fn main() -> Result<()> {
+    let logfile = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open("run.log")
+        .unwrap();
+    let timer = OffsetTime::new(
+        time::UtcOffset::UTC,
+        time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]")
+    );
     tracing_subscriber::fmt()
         .event_format(
             tracing_subscriber::fmt::format()
                 .with_target(false)
                 .with_file(true)
-                .with_line_number(true),
+                .with_line_number(true)
+                .with_timer(timer)
         )
+        .with_writer(logfile)
         .init();
     run_test_cases();
 
