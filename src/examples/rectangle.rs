@@ -73,10 +73,10 @@ impl SceneObject<ObjectType> for RectanglePlayer {
 
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let mut direction = Vec2::zero();
-        if ctx.input().down(KeyCode::Left) { direction += Vec2::left(); }
-        if ctx.input().down(KeyCode::Right) { direction += Vec2::right(); }
-        if ctx.input().down(KeyCode::Up) { direction += Vec2::up(); }
-        if ctx.input().down(KeyCode::Down) { direction += Vec2::down(); }
+        if ctx.input().down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
+        if ctx.input().down(KeyCode::ArrowRight) { direction += Vec2::right(); }
+        if ctx.input().down(KeyCode::ArrowUp) { direction += Vec2::up(); }
+        if ctx.input().down(KeyCode::ArrowDown) { direction += Vec2::down(); }
         self.vel = Self::SPEED * direction.normed();
     }
 

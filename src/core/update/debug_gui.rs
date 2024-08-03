@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use imgui::{CollapsingHeader, Condition};
+use egui::{Color32, Id};
 use itertools::Itertools;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::scene::GuiClosure;
@@ -114,28 +114,25 @@ struct GuiObjectTreeBuilder {
     depth: usize,
 }
 impl GuiObjectTreeBuilder {
-    fn build(&self, ui: &GuiUi) {
+    fn build(&self, ui: &mut GuiUi) {
         if self.label == ObjectLabel::Root {
             self.displayed.values().for_each(|tree| tree.build(ui));
         } else {
-            if CollapsingHeader::new(self.label.to_string())
-                .open_on_arrow(true)
-                .leaf(self.displayed.is_empty())
-                .build(ui) {
+            ui.collapsing(self.label.to_string(), |ui| {
                 let by_name = self.displayed.values()
                     .chunk_by(|tree| tree.label.name());
                 for (_, child_group) in by_name.into_iter() {
                     let child_group = child_group.collect_vec();
                     let max_displayed = 5;
-                    ui.indent();
-                    child_group.iter().take(max_displayed)
-                        .for_each(|tree| tree.build(ui));
-                    if child_group.len() > max_displayed {
-                        ui.text(format!("[..{}] 🤯", child_group.len()));
-                    }
-                    ui.unindent();
+                    ui.indent(0, |ui| {
+                        child_group.iter().take(max_displayed)
+                            .for_each(|tree| tree.build(ui));
+                        if child_group.len() > max_displayed {
+                            ui.label(format!("[..{}]", child_group.len()));
+                        }
+                    });
                 }
-            }
+            });
         }
 
         if self.depth == 0 {
@@ -158,12 +155,22 @@ impl DebugGui {
     }
 
     pub fn build(&self) -> Box<GuiClosure> {
-        if !self.enabled { return Box::new(|_| {}); }
+        let enabled = self.enabled;
         let object_tree_builder = self.object_tree.as_builder();
-        Box::new(move |ui| {
-            ui.window("Object Tree")
-                .size([300., 600.], Condition::FirstUseEver)
-                .build_with(|ui| object_tree_builder.build(ui));
+        Box::new(move |ctx| {
+            egui::SidePanel::left(Id::new("Object Tree"))
+                .frame(egui::Frame::default()
+                    .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
+                    .inner_margin(egui::Margin::same(6.)))
+                .show_animated(&ctx, enabled, |ui| {
+                    egui::ScrollArea::new([false, true])
+                        .show(ui, |ui| {
+                            ui.add(egui::Label::new("Object Tree 🌳")
+                               .extend());
+                            ui.separator();
+                            object_tree_builder.build(ui);
+                        });
+                });
         })
     }
 

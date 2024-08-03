@@ -283,7 +283,7 @@ impl Player {
                     ..from_nes(2, 5, 0, 0)).contains(&x) => SpeedRegime::Medium,
                 _ => SpeedRegime::Fast,
             };
-            if ctx.input().pressed(KeyCode::Z) {
+            if ctx.input().pressed(KeyCode::KeyZ) {
                 self.start_jump();
                 return;
             }
@@ -334,7 +334,7 @@ impl Player {
         }
     }
     fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.input().down(KeyCode::Down) {
+        if ctx.input().down(KeyCode::ArrowDown) {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.checked_downcast::<Pipe>();
@@ -344,7 +344,7 @@ impl Player {
                     }
                 }
             }
-        } else if ctx.input().down(KeyCode::Right) {
+        } else if ctx.input().down(KeyCode::ArrowRight) {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = collisions.first().other.checked_downcast::<Pipe>();
@@ -549,7 +549,7 @@ impl SceneObject<ObjectType> for Player {
         self.maybe_start_exit_pipe(ctx);
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.input().pressed(KeyCode::W) {
+        if ctx.input().pressed(KeyCode::KeyW) {
             if self.show_wireframes {
                 ctx.object_mut().others_as_mut::<CollisionShape>()
                     .into_iter()
@@ -571,15 +571,15 @@ impl SceneObject<ObjectType> for Player {
         if self.state == PlayerState::EnteringPipe {
             return;
         }
-        let new_dir = if ctx.input().down(KeyCode::Left) && !ctx.input().down(KeyCode::Right) {
+        let new_dir = if ctx.input().down(KeyCode::ArrowLeft) && !ctx.input().down(KeyCode::ArrowRight) {
             Vec2::left()
-        } else if !ctx.input().down(KeyCode::Left) && ctx.input().down(KeyCode::Right) {
+        } else if !ctx.input().down(KeyCode::ArrowLeft) && ctx.input().down(KeyCode::ArrowRight) {
             Vec2::right()
         } else {
             Vec2::zero()
         };
-        let hold_run = ctx.input().down(KeyCode::X);
-        self.hold_jump = ctx.input().down(KeyCode::Z);
+        let hold_run = ctx.input().down(KeyCode::KeyX);
+        self.hold_jump = ctx.input().down(KeyCode::KeyZ);
 
         self.maybe_start_jump(ctx);
         match self.state {

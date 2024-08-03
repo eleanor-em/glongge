@@ -50,8 +50,8 @@ use crate::{core::{
     }
 }, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
+use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::DebugGui;
-use crate::gui::GuiUi;
 use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -275,7 +275,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     scene_data: Arc<Mutex<Vec<u8>>>,
 
     debug_gui: DebugGui,
-    gui_cmd: Vec<Box<dyn FnOnce(&mut GuiUi) + Send>>,
+    gui_cmd: Vec<Box<GuiClosure>>,
 
     perf_stats: UpdatePerfStats,
 }
@@ -524,7 +524,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
 
     fn update_gui(&mut self, input_handler: &InputHandler, mut object_tracker: &mut ObjectTracker<ObjectType>) {
-        if input_handler.pressed(KeyCode::Grave) {
+        if input_handler.pressed(KeyCode::Backquote) {
             self.debug_gui.toggle();
         }
 

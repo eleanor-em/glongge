@@ -27,8 +27,11 @@ tracing-subscriber = "0.3.18"
 vulkano = "0.34.1"
 vulkano-shaders = "0.34.0"
 # windowing
-winit = "0.28.7"
-imgui = { git = "https://github.com/eleanor-em/imgui-rs" } # forked from 0.12.0
+#winit = "0.28.7"
+egui = "0.28.1"
+egui-winit = "0.28.1"
+raw-window-handle = "0.5.2"
+#imgui = { git = "https://github.com/eleanor-em/imgui-rs" } # forked from 0.12.0
 # media
 ab_glyph = "0.2.28"
 asefile = "0.3.8"

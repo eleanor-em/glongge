@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     run_test_cases();
 
     let window_ctx = WindowContext::new()?;
-    let imgui = UniqueShared::new(GuiContext::new());
+    let gui_ctx = GuiContext::default();
     let vk_ctx = VulkanoContext::new(&window_ctx)?;
     let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
     ObjectType::preload_all(&mut resource_handler)?;
@@ -53,10 +53,9 @@ fn main() -> Result<()> {
     ];
     let render_handler = RenderHandler::new(
         &vk_ctx,
-        imgui.clone(),
+        gui_ctx.clone(),
         viewport.clone(),
         shaders,
-        resource_handler.clone()
     )?
         // .with_global_scale_factor(1.);
         .with_global_scale_factor(2.);
@@ -86,7 +85,7 @@ fn main() -> Result<()> {
     }
 
     let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, vk_ctx, imgui.clone(), render_handler, input_handler, resource_handler)
+    WindowEventHandler::new(window, vk_ctx, gui_ctx.clone(), render_handler, input_handler, resource_handler)
         .consume(event_loop);
     Ok(())
 }

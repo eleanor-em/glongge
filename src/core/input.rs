@@ -2,9 +2,9 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
-use winit::event::ElementState;
+use egui_winit::winit::event::ElementState;
 
-pub use winit::event::VirtualKeyCode as KeyCode;
+pub use egui_winit::winit::keyboard::KeyCode as KeyCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputState {

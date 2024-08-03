@@ -5,6 +5,7 @@ use std::{
     ops::Range,
     collections::BTreeMap
 };
+use egui::FullOutput;
 
 use vulkano::{
     command_buffer::{
@@ -13,7 +14,7 @@ use vulkano::{
     render_pass::Framebuffer,
     Validated,
 };
-use winit::window::Window;
+use egui_winit::winit::window::Window;
 use num_traits::Zero;
 use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
@@ -29,9 +30,10 @@ use crate::{
     resource::texture::TextureSubArea,
 };
 use crate::core::prelude::linalg::TransformF32;
+use crate::core::scene::GuiClosure;
 use crate::core::util::UniqueShared;
-use crate::gui::{GuiContext, GuiUi};
-use crate::gui::render::ImGuiRenderer;
+use crate::gui::GuiContext;
+use crate::gui::render::GuiRenderer;
 use crate::shader::{Shader, ShaderId};
 
 #[derive(Clone, Debug)]
@@ -64,7 +66,7 @@ pub struct RenderInfoFull {
 pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
-    pub(crate) gui_commands: Vec<Box<dyn FnOnce(&mut GuiUi) + Send>>,
+    pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
@@ -125,11 +127,11 @@ pub struct ShaderRenderFrame<'a> {
 
 #[derive(Clone)]
 pub struct RenderHandler {
-    gui_ctx: UniqueShared<GuiContext>,
+    gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<dyn Shader>>,
-    gui_shader: UniqueShared<ImGuiRenderer>,
+    gui_shader: UniqueShared<GuiRenderer>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 
 }
@@ -137,10 +139,9 @@ pub struct RenderHandler {
 impl RenderHandler {
     pub fn new(
         vk_ctx: &VulkanoContext,
-        gui_ctx: UniqueShared<GuiContext>,
+        gui_ctx: GuiContext,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<dyn Shader>>,
-        resource_handler: ResourceHandler,
     ) -> Result<Self> {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {
@@ -148,7 +149,7 @@ impl RenderHandler {
                       b.get().name_concrete(),
                       "duplicate shader name");
         }
-        let gui_shader = ImGuiRenderer::new(vk_ctx.clone(), gui_ctx.clone(), viewport.clone(), resource_handler)?;
+        let gui_shader = GuiRenderer::new(vk_ctx.clone(), viewport.clone())?;
         Ok(Self {
             gui_ctx,
             gui_shader,
@@ -176,10 +177,10 @@ impl RenderHandler {
     }
 
     pub(crate) fn on_gui(
-        &mut self, ui: &mut GuiUi
+        &mut self, ctx: &GuiContext
     ) {
         for cmd in self.render_data_channel.lock().unwrap().gui_commands.drain(..) {
-            cmd(ui);
+            cmd(ctx);
         }
     }
 
@@ -187,6 +188,7 @@ impl RenderHandler {
         &mut self,
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
+        full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let render_frame = self.render_data_channel.lock().unwrap().next_frame();
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
@@ -204,6 +206,7 @@ impl RenderHandler {
         // let extent = [6 * framebuffer.extent()[0] / 8, 6 * framebuffer.extent()[1] / 8];
         let top_left = [0, 0];
         let extent = framebuffer.extent();
+        self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
         builder.begin_render_pass(
             RenderPassBeginInfo {
                 render_area_offset: top_left,
@@ -217,9 +220,8 @@ impl RenderHandler {
             shader.get().build_render_pass(&mut builder)?;
         }
 
-        let mut imgui = self.gui_ctx.get();
-        let draw_data = imgui.render();
-        self.gui_shader.get().build_render_pass(&mut builder, draw_data)?;
+        let primitives = self.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        self.gui_shader.get().build_render_pass(&mut builder, &primitives)?;
 
         builder.end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)
