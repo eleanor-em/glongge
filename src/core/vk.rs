@@ -650,7 +650,7 @@ impl WindowEventHandler {
     }
 
     #[must_use]
-    pub fn with_report_stats(mut self) -> Self {
+    pub fn with_render_stats(mut self) -> Self {
         self.report_stats = true;
         self
     }
@@ -949,7 +949,7 @@ impl RenderPerfStats {
 
         let late_in_row = self.totals_ms.iter()
             .rev()
-            .take_while(|&&t| t > 16.6)
+            .take_while(|&&t| t > 17.)
             .collect_vec()
             .len();
         if late_in_row > 1 {
@@ -964,9 +964,9 @@ impl RenderPerfStats {
             if on_time_rate.round() < 100. {
                 info!("frames on time: {on_time_rate:.1}%");
             }
-            self.render_wait.report_ms_if_at_least(17.);
+            // self.render_wait.report_ms_if_at_least(17.);
             let min_report_ms = 0.5;
-            self.render_active.report_ms_if_at_least(min_report_ms);
+            // self.render_active.report_ms_if_at_least(min_report_ms);
             self.between_renders.report_ms_if_at_least(min_report_ms);
             self.handle_swapchain.report_ms_if_at_least(min_report_ms);
             self.acquire_and_sync.report_ms_if_at_least(17.);
