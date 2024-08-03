@@ -749,8 +749,6 @@ impl WindowEventHandler {
     }
 
     pub fn consume(mut self, event_loop: EventLoop<()>) {
-        // let mut gui_ctx = self.gui_ctx.get();
-
         let mut egui_window_state = egui_winit::State::new(
             self.gui_ctx.clone(),
             ViewportId::ROOT,
@@ -758,9 +756,6 @@ impl WindowEventHandler {
             Some(self.window.scale_factor() as f32),
             None
         );
-        // let mut platform = WinitPlatform::init(&mut self.gui_ctx);
-        // platform.attach_window(imgui.io_mut(), &self.window, HiDpiMode::Rounded);
-        // drop(gui_ctx);
 
         ensure_shaders_locked();
         event_loop.run(move |event, _| {
@@ -872,6 +867,9 @@ impl WindowEventHandler {
         };
 
         match event {
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                std::process::exit(0);
+            }
             Event::WindowEvent { event: WindowEvent::KeyboardInput {
                 event, ..
             }, .. } => {
