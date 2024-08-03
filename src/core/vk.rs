@@ -454,8 +454,12 @@ mod compat {
             (RawWindowHandle::Wayland(window), RawDisplayHandle::Wayland(display)) => {
                 Ok(Surface::from_wayland(instance, display.display.as_ptr(), window.surface.as_ptr(), None)?)
             }
-            (RawWindowHandle::Win32(window), RawDisplayHandle::Windows(_display)) => {
-                Ok(Surface::from_win32(instance, &window.hinstance.unwrap(), &window.hwnd, None)?)
+            (RawWindowHandle::Win32(window), _) => {
+                Ok(Surface::from_win32(instance,
+                                       // These casts make no goddamn sense, but they work.
+                                       window.hinstance.unwrap().get() as *mut isize,
+                                       window.hwnd.get() as *const isize,
+                                       None)?)
             }
             (RawWindowHandle::Xcb(window), RawDisplayHandle::Xcb(display)) => {
                 Ok(Surface::from_xcb(instance, display.connection.unwrap().as_ptr(), window.window.into(), None)?)
