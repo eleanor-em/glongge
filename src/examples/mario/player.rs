@@ -459,7 +459,8 @@ impl SceneObject<ObjectType> for Player {
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 8 },
-        );
+        )
+            .with_name("Sprite[Idle]");
         self.walk_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
@@ -469,7 +470,8 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 2, y: 0 }
         )
             .with_fixed_ms_per_frame(110)
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Walk]");
         self.run_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
@@ -479,35 +481,40 @@ impl SceneObject<ObjectType> for Player {
             Vec2Int { x: 2, y: 0 }
         )
             .with_fixed_ms_per_frame(60)
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Run]");
         self.skid_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 76, y: 8 },
         )
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Skid]");
         self.fall_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 96, y: 8 },
         )
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Fall]");
         self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 116, y: 8 },
         )
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Die]");
         self.flagpole_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 136, y: 8 },
         )
-            .with_hidden();
+            .with_hidden()
+            .with_name("Sprite[Flagpole]");
 
         self.jump_sound = resource_handler.sound.wait_load_file("res/jump-small.wav".to_string())?;
         self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav".to_string())?;

@@ -40,6 +40,8 @@ pub struct GgInternalSprite {
     paused: bool,
     state: SpriteState,
     last_state: SpriteState,
+
+    name: String,
 }
 
 pub struct Sprite {
@@ -84,6 +86,7 @@ impl GgInternalSprite {
             frame: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
+            name: "Sprite".to_string(),
         }));
         object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
         let extent = tile_size.into();
@@ -106,6 +109,9 @@ impl GgInternalSprite {
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
     fn get_type(&self) -> ObjectType { ObjectType::gg_sprite() }
+    fn name(&self) -> String {
+        self.name.clone()
+    }
 
     fn on_load(
         &mut self,
@@ -258,6 +264,13 @@ impl Sprite {
     pub fn with_hidden(self) -> Self {
         {
             self.inner.borrow_mut().state = SpriteState::Hide;
+        }
+        self
+    }
+    #[must_use]
+    pub fn with_name(self, name: impl AsRef<str>) -> Self {
+        {
+            self.inner.borrow_mut().name = name.as_ref().to_string();
         }
         self
     }

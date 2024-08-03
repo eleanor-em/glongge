@@ -1054,6 +1054,10 @@ impl GgInternalCollisionShape {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape {
+    fn name(&self) -> String {
+        format!("CollisionShape [{:?}]", self.collider.get_type()).to_string()
+    }
+
     fn on_load(&mut self, _object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
         Ok(None)
     }
@@ -1114,9 +1118,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
-        if self.show_wireframe { Some(self) } else { None }
-    }
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
@@ -1139,30 +1140,10 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
-    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain {
-        if ctx.scene().is_debug_enabled() {
-            ImGuiCommandChain::new()
-                .window_default(
-                    "Collision",
-                    ImGuiCommandChain::new()
-                        .text_wrapped(format!("CollisionShape at ({:.1}, {:.1}):\n\t{}",
-                                              ctx.object().absolute_transform().centre.x,
-                                              ctx.object().absolute_transform().centre.y,
-                                              self.collider))
-                )
-        } else {
-            ImGuiCommandChain::default()
-        }
-    }
-}
-
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
-use crate::core::scene::GuiObject;
 use crate::core::update::RenderContext;
 use crate::core::util::canvas::Canvas;
 use crate::core::util::gg_iter;
 use crate::core::util::gg_iter::GgIter;
-use crate::gui::command::ImGuiCommandChain;
 use crate::shader::{get_shader, Shader, WireframeShader};

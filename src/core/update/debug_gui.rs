@@ -1,37 +1,144 @@
-use imgui::Condition;
-use crate::core::ObjectTypeEnum;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::rc::Rc;
+use imgui::{CollapsingHeader, Condition, TreeNodeFlags};
+use itertools::Itertools;
+use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
+use crate::core::scene::GuiClosure;
 use crate::core::update::ObjectHandler;
-use crate::gui::command::ImGuiCommandChain;
 
-pub fn build<ObjectType: ObjectTypeEnum>(
-    object_handler: &ObjectHandler<ObjectType>
-) -> ImGuiCommandChain {
-    let mut cmd = ImGuiCommandChain::new()
-        .window(
-            "Object Tree",
-            |win| {
-                win.size([300., 110.], Condition::FirstUseEver)
-            },
-            ImGuiCommandChain::new()
-        )
-        .window(
-            "Collision",
-            |win| {
-                win.size([300, 110], Condition::FirstUseEver)
-                    .position([200, 0], Condition::FirstUseEver)
-            },
-            ImGuiCommandChain::new()
-        );
+pub(crate) struct GuiObjectTree {
+    label: Option<String>,
+    displayed: BTreeMap<ObjectId, GuiObjectTree>,
+    depth: usize,
+    disambiguation: Rc<RefCell<BTreeMap<String, usize>>>,
+}
 
-    object_handler.depth_first_with(
-        |parent, depth: usize| {
-            let name = "\t".repeat(depth - 1) + &format!("{:?}", parent.borrow().get_type());
-            cmd = cmd.clone().window_default(
-                "Object Tree",
-                ImGuiCommandChain::new()
-                    .text(name));
-        },
-        |_, depth| depth + 1
-    );
-    cmd
+impl GuiObjectTree {
+    fn new() -> Self {
+        Self {
+            label: None,
+            displayed: BTreeMap::new(),
+            depth: 0,
+            disambiguation: Rc::new(RefCell::new(BTreeMap::new()))
+        }
+    }
+
+    fn child(&self, label: String) -> Self {
+        let count = *self.disambiguation.borrow_mut().entry(label.clone())
+            .and_modify(|count| { *count += 1 })
+            .or_default();
+        Self {
+            label: if count > 0 {
+                Some(format!("{label} {count}").to_string())
+            } else {
+                Some(label)
+            },
+            displayed: BTreeMap::new(),
+            depth: 0,
+            disambiguation: self.disambiguation.clone(),
+        }
+    }
+
+    pub fn on_add_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, object: &SceneObjectWithId<O>) {
+        let mut child = self.child(object.inner.borrow().name());
+        let mut tree = self;
+        for id in object_handler.get_parent_chain_or_panic(object.object_id).into_iter().rev() {
+            if tree.displayed.contains_key(&id) {
+                child.depth += 1;
+                tree = tree.displayed.get_mut(&id).unwrap();
+            } else {
+                tree.displayed.insert(object.object_id, child);
+                return;
+            }
+        };
+    }
+
+    pub fn on_remove_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, removed_id: ObjectId) {
+        let mut chain = object_handler.get_parent_chain_or_panic(removed_id);
+        let mut tree = self;
+        let mut id = chain.pop().unwrap();
+        while id != removed_id {
+            if let Some(next) = tree.displayed.get_mut(&id) {
+                tree = next;
+            } else {
+                // Orphaned object, nothing to remove
+                return;
+            }
+            id = chain.pop().unwrap();
+        }
+        tree.displayed.remove(&id);
+    }
+
+    fn as_builder(&self) -> GuiObjectTreeBuilder {
+        GuiObjectTreeBuilder {
+            label: self.label.clone(),
+            displayed: self.displayed.iter()
+                .map(|(id, tree)| (*id, tree.as_builder()))
+                .collect(),
+            depth: self.depth,
+        }
+    }
+}
+
+struct GuiObjectTreeBuilder {
+    label: Option<String>,
+    displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
+    depth: usize,
+}
+impl GuiObjectTreeBuilder {
+    fn build(&self, ui: &imgui::Ui) {
+        let prefix = "\t".repeat(self.depth);
+        if let Some(label) = &self.label {
+            if CollapsingHeader::new(format!("{prefix}{label}"))
+                .flags(TreeNodeFlags::empty())
+                .open_on_arrow(true)
+                .leaf(self.displayed.is_empty())
+                .build(ui) {
+            let by_name = self.displayed.values()
+                .chunk_by(|tree| tree.label.as_ref());
+            for (_, child_group) in by_name.into_iter() {
+                let child_group = child_group.collect_vec();
+                let max_displayed = 5;
+                child_group.iter().take(max_displayed)
+                    .for_each(|tree| tree.build(ui));
+                if child_group.len() > max_displayed {
+                    ui.text(format!("{prefix}[..{}]", child_group.len()));
+                }
+            }
+                }
+        } else {
+            self.displayed.values().for_each(|tree| tree.build(ui));
+        }
+
+        if !self.displayed.is_empty() {
+            ui.spacing();
+        }
+    }
+}
+
+pub(crate) struct DebugGui {
+    pub(crate) object_tree: GuiObjectTree,
+    pub(crate) enabled: bool,
+}
+
+impl DebugGui {
+    pub fn new() -> Self {
+        Self {
+            object_tree: GuiObjectTree::new(),
+            enabled: false,
+        }
+    }
+
+    pub fn build(&self) -> Box<GuiClosure> {
+        if !self.enabled { return Box::new(|_| {}); }
+        let object_tree_builder = self.object_tree.as_builder();
+        Box::new(move |ui| {
+            ui.window("Object Tree")
+                .size([300., 600.], Condition::FirstUseEver)
+                .build_with(|ui| object_tree_builder.build(ui));
+        })
+    }
+
+    pub fn toggle(&mut self) { self.enabled = !self.enabled; }
 }

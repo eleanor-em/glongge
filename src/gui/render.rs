@@ -1,6 +1,8 @@
 // Based on: https://github.com/Tenebryo/imgui-vulkano-renderer
 
+use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 use anyhow::{Context, Result};
 use imgui::{DrawCmd, DrawCmdParams, DrawVert, FontConfig, FontSource, Textures, internal::RawWrapper, DrawList, DrawIdx};
 use num_traits::Zero;
@@ -402,6 +404,10 @@ impl ImGuiRenderer {
                         callback(draw_list.raw(), raw_cmd);
                     },
                 }
+            }
+            if env::consts::OS == "macos" {
+                // Metal/MoltenVK has some sort of race condition bug with vertex buffers.
+                std::thread::sleep(Duration::from_millis(1));
             }
         }
         Ok(())

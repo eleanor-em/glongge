@@ -2,7 +2,6 @@ use std::ops::{Deref, DerefMut};
 
 pub mod render;
 pub mod window;
-pub mod command;
 
 // imgui::Context does not implement Send, for some reason.
 pub struct ImGuiContext(imgui::Context);

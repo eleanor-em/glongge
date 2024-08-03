@@ -30,7 +30,6 @@ use crate::{
 };
 use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
-use crate::gui::command::ImGuiCommandChain;
 use crate::shader::ensure_shaders_locked;
 
 #[derive(Clone)]
@@ -47,7 +46,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
     fn new(scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
            input_handler: Arc<Mutex<InputHandler>>,
            resource_handler: ResourceHandler,
-           render_info_receiver: Arc<Mutex<RenderDataChannel>>,
+           render_data_channel: Arc<Mutex<RenderDataChannel>>,
            tx: Sender<SceneHandlerInstruction>) -> Self {
         let name = scene.try_lock()
             .expect("scene locked in InternalScene::new(), could not get scene name")
@@ -57,7 +56,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
             name,
             input_handler,
             resource_handler,
-            render_data_channel: render_info_receiver,
+            render_data_channel: render_data_channel,
             tx,
         }
     }
@@ -256,8 +255,9 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
     fn render_info(&self) -> RenderInfo;
 }
 
+pub type GuiClosure = dyn FnOnce(&mut imgui::Ui) + Send;
 pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
-    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> ImGuiCommandChain;
+    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> Box<GuiClosure>;
 }
 
 impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>

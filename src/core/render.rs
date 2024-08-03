@@ -30,7 +30,6 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
-use crate::gui::command::ImGuiCommandChain;
 use crate::gui::ImGuiContext;
 use crate::gui::render::ImGuiRenderer;
 use crate::shader::{Shader, ShaderId};
@@ -62,11 +61,10 @@ pub struct RenderInfoFull {
     pub depth: VertexDepth,
 }
 
-#[derive(Clone)]
 pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
-    pub(crate) gui_commands: ImGuiCommandChain,
+    pub(crate) gui_commands: Vec<Box<dyn FnOnce(&mut imgui::Ui) + Send>>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
@@ -75,7 +73,7 @@ impl RenderDataChannel {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
             render_infos: Vec::new(),
-            gui_commands: ImGuiCommandChain::new(),
+            gui_commands: Vec::new(),
             viewport,
             clear_col: Colour::black(),
         }))
@@ -143,7 +141,7 @@ impl RenderHandler {
         shaders: Vec<UniqueShared<dyn Shader>>,
         resource_handler: ResourceHandler,
     ) -> Result<Self> {
-        let render_info_receiver = RenderDataChannel::new(viewport.clone_inner());
+        let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {
             check_ne!(a.get().name_concrete(),
                       b.get().name_concrete(),
@@ -156,7 +154,7 @@ impl RenderHandler {
             shaders,
             viewport,
             command_buffer: None,
-            render_data_channel: render_info_receiver,
+            render_data_channel: render_data_channel,
         })
     }
 
@@ -177,10 +175,11 @@ impl RenderHandler {
     }
 
     pub(crate) fn on_gui(
-        &mut self, ui: &imgui::Ui
+        &mut self, ui: &mut imgui::Ui
     ) {
-        let cmd = self.render_data_channel.lock().unwrap().gui_commands.drain();
-        cmd.build(ui);
+        for cmd in self.render_data_channel.lock().unwrap().gui_commands.drain(..) {
+            cmd(ui);
+        }
     }
 
     pub(crate) fn on_render(

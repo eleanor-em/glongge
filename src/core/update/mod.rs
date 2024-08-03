@@ -49,7 +49,7 @@ use crate::{core::{
     }
 }, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
-use crate::gui::command::ImGuiCommandChain;
+use crate::core::update::debug_gui::DebugGui;
 use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -86,6 +86,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                     || panic!("missing object_id from objects: {id:?}")
                 ).borrow().get_type()))
     }
+    fn get_parent_chain_or_panic(&self, mut id: ObjectId) -> Vec<ObjectId> {
+        let mut parents = Vec::new();
+        while !id.is_root() {
+            parents.push(id);
+            id = self.get_parent_or_panic(id);
+        }
+        parents
+    }
     fn get_children_or_panic(&self, id: ObjectId) -> &Vec<SceneObjectWithId<ObjectType>> {
         self.children.get(&id)
             .unwrap_or_else(|| panic!("missing object_id from children: {:?} [{:?}]",
@@ -106,7 +114,10 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .retain(|obj| obj.object_id != remove_id);
         self.parents.remove(&remove_id);
     }
-    fn add_object(&mut self, new_id: ObjectId, new_obj: PendingAddObject<ObjectType>) {
+    fn add_object(&mut self,
+                  new_id: ObjectId,
+                  new_obj: PendingAddObject<ObjectType>
+    ) -> SceneObjectWithId<ObjectType> {
         if self.children.is_empty() {
             self.children.insert(ObjectId(0), Vec::new());
             self.absolute_transforms.insert(ObjectId(0), Transform::default());
@@ -114,8 +125,11 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.objects.insert(new_id, new_obj.inner.clone());
         self.parents.insert(new_id, new_obj.parent_id);
         self.children.insert(new_id, Vec::new());
-        self.get_children_or_panic_mut(new_obj.parent_id)
-            .push(SceneObjectWithId::new(new_id, new_obj.inner));
+        let children = self.get_children_or_panic_mut(new_obj.parent_id);
+
+        let new_object = SceneObjectWithId::new(new_id, new_obj.inner);
+        children.push(new_object.clone());
+        new_object
     }
 
     fn get_collisions(&mut self) -> Vec<CollisionNotification<ObjectType>> {
@@ -221,6 +235,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             }
         }
     }
+    #[allow(dead_code)]
     fn depth_first_with<T: Clone + Default, A, M>(&self, mut action: A, mut map: M)
     where
         A: FnMut(&AnySceneObject<ObjectType>, T),
@@ -245,11 +260,10 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     input_handler: Arc<Mutex<InputHandler>>,
     object_handler: ObjectHandler<ObjectType>,
 
-    gui_cmd: ImGuiCommandChain,
     vertex_map: VertexMap,
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
-    render_info_receiver: Arc<Mutex<RenderDataChannel>>,
+    render_data_channel: Arc<Mutex<RenderDataChannel>>,
     clear_col: Colour,
 
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine<ObjectType>>>,
@@ -257,7 +271,9 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     scene_instruction_rx: Receiver<SceneInstruction>,
     scene_name: SceneName,
     scene_data: Arc<Mutex<Vec<u8>>>,
-    debug_enabled: bool,
+
+    debug_gui: DebugGui,
+    gui_cmd: Vec<Box<dyn FnOnce(&mut imgui::Ui) + Send>>,
 
     perf_stats: UpdatePerfStats,
 }
@@ -267,7 +283,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         objects: Vec<AnySceneObject<ObjectType>>,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
-        render_info_receiver: Arc<Mutex<RenderDataChannel>>,
+        render_data_channel: Arc<Mutex<RenderDataChannel>>,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>
     ) -> Result<Self> {
@@ -275,18 +291,18 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         let mut rv = Self {
             input_handler,
             object_handler: ObjectHandler::new(),
-            gui_cmd: ImGuiCommandChain::new(),
             vertex_map: VertexMap::new(),
-            viewport: render_info_receiver.clone().lock().unwrap().current_viewport(),
+            viewport: render_data_channel.clone().lock().unwrap().current_viewport(),
             resource_handler,
-            render_info_receiver,
+            render_data_channel,
             clear_col: Colour::black(),
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
             scene_instruction_rx,
             scene_name,
             scene_data,
-            debug_enabled: false,
+            debug_gui: DebugGui::new(),
+            gui_cmd: Vec::new(),
             perf_stats: UpdatePerfStats::new(),
         };
 
@@ -421,8 +437,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     where I: IntoIterator<Item=(ObjectId, PendingAddObject<ObjectType>)>
     {
         for (new_id, new_obj) in pending_add {
-            self.object_handler.add_object(new_id, new_obj.clone());
             let parent = self.object_handler.get_parent(new_obj.parent_id);
+            let new_obj = self.object_handler.add_object(new_id, new_obj.clone());
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
                 this_id: new_id,
@@ -436,13 +452,17 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             if let Some(new_vertices) = new_obj.inner.borrow_mut()
                 .on_load(&mut object_ctx, &mut self.resource_handler)? {
                 self.vertex_map.insert(new_id, new_vertices);
-            }
+            };
+            self.debug_gui.object_tree.on_add_object(&self.object_handler, &new_obj);
         }
         Ok(())
     }
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler.collision_handler.remove_objects(&pending_remove_objects);
+        for remove_id in &pending_remove_objects {
+            self.debug_gui.object_tree.on_remove_object(&self.object_handler, *remove_id);
+        }
         for remove_id in pending_remove_objects {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
@@ -502,29 +522,26 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
 
     fn update_gui(&mut self, input_handler: &InputHandler, mut object_tracker: &mut ObjectTracker<ObjectType>) {
-        let mut cmd = ImGuiCommandChain::new();
-        // Add debug GUI:
         if input_handler.pressed(KeyCode::Grave) {
-            self.debug_enabled = !self.debug_enabled;
-        }
-        if self.debug_enabled {
-            cmd.extend(debug_gui::build(&self.object_handler));
+            self.debug_gui.toggle();
         }
 
         let gui_objects = self.object_handler.objects.iter()
             .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
             .map(|(id, obj)| (*id, obj.clone()))
             .collect_vec();
-        for (id, obj) in gui_objects {
-            let ctx = UpdateContext::new(
-                self,
-                input_handler,
-                id,
-                &mut object_tracker
-            );
-            cmd.extend(obj.borrow().as_gui_object().unwrap().on_gui(&ctx));
-        }
-        self.gui_cmd = cmd;
+        self.gui_cmd = gui_objects.into_iter()
+            .map(|(id, obj)| {
+                let ctx = UpdateContext::new(
+                    self,
+                    input_handler,
+                    id,
+                    &mut object_tracker
+                );
+                obj.borrow().as_gui_object().unwrap().on_gui(&ctx)
+            })
+            .collect_vec();
+        self.gui_cmd.push(self.debug_gui.build());
     }
 
     fn handle_collisions(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
@@ -603,14 +620,14 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         } else {
             None
         };
-        let mut render_info_receiver = self.render_info_receiver.lock().unwrap();
-        render_info_receiver.gui_commands = self.gui_cmd.clone();
+        let mut render_data_channel = self.render_data_channel.lock().unwrap();
+        render_data_channel.gui_commands = self.gui_cmd.drain(..).collect_vec();
         if let Some(vertices) = maybe_vertices {
-            render_info_receiver.vertices = vertices;
+            render_data_channel.vertices = vertices;
         }
-        render_info_receiver.render_infos = render_infos;
-        render_info_receiver.set_clear_col(self.clear_col);
-        self.viewport = render_info_receiver.current_viewport()
+        render_data_channel.render_infos = render_infos;
+        render_data_channel.set_clear_col(self.clear_col);
+        self.viewport = render_data_channel.current_viewport()
             .translated(self.viewport.translation);
     }
 
@@ -691,7 +708,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
-                debug_enabled: &mut caller.debug_enabled,
+                debug_enabled: &mut caller.debug_gui.enabled,
             },
             object: ObjectContext {
                 collision_handler: &caller.object_handler.collision_handler,

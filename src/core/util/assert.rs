@@ -77,7 +77,7 @@ pub use check_false;
 #[macro_export]
 macro_rules! check_is_some {
     ($lhs:expr) => {{
-        let value = $lhs;
+        let value = &$lhs;
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_none() {
             panic!(
@@ -88,7 +88,7 @@ macro_rules! check_is_some {
         }
     }};
     ($lhs:expr, $extra:expr) => {{
-        let value = $lhs;
+        let value = &$lhs;
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_none() {
             panic!(
@@ -106,7 +106,7 @@ pub use check_is_some;
 #[macro_export]
 macro_rules! check_is_none {
     ($lhs:expr) => {{
-        let value = $lhs;
+        let value = $lhs.as_ref();
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_none() {
             panic!(
@@ -117,7 +117,7 @@ macro_rules! check_is_none {
         }
     }};
     ($lhs:expr, $extra:expr) => {{
-        let value = $lhs;
+        let value = $lhs.as_ref();
         $crate::core::util::assert::assert_type::<Option<_>>(&value);
         if value.is_some() {
             panic!(
