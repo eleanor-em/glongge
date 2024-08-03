@@ -69,7 +69,7 @@ use crate::{
 };
 use crate::core::render::RenderHandler;
 use crate::core::util::UniqueShared;
-use crate::gui::ImGuiContext;
+use crate::gui::GuiContext;
 use crate::gui::window::{HiDpiMode, WinitPlatform};
 use crate::shader::ensure_shaders_locked;
 
@@ -607,7 +607,7 @@ pub struct WindowEventHandler {
     window: Arc<Window>,
     scale_factor: f64,
     vk_ctx: VulkanoContext,
-    imgui: UniqueShared<ImGuiContext>,
+    gui_ctx: UniqueShared<GuiContext>,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -626,7 +626,7 @@ impl WindowEventHandler {
     pub fn new(
         window: Arc<Window>,
         vk_ctx: VulkanoContext,
-        imgui: UniqueShared<ImGuiContext>,
+        gui_ctx: UniqueShared<GuiContext>,
         render_handler: RenderHandler,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
@@ -637,7 +637,7 @@ impl WindowEventHandler {
             window,
             scale_factor,
             vk_ctx,
-            imgui,
+            gui_ctx,
             render_handler,
             input_handler,
             resource_handler,
@@ -656,7 +656,7 @@ impl WindowEventHandler {
     }
 
     pub fn consume(mut self, event_loop: EventLoop<()>) {
-        let mut imgui = self.imgui.get();
+        let mut imgui = self.gui_ctx.get();
 
         let mut platform = WinitPlatform::init(&mut imgui);
         platform.attach_window(imgui.io_mut(), &self.window, HiDpiMode::Rounded);
@@ -764,7 +764,7 @@ impl WindowEventHandler {
 
     fn run_inner(&mut self, mut platform: WinitPlatform, event: &Event<()>, control_flow: &mut ControlFlow) -> Result<()> {
         {
-            let mut imgui = self.imgui.get();
+            let mut imgui = self.gui_ctx.get();
             platform.handle_event(imgui.io_mut(), &self.window, event);
         }
         match event {
@@ -806,7 +806,7 @@ impl WindowEventHandler {
                 {
                     Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
                         {
-                            let mut imgui = self.imgui.get();
+                            let mut imgui = self.gui_ctx.get();
                             platform.prepare_frame(imgui.io_mut(), &self.window)?;
                             let ui = imgui.new_frame();
                             self.render_handler.on_gui(ui);

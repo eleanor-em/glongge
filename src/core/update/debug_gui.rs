@@ -7,6 +7,7 @@ use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
+use crate::gui::GuiUi;
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -113,7 +114,7 @@ struct GuiObjectTreeBuilder {
     depth: usize,
 }
 impl GuiObjectTreeBuilder {
-    fn build(&self, ui: &imgui::Ui) {
+    fn build(&self, ui: &GuiUi) {
         if self.label == ObjectLabel::Root {
             self.displayed.values().for_each(|tree| tree.build(ui));
         } else {

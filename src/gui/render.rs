@@ -41,7 +41,7 @@ use crate::{
         vk::{AdjustedViewport, VulkanoContext}
     },
     shader::VkVertex,
-    gui::ImGuiContext,
+    gui::GuiContext,
     resource::{
         ResourceHandler,
         texture::Texture
@@ -119,7 +119,7 @@ type ImGuiIndexBuffer = Subbuffer<[DrawIdx]>;
 
 pub struct ImGuiRenderer {
     vk_ctx: VulkanoContext,
-    _imgui: UniqueShared<ImGuiContext>,
+    _imgui: UniqueShared<GuiContext>,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
@@ -132,14 +132,14 @@ pub struct ImGuiRenderer {
 impl ImGuiRenderer {
     pub fn new(
         vk_ctx: VulkanoContext,
-        imgui: UniqueShared<ImGuiContext>,
+        gui_ctx: UniqueShared<GuiContext>,
         viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler
     ) -> Result<UniqueShared<Self>> {
         let device = vk_ctx.device();
         let textures = Textures::new();
 
-        let imgui_clone = imgui.clone();
+        let imgui_clone = gui_ctx.clone();
         let mut imgui_guard = imgui_clone.get();
         let font_size = 13.0 * viewport.get().scale_factor() as f32;
         imgui_guard.fonts().add_font(&[
@@ -171,7 +171,7 @@ impl ImGuiRenderer {
         imgui_guard.fonts().tex_id = imgui::TextureId::from(usize::MAX);
         Ok(UniqueShared::new(Self {
             vk_ctx,
-            _imgui: imgui,
+            _imgui: gui_ctx,
             vs: vs::load(device.clone()).context("failed to create shader module")?,
             fs: fs::load(device).context("failed to create shader module")?,
             viewport,

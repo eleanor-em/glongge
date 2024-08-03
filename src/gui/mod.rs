@@ -4,21 +4,21 @@ pub mod render;
 pub mod window;
 
 // imgui::Context does not implement Send, for some reason.
-pub struct ImGuiContext(imgui::Context);
+pub struct GuiContext(imgui::Context);
 
-unsafe impl Send for ImGuiContext {}
+unsafe impl Send for GuiContext {}
 
-impl ImGuiContext {
+impl GuiContext {
     pub fn new() -> Self { Self(imgui::Context::create()) }
 }
 
-impl Default for ImGuiContext {
+impl Default for GuiContext {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Deref for ImGuiContext {
+impl Deref for GuiContext {
     type Target = imgui::Context;
 
     fn deref(&self) -> &Self::Target {
@@ -26,8 +26,10 @@ impl Deref for ImGuiContext {
     }
 }
 
-impl DerefMut for ImGuiContext {
+impl DerefMut for GuiContext {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
+
+pub type GuiUi = imgui::Ui;

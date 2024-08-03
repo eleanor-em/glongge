@@ -30,7 +30,7 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::util::UniqueShared;
-use crate::gui::ImGuiContext;
+use crate::gui::{GuiContext, GuiUi};
 use crate::gui::render::ImGuiRenderer;
 use crate::shader::{Shader, ShaderId};
 
@@ -64,7 +64,7 @@ pub struct RenderInfoFull {
 pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
-    pub(crate) gui_commands: Vec<Box<dyn FnOnce(&mut imgui::Ui) + Send>>,
+    pub(crate) gui_commands: Vec<Box<dyn FnOnce(&mut GuiUi) + Send>>,
     viewport: AdjustedViewport,
     clear_col: Colour,
 }
@@ -125,7 +125,7 @@ pub struct ShaderRenderFrame<'a> {
 
 #[derive(Clone)]
 pub struct RenderHandler {
-    imgui: UniqueShared<ImGuiContext>,
+    gui_ctx: UniqueShared<GuiContext>,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<dyn Shader>>,
@@ -137,7 +137,7 @@ pub struct RenderHandler {
 impl RenderHandler {
     pub fn new(
         vk_ctx: &VulkanoContext,
-        imgui: UniqueShared<ImGuiContext>,
+        gui_ctx: UniqueShared<GuiContext>,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<dyn Shader>>,
         resource_handler: ResourceHandler,
@@ -148,9 +148,9 @@ impl RenderHandler {
                       b.get().name_concrete(),
                       "duplicate shader name");
         }
-        let gui_shader = ImGuiRenderer::new(vk_ctx.clone(), imgui.clone(), viewport.clone(), resource_handler)?;
+        let gui_shader = ImGuiRenderer::new(vk_ctx.clone(), gui_ctx.clone(), viewport.clone(), resource_handler)?;
         Ok(Self {
-            imgui,
+            gui_ctx,
             gui_shader,
             shaders,
             viewport,
@@ -176,7 +176,7 @@ impl RenderHandler {
     }
 
     pub(crate) fn on_gui(
-        &mut self, ui: &mut imgui::Ui
+        &mut self, ui: &mut GuiUi
     ) {
         for cmd in self.render_data_channel.lock().unwrap().gui_commands.drain(..) {
             cmd(ui);
@@ -217,7 +217,7 @@ impl RenderHandler {
             shader.get().build_render_pass(&mut builder)?;
         }
 
-        let mut imgui = self.imgui.get();
+        let mut imgui = self.gui_ctx.get();
         let draw_data = imgui.render();
         self.gui_shader.get().build_render_pass(&mut builder, draw_data)?;
 

@@ -51,6 +51,7 @@ use crate::{core::{
 }, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
 use crate::core::update::debug_gui::DebugGui;
+use crate::gui::GuiUi;
 use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -274,7 +275,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     scene_data: Arc<Mutex<Vec<u8>>>,
 
     debug_gui: DebugGui,
-    gui_cmd: Vec<Box<dyn FnOnce(&mut imgui::Ui) + Send>>,
+    gui_cmd: Vec<Box<dyn FnOnce(&mut GuiUi) + Send>>,
 
     perf_stats: UpdatePerfStats,
 }

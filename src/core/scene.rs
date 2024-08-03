@@ -30,6 +30,7 @@ use crate::{
 };
 use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
+use crate::gui::GuiUi;
 use crate::shader::ensure_shaders_locked;
 
 #[derive(Clone)]
@@ -255,7 +256,7 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
     fn render_info(&self) -> RenderInfo;
 }
 
-pub type GuiClosure = dyn FnOnce(&mut imgui::Ui) + Send;
+pub type GuiClosure = dyn FnOnce(&mut GuiUi) + Send;
 pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> Box<GuiClosure>;
 }

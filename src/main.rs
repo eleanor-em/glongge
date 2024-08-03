@@ -13,7 +13,7 @@ use glongge::core::{
     ObjectTypeEnum,
 };
 use glongge::core::util::UniqueShared;
-use glongge::gui::ImGuiContext;
+use glongge::gui::GuiContext;
 use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
 use crate::object_type::ObjectType;
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     run_test_cases();
 
     let window_ctx = WindowContext::new()?;
-    let imgui = UniqueShared::new(ImGuiContext::new());
+    let imgui = UniqueShared::new(GuiContext::new());
     let vk_ctx = VulkanoContext::new(&window_ctx)?;
     let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
     ObjectType::preload_all(&mut resource_handler)?;
