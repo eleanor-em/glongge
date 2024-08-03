@@ -131,6 +131,7 @@ pub struct RenderHandler {
     shaders: Vec<UniqueShared<dyn Shader>>,
     gui_shader: UniqueShared<ImGuiRenderer>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
+
 }
 
 impl RenderHandler {

@@ -102,14 +102,14 @@ pub trait Shader: Send {
 }
 
 #[derive(Clone)]
-struct CachedVertexBuffer<T: VkVertex> {
+struct CachedVertexBuffer<T: VkVertex + Copy> {
     ctx: VulkanoContext,
     inner: Subbuffer<[T]>,
     vertex_count: usize,
     begin: usize,
 }
 
-impl<T: VkVertex> CachedVertexBuffer<T> {
+impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn new(ctx: VulkanoContext, size: usize) -> Result<Self> {
         let inner = Self::create_vertex_buffer(
             &ctx,
@@ -120,7 +120,7 @@ impl<T: VkVertex> CachedVertexBuffer<T> {
 
     fn len(&self) -> usize { self.inner.len() as usize / self.ctx.framebuffers().len() }
 
-    fn write(&mut self, mut data: Vec<T>) -> Result<()> {
+    fn write(&mut self, data: &[T]) -> Result<()> {
         let buf_len = usize::try_from(self.inner.len())
             .unwrap_or_else(|_| panic!("inexplicable: self.inner.len() = {}", self.inner.len()));
         check_le!(self.begin, buf_len);
@@ -128,10 +128,7 @@ impl<T: VkVertex> CachedVertexBuffer<T> {
         if self.begin == buf_len {
             self.begin = 0;
         }
-        let begin = self.begin as u64;
-        let end = (self.begin + self.len()) as u64;
-        let slice = self.inner.clone().slice(begin..end);
-        slice.write()?[..data.len()].swap_with_slice(&mut data);
+        self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(&data);
 
         self.vertex_count = data.len();
         Ok(())
@@ -359,7 +356,7 @@ impl Shader for SpriteShader {
                 });
             }
         }
-        self.vertex_buffer.write(vertices)?;
+        self.vertex_buffer.write(&vertices)?;
         Ok(())
     }
     fn build_render_pass(
@@ -529,7 +526,7 @@ impl Shader for WireframeShader {
                 });
             }
         }
-        self.vertex_buffer.write(vertices)?;
+        self.vertex_buffer.write(&vertices)?;
         Ok(())
     }
     fn build_render_pass(
@@ -698,7 +695,7 @@ impl Shader for BasicShader {
                 });
             }
         }
-        self.vertex_buffer.write(vertices)?;
+        self.vertex_buffer.write(&vertices)?;
         Ok(())
     }
     fn build_render_pass(
