@@ -1,14 +1,40 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use imgui::{CollapsingHeader, Condition, TreeNodeFlags};
+use imgui::{CollapsingHeader, Condition};
 use itertools::Itertools;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::scene::GuiClosure;
+use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
 
+#[derive(Clone, Eq, PartialEq)]
+enum ObjectLabel {
+    Root,
+    Unique(String),
+    Disambiguated(String, usize),
+}
+
+impl ObjectLabel {
+    fn name(&self) -> String {
+        match self {
+            ObjectLabel::Root => "<root>".to_string(),
+            ObjectLabel::Unique(name) => name.clone(),
+            Disambiguated(name, _) => name.clone(),
+        }
+    }
+
+    fn to_string(&self) -> String {
+        match self {
+            ObjectLabel::Root => "<root>".to_string(),
+            ObjectLabel::Unique(name) => name.clone(),
+            Disambiguated(name, count) => format!("{name} {count}"),
+        }
+    }
+}
+
 pub(crate) struct GuiObjectTree {
-    label: Option<String>,
+    label: ObjectLabel,
     displayed: BTreeMap<ObjectId, GuiObjectTree>,
     depth: usize,
     disambiguation: Rc<RefCell<BTreeMap<String, usize>>>,
@@ -17,7 +43,7 @@ pub(crate) struct GuiObjectTree {
 impl GuiObjectTree {
     fn new() -> Self {
         Self {
-            label: None,
+            label: ObjectLabel::Root,
             displayed: BTreeMap::new(),
             depth: 0,
             disambiguation: Rc::new(RefCell::new(BTreeMap::new()))
@@ -30,9 +56,9 @@ impl GuiObjectTree {
             .or_default();
         Self {
             label: if count > 0 {
-                Some(format!("{label} {count}").to_string())
+                ObjectLabel::Disambiguated(label, count)
             } else {
-                Some(label)
+                ObjectLabel::Unique(label)
             },
             displayed: BTreeMap::new(),
             depth: 0,
@@ -82,36 +108,36 @@ impl GuiObjectTree {
 }
 
 struct GuiObjectTreeBuilder {
-    label: Option<String>,
+    label: ObjectLabel,
     displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
     depth: usize,
 }
 impl GuiObjectTreeBuilder {
     fn build(&self, ui: &imgui::Ui) {
-        let prefix = "\t".repeat(self.depth);
-        if let Some(label) = &self.label {
-            if CollapsingHeader::new(format!("{prefix}{label}"))
-                .flags(TreeNodeFlags::empty())
+        if self.label == ObjectLabel::Root {
+            self.displayed.values().for_each(|tree| tree.build(ui));
+        } else {
+            if CollapsingHeader::new(self.label.to_string())
                 .open_on_arrow(true)
                 .leaf(self.displayed.is_empty())
                 .build(ui) {
-            let by_name = self.displayed.values()
-                .chunk_by(|tree| tree.label.as_ref());
-            for (_, child_group) in by_name.into_iter() {
-                let child_group = child_group.collect_vec();
-                let max_displayed = 5;
-                child_group.iter().take(max_displayed)
-                    .for_each(|tree| tree.build(ui));
-                if child_group.len() > max_displayed {
-                    ui.text(format!("{prefix}[..{}]", child_group.len()));
+                let by_name = self.displayed.values()
+                    .chunk_by(|tree| tree.label.name());
+                for (_, child_group) in by_name.into_iter() {
+                    let child_group = child_group.collect_vec();
+                    let max_displayed = 5;
+                    ui.indent();
+                    child_group.iter().take(max_displayed)
+                        .for_each(|tree| tree.build(ui));
+                    if child_group.len() > max_displayed {
+                        ui.text(format!("[..{}] 🤯", child_group.len()));
+                    }
+                    ui.unindent();
                 }
             }
-                }
-        } else {
-            self.displayed.values().for_each(|tree| tree.build(ui));
         }
 
-        if !self.displayed.is_empty() {
+        if self.depth == 0 {
             ui.spacing();
         }
     }

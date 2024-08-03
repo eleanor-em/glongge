@@ -31,6 +31,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
             fn gg_collider() -> Self { Self::GgInternalCollisionShape }
             fn gg_canvas() -> Self { Self::GgInternalCanvas }
             fn gg_canvas_item() -> Self { Self::GgInternalCanvasItem }
+            fn gg_container() -> Self { Self::GgInternalContainer }
         }
     };
 
@@ -152,6 +153,7 @@ pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_
 
 fn has_object_type_param(name: &proc_macro2::Ident) -> bool {
     match name.to_string().as_str() {
+        "GgInternalContainer" => true,
         _ => false,
     }
 }

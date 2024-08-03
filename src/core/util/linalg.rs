@@ -44,8 +44,8 @@ impl Vec2Int {
     pub fn range(start: Vec2Int, end: Vec2Int) -> Product<Range<i32>, Range<i32>> {
         (start.x..end.x).cartesian_product(start.y..end.y)
     }
-    pub fn range_from_zero(end: Vec2Int) -> Product<Range<i32>, Range<i32>> {
-        Self::range(Vec2Int::zero(), end)
+    pub fn range_from_zero(end: impl Into<Vec2Int>) -> Product<Range<i32>, Range<i32>> {
+        Self::range(Vec2Int::zero(), end.into())
     }
 
     #[allow(clippy::cast_sign_loss)]

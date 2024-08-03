@@ -38,6 +38,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn gg_collider() -> Self;
     fn gg_canvas() -> Self;
     fn gg_canvas_item() -> Self;
+    fn gg_container() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
