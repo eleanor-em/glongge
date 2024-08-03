@@ -470,7 +470,7 @@ impl GuiRenderer {
             if current_texture != Some(mesh.texture_id) {
                 if self.texture_desc_sets.get(&mesh.texture_id).is_none() {
                     warn!("texture no longer exists: {:?}", mesh.texture_id);
-                    // continue;
+                    continue;
                 }
                 current_texture = Some(mesh.texture_id);
             }

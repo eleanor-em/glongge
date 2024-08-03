@@ -1,4 +1,5 @@
 use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use std::time::Duration;
 use egui::{FullOutput, ViewportId, ViewportInfo};
 use egui_winit::EventResponse;
 use num_traits::Zero;
@@ -1046,7 +1047,14 @@ impl RenderPerfStats {
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
-        self.totals_ms.push(self.last_step.elapsed().as_millis_f64());
+        let render_time = self.last_step.elapsed().as_millis_f64();
+        self.totals_ms.push(render_time);
+
+        if render_time < 10. && std::env::consts::OS == "macos" {
+            // macOS: Metal/MoltenVK has some sort of obscure race condition with vertex buffers
+            // when you render too fast.
+            std::thread::sleep(Duration::from_millis(5));
+        }
         self.last_step = Instant::now();
 
         let late_in_row = self.totals_ms.iter()
