@@ -152,7 +152,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Some(SceneObjectWithId::new(parent_id, parent.clone()))
         }
     }
-    fn get_children(&self, this_id: ObjectId) -> Vec<SceneObjectWithId<ObjectType>> {
+    fn get_children_owned(&self, this_id: ObjectId) -> Vec<SceneObjectWithId<ObjectType>> {
         self.get_children_or_panic(this_id)
             .iter()
             .map(SceneObjectWithId::clone)
@@ -457,6 +457,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             };
             self.debug_gui.object_tree.on_add_object(&self.object_handler, &new_obj);
         }
+        self.debug_gui.object_tree.refresh_labels(&self.object_handler);
         Ok(())
     }
 
@@ -701,7 +702,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         object_tracker: &'a mut ObjectTracker<ObjectType>
     ) -> Self {
         let parent = caller.object_handler.get_parent(this_id);
-        let children = caller.object_handler.get_children(this_id);
+        let children = caller.object_handler.get_children_owned(this_id);
         Self {
             input: input_handler,
             scene: SceneContext {

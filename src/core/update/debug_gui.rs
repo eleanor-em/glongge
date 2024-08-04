@@ -5,9 +5,10 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Align, Color32, FontSelection, Frame, Id, Style};
+use egui::{Align, Color32, Direction, FontSelection, Frame, Id, Layout, Style, TextFormat};
 use egui::scroll_area::ScrollBarVisibility;
-use egui::text::LayoutJob;
+use egui::style::ScrollStyle;
+use egui::text::{LayoutJob, TextWrapping};
 use itertools::Itertools;
 use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
@@ -16,28 +17,44 @@ use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
 use crate::gui::GuiUi;
+use crate::resource::sprite::GgInternalSprite;
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
     Root,
-    Unique(String),
-    Disambiguated(String, usize),
+    Unique(String, String),
+    Disambiguated(String, String, usize),
 }
 
 impl ObjectLabel {
-    fn name(&self) -> String {
+    fn name(&self) -> &str {
         match self {
-            ObjectLabel::Root => "<root>".to_string(),
-            ObjectLabel::Unique(name) => name.clone(),
-            Disambiguated(name, _) => name.clone(),
+            ObjectLabel::Root => "<root>",
+            ObjectLabel::Unique(name, _) | Disambiguated(name, _, _) => name.as_str(),
         }
     }
 
-    fn to_string(&self) -> String {
+    fn id_source(&self) -> String {
         match self {
             ObjectLabel::Root => "<root>".to_string(),
-            ObjectLabel::Unique(name) => name.clone(),
-            Disambiguated(name, count) => format!("{name} {count}"),
+            ObjectLabel::Unique(name, _) => name.clone(),
+            Disambiguated(name, _, count) => format!("{name} {count}"),
+        }
+    }
+
+    fn set_tags(&mut self, new_tags: impl AsRef<str>) {
+        match self {
+            ObjectLabel::Root => {},
+            ObjectLabel::Unique(_, tags) | Disambiguated(_, tags, _) => {
+                *tags = new_tags.as_ref().to_string()
+            },
+        }
+    }
+
+    fn get_tags(&self) -> &str {
+        match self {
+            ObjectLabel::Root => "",
+            ObjectLabel::Unique(_, tags) | Disambiguated(_, tags, _) =>  tags.as_str()
         }
     }
 }
@@ -67,6 +84,27 @@ impl GuiObjectTreeNode {
         }
     }
 
+    fn refresh_label<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        if !self.object_id.is_root() {
+            let mut tags = String::new();
+            let object = object_handler.get_object_or_panic(self.object_id);
+            if object.downcast::<CollisionShape>().is_some() || object_handler.get_children_or_panic(self.object_id).iter()
+                .find_map(|child| child.downcast::<CollisionShape>())
+                .is_some() {
+                tags += "▣ ";
+            }
+            if object.downcast::<GgInternalSprite>().is_some() || object_handler.get_children_or_panic(self.object_id).iter()
+                .find_map(|child| child.downcast::<GgInternalSprite>())
+                .is_some() {
+                tags += "👾 ";
+            }
+            self.label.set_tags(tags.trim());
+        }
+        for child in self.displayed.values_mut() {
+            child.refresh_label(object_handler);
+        }
+    }
+
     fn child<O: ObjectTypeEnum>(&self, object: &SceneObjectWithId<O>) -> Self {
         let name = object.inner.borrow().name();
         let count = *self.disambiguation.borrow_mut().entry(name.clone())
@@ -75,9 +113,9 @@ impl GuiObjectTreeNode {
         let (open_tx, open_rx) = mpsc::channel();
         Self {
             label: if count > 0 {
-                ObjectLabel::Disambiguated(name, count)
+                ObjectLabel::Disambiguated(name, String::new(), count)
             } else {
-                ObjectLabel::Unique(name)
+                ObjectLabel::Unique(name, String::new())
             },
             object_id: object.object_id,
             displayed: BTreeMap::new(),
@@ -136,10 +174,14 @@ impl GuiObjectTree {
             egui::SidePanel::left(Id::new("object-tree"))
                 .frame(frame)
                 .show_animated(ctx, enabled, |ui| {
+                    ui.spacing_mut().scroll = ScrollStyle {
+                        floating: false,
+                        bar_width: 5.,
+                        ..Default::default()
+                    };
                     egui::ScrollArea::vertical()
                         .show(ui, |ui| {
-                            ui.add(egui::Label::new("Object Tree 🌳")
-                                .extend());
+                            ui.add(egui::Label::new("Object Tree 🌳"));
                             ui.separator();
                             root.build(ui);
                         });
@@ -176,6 +218,10 @@ impl GuiObjectTree {
         }
         tree.displayed.remove(&id);
     }
+
+    pub fn refresh_labels<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        self.root.refresh_label(object_handler);
+    }
 }
 struct GuiObjectTreeBuilder {
     label: ObjectLabel,
@@ -192,35 +238,43 @@ impl GuiObjectTreeBuilder {
         if self.label == ObjectLabel::Root {
             self.displayed.values_mut().for_each(|tree| tree.build(ui));
         } else {
-            let response = egui::CollapsingHeader::new(self.label.name())
-                .id_source(self.label.to_string())
-                .show_background(self.selected)
-                .open(Some(self.open))
-                .show(ui, |ui| {
-                    let by_name = self.displayed.values_mut()
-                        .chunk_by(|tree| tree.label.name());
-                    for (_, child_group) in by_name.into_iter() {
-                        let mut child_group = child_group.collect_vec();
-                        let max_displayed = 5;
-                        ui.indent(0, |ui| {
+            ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                let parent_max_w = ui.max_rect().width();
+                let offset = ui.min_rect().left() - parent_max_w;
+
+                let mut layout_job = LayoutJob {
+                    halign: Align::Center,
+                    ..Default::default()
+                };
+                layout_job.append(self.label.get_tags(), 0., TextFormat::default());
+                ui.add(egui::Label::new(layout_job).selectable(false));
+
+                let response = egui::CollapsingHeader::new(self.label.name())
+                    .id_source(self.label.id_source())
+                    .show_background(self.selected)
+                    .open(Some(self.open))
+                    .show(ui, |ui| {
+                        ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
+                        let by_name = self.displayed.values_mut()
+                            .chunk_by(|tree| tree.label.name().to_string());
+                        for (_, child_group) in by_name.into_iter() {
+                            let mut child_group = child_group.collect_vec();
+                            let max_displayed = 5;
                             child_group.iter_mut().take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
                             if child_group.len() > max_displayed {
                                 ui.label(format!("[..{}]", child_group.len()));
+                                ui.end_row();
                             }
-                        });
-                    }
-                });
-            if response.header_response.double_clicked() || response.header_response.secondary_clicked() {
-                self.open_tx.send(!self.open).unwrap();
-            }
-            if response.header_response.clicked() {
-                self.selected_tx.send(self.object_id).unwrap();
-            }
-        }
-
-        if self.depth == 0 {
-            ui.spacing();
+                        }
+                    });
+                if response.header_response.double_clicked() || response.header_response.secondary_clicked() {
+                    self.open_tx.send(!self.open).unwrap();
+                }
+                if response.header_response.clicked() {
+                    self.selected_tx.send(self.object_id).unwrap();
+                }
+            });
         }
     }
 }
