@@ -52,6 +52,7 @@ use crate::{core::{
 use crate::core::render::StoredRenderItem;
 use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::DebugGui;
+use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
 
 struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -107,6 +108,18 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.children.get_mut(&id)
             .unwrap_or_else(|| panic!("missing object_id from children: {:?} [{:?}]",
                                       id, self.objects.get(&id).unwrap().borrow().get_type()))
+    }
+    fn get_sprite(&self, id: ObjectId) -> Option<Ref<GgInternalSprite>> {
+        self.get_object_or_panic(id).downcast::<GgInternalSprite>()
+            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast::<GgInternalSprite>()))
+    }
+    fn get_collision_shape(&self, id: ObjectId) -> Option<Ref<CollisionShape>> {
+        self.get_object_or_panic(id).downcast::<CollisionShape>()
+            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast::<CollisionShape>()))
+    }
+    fn get_collision_shape_mut(&self, id: ObjectId) -> Option<RefMut<CollisionShape>> {
+        self.get_object_or_panic(id).downcast_mut::<CollisionShape>()
+            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast_mut::<CollisionShape>()))
     }
 
     fn remove_object(&mut self, remove_id: ObjectId) {
@@ -275,7 +288,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     scene_data: Arc<Mutex<Vec<u8>>>,
 
     debug_gui: DebugGui,
-    gui_cmd: Vec<Box<GuiClosure>>,
+    gui_cmd: Option<Box<GuiClosure>>,
 
     perf_stats: UpdatePerfStats,
 }
@@ -304,7 +317,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             scene_name,
             scene_data,
             debug_gui: DebugGui::new()?,
-            gui_cmd: Vec::new(),
+            gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
         };
 
@@ -533,7 +546,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
             .map(|(id, obj)| (*id, obj.clone()))
             .collect_vec();
-        self.gui_cmd = gui_objects.into_iter()
+        let gui_cmds = gui_objects.into_iter()
             .map(|(id, obj)| {
                 let ctx = UpdateContext::new(
                     self,
@@ -541,10 +554,10 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     id,
                     &mut object_tracker
                 );
-                obj.borrow().as_gui_object().unwrap().on_gui(&ctx)
+                (id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))
             })
-            .collect_vec();
-        self.gui_cmd.push(self.debug_gui.build());
+            .collect();
+        self.gui_cmd = Some(self.debug_gui.build(&self.object_handler, gui_cmds));
     }
 
     fn handle_collisions(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
@@ -624,7 +637,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             None
         };
         let mut render_data_channel = self.render_data_channel.lock().unwrap();
-        render_data_channel.gui_commands = self.gui_cmd.drain(..).collect_vec();
+        render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;
         }

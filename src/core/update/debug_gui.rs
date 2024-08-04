@@ -5,19 +5,18 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Align, Color32, Direction, FontSelection, Frame, Id, Layout, Style, TextFormat};
+use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat};
 use egui::scroll_area::ScrollBarVisibility;
 use egui::style::ScrollStyle;
-use egui::text::{LayoutJob, TextWrapping};
+use egui::text::LayoutJob;
 use itertools::Itertools;
 use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::prelude::*;
-use crate::core::scene::GuiClosure;
+use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
 use crate::gui::GuiUi;
-use crate::resource::sprite::GgInternalSprite;
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -59,6 +58,90 @@ impl ObjectLabel {
     }
 }
 
+struct GuiObjectView {
+    object_id: ObjectId,
+}
+
+impl GuiObjectView {
+    fn new() -> Self {
+        Self { object_id: ObjectId::root() }
+    }
+
+    fn update_selection<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        selected_id: ObjectId
+    ) {
+        if !self.object_id.is_root() {
+            object_handler.get_collision_shape_mut(selected_id)
+                .map(|mut c| c.hide_wireframe());
+        }
+        self.object_id = selected_id;
+        if !selected_id.is_root() {
+            object_handler.get_collision_shape_mut(selected_id)
+                .map(|mut c| c.show_wireframe());
+        }
+    }
+
+    fn build_closure<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        mut gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
+        frame: Frame,
+        enabled: bool
+    ) -> Box<GuiClosure> {
+        let object_id = self.object_id;
+        let mut name = None;
+        let mut absolute_transform = None;
+        let mut relative_transform = None;
+        let mut gui_cmd = None;
+        if !object_id.is_root() {
+            let object = object_handler.get_object_or_panic(object_id).borrow();
+            name = Some(object.name());
+            absolute_transform = object_handler.absolute_transforms.get(&object_id).cloned();
+            relative_transform = Some(object.transform());
+            gui_cmd = gui_cmds.remove(&object_id);
+        }
+        Box::new(move |ctx| {
+            egui::SidePanel::right(Id::new("object-view"))
+                .frame(frame)
+                .show_animated(ctx, enabled && !object_id.is_root(), |ui| {
+                    egui::ScrollArea::vertical()
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                let mut layout_job = LayoutJob {
+                                    halign: Align::Center,
+                                    justify: true,
+                                    ..Default::default()
+                                };
+                                layout_job.append(name.unwrap().as_str(), 0., TextFormat {
+                                    color: Color32::from_gray(255),
+                                    ..Default::default()
+                                });
+                                ui.add(egui::Label::new(layout_job)
+                                    .selectable(false));
+                                ui.separator();
+                            });
+                            egui::CollapsingHeader::new("Absolute transform")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    absolute_transform.unwrap().build_gui(ui);
+                                });
+                            egui::CollapsingHeader::new("Relative transform")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    relative_transform.unwrap().build_gui(ui);
+                                });
+                            if let Some(gui_cmd) = gui_cmd {
+                                ui.separator();
+                                gui_cmd(ui);
+                            }
+                        });
+                });
+        })
+    }
+}
+
 struct GuiObjectTreeNode {
     label: ObjectLabel,
     object_id: ObjectId,
@@ -87,15 +170,10 @@ impl GuiObjectTreeNode {
     fn refresh_label<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         if !self.object_id.is_root() {
             let mut tags = String::new();
-            let object = object_handler.get_object_or_panic(self.object_id);
-            if object.downcast::<CollisionShape>().is_some() || object_handler.get_children_or_panic(self.object_id).iter()
-                .find_map(|child| child.downcast::<CollisionShape>())
-                .is_some() {
+            if object_handler.get_collision_shape(self.object_id).is_some() {
                 tags += "▣ ";
             }
-            if object.downcast::<GgInternalSprite>().is_some() || object_handler.get_children_or_panic(self.object_id).iter()
-                .find_map(|child| child.downcast::<GgInternalSprite>())
-                .is_some() {
+            if object_handler.get_sprite(self.object_id).is_some() {
                 tags += "👾 ";
             }
             self.label.set_tags(tags.trim());
@@ -137,7 +215,6 @@ impl GuiObjectTreeNode {
             displayed: self.displayed.iter_mut()
                 .map(|(id, tree)| (*id, tree.as_builder(selected_id, selected_tx.clone())))
                 .collect(),
-            depth: self.depth,
             open: self.open,
             open_tx: self.open_tx.clone(),
             selected, selected_tx
@@ -227,7 +304,6 @@ struct GuiObjectTreeBuilder {
     label: ObjectLabel,
     object_id: ObjectId,
     displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
-    depth: usize,
     open: bool,
     open_tx: Sender<bool>,
     selected: bool,
@@ -259,7 +335,7 @@ impl GuiObjectTreeBuilder {
                             .chunk_by(|tree| tree.label.name().to_string());
                         for (_, child_group) in by_name.into_iter() {
                             let mut child_group = child_group.collect_vec();
-                            let max_displayed = 5;
+                            let max_displayed = 10;
                             child_group.iter_mut().take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
                             if child_group.len() > max_displayed {
@@ -355,6 +431,7 @@ impl GuiConsoleLog {
 pub(crate) struct DebugGui {
     pub(crate) enabled: bool,
     pub(crate) object_tree: GuiObjectTree,
+    object_view: GuiObjectView,
     console_log: GuiConsoleLog,
     frame: Frame,
 }
@@ -364,6 +441,7 @@ impl DebugGui {
         Ok(Self {
             enabled: false,
             object_tree: GuiObjectTree::new(),
+            object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
@@ -371,12 +449,25 @@ impl DebugGui {
         })
     }
 
-    pub fn build(&mut self) -> Box<GuiClosure> {
+    pub fn build<O: ObjectTypeEnum>(&mut self,
+                                    object_handler: &ObjectHandler<O>,
+                                    gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
+    ) -> Box<GuiClosure> {
+        if !self.object_tree.selected_id.is_root() {
+            self.object_view.update_selection(object_handler, self.object_tree.selected_id);
+        }
+
         let build_object_tree = self.object_tree.build_closure(self.frame.clone(), self.enabled);
+        let build_object_view = self.object_view.build_closure(
+            object_handler,
+            gui_cmds,
+            self.frame.clone(),
+            self.enabled);
         let build_console_log = self.console_log.build_closure(self.frame.clone(), self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);
+            build_object_view(ctx);
         })
     }
 

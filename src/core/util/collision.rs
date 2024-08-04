@@ -25,6 +25,7 @@ use crate::{
     },
     resource::sprite::Sprite
 };
+use crate::core::scene::{GuiInsideClosure, GuiObject};
 
 #[derive(Debug)]
 pub enum ColliderType {
@@ -1118,6 +1119,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
+    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
+        if self.show_wireframe { Some(self) } else { None }
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
@@ -1133,12 +1137,22 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     fn render_info(&self) -> RenderInfo {
         check!(self.show_wireframe);
         RenderInfo {
-            col: Colour::cyan().with_alpha(0.5).into(),
+            col: Colour::cyan().with_alpha(0.3).into(),
             shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
         }
     }
 }
+
+impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
+    fn on_gui(&self, _ctx: &UpdateContext<ObjectType>) -> Box<GuiInsideClosure> {
+        let collider = self.collider().clone();
+        Box::new(move |ui| {
+            ui.label(collider.to_string());
+        })
+    }
+}
+
 
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
