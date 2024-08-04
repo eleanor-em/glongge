@@ -303,7 +303,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             scene_instruction_rx,
             scene_name,
             scene_data,
-            debug_gui: DebugGui::new(),
+            debug_gui: DebugGui::new()?,
             gui_cmd: Vec::new(),
             perf_stats: UpdatePerfStats::new(),
         };
