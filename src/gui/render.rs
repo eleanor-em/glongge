@@ -135,6 +135,19 @@ pub struct EguiVertex {
     #[format(R8G8B8A8_UNORM)]
     pub a_srgba: [u8; 4],
 }
+
+fn image_size_bytes(delta: &egui::epaint::ImageDelta) -> usize {
+    match &delta.image {
+        egui::ImageData::Color(c) => {
+            // Always four bytes per pixel for sRGBA
+            c.width() * c.height() * 4
+        }
+        egui::ImageData::Font(f) => {
+            f.width() * f.height() * 4
+        }
+    }
+}
+
 pub struct GuiRenderer {
     vk_ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
@@ -147,7 +160,7 @@ pub struct GuiRenderer {
     texture_images: BTreeMap<egui::TextureId, Arc<ImageView>>,
     next_native_tex_id: u64,
 }
-//
+
 impl GuiRenderer {
     pub fn new(
         vk_ctx: VulkanoContext,
@@ -250,17 +263,6 @@ impl GuiRenderer {
         self.texture_desc_sets.remove(&texture_id);
         self.texture_images.remove(&texture_id);
     }
-    fn image_size_bytes(&self, delta: &egui::epaint::ImageDelta) -> usize {
-        match &delta.image {
-            egui::ImageData::Color(c) => {
-                // Always four bytes per pixel for sRGBA
-                c.width() * c.height() * 4
-            }
-            egui::ImageData::Font(f) => {
-                f.width() * f.height() * 4
-            }
-        }
-    }
     /// Write a single texture delta using the provided staging region and commandbuffer
     fn update_texture_within(
         &mut self,
@@ -270,7 +272,9 @@ impl GuiRenderer {
         mapped_stage: &mut [u8],
         cbb: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) -> Result<()> {
-        // Extract pixel data from egui, writing into our region of the stage buffer.
+        // egui has a small oversight: Color32::to_array() takes &self not self, so we can't
+        // eliminate the "redundant" closure.
+        #[allow(clippy::redundant_closure_for_method_calls)]
         match &delta.image {
             egui::ImageData::Color(image) => {
                 assert_eq!(
@@ -350,7 +354,7 @@ impl GuiRenderer {
     pub fn update_textures(&mut self, sets: &[(egui::TextureId, egui::epaint::ImageDelta)]) -> Result<()> {
         // Allocate enough memory to upload every delta at once.
         let total_size_bytes =
-            sets.iter().map(|(_, set)| self.image_size_bytes(set)).sum::<usize>() * 4;
+            sets.iter().map(|(_, set)| image_size_bytes(set)).sum::<usize>() * 4;
         // Infallible - unless we're on a 128 bit machine? :P
         let total_size_bytes = u64::try_from(total_size_bytes)?;
         let Ok(total_size_bytes) = vulkano::NonZeroDeviceSize::try_from(total_size_bytes) else {
@@ -386,7 +390,7 @@ impl GuiRenderer {
             let mut past_buffer_end = 0usize;
 
             for (id, delta) in sets {
-                let image_size_bytes = self.image_size_bytes(delta);
+                let image_size_bytes = image_size_bytes(delta);
                 let range = past_buffer_end..(image_size_bytes + past_buffer_end);
 
                 // Bump for next loop
@@ -447,7 +451,7 @@ impl GuiRenderer {
     ) -> Result<()> {
         let meshes = primitives.iter().filter_map(|mesh| match &mesh.primitive {
             Primitive::Mesh(m) => Some(m),
-            _ => None,
+            Primitive::Callback(_) => None,
         }).cloned().collect_vec();
         if meshes.is_empty() {
             return Ok(());
@@ -468,7 +472,7 @@ impl GuiRenderer {
         for mesh in meshes {
             let pipeline = self.get_or_create_pipeline()?;
             if current_texture != Some(mesh.texture_id) {
-                if self.texture_desc_sets.get(&mesh.texture_id).is_none() {
+                if !self.texture_desc_sets.contains_key(&mesh.texture_id) {
                     warn!("texture no longer exists: {:?}", mesh.texture_id);
                     continue;
                 }

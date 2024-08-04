@@ -80,7 +80,7 @@ pub struct ObjectId(usize);
 impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
 
-    fn is_root(&self) -> bool { self.0 == 0 }
+    fn is_root(self) -> bool { self.0 == 0 }
     fn root() -> Self { ObjectId(0) }
 }
 

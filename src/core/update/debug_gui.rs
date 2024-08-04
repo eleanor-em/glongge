@@ -6,7 +6,6 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat};
-use egui::scroll_area::ScrollBarVisibility;
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use itertools::Itertools;
@@ -45,7 +44,7 @@ impl ObjectLabel {
         match self {
             ObjectLabel::Root => {},
             ObjectLabel::Unique(_, tags) | Disambiguated(_, tags, _) => {
-                *tags = new_tags.as_ref().to_string()
+                *tags = new_tags.as_ref().to_string();
             },
         }
     }
@@ -72,14 +71,12 @@ impl GuiObjectView {
         object_handler: &ObjectHandler<O>,
         selected_id: ObjectId
     ) {
-        if !self.object_id.is_root() {
-            object_handler.get_collision_shape_mut(selected_id)
-                .map(|mut c| c.hide_wireframe());
+        if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id) {
+            c.hide_wireframe();
         }
         self.object_id = selected_id;
-        if !selected_id.is_root() {
-            object_handler.get_collision_shape_mut(selected_id)
-                .map(|mut c| c.show_wireframe());
+        if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id) {
+            c.show_wireframe();
         }
     }
 
@@ -98,7 +95,7 @@ impl GuiObjectView {
         if !object_id.is_root() {
             let object = object_handler.get_object_or_panic(object_id).borrow();
             name = Some(object.name());
-            absolute_transform = object_handler.absolute_transforms.get(&object_id).cloned();
+            absolute_transform = object_handler.absolute_transforms.get(&object_id).copied();
             relative_transform = Some(object.transform());
             gui_cmd = gui_cmds.remove(&object_id);
         }
@@ -331,9 +328,8 @@ impl GuiObjectTreeBuilder {
                     .open(Some(self.open))
                     .show(ui, |ui| {
                         ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
-                        let by_name = self.displayed.values_mut()
-                            .chunk_by(|tree| tree.label.name().to_string());
-                        for (_, child_group) in by_name.into_iter() {
+                        for (_, child_group) in &self.displayed.values_mut()
+                            .chunk_by(|tree| tree.label.name().to_string()) {
                             let mut child_group = child_group.collect_vec();
                             let max_displayed = 10;
                             child_group.iter_mut().take(max_displayed)
@@ -383,8 +379,7 @@ impl GuiConsoleLog {
                 .default_height(150.)
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
-                    egui::ScrollArea::vertical()
-                        .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                    egui::ScrollArea::both()
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             ui.separator();
@@ -417,7 +412,7 @@ impl GuiConsoleLog {
                                         .append_to(&mut layout_job,
                                                    &style,
                                                    FontSelection::Default,
-                                                   Align::Center)
+                                                   Align::Center);
                                 }
                             }
                             ui.add(egui::Label::new(layout_job)
@@ -457,13 +452,11 @@ impl DebugGui {
             self.object_view.update_selection(object_handler, self.object_tree.selected_id);
         }
 
-        let build_object_tree = self.object_tree.build_closure(self.frame.clone(), self.enabled);
+        let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
         let build_object_view = self.object_view.build_closure(
-            object_handler,
-            gui_cmds,
-            self.frame.clone(),
-            self.enabled);
-        let build_console_log = self.console_log.build_closure(self.frame.clone(), self.enabled);
+            object_handler, gui_cmds, self.frame, self.enabled
+        );
+        let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);

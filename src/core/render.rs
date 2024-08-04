@@ -156,7 +156,7 @@ impl RenderHandler {
             shaders,
             viewport,
             command_buffer: None,
-            render_data_channel: render_data_channel,
+            render_data_channel,
         })
     }
 
@@ -201,16 +201,9 @@ impl RenderHandler {
             CommandBufferUsage::OneTimeSubmit,
         )?;
 
-        // TODO: will be useful for adding the gui console.
-        // let top_left = [framebuffer.extent()[0] / 8, framebuffer.extent()[1] / 8];
-        // let extent = [6 * framebuffer.extent()[0] / 8, 6 * framebuffer.extent()[1] / 8];
-        let top_left = [0, 0];
-        let extent = framebuffer.extent();
         self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
         builder.begin_render_pass(
             RenderPassBeginInfo {
-                render_area_offset: top_left,
-                render_area_extent: extent,
                 clear_values: vec![Some(render_frame.clear_col.as_f32().into())],
                 ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
             },

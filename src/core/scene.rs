@@ -57,7 +57,7 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
             name,
             input_handler,
             resource_handler,
-            render_data_channel: render_data_channel,
+            render_data_channel,
             tx,
         }
     }

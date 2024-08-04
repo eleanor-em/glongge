@@ -80,7 +80,7 @@ impl WindowContext {
         let event_loop = EventLoop::new()?;
         let window = Arc::new(
             WindowBuilder::new()
-                .with_inner_size(LogicalSize::new(1024, 768))
+                .with_inner_size(LogicalSize::new(1280, 800))
                 .build(&event_loop)?,
         );
         Ok(Self { event_loop, window })

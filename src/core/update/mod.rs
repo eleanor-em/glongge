@@ -74,6 +74,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             collision_handler: CollisionHandler::new(),
         }
     }
+    fn get_object(&self, id: ObjectId) -> Option<&AnySceneObject<ObjectType>> {
+        if id.is_root() { None } else { Some(self.get_object_or_panic(id)) }
+    }
 
     fn get_object_or_panic(&self, id: ObjectId) -> &AnySceneObject<ObjectType> {
         self.objects.get(&id)
@@ -111,15 +114,20 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
     fn get_sprite(&self, id: ObjectId) -> Option<Ref<GgInternalSprite>> {
         self.get_object_or_panic(id).downcast::<GgInternalSprite>()
-            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast::<GgInternalSprite>()))
+            .or(self.get_children_or_panic(id).iter()
+                .find_map(SceneObjectWithId::downcast::<GgInternalSprite>))
     }
     fn get_collision_shape(&self, id: ObjectId) -> Option<Ref<CollisionShape>> {
-        self.get_object_or_panic(id).downcast::<CollisionShape>()
-            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast::<CollisionShape>()))
+        let o = self.get_object(id)?;
+        o.downcast::<CollisionShape>()
+            .or(self.get_children_or_panic(id).iter()
+                .find_map(SceneObjectWithId::downcast::<CollisionShape>))
     }
     fn get_collision_shape_mut(&self, id: ObjectId) -> Option<RefMut<CollisionShape>> {
-        self.get_object_or_panic(id).downcast_mut::<CollisionShape>()
-            .or(self.get_children_or_panic(id).iter().find_map(|c| c.downcast_mut::<CollisionShape>()))
+        let o = self.get_object(id)?;
+        o.downcast_mut::<CollisionShape>()
+            .or(self.get_children_or_panic(id).iter()
+                .find_map(SceneObjectWithId::downcast_mut::<CollisionShape>))
     }
 
     fn remove_object(&mut self, remove_id: ObjectId) {
@@ -537,7 +545,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         object_tracker
     }
 
-    fn update_gui(&mut self, input_handler: &InputHandler, mut object_tracker: &mut ObjectTracker<ObjectType>) {
+    fn update_gui(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
         if input_handler.pressed(KeyCode::Backquote) {
             self.debug_gui.toggle();
         }
@@ -549,10 +557,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         let gui_cmds = gui_objects.into_iter()
             .map(|(id, obj)| {
                 let ctx = UpdateContext::new(
-                    self,
-                    input_handler,
-                    id,
-                    &mut object_tracker
+                    self, input_handler, id, object_tracker
                 );
                 (id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))
             })

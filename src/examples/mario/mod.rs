@@ -307,21 +307,21 @@ impl Scene<ObjectType> for MarioOverworldScene {
                             y: tile_y * 16,
                         })
                     }))
-                .chain(Vec2Int::range_from_zero([69, 2])
+                .chain(Vec2Int::range_from_zero([69, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 1) * 16,
                             y: 384 - (tile_y + 1) * 16
                         })
                     }))
-                .chain(Vec2Int::range_from_zero([15, 2])
+                .chain(Vec2Int::range_from_zero([15, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 72) * 16,
                             y: 384 - (tile_y + 1) * 16
                         })
                     }))
-                .chain(Vec2Int::range_from_zero([80, 2])
+                .chain(Vec2Int::range_from_zero([80, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 155) * 16,
@@ -335,7 +335,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                             y: 384 - 10 * 16
                         })
                     }))
-                .chain(Vec2Int::range_from_zero([63, 2])
+                .chain(Vec2Int::range_from_zero([63, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 90) * 16,
@@ -386,7 +386,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
                     y: tile_y * 16,
                 })
             }))
-            .chain(Vec2Int::range_from_zero([17, 2])
+            .chain(Vec2Int::range_from_zero([17, 3])
                 .map(|(tile_x, tile_y)| {
                     UndergroundFloor::create(Vec2Int {
                     x: (tile_x + 1) * 16,

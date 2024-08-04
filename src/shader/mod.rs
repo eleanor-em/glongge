@@ -128,7 +128,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         if self.begin == buf_len {
             self.begin = 0;
         }
-        self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(&data);
+        self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(data);
 
         self.vertex_count = data.len();
         Ok(())
