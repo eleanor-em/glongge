@@ -1,13 +1,6 @@
 use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 
-#[derive(BufferContents, Clone, Copy)]
-#[repr(C)]
-pub struct UniformData {
-    pub window_width: f32,
-    pub window_height: f32,
-    pub scale_factor: f32,
-}
 #[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Vertex {
@@ -38,7 +31,7 @@ pub mod vertex_shader {
 
             layout(location = 0) out vec4 f_blend_col;
 
-            layout(set = 0, binding = 0) uniform Data {
+            layout(push_constant) uniform WindowData {
                 float window_width;
                 float window_height;
                 float scale_factor;

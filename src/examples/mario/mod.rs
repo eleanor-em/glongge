@@ -300,7 +300,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     y: 384 - 4 * 16,
                 }, Vec2::up(), None),
             ].into_iter()
-                .chain(Vec2Int::range_from_zero([1, 24])
+                .chain(Vec2Int::range_from_zero([1, 25])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: tile_x * 16,
@@ -311,21 +311,21 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 1) * 16,
-                            y: 384 - (tile_y + 1) * 16
+                            y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([15, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 72) * 16,
-                            y: 384 - (tile_y + 1) * 16
+                            y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([80, 3])
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 155) * 16,
-                            y: 384 - (tile_y + 1) * 16
+                            y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([8, 1])
@@ -339,7 +339,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     .map(|(tile_x, tile_y)| {
                         Floor::create(Vec2Int {
                             x: (tile_x + 90) * 16,
-                            y: 384 - (tile_y + 1) * 16
+                            y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .collect_vec()),
@@ -379,7 +379,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
                     y: 0,
                 }),
             ].into_iter()
-            .chain(Vec2Int::range_from_zero([1, 24])
+            .chain(Vec2Int::range_from_zero([1, 25])
                 .map(|(tile_x, tile_y)| {
                 UndergroundFloor::create(Vec2Int {
                     x: tile_x * 16,
@@ -390,7 +390,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
                 .map(|(tile_x, tile_y)| {
                     UndergroundFloor::create(Vec2Int {
                     x: (tile_x + 1) * 16,
-                    y: 384 - (tile_y + 1) * 16
+                    y: 400 - (tile_y + 1) * 16
                     })
                 }))
             .chain(Vec2Int::range_from_zero([7, 3])

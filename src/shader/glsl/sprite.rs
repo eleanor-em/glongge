@@ -1,13 +1,6 @@
 use vulkano::buffer::BufferContents;
 use crate::shader::VkVertex;
 
-#[derive(BufferContents, Clone, Copy)]
-#[repr(C)]
-pub struct UniformData {
-    pub window_width: f32,
-    pub window_height: f32,
-    pub scale_factor: f32,
-}
 #[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Vertex {
@@ -46,7 +39,7 @@ pub mod vertex_shader {
             layout(location = 1) out uint f_texture_id;
             layout(location = 2) out vec4 f_blend_col;
 
-            layout(set = 0, binding = 0) uniform Data {
+            layout(push_constant) uniform WindowData {
                 float window_width;
                 float window_height;
                 float scale_factor;
@@ -103,7 +96,7 @@ pub mod fragment_shader {
 
             layout(location = 0) out vec4 f_col;
 
-            layout(set = 0, binding = 1) uniform sampler2D tex[1023];
+            layout(set = 0, binding = 0) uniform sampler2D tex[1023];
 
             void main() {
                 const vec4 tex_col = texture(tex[f_texture_id], f_uv);

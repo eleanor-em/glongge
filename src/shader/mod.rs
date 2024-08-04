@@ -245,36 +245,7 @@ impl SpriteShader {
             Some(pipeline) => Ok(pipeline)
         }
     }
-    fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
-        let uniform_buffer= Buffer::new_sized(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-        ).map_err(Validated::unwrap)?;
-
-        let uniform_data = {
-            let viewport = self.viewport.get();
-            sprite::UniformData {
-                #[allow(clippy::cast_possible_truncation)]
-                window_width: viewport.physical_width() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                window_height: viewport.physical_height() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                scale_factor: viewport.scale_factor() as f32,
-            }
-        };
-        *uniform_buffer.write()? = uniform_data;
-        Ok(uniform_buffer)
-    }
-
-    fn create_uniform_buffer_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
+    fn create_uniform_desc_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
         let pipeline = self.get_or_create_pipeline()?;
         let sampler = Sampler::new(
             self.ctx.device(),
@@ -298,9 +269,8 @@ impl SpriteShader {
             &self.ctx.descriptor_set_allocator(),
             pipeline.layout().set_layouts()[0].clone(),
             [
-                WriteDescriptorSet::buffer(0, self.create_uniform_buffer()?),
                 WriteDescriptorSet::image_view_sampler_array(
-                    1,
+                    0,
                     0,
                     textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
                 ),
@@ -364,16 +334,26 @@ impl Shader for SpriteShader {
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
-        let uniform_buffer_set = self.create_uniform_buffer_set()?;
+        let uniform_desc_set = self.create_uniform_desc_set()?;
         let layout = pipeline.layout().clone();
+        let viewport = self.viewport.get();
+        let pc = sprite::vertex_shader::WindowData {
+            #[allow(clippy::cast_possible_truncation)]
+            window_width: viewport.physical_width() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            window_height: viewport.physical_height() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            scale_factor: viewport.scale_factor() as f32,
+        };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                layout,
+                layout.clone(),
                 0,
-                uniform_buffer_set.clone(),
-            )?;
+                uniform_desc_set.clone(),
+            )?
+            .push_constants(layout, 0, pc)?;
         self.vertex_buffer.draw(builder)?;
         Ok(())
     }
@@ -459,46 +439,6 @@ impl WireframeShader {
             Some(pipeline) => Ok(pipeline)
         }
     }
-    fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
-        let uniform_buffer= Buffer::new_sized(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-        ).map_err(Validated::unwrap)?;
-
-        let uniform_data = {
-            let viewport = self.viewport.get();
-            sprite::UniformData {
-                #[allow(clippy::cast_possible_truncation)]
-                window_width: viewport.physical_width() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                window_height: viewport.physical_height() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                scale_factor: viewport.scale_factor() as f32,
-            }
-        };
-        *uniform_buffer.write()? = uniform_data;
-        Ok(uniform_buffer)
-    }
-
-    fn create_uniform_buffer_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
-        let pipeline = self.get_or_create_pipeline()?;
-        Ok(PersistentDescriptorSet::new(
-            &self.ctx.descriptor_set_allocator(),
-            pipeline.layout().set_layouts()[0].clone(),
-            [
-                WriteDescriptorSet::buffer(0, self.create_uniform_buffer()?),
-            ],
-            [],
-        ).map_err(Validated::unwrap)?)
-    }
 }
 
 impl Shader for WireframeShader {
@@ -534,16 +474,19 @@ impl Shader for WireframeShader {
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
-        let uniform_buffer_set = self.create_uniform_buffer_set()?;
         let layout = pipeline.layout().clone();
+        let viewport = self.viewport.get();
+        let pc = wireframe::vertex_shader::WindowData {
+            #[allow(clippy::cast_possible_truncation)]
+            window_width: viewport.physical_width() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            window_height: viewport.physical_height() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            scale_factor: viewport.scale_factor() as f32,
+        };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                layout,
-                0,
-                uniform_buffer_set.clone(),
-            )?;
+            .push_constants(layout, 0, pc)?;
         self.vertex_buffer.draw(builder)?;
         Ok(())
     }
@@ -628,46 +571,6 @@ impl BasicShader {
             Some(pipeline) => Ok(pipeline)
         }
     }
-    fn create_uniform_buffer(&mut self) -> Result<Subbuffer<sprite::UniformData>> {
-        let uniform_buffer= Buffer::new_sized(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-        ).map_err(Validated::unwrap)?;
-
-        let uniform_data = {
-            let viewport = self.viewport.get();
-            sprite::UniformData {
-                #[allow(clippy::cast_possible_truncation)]
-                window_width: viewport.physical_width() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                window_height: viewport.physical_height() as f32,
-                #[allow(clippy::cast_possible_truncation)]
-                scale_factor: viewport.scale_factor() as f32,
-            }
-        };
-        *uniform_buffer.write()? = uniform_data;
-        Ok(uniform_buffer)
-    }
-
-    fn create_uniform_buffer_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
-        let pipeline = self.get_or_create_pipeline()?;
-        Ok(PersistentDescriptorSet::new(
-            &self.ctx.descriptor_set_allocator(),
-            pipeline.layout().set_layouts()[0].clone(),
-            [
-                WriteDescriptorSet::buffer(0, self.create_uniform_buffer()?),
-            ],
-            [],
-        ).map_err(Validated::unwrap)?)
-    }
 }
 
 impl Shader for BasicShader {
@@ -703,16 +606,19 @@ impl Shader for BasicShader {
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
-        let uniform_buffer_set = self.create_uniform_buffer_set()?;
         let layout = pipeline.layout().clone();
+        let viewport = self.viewport.get();
+        let pc = wireframe::vertex_shader::WindowData {
+            #[allow(clippy::cast_possible_truncation)]
+            window_width: viewport.physical_width() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            window_height: viewport.physical_height() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            scale_factor: viewport.scale_factor() as f32,
+        };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                layout,
-                0,
-                uniform_buffer_set.clone(),
-            )?;
+            .push_constants(layout, 0, pc)?;
         self.vertex_buffer.draw(builder)?;
         Ok(())
     }
