@@ -914,6 +914,7 @@ impl WindowEventHandler {
                         let full_output = self.gui_ctx.run(raw_input, |ctx| {
                             self.render_handler.on_gui(ctx);
                         });
+                        platform.handle_platform_output(&self.window, full_output.platform_output.clone());
                         per_image_ctx.current.replace(image_idx as usize);
                         self.idle(&mut per_image_ctx, acquire_future, full_output)?;
                         let image_idx = per_image_ctx.current.expect("no current image?");
