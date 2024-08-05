@@ -94,6 +94,7 @@ pub mod gg_time {
         pub fn as_tuple_ms(&self) -> (String, f64, f64) {
             (self.tag.clone(), self.mean_ms(), self.max_ms())
         }
+        #[must_use]
         pub fn report_take(&mut self) -> TimeIt {
             let rv = self.clone();
             self.reset();

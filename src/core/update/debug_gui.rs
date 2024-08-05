@@ -387,7 +387,7 @@ impl GuiConsoleLog {
         Ok(Self {
             log_output: Vec::new(),
             log_file,
-            view_perf: ViewPerfMode::Render,
+            view_perf: ViewPerfMode::None,
             view_perf_tx, view_perf_rx,
             update_perf_stats: None,
             render_perf_stats: None,

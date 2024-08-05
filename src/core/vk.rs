@@ -976,10 +976,11 @@ impl RenderPerfStats {
     }
 
     fn end(&mut self) -> Option<Self> {
+        const DEADLINE_MS: f64 = 16.8;
+
         self.end_step.stop();
         self.between_renders.start();
 
-        const DEADLINE_MS: f64 = 16.8;
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
@@ -1025,7 +1026,7 @@ impl RenderPerfStats {
                 count: 0,
                 last_perf_stats: None,
                 last_report: Instant::now(),
-                last_step: self.last_step.clone(),
+                last_step: self.last_step,
                 totals_ms: vec![],
             }));
             self.last_report = Instant::now();
