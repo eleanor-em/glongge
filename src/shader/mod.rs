@@ -3,7 +3,6 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use anyhow::{Context, Result};
 use itertools::Itertools;
-use tracing::error;
 use vulkano::{pipeline::{
     graphics::{
         multisample::MultisampleState,
@@ -122,14 +121,36 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
 
     fn len(&self) -> usize { self.inner.len() as usize / self.ctx.framebuffers().len() }
 
+    fn realloc(&mut self) -> Result<()> {
+        let size = self.inner.len() as usize * std::mem::size_of::<T>();
+        if size / 1024 / 1024 == 0 {
+            warn!("reallocating vertex buffer: {} KiB -> {} KiB",
+                size / 1024 , size * 2 / 1024);
+        } else {
+            warn!("reallocating vertex buffer: {} MiB -> {} MiB",
+                size / 1024 / 1024, size * 2 / 1024 / 1024);
+        }
+        self.inner = Self::create_vertex_buffer(
+            &self.ctx,
+            (self.inner.len() * 2) as DeviceSize
+        )?;
+        Ok(())
+    }
+
     fn write(&mut self, data: &[T]) -> Result<()> {
-        let buf_len = usize::try_from(self.inner.len())
+        let mut buf_len = usize::try_from(self.inner.len())
             .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+        self.begin += self.len();
         if self.begin > buf_len {
             bail!("self.begin accounting wrong? {} > {buf_len}", self.begin)
         }
-        self.begin += self.len();
         if self.begin == buf_len {
+            self.begin = 0;
+        }
+        while self.begin + data.len() > buf_len {
+            buf_len = usize::try_from(self.inner.len())
+                .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+            self.realloc()?;
             self.begin = 0;
         }
         self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(data);
@@ -190,7 +211,7 @@ impl SpriteShader {
     ) -> Result<UniqueShared<Self>> {
         register_shader::<Self>();
         let device = ctx.device();
-        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
         Ok(UniqueShared::new(Self {
             ctx,
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
@@ -343,6 +364,7 @@ impl Shader for SpriteShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
+        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let uniform_desc_set = self.create_uniform_desc_set()?;
         let layout = pipeline.layout().clone();
@@ -386,7 +408,7 @@ impl WireframeShader {
     ) -> Result<UniqueShared<Self>> {
         register_shader::<Self>();
         let device = ctx.device();
-        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
         Ok(UniqueShared::new(Self {
             ctx,
             vs: wireframe::vertex_shader::load(device.clone()).context("failed to create shader module")?,
@@ -483,6 +505,7 @@ impl Shader for WireframeShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
+        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
@@ -497,7 +520,9 @@ impl Shader for WireframeShader {
         builder
             .bind_pipeline_graphics(pipeline.clone())?
             .push_constants(layout, 0, pc)?;
-        self.vertex_buffer.draw(builder)?;
+        if self.vertex_buffer.draw(builder).is_err() {
+            self.vertex_buffer.realloc()?;
+        }
         Ok(())
     }
 }
@@ -518,7 +543,7 @@ impl BasicShader {
     ) -> Result<UniqueShared<Self>> {
         register_shader::<Self>();
         let device = ctx.device();
-        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 1_000_000)?;
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
         Ok(UniqueShared::new(Self {
             ctx,
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
@@ -615,6 +640,7 @@ impl Shader for BasicShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
+        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
