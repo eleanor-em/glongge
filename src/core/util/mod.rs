@@ -39,6 +39,7 @@ pub mod gg_time {
         last_ns: u128,
         last_wall: Instant,
         last_report: Instant,
+        running: bool,
     }
 
     impl TimeIt {
@@ -51,19 +52,24 @@ pub mod gg_time {
                 last_ns: 0,
                 last_wall: Instant::now(),
                 last_report: Instant::now(),
+                running: false,
             }
         }
 
         pub fn start(&mut self) {
             self.last_wall = Instant::now();
             self.last_ns = 0;
+            self.running = true;
         }
         pub fn stop(&mut self) {
-            let delta = self.last_wall.elapsed().as_nanos();
-            self.n += 1;
-            self.total_ns += delta;
-            self.last_ns += delta;
-            self.max_ns = cmp::max(self.max_ns, self.last_ns);
+            if self.running {
+                let delta = self.last_wall.elapsed().as_nanos();
+                self.n += 1;
+                self.total_ns += delta;
+                self.last_ns += delta;
+                self.max_ns = cmp::max(self.max_ns, self.last_ns);
+                self.running = false;
+            }
         }
 
         pub fn pause(&mut self) {
@@ -76,6 +82,7 @@ pub mod gg_time {
         }
 
         fn reset(&mut self) {
+            self.running = false;
             *self = Self::new(&self.tag);
             self.last_report = Instant::now();
         }

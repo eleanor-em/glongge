@@ -32,6 +32,7 @@ use crate::{
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
 use crate::core::util::UniqueShared;
+use crate::core::vk::RenderPerfStats;
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;
 use crate::shader::{Shader, ShaderId};
@@ -69,6 +70,7 @@ pub struct RenderDataChannel {
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     viewport: AdjustedViewport,
     clear_col: Colour,
+    pub(crate) last_render_stats: Option<RenderPerfStats>,
 }
 impl RenderDataChannel {
     fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
@@ -78,6 +80,7 @@ impl RenderDataChannel {
             gui_commands: Vec::new(),
             viewport,
             clear_col: Colour::black(),
+            last_render_stats: None,
         }))
     }
 
@@ -133,7 +136,6 @@ pub struct RenderHandler {
     shaders: Vec<UniqueShared<dyn Shader>>,
     gui_shader: UniqueShared<GuiRenderer>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
-
 }
 
 impl RenderHandler {
@@ -178,12 +180,13 @@ impl RenderHandler {
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
     }
 
-    pub(crate) fn on_gui(
-        &mut self, ctx: &GuiContext
-    ) {
-        for cmd in self.render_data_channel.lock().unwrap().gui_commands.drain(..) {
-            cmd(ctx);
-        }
+    pub(crate) fn on_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
+        let gui_commands = {
+            let mut channel = self.render_data_channel.lock().unwrap();
+            channel.last_render_stats = last_render_stats;
+            channel.gui_commands.drain(..).collect_vec()
+        };
+        gui_commands.into_iter().for_each(|cmd| cmd(ctx));
     }
 
     pub(crate) fn on_render(

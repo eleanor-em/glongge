@@ -17,6 +17,7 @@ use crate::core::update::collision::Collision;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, NonemptyVec};
+use crate::core::vk::RenderPerfStats;
 use crate::gui::GuiUi;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -361,13 +362,21 @@ impl GuiObjectTreeBuilder {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum ViewPerfMode {
+    Update,
+    Render,
+    None
+}
+
 pub(crate) struct GuiConsoleLog {
     log_output: Vec<String>,
     log_file: BufReader<File>,
-    view_perf: bool,
-    view_perf_tx: Sender<bool>,
-    view_perf_rx: Receiver<bool>,
-    last_perf_stats: Option<UpdatePerfStats>,
+    view_perf: ViewPerfMode,
+    view_perf_tx: Sender<ViewPerfMode>,
+    view_perf_rx: Receiver<ViewPerfMode>,
+    update_perf_stats: Option<UpdatePerfStats>,
+    render_perf_stats: Option<RenderPerfStats>,
 }
 impl GuiConsoleLog {
     fn new() -> Result<Self> {
@@ -378,14 +387,18 @@ impl GuiConsoleLog {
         Ok(Self {
             log_output: Vec::new(),
             log_file,
-            view_perf: true,
+            view_perf: ViewPerfMode::Render,
             view_perf_tx, view_perf_rx,
-            last_perf_stats: None,
+            update_perf_stats: None,
+            render_perf_stats: None,
         })
     }
 
     pub(crate) fn update_perf_stats(&mut self, stats: Option<UpdatePerfStats>) {
-        self.last_perf_stats = stats;
+        self.update_perf_stats = stats;
+    }
+    pub(crate) fn render_perf_stats(&mut self, stats: Option<RenderPerfStats>) {
+        self.render_perf_stats = stats;
     }
 
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
@@ -399,7 +412,8 @@ impl GuiConsoleLog {
         }
         let view_perf = self.view_perf;
         let view_perf_tx = self.view_perf_tx.clone();
-        let update_perf_stats = self.last_perf_stats.clone();
+        let update_perf_stats = self.update_perf_stats.clone();
+        let render_perf_stats = self.render_perf_stats.clone();
 
         Box::new(move |ctx| {
             egui::TopBottomPanel::top(Id::new("log"))
@@ -409,21 +423,37 @@ impl GuiConsoleLog {
                 .show_animated(ctx, enabled, |ui| {
                     ui.with_layout(egui::Layout::right_to_left(Align::TOP), |ui| {
                         if ui.add(egui::Button::new("🖥")
-                            .selected(view_perf)
+                            .selected(view_perf == ViewPerfMode::Update)
                         ).clicked() {
-                            view_perf_tx.send(!view_perf).unwrap();
+                            let next = if view_perf == ViewPerfMode::Update {
+                                ViewPerfMode::None
+                            } else {
+                                ViewPerfMode::Update
+                            };
+                            view_perf_tx.send(next).unwrap();
+                        }
+                        if ui.add(egui::Button::new("🎨")
+                            .selected(view_perf == ViewPerfMode::Render)
+                        ).clicked() {
+                            let next = if view_perf == ViewPerfMode::Render {
+                                ViewPerfMode::None
+                            } else {
+                                ViewPerfMode::Render
+                            };
+                            view_perf_tx.send(next).unwrap();
                         }
                         Self::build_update_perf(ui, view_perf, frame, update_perf_stats);
+                        Self::build_render_perf(ui, view_perf, frame, render_perf_stats);
                         Self::build_log_scroll_area(ui, log_output);
                     });
                 });
         })
     }
 
-    fn build_update_perf(ui: &mut Ui, view_perf: bool, frame: Frame, update_perf_stats: Option<UpdatePerfStats>) {
-        egui::SidePanel::right("perf")
+    fn build_update_perf(ui: &mut Ui, view_perf: ViewPerfMode, frame: Frame, update_perf_stats: Option<UpdatePerfStats>) {
+        egui::SidePanel::right("perf-update")
             .frame(frame)
-            .show_animated_inside(ui, view_perf, |ui| {
+            .show_animated_inside(ui, view_perf == ViewPerfMode::Update, |ui| {
                 let mut layout_job = LayoutJob {
                     halign: Align::Center,
                     justify: true,
@@ -438,7 +468,7 @@ impl GuiConsoleLog {
                     .selectable(false));
                 ui.separator();
                 if let Some(perf_stats) = update_perf_stats {
-                    egui::Grid::new("perf-data")
+                    egui::Grid::new("perf-update-data")
                         .num_columns(3)
                         .show(ui, |ui| {
                             for (tag, mean, max) in perf_stats.as_tuples_ms() {
@@ -456,6 +486,43 @@ impl GuiConsoleLog {
                 }
             });
     }
+    fn build_render_perf(ui: &mut Ui, view_perf: ViewPerfMode, frame: Frame, render_perf_stats: Option<RenderPerfStats>) {
+        egui::SidePanel::right("perf-render")
+            .frame(frame)
+            .show_animated_inside(ui, view_perf == ViewPerfMode::Render, |ui| {
+                let mut layout_job = LayoutJob {
+                    halign: Align::Center,
+                    justify: true,
+                    ..Default::default()
+                };
+                layout_job.append("Render Performance", 0., TextFormat {
+                    color: Color32::from_gray(255),
+                    ..Default::default()
+                });
+                ui.add(egui::Label::new(layout_job)
+                    .extend()
+                    .selectable(false));
+                ui.separator();
+                if let Some(perf_stats) = render_perf_stats {
+                    egui::Grid::new("perf-render-data")
+                        .num_columns(3)
+                        .show(ui, |ui| {
+                            for (tag, mean, max) in perf_stats.as_tuples_ms() {
+                                let is_total = tag == "total";
+                                ui.add(egui::Label::new(tag).selectable(false));
+                                ui.add(egui::Label::new(format!("{mean:.1}")).selectable(false));
+                                ui.add(egui::Label::new(format!("{max:.1}")).selectable(false));
+                                ui.end_row();
+                                if is_total {
+                                    ui.separator();
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                }
+            });
+    }
+
 
     fn build_log_scroll_area(ui: &mut Ui, log_output: Vec<String>) {
         ui.with_layout(egui::Layout::top_down(Align::LEFT), |ui| {
@@ -481,8 +548,10 @@ impl GuiConsoleLog {
                             egui::RichText::new(text)
                                 .color(match col {
                                     2 => Color32::from_gray(120),
-                                    32 => Color32::from_rgb(0, 166, 0),
-                                    33 => Color32::from_rgb(153, 153, 0),
+                                    31 => Color32::from_rgb(197, 15, 31),
+                                    32 => Color32::from_rgb(19, 161, 14),
+                                    33 => Color32::from_rgb(193, 156, 0),
+                                    34 => Color32::from_rgb(0, 55, 218),
                                     0 => Color32::from_gray(240),
                                     _ => {
                                         warn!("unrecognised colour code: {col}");

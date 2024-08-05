@@ -54,6 +54,7 @@ use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::DebugGui;
 use crate::core::util::collision::BoxCollider;
 use crate::core::util::gg_err;
+use crate::core::vk::RenderPerfStats;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
 
@@ -301,6 +302,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     gui_cmd: Option<Box<GuiClosure>>,
 
     perf_stats: UpdatePerfStats,
+    last_render_perf_stats: Option<RenderPerfStats>,
 }
 
 impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
@@ -329,6 +331,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             debug_gui: DebugGui::new()?,
             gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
+            last_render_perf_stats: None,
         };
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
@@ -363,9 +366,15 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 if fixed_updates > 0 {
                     fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
                     if fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
-                        warn!("fixed update behind by {:.2} ms",
+                        warn!("fixed update behind by {:.1} ms",
                             f64::from_u128(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
                                 .unwrap_or(f64::INFINITY) / 1000.);
+                    }
+                    if fixed_update_us >= FIXED_UPDATE_TIMEOUT {
+                        warn!("fixed update behind by {:.1} ms, giving up",
+                            f64::from_u128(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                                .unwrap_or(f64::INFINITY) / 1000.);
+                        fixed_update_us = 0;
                     }
                 }
 
@@ -385,6 +394,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
                 self.perf_stats.total_stats.stop();
                 self.debug_gui.console_log.update_perf_stats(self.perf_stats.get());
+                self.debug_gui.console_log.render_perf_stats(self.last_render_perf_stats.clone());
                 delta = now.elapsed();
             }
 
@@ -691,6 +701,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             None
         };
         let mut render_data_channel = self.render_data_channel.lock().unwrap();
+        self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
         render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;

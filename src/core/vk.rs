@@ -1,5 +1,4 @@
 use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
-use std::time::Duration;
 use egui::{FullOutput, ViewportId, ViewportInfo};
 use egui_winit::EventResponse;
 use num_traits::Zero;
@@ -708,11 +707,10 @@ pub struct WindowEventHandler {
 
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
     render_stats: RenderPerfStats,
+    last_render_stats: Option<RenderPerfStats>,
 
     is_ready: bool,
     last_ready_poll: Instant,
-
-    report_stats: bool,
 }
 
 #[allow(private_bounds)]
@@ -737,16 +735,10 @@ impl WindowEventHandler {
             resource_handler,
             fences,
             render_stats: RenderPerfStats::new(),
+            last_render_stats: None,
             is_ready: false,
             last_ready_poll: Instant::now(),
-            report_stats: false,
         }
-    }
-
-    #[must_use]
-    pub fn with_render_stats(mut self) -> Self {
-        self.report_stats = true;
-        self
     }
 
     pub fn consume(mut self, event_loop: EventLoop<()>) {
@@ -782,26 +774,28 @@ impl WindowEventHandler {
         acquire_future: SwapchainAcquireFuture,
         full_output: FullOutput
     ) -> Result<()> {
-        self.render_stats.begin_acquire_and_sync();
-        let ready_future = self.acquire_and_synchronise(per_image_ctx, acquire_future)?;
-        self.render_stats.begin_on_render();
+        self.render_stats.synchronise.start();
+        let ready_future = self.synchronise(per_image_ctx, acquire_future)?;
+        self.render_stats.synchronise.stop();
+        self.render_stats.on_render.start();
         let command_buffer = self.render_handler.on_render(
             &self.vk_ctx,
             self.vk_ctx.framebuffers.current_value(per_image_ctx),
             full_output
         )?;
-        self.render_stats.begin_submit_command_buffers();
+        self.render_stats.on_render.stop();
+        self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
-        self.render_stats.end_render();
+        self.render_stats.submit_command_buffers.stop();
+        self.render_stats.end_step.start();
         Ok(())
     }
 
-    fn acquire_and_synchronise(
+    fn synchronise(
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
-        self.render_stats.pause_render_active();
         if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.vk_ctx)? {
             uploads.flush()?;
             info!("loaded textures");
@@ -813,7 +807,6 @@ impl WindowEventHandler {
                 error!("{}", e);
             }
         }
-        self.render_stats.unpause_render_active();
         let last_fence = if let Some(fence) = self.fences.current_value(per_image_ctx).take() {
             fence.boxed()
         } else {
@@ -896,13 +889,12 @@ impl WindowEventHandler {
             }
             Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
                 if !self.poll_ready() { return Ok(()); }
-                self.render_stats.begin_handle_swapchain();
                 let per_image_ctx = self.vk_ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();
                 // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                let rv = match swapchain::acquire_next_image(self.vk_ctx.swapchain(), None)
-                    .map_err(Validated::unwrap)
-                {
+                let acquired = swapchain::acquire_next_image(self.vk_ctx.swapchain(), None)
+                    .map_err(Validated::unwrap);
+                let rv = match acquired {
                     Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
                         egui_winit::update_viewport_info(
                             &mut ViewportInfo::default(),
@@ -919,8 +911,9 @@ impl WindowEventHandler {
                                     .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) })
                                     .unwrap_or_default()
                             );
-                            self.render_handler.on_gui(ctx);
+                            self.render_handler.on_gui(ctx, self.last_render_stats.clone());
                         });
+                        self.render_stats.between_renders.stop();
                         platform.handle_platform_output(&self.window, full_output.platform_output.clone());
                         per_image_ctx.current.replace(image_idx as usize);
                         self.idle(&mut per_image_ctx, acquire_future, full_output)?;
@@ -929,11 +922,13 @@ impl WindowEventHandler {
                         Ok(())
                     },
                     Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
-                        self.recreate_swapchain()
+                        self.recreate_swapchain()?;
+                        self.render_stats.between_renders.stop();
+                        Ok(())
                     },
                     Err(e) => Err(e.into()),
                 };
-                self.render_stats.report_and_end_step(self.report_stats);
+                self.last_render_stats = self.render_stats.end();
                 self.window.request_redraw();
                 rv
             }
@@ -942,162 +937,115 @@ impl WindowEventHandler {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
-enum RenderState {
-    HandleSwapchain,
-    AcquireAndSync,
-    OnRender,
-    SubmitCommandBuffers,
-    EndRender,
-    BetweenRenders,
-}
-
-struct RenderPerfStats {
-    state: RenderState,
+#[derive(Clone)]
+pub(crate) struct RenderPerfStats {
     handle_swapchain: TimeIt,
-    acquire_and_sync: TimeIt,
+    synchronise: TimeIt,
     on_render: TimeIt,
     submit_command_buffers: TimeIt,
     end_step: TimeIt,
-    render_wait: TimeIt,
-    render_active: TimeIt,
     between_renders: TimeIt,
+
     total: TimeIt,
     on_time: u64,
     count: u64,
     last_step: Instant,
     last_report: Instant,
     totals_ms: Vec<f64>,
+
+    last_perf_stats: Option<Box<RenderPerfStats>>,
 }
 
 impl RenderPerfStats {
     fn new() -> Self {
         Self {
-            state: RenderState::BetweenRenders,
             handle_swapchain: TimeIt::new("handle swapchain"),
-            acquire_and_sync: TimeIt::new("acquire-and-sync"),
-            on_render: TimeIt::new("on render"),
+            synchronise: TimeIt::new("synchronise"),
+            on_render: TimeIt::new("on_render"),
             submit_command_buffers: TimeIt::new("submit cmdbufs"),
             end_step: TimeIt::new("end step"),
-            render_wait: TimeIt::new("wait for render"),
-            render_active: TimeIt::new("render"),
             between_renders: TimeIt::new("between renders"),
-            total: TimeIt::new("total (render)"),
+            total: TimeIt::new("total"),
             on_time: 0,
             count: 0,
             last_step: Instant::now(),
             last_report: Instant::now(),
             totals_ms: Vec::with_capacity(10),
+            last_perf_stats: None,
         }
     }
 
-    fn begin_handle_swapchain(&mut self) {
-        check_eq!(&self.state, &RenderState::BetweenRenders);
-        self.state = RenderState::HandleSwapchain;
-
-        self.total.stop();
-        self.total.start();
-        self.between_renders.stop();
-        self.render_active.start();
-        self.handle_swapchain.start();
-    }
-
-    fn begin_acquire_and_sync(&mut self) {
-        check_eq!(&self.state, &RenderState::HandleSwapchain);
-        self.state = RenderState::AcquireAndSync;
-        self.acquire_and_sync.start();
-    }
-    fn begin_on_render(&mut self) {
-        check_eq!(&self.state, &RenderState::AcquireAndSync);
-        self.state = RenderState::OnRender;
-        self.acquire_and_sync.stop();
-        self.on_render.start();
-    }
-
-    fn begin_submit_command_buffers(&mut self) {
-        check_eq!(&self.state, &RenderState::OnRender);
-        self.state = RenderState::SubmitCommandBuffers;
-        self.on_render.stop();
-        self.submit_command_buffers.start();
-    }
-
-    fn end_render(&mut self) {
-        check_eq!(&self.state, &RenderState::SubmitCommandBuffers);
-        self.state = RenderState::EndRender;
-        self.submit_command_buffers.stop();
-        self.end_step.start();
-    }
-
-    fn pause_render_active(&mut self) {
-        self.render_active.pause();
-        self.render_wait.start();
-    }
-    fn unpause_render_active(&mut self) {
-        self.render_wait.stop();
-        self.render_active.unpause();
-    }
-
-    fn report_and_end_step(&mut self, report_stats: bool) {
-        // in some error conditions, we are in a different state at the end of a step:
-        // crate::check_eq!(self.state, RenderState::EndRender);
-        self.state = RenderState::BetweenRenders;
+    fn end(&mut self) -> Option<Self> {
         self.end_step.stop();
-        self.render_active.stop();
+        self.between_renders.start();
 
-        // track how many frames are late
-        let active_ms = self.render_active.last_ms() + self.between_renders.last_ms();
-        if active_ms < 1000. / 60. {
-            self.on_time += 1;
-        } else {
-            warn!("late frame: {active_ms:.2} ms");
-        }
-
+        const DEADLINE_MS: f64 = 16.8;
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
         let render_time = self.last_step.elapsed().as_millis_f64();
         self.totals_ms.push(render_time);
 
-        if render_time < 10. && std::env::consts::OS == "macos" {
-            // macOS: Metal/MoltenVK has some sort of obscure race condition with vertex buffers
-            // when you render too fast.
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        self.last_step = Instant::now();
-
         let late_in_row = self.totals_ms.iter()
             .rev()
-            .take_while(|&&t| t > 17.)
-            .collect_vec()
-            .len();
-        if late_in_row > 1 {
-            warn!("{late_in_row} frames late in a row!");
+            .take_while(|&&t| t > DEADLINE_MS)
+            .collect_vec();
+        if late_in_row.len() > 1 {
+            let mut msg = format!("{} frames late in a row: ", late_in_row.len());
+            for time in &late_in_row[..late_in_row.len() - 1] {
+                msg += format!("{time:.1}, ").as_str();
+            }
+            msg += format!("{:.1}", late_in_row.last().unwrap()).as_str();
+            warn!("{msg}");
+        }
+        if render_time <= DEADLINE_MS {
+            self.on_time += 1;
         }
         self.count += 1;
 
-        // arbitrary; report every 5 seconds
-        if report_stats && self.last_report.elapsed().as_secs() >= 5 {
+        self.total.stop();
+        self.total.start();
+        self.last_step = Instant::now();
+
+        if self.last_report.elapsed().as_secs() >= 2 {
             #[allow(clippy::cast_precision_loss)]
             let on_time_rate = self.on_time as f64 / self.count as f64 * 100.;
             if on_time_rate.round() < 100. {
-                info!("frames on time: {on_time_rate:.1}%");
+                warn!("frames on time: {on_time_rate:.1}%");
             }
-            // self.render_wait.report_ms_if_at_least(17.);
-            let min_report_ms = 0.5;
-            // self.render_active.report_ms_if_at_least(min_report_ms);
-            self.between_renders.report_ms_if_at_least(min_report_ms);
-            self.handle_swapchain.report_ms_if_at_least(min_report_ms);
-            self.acquire_and_sync.report_ms_if_at_least(17.);
-            self.on_render.report_ms_if_at_least(min_report_ms);
-            self.submit_command_buffers
-                .report_ms_if_at_least(min_report_ms);
-            self.end_step.report_ms_if_at_least(min_report_ms);
-            self.total.report_ms_if_at_least(17.);
+            self.last_perf_stats = Some(Box::new(Self {
+                handle_swapchain: self.handle_swapchain.report_take(),
+                synchronise: self.synchronise.report_take(),
+                on_render: self.on_render.report_take(),
+                submit_command_buffers: self.submit_command_buffers.report_take(),
+                end_step: self.end_step.report_take(),
+                between_renders: self.between_renders.report_take(),
+                total: self.total.report_take(),
+                on_time: 0,
+                count: 0,
+                last_perf_stats: None,
+                last_report: Instant::now(),
+                last_step: self.last_step.clone(),
+                totals_ms: vec![],
+            }));
+            self.last_report = Instant::now();
             self.last_report = Instant::now();
             self.on_time = 0;
             self.count = 0;
         }
 
-        self.between_renders.start();
+        self.last_perf_stats.clone().map(|s| *s)
+    }
+
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
+        vec![
+            self.total.as_tuple_ms(),
+            self.handle_swapchain.as_tuple_ms(),
+            self.synchronise.as_tuple_ms(),
+            self.on_render.as_tuple_ms(),
+            self.submit_command_buffers.as_tuple_ms(),
+            self.end_step.as_tuple_ms(),
+            self.between_renders.as_tuple_ms(),
+        ]
     }
 }
