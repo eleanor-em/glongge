@@ -912,6 +912,13 @@ impl WindowEventHandler {
                         );
                         let raw_input = platform.take_egui_input(&self.window);
                         let full_output = self.gui_ctx.run(raw_input, |ctx| {
+                            let mut input = self.input_handler.lock().unwrap();
+                            input.set_viewport(self.render_handler.viewport());
+                            input.set_mouse_pos(
+                                ctx.pointer_latest_pos()
+                                    .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) })
+                                    .unwrap_or_default()
+                            );
                             self.render_handler.on_gui(ctx);
                         });
                         platform.handle_platform_output(&self.window, full_output.platform_output.clone());

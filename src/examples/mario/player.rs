@@ -70,7 +70,6 @@ pub struct Player {
     v_accel: f64,
 
     hold_jump: bool,
-    show_wireframes: bool,
 
     speed_regime: SpeedRegime,
     state: PlayerState,
@@ -121,7 +120,6 @@ impl Player {
             // Prevents player getting "stuck" on ground when level starts in air.
             last_ground_state: PlayerState::Walking,
             state: if exiting_pipe { PlayerState::ExitingPipe } else { PlayerState::Idle },
-            show_wireframes: false,
             ..Default::default()
         })
     }
@@ -549,20 +547,6 @@ impl SceneObject<ObjectType> for Player {
         self.maybe_start_exit_pipe(ctx);
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.input().pressed(KeyCode::KeyW) {
-            if self.show_wireframes {
-                ctx.object_mut().others_as_mut::<CollisionShape>()
-                    .into_iter()
-                    .for_each(|mut shape| shape.hide_wireframe());
-                self.show_wireframes = false;
-            } else {
-                ctx.object_mut().others_as_mut::<CollisionShape>()
-                    .into_iter()
-                    .for_each(|mut shape| shape.show_wireframe());
-                self.show_wireframes = true;
-            }
-        }
-
         if self.state == PlayerState::Dying {
             self.speed = 0.;
             self.v_accel = BASE_GRAVITY;

@@ -5,6 +5,9 @@ use std::{
 use egui_winit::winit::event::ElementState;
 
 pub use egui_winit::winit::keyboard::KeyCode as KeyCode;
+use num_traits::Zero;
+use crate::core::prelude::Vec2;
+use crate::core::vk::AdjustedViewport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputState {
@@ -17,11 +20,18 @@ enum InputState {
 pub struct InputHandler {
     data: BTreeMap<KeyCode, InputState>,
     queued_events: Vec<(KeyCode, ElementState)>,
+    mouse_pos: Vec2,
+    viewport: AdjustedViewport,
 }
 
 impl InputHandler {
     pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(InputHandler { data: BTreeMap::new(), queued_events: Vec::new() }))
+        Arc::new(Mutex::new(InputHandler {
+            data: BTreeMap::new(),
+            queued_events: Vec::new(),
+            mouse_pos: Vec2::zero(),
+            viewport: AdjustedViewport::default(),
+        }))
     }
 
     pub fn pressed(&self, key: KeyCode) -> bool {
@@ -42,6 +52,10 @@ impl InputHandler {
     pub fn up(&self, key: KeyCode) -> bool {
         self.released(key) || self.stayed_up(key)
     }
+
+    pub(crate) fn set_mouse_pos(&mut self, pos: Vec2) { self.mouse_pos = pos; }
+    pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) { self.viewport = viewport; }
+    pub fn mouse_pos(&self) -> Vec2 { self.mouse_pos / self.viewport.gui_scale_factor() }
 
     pub(crate) fn queue_event(&mut self, key: KeyCode, state: ElementState) {
         self.queued_events.push((key, state));

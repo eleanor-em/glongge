@@ -152,6 +152,12 @@ impl CollisionHandler {
         rv
     }
 
+    pub fn all_tags(&self) -> Vec<&'static str> {
+        self.object_ids_by_emitting_tag.keys().copied()
+            .chain(self.object_ids_by_listening_tag.keys().copied())
+            .collect()
+    }
+
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
         absolute_transforms: &BTreeMap<ObjectId, Transform>,

@@ -52,6 +52,7 @@ use crate::{core::{
 use crate::core::render::StoredRenderItem;
 use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::DebugGui;
+use crate::core::util::collision::BoxCollider;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
 
@@ -551,6 +552,19 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         }
 
         if self.debug_gui.enabled {
+            let all_tags = self.object_handler.collision_handler.all_tags();
+            self.debug_gui.clear_mouseovers(&self.object_handler);
+            if let Some(collisions) = {
+                let ctx = UpdateContext::new(
+                    self, input_handler, ObjectId::root(), object_tracker
+                );
+                ctx.object.test_collision_point(
+                    input_handler.mouse_pos(),
+                    all_tags
+                )
+            } {
+                self.debug_gui.on_mouseovers(&self.object_handler, collisions);
+            }
             let gui_objects = self.object_handler.objects.iter()
                 .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
                 .map(|(id, obj)| (*id, obj.clone()))
@@ -1052,12 +1066,21 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
+    pub fn test_collision_point(&self,
+                                point: Vec2,
+                                listening_tags: Vec<&'static str>
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.test_collision_with(
+            &BoxCollider::from_top_left(point - Vec2::one() / 2, Vec2::one()).into_generic(),
+            listening_tags
+        )
+    }
     pub fn test_collision(&self,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.collider()
             .and_then(|collider| {
-                self.test_collision_inner(&collider, listening_tags)
+                self.test_collision_with(&collider, listening_tags)
             })
     }
     pub fn test_collision_along(&self,
@@ -1067,7 +1090,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.collider()
             .and_then(|collider| {
-                self.test_collision_inner(&collider.translated(distance * axis), listening_tags)
+                self.test_collision_with(&collider.translated(distance * axis), listening_tags)
             })
             .and_then(|vec| {
                 NonemptyVec::try_from_iter(vec
@@ -1076,7 +1099,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             })
     }
 
-    fn test_collision_inner(
+    pub fn test_collision_with(
         &self,
         collider: &GenericCollider,
         listening_tags: Vec<&'static str>

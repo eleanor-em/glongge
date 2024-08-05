@@ -166,6 +166,8 @@ impl RenderHandler {
         self
     }
 
+    pub(crate) fn viewport(&self) -> AdjustedViewport { self.viewport.get().clone() }
+
     pub(crate) fn on_resize(
         &mut self,
         _ctx: &VulkanoContext,

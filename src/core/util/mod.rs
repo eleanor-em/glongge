@@ -315,6 +315,12 @@ impl<T> NonemptyVec<T> {
     }
 }
 
+impl<T> From<NonemptyVec<T>> for Vec<T> {
+    fn from(value: NonemptyVec<T>) -> Self {
+        value.inner
+    }
+}
+
 impl<T> IntoIterator for NonemptyVec<T> {
     type Item = T;
     type IntoIter = IntoIter<T>;

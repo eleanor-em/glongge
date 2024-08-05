@@ -13,8 +13,10 @@ use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
+use crate::core::update::collision::Collision;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
+use crate::core::util::NonemptyVec;
 use crate::gui::GuiUi;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -99,6 +101,7 @@ impl GuiObjectView {
             relative_transform = Some(object.transform());
             gui_cmd = gui_cmds.remove(&object_id);
         }
+
         Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
                 .frame(frame)
@@ -429,6 +432,8 @@ pub(crate) struct DebugGui {
     object_view: GuiObjectView,
     console_log: GuiConsoleLog,
     frame: Frame,
+
+    wireframe_mouseovers: Vec<ObjectId>,
 }
 
 impl DebugGui {
@@ -440,13 +445,40 @@ impl DebugGui {
             console_log: GuiConsoleLog::new()?,
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
-                .inner_margin(egui::Margin::same(6.))
+                .inner_margin(egui::Margin::same(6.)),
+            wireframe_mouseovers: Vec::new(),
         })
     }
 
-    pub fn build<O: ObjectTypeEnum>(&mut self,
-                                    object_handler: &ObjectHandler<O>,
-                                    gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
+    pub fn clear_mouseovers<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>
+    ) {
+        self.wireframe_mouseovers.drain(..)
+            .filter_map(|o| object_handler.get_collision_shape_mut(o))
+            .for_each(|mut c| c.hide_wireframe());
+    }
+
+    pub fn on_mouseovers<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        collisions: NonemptyVec<Collision<O>>
+    ) {
+        self.wireframe_mouseovers = collisions.into_iter()
+            .map(|c| c.other.object_id)
+            .map(|o| {
+                if let Some(mut c) = object_handler.get_collision_shape_mut(o) {
+                    c.show_wireframe();
+                }
+                o
+            })
+            .collect_vec();
+    }
+
+    pub fn build<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
         if !self.object_tree.selected_id.is_root() {
             self.object_view.update_selection(object_handler, self.object_tree.selected_id);
