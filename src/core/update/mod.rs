@@ -612,7 +612,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     }
                 })
                 .collect();
-            self.gui_cmd = Some(self.debug_gui.build(&self.object_handler, gui_cmds));
+            self.gui_cmd = Some(self.debug_gui.build(input_handler, &self.object_handler, gui_cmds));
         }
     }
 

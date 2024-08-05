@@ -11,12 +11,13 @@ use egui::text::LayoutJob;
 use itertools::Itertools;
 use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
+use crate::core::input::InputHandler;
 use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
-use crate::core::util::{gg_err, NonemptyVec};
+use crate::core::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
 use crate::gui::GuiUi;
 
@@ -205,6 +206,16 @@ impl GuiObjectTreeNode {
         }
     }
 
+    fn update_open_with_selected(&mut self, selected_id: ObjectId) -> bool {
+        let mut rv = false;
+        if self.displayed.contains_key(&selected_id) ||
+                self.displayed.values_mut().any(|c| c.update_open_with_selected(selected_id)) {
+            self.open = true;
+            rv = true;
+        }
+        rv
+    }
+
     fn as_builder(&mut self, selected_id: ObjectId, selected_tx: Sender<ObjectId>) -> GuiObjectTreeBuilder {
         if let Some(next) = self.open_rx.try_iter().last() {
             self.open = next;
@@ -243,6 +254,7 @@ impl GuiObjectTree {
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
         if let Some(next) = self.selected_rx.try_iter().last() {
             self.selected_id = next;
+            self.root.update_open_with_selected(self.selected_id);
         }
         let mut root = self.root.as_builder(
             self.selected_id,
@@ -266,7 +278,6 @@ impl GuiObjectTree {
                 });
         })
     }
-
 
     pub fn on_add_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, object: &SceneObjectWithId<O>) {
         let mut tree = &mut self.root;
@@ -622,9 +633,19 @@ impl DebugGui {
 
     pub fn build<O: ObjectTypeEnum>(
         &mut self,
+        input_handler: &InputHandler,
         object_handler: &ObjectHandler<O>,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
+        if input_handler.pressed(KeyCode::KeyF) {
+            if let Some(i) = gg_iter::index_of(&self.wireframe_mouseovers, &self.object_tree.selected_id) {
+                let i = i + 1 % self.wireframe_mouseovers.len();
+                self.object_tree.selected_tx.send(self.wireframe_mouseovers[i]).unwrap();
+            } else if !self.wireframe_mouseovers.is_empty() {
+                self.object_tree.selected_tx.send(self.wireframe_mouseovers[0]).unwrap();
+            }
+        }
+
         if !self.object_tree.selected_id.is_root() {
             gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
         }
