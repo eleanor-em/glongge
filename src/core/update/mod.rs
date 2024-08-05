@@ -53,7 +53,7 @@ use crate::core::render::StoredRenderItem;
 use crate::core::scene::GuiClosure;
 use crate::core::update::debug_gui::DebugGui;
 use crate::core::util::collision::BoxCollider;
-use crate::core::util::gg_err;
+use crate::core::util::{gg_err, gg_iter};
 use crate::core::vk::RenderPerfStats;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
@@ -83,6 +83,17 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .borrow().get_type();
         Ok(format!("{object_type:?}"))
     }
+    fn get_first_object_id(&self) -> Option<ObjectId> {
+        self.objects.first_key_value().map(|o| o.0).copied()
+    }
+    fn get_next_object_id(&self, source: ObjectId) -> Option<ObjectId> {
+        let object_ids = self.objects.keys().copied().collect_vec();
+        let i = gg_iter::index_of(&object_ids, &source)?;
+        Some(object_ids[(i + 1) % object_ids.len()])
+    }
+    // fn get_first_object(&self) -> Option<&AnySceneObject<ObjectType>> {
+    //     self.objects.first_key_value().map(|o| o.1)
+    // }
     fn get_object(&self, id: ObjectId) -> Result<Option<&AnySceneObject<ObjectType>>> {
         if id.is_root() {
             Ok(None)

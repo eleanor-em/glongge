@@ -216,7 +216,7 @@ impl GuiObjectTreeNode {
         rv
     }
 
-    fn as_builder(&mut self, selected_id: ObjectId, selected_tx: Sender<ObjectId>) -> GuiObjectTreeBuilder {
+    fn as_builder(&mut self, selected_changed: bool, selected_id: ObjectId, selected_tx: Sender<ObjectId>) -> GuiObjectTreeBuilder {
         if let Some(next) = self.open_rx.try_iter().last() {
             self.open = next;
         }
@@ -225,11 +225,11 @@ impl GuiObjectTreeNode {
             label: self.label.clone(),
             object_id: self.object_id,
             displayed: self.displayed.iter_mut()
-                .map(|(id, tree)| (*id, tree.as_builder(selected_id, selected_tx.clone())))
+                .map(|(id, tree)| (*id, tree.as_builder(selected_changed, selected_id, selected_tx.clone())))
                 .collect(),
             open: self.open,
             open_tx: self.open_tx.clone(),
-            selected, selected_tx
+            selected_changed, selected, selected_tx,
         }
     }
 }
@@ -252,11 +252,14 @@ impl GuiObjectTree {
     }
 
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
+        let mut selected_changed = false;
         if let Some(next) = self.selected_rx.try_iter().last() {
             self.selected_id = next;
             self.root.update_open_with_selected(self.selected_id);
+            selected_changed = true;
         }
         let mut root = self.root.as_builder(
+            selected_changed,
             self.selected_id,
             self.selected_tx.clone()
         );
@@ -277,6 +280,58 @@ impl GuiObjectTree {
                         });
                 });
         })
+    }
+
+    fn on_input<O: ObjectTypeEnum>(
+        &mut self,
+        input_handler: &InputHandler,
+        object_handler: &ObjectHandler<O>,
+        wireframe_mouseovers: &[ObjectId]
+    ) {
+        if input_handler.pressed(KeyCode::KeyF) {
+            if let Some(i) = gg_iter::index_of(wireframe_mouseovers, &self.selected_id) {
+                let i = (i + 1) % wireframe_mouseovers.len();
+                self.selected_tx.send(wireframe_mouseovers[i]).unwrap();
+            } else if !wireframe_mouseovers.is_empty() {
+                self.selected_tx.send(wireframe_mouseovers[0]).unwrap();
+            }
+        }
+        if input_handler.pressed(KeyCode::KeyC) {
+            if self.selected_id.is_root() {
+                if let Some(object_id) = object_handler.get_first_object_id() {
+                    self.selected_tx.send(object_id).unwrap();
+                }
+            } else if let Some(child) = gg_err::ok_and_log(object_handler.get_children(self.selected_id)
+                .map(|v| v.first())) {
+                self.selected_tx.send(child.object_id).unwrap();
+            } else {
+                self.select_next_sibling(object_handler);
+            }
+        }
+        if input_handler.pressed(KeyCode::KeyS) {
+            self.select_next_sibling(object_handler);
+        }
+        if input_handler.pressed(KeyCode::KeyP) {
+            if let Some(parent) = gg_err::ok_and_log(object_handler.get_parent(self.selected_id)) {
+                self.selected_tx.send(parent.object_id).unwrap();
+            }
+        }
+    }
+
+    fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        if let Some(sibling_id) = gg_err::ok_and_log(object_handler.get_parent(self.selected_id))
+            .and_then(|parent| {
+                let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent.object_id))
+                    .iter()
+                    .map(|o| o.object_id)
+                    .collect_vec();
+                gg_iter::index_of(&siblings, &self.selected_id)
+                    .map(|i| siblings[(i + 1) % siblings.len()])
+            }) {
+            self.selected_tx.send(sibling_id).unwrap();
+        } else if let Some(sibling_id) = object_handler.get_next_object_id(self.selected_id) {
+            self.selected_tx.send(sibling_id).unwrap();
+        }
     }
 
     pub fn on_add_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, object: &SceneObjectWithId<O>) {
@@ -325,6 +380,7 @@ struct GuiObjectTreeBuilder {
     displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
     open: bool,
     open_tx: Sender<bool>,
+    selected_changed: bool,
     selected: bool,
     selected_tx: Sender<ObjectId>,
 }
@@ -362,6 +418,9 @@ impl GuiObjectTreeBuilder {
                             }
                         }
                     });
+                if self.selected_changed && self.selected {
+                    response.header_response.scroll_to_me(Some(Align::Center));
+                }
                 if response.header_response.double_clicked() || response.header_response.secondary_clicked() {
                     self.open_tx.send(!self.open).unwrap();
                 }
@@ -538,6 +597,7 @@ impl GuiConsoleLog {
     fn build_log_scroll_area(ui: &mut Ui, log_output: Vec<String>) {
         ui.with_layout(egui::Layout::top_down(Align::LEFT), |ui| {
             egui::ScrollArea::both()
+                .min_scrolled_height(180.)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     // XXX: separator needed to make it fill available space.
@@ -637,15 +697,7 @@ impl DebugGui {
         object_handler: &ObjectHandler<O>,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
-        if input_handler.pressed(KeyCode::KeyF) {
-            if let Some(i) = gg_iter::index_of(&self.wireframe_mouseovers, &self.object_tree.selected_id) {
-                let i = i + 1 % self.wireframe_mouseovers.len();
-                self.object_tree.selected_tx.send(self.wireframe_mouseovers[i]).unwrap();
-            } else if !self.wireframe_mouseovers.is_empty() {
-                self.object_tree.selected_tx.send(self.wireframe_mouseovers[0]).unwrap();
-            }
-        }
-
+        self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
         if !self.object_tree.selected_id.is_root() {
             gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
         }
