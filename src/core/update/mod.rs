@@ -550,19 +550,21 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             self.debug_gui.toggle();
         }
 
-        let gui_objects = self.object_handler.objects.iter()
-            .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
-            .map(|(id, obj)| (*id, obj.clone()))
-            .collect_vec();
-        let gui_cmds = gui_objects.into_iter()
-            .map(|(id, obj)| {
-                let ctx = UpdateContext::new(
-                    self, input_handler, id, object_tracker
-                );
-                (id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))
-            })
-            .collect();
-        self.gui_cmd = Some(self.debug_gui.build(&self.object_handler, gui_cmds));
+        if self.debug_gui.enabled {
+            let gui_objects = self.object_handler.objects.iter()
+                .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
+                .map(|(id, obj)| (*id, obj.clone()))
+                .collect_vec();
+            let gui_cmds = gui_objects.into_iter()
+                .map(|(id, obj)| {
+                    let ctx = UpdateContext::new(
+                        self, input_handler, id, object_tracker
+                    );
+                    (id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))
+                })
+                .collect();
+            self.gui_cmd = Some(self.debug_gui.build(&self.object_handler, gui_cmds));
+        }
     }
 
     fn handle_collisions(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {

@@ -207,7 +207,7 @@ impl Neg for &Vec2Int {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialOrd, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -215,11 +215,35 @@ pub struct Vec2 {
 
 impl Eq for Vec2 {}
 
-// I'm sorry, clippy.
-#[allow(clippy::derive_ord_xor_partial_ord)]
+impl PartialOrd<Self> for Vec2 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Ord for Vec2 {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        match self.x.partial_cmp(&other.x) {
+            Some(Ordering::Less) => Ordering::Less,
+            Some(Ordering::Equal) => self.y.partial_cmp(&other.y)
+                .unwrap_or_else(|| {
+                    warn!("Vec2: partial_cmp() failed for y: {} vs. {}", self, other);
+                    self.y.total_cmp(&other.y)
+                }),
+            Some(Ordering::Greater) => Ordering::Greater,
+            None => {
+                warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
+                match self.x.total_cmp(&other.x) {
+                    Ordering::Less => Ordering::Less,
+                    Ordering::Equal => self.y.partial_cmp(&other.y)
+                        .unwrap_or_else(|| {
+                            warn!("Vec2: partial_cmp() failed for y: {} vs. {}", self, other);
+                            self.y.total_cmp(&other.y)
+                        }),
+                    Ordering::Greater => Ordering::Greater,
+                }
+            }
+        }
     }
 }
 
@@ -291,6 +315,25 @@ impl Vec2 {
     #[allow(clippy::cast_possible_truncation)]
     pub fn as_f32_lossy(&self) -> [f32; 2] {
         (*self).into()
+    }
+
+    pub fn cmp_by_length(&self, other: &Vec2) -> Ordering {
+        let self_len = self.len_squared();
+        let other_len = other.len_squared();
+        self_len.partial_cmp(&other_len)
+            .unwrap_or_else(|| {
+                warn!("cmp_by_length(): partial_cmp() failed: {} vs. {}", self, other);
+                self_len.total_cmp(&other_len)
+            })
+    }
+    pub fn cmp_by_dist(&self, other: &Vec2, origin: Vec2) -> Ordering {
+        let self_len = (*self - origin).len_squared();
+        let other_len = (*other - origin).len_squared();
+        self_len.partial_cmp(&other_len)
+            .unwrap_or_else(|| {
+                warn!("cmp_by_dist() to {}: partial_cmp() failed: {} vs. {}", origin, self, other);
+                self_len.total_cmp(&other_len)
+            })
     }
 }
 

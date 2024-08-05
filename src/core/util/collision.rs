@@ -573,7 +573,7 @@ impl ConvexCollider {
                 } else if det < 0. {
                     Ordering::Greater
                 } else {
-                    a.len_squared().partial_cmp(&b.len_squared()).unwrap()
+                    a.len_squared().total_cmp(&b.len_squared())
                 }
             }
         });
@@ -703,17 +703,13 @@ impl CompoundCollider {
             .filter_map(|(a, b)| {
                 Vec2::intersect(origin, (origin - prev).normed(), *a, (*b - *a).normed())
             })
-            .min_by(|a, b| {
-                a.len_squared().partial_cmp(&b.len_squared()).unwrap()
-            });
+            .min_by(|a, b| a.cmp_by_length(b));
 
         let intersections_2 = filtered_edges.iter()
             .filter_map(|(a, b)| {
                 Vec2::intersect(origin, (origin - next).normed(), *a, (*b - *a).normed())
             })
-            .min_by(|a, b| {
-                a.len_squared().partial_cmp(&b.len_squared()).unwrap()
-            });
+            .min_by(|a, b| a.cmp_by_length(b));
 
         if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
             let centre: Vec2 = (start + end) / 2;
@@ -721,11 +717,7 @@ impl CompoundCollider {
                 .filter_map(|(a, b)| {
                     Vec2::intersect(origin, (centre - origin).normed(), *a, (*b - *a).normed())
                 })
-                .min_by(|a, b| {
-                    let da = origin.dist_squared(*a);
-                    let db = origin.dist_squared(*b);
-                    da.partial_cmp(&db).unwrap()
-                })
+                .min_by(|a, b| a.cmp_by_dist(b, origin))
         } else {
             None
         }
