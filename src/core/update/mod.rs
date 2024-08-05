@@ -554,14 +554,12 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         if self.debug_gui.enabled {
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
+            let mouse_pos = self.viewport.top_left() + input_handler.screen_mouse_pos();
             if let Some(collisions) = {
                 let ctx = UpdateContext::new(
                     self, input_handler, ObjectId::root(), object_tracker
                 );
-                ctx.object.test_collision_point(
-                    input_handler.mouse_pos(),
-                    all_tags
-                )
+                ctx.object.test_collision_point(mouse_pos, all_tags)
             } {
                 self.debug_gui.on_mouseovers(&self.object_handler, collisions);
             }
@@ -1107,22 +1105,35 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         let mut rv = Vec::new();
         for tag in listening_tags {
             for other_id in self.collision_handler.get_object_ids_by_emitting_tag(tag) {
-                let other = self.object_tracker.get(*other_id)
-                    .unwrap_or_else(|| panic!("missing object_id in objects: {other_id:?}"));
-                let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
-                    .collider()
-                    .transformed(
-                        self.all_absolute_transforms.get(other_id)
-                            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {other_id:?}"))
-                    );
-                if let Some(mtv) = collider.collides_with(&other_collider) {
-                    let other = self.lookup_parent(*other_id)
-                        .unwrap_or_else(|| panic!("orphaned GgInternalCollisionShape: {other_id:?}"));
-                    rv.push(Collision { other, mtv });
+                match self.test_collision_inner(collider, other_id) {
+                    Ok(Some(c)) => rv.push(c),
+                    Err(e) => error!("{e:?}"),
+                    _ => {}
                 }
             }
         }
         NonemptyVec::try_from_vec(rv)
+    }
+
+    fn test_collision_inner(&self,
+                            collider: &GenericCollider,
+                            other_id: &ObjectId
+    ) -> Result<Option<Collision<ObjectType>>> {
+        let other = self.object_tracker.get(*other_id)
+            .ok_or_else(|| anyhow!("missing object_id in objects: {other_id:?}"))?;
+        let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
+            .collider()
+            .transformed(
+                self.all_absolute_transforms.get(other_id)
+                    .ok_or_else(|| anyhow!("missing object_id in absolute_transforms: {other_id:?}"))?
+            );
+        if let Some(mtv) = collider.collides_with(&other_collider) {
+            let other = self.lookup_parent(*other_id)
+                .ok_or_else(|| anyhow!("orphaned GgInternalCollisionShape: {other_id:?}"))?;
+            Ok(Some(Collision { other, mtv }))
+        } else {
+            Ok(None)
+        }
     }
     fn lookup_parent(&self, object_id: ObjectId) -> Option<SceneObjectWithId<ObjectType>> {
         let parent_id = self.all_parents.get(&object_id)?;

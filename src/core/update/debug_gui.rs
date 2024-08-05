@@ -379,7 +379,7 @@ impl GuiConsoleLog {
         Box::new(move |ctx| {
             egui::TopBottomPanel::top(Id::new("log"))
                 .frame(frame)
-                .default_height(150.)
+                .default_height(180.)
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
                     egui::ScrollArea::both()
