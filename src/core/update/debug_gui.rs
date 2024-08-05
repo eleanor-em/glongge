@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat};
+use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use itertools::Itertools;
@@ -15,7 +15,7 @@ use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
-use crate::core::update::ObjectHandler;
+use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, NonemptyVec};
 use crate::gui::GuiUi;
 
@@ -361,19 +361,31 @@ impl GuiObjectTreeBuilder {
     }
 }
 
-struct GuiConsoleLog {
+pub(crate) struct GuiConsoleLog {
     log_output: Vec<String>,
     log_file: BufReader<File>,
+    view_perf: bool,
+    view_perf_tx: Sender<bool>,
+    view_perf_rx: Receiver<bool>,
+    last_perf_stats: Option<UpdatePerfStats>,
 }
 impl GuiConsoleLog {
     fn new() -> Result<Self> {
         let log_file = BufReader::new(std::fs::OpenOptions::new()
             .read(true)
             .open("run.log")?);
+        let (view_perf_tx, view_perf_rx) = mpsc::channel();
         Ok(Self {
             log_output: Vec::new(),
             log_file,
+            view_perf: true,
+            view_perf_tx, view_perf_rx,
+            last_perf_stats: None,
         })
+    }
+
+    pub(crate) fn update_perf_stats(&mut self, stats: Option<UpdatePerfStats>) {
+        self.last_perf_stats = stats;
     }
 
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
@@ -382,6 +394,12 @@ impl GuiConsoleLog {
             self.log_output.push(line);
         }
         let log_output = self.log_output.clone();
+        if let Some(next) = self.view_perf_rx.try_iter().last() {
+            self.view_perf = next;
+        }
+        let view_perf = self.view_perf;
+        let view_perf_tx = self.view_perf_tx.clone();
+        let update_perf_stats = self.last_perf_stats.clone();
 
         Box::new(move |ctx| {
             egui::TopBottomPanel::top(Id::new("log"))
@@ -389,47 +407,99 @@ impl GuiConsoleLog {
                 .default_height(180.)
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
-                    egui::ScrollArea::both()
-                        .stick_to_bottom(true)
-                        .show(ui, |ui| {
-                            ui.separator();
-                            let mut layout_job = LayoutJob::default();
-                            let last_log = log_output.len() - 1;
-                            for (i, line) in log_output.into_iter().enumerate() {
-                                let segments = if i == last_log {
-                                    line.trim()
-                                } else {
-                                    line.as_str()
-                                }.split("\x1b[");
-                                let style = Style::default();
-                                for segment in segments.filter(|s| !s.is_empty()) {
-                                    let sep = segment.find('m').unwrap();
-                                    let colour_code = &segment[..sep];
-                                    let col = colour_code.parse::<i32>().unwrap();
-                                    let text = &segment[sep + 1..];
-                                    egui::RichText::new(text)
-                                        .color(match col {
-                                            2 => Color32::from_gray(120),
-                                            32 => Color32::from_rgb(0, 166, 0),
-                                            33 => Color32::from_rgb(153, 153, 0),
-                                            0 => Color32::from_gray(240),
-                                            _ => {
-                                                warn!("unrecognised colour code: {col}");
-                                                Color32::from_gray(240)
-                                            },
-                                        })
-                                        .monospace()
-                                        .append_to(&mut layout_job,
-                                                   &style,
-                                                   FontSelection::Default,
-                                                   Align::Center);
-                                }
-                            }
-                            ui.add(egui::Label::new(layout_job)
-                                .selectable(true));
-                        })
+                    ui.with_layout(egui::Layout::right_to_left(Align::TOP), |ui| {
+                        if ui.add(egui::Button::new("🖥")
+                            .selected(view_perf)
+                        ).clicked() {
+                            view_perf_tx.send(!view_perf).unwrap();
+                        }
+                        Self::build_update_perf(ui, view_perf, frame, update_perf_stats);
+                        Self::build_log_scroll_area(ui, log_output);
+                    });
                 });
         })
+    }
+
+    fn build_update_perf(ui: &mut Ui, view_perf: bool, frame: Frame, update_perf_stats: Option<UpdatePerfStats>) {
+        egui::SidePanel::right("perf")
+            .frame(frame)
+            .show_animated_inside(ui, view_perf, |ui| {
+                let mut layout_job = LayoutJob {
+                    halign: Align::Center,
+                    justify: true,
+                    ..Default::default()
+                };
+                layout_job.append("Update Performance", 0., TextFormat {
+                    color: Color32::from_gray(255),
+                    ..Default::default()
+                });
+                ui.add(egui::Label::new(layout_job)
+                    .extend()
+                    .selectable(false));
+                ui.separator();
+                if let Some(perf_stats) = update_perf_stats {
+                    egui::Grid::new("perf-data")
+                        .num_columns(3)
+                        .show(ui, |ui| {
+                            for (tag, mean, max) in perf_stats.as_tuples_ms() {
+                                let is_total = tag == "total";
+                                ui.add(egui::Label::new(tag).selectable(false));
+                                ui.add(egui::Label::new(format!("{mean:.1}")).selectable(false));
+                                ui.add(egui::Label::new(format!("{max:.1}")).selectable(false));
+                                ui.end_row();
+                                if is_total {
+                                    ui.separator();
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                }
+            });
+    }
+
+    fn build_log_scroll_area(ui: &mut Ui, log_output: Vec<String>) {
+        ui.with_layout(egui::Layout::top_down(Align::LEFT), |ui| {
+            egui::ScrollArea::both()
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    // XXX: separator needed to make it fill available space.
+                    ui.separator();
+                    let mut layout_job = LayoutJob::default();
+                    let last_log = log_output.len() - 1;
+                    for (i, line) in log_output.into_iter().enumerate() {
+                        let segments = if i == last_log {
+                            line.trim()
+                        } else {
+                            line.as_str()
+                        }.split("\x1b[");
+                        let style = Style::default();
+                        for segment in segments.filter(|s| !s.is_empty()) {
+                            let sep = segment.find('m').unwrap();
+                            let colour_code = &segment[..sep];
+                            let col = colour_code.parse::<i32>().unwrap();
+                            let text = &segment[sep + 1..];
+                            egui::RichText::new(text)
+                                .color(match col {
+                                    2 => Color32::from_gray(120),
+                                    32 => Color32::from_rgb(0, 166, 0),
+                                    33 => Color32::from_rgb(153, 153, 0),
+                                    0 => Color32::from_gray(240),
+                                    _ => {
+                                        warn!("unrecognised colour code: {col}");
+                                        Color32::from_gray(240)
+                                    },
+                                })
+                                .monospace()
+                                .append_to(&mut layout_job,
+                                           &style,
+                                           FontSelection::Default,
+                                           Align::Center);
+                        }
+                    }
+                    ui.add(egui::Label::new(layout_job)
+                        .selectable(true));
+                });
+        });
     }
 }
 
@@ -437,7 +507,7 @@ pub(crate) struct DebugGui {
     pub(crate) enabled: bool,
     pub(crate) object_tree: GuiObjectTree,
     object_view: GuiObjectView,
-    console_log: GuiConsoleLog,
+    pub(crate) console_log: GuiConsoleLog,
     frame: Frame,
 
     wireframe_mouseovers: Vec<ObjectId>,

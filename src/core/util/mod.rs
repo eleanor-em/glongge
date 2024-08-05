@@ -30,6 +30,7 @@ pub mod gg_time {
         duration.as_micros() / crate::core::config::FIXED_UPDATE_INTERVAL_US
     }
 
+    #[derive(Clone)]
     pub struct TimeIt {
         tag: String,
         n: u128,
@@ -82,6 +83,14 @@ pub mod gg_time {
             #[allow(clippy::cast_precision_loss)]
             let max_ns = self.max_ns as f64;
             max_ns / 1_000_000.
+        }
+        pub fn as_tuple_ms(&self) -> (String, f64, f64) {
+            (self.tag.clone(), self.mean_ms(), self.max_ms())
+        }
+        pub fn report_take(&mut self) -> TimeIt {
+            let rv = self.clone();
+            self.reset();
+            rv
         }
         pub fn report_ms(&mut self) {
             info!(

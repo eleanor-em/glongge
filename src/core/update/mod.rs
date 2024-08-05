@@ -384,7 +384,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 self.input_handler.lock().unwrap().update_step();
 
                 self.perf_stats.total_stats.stop();
-                self.perf_stats.report();
+                self.debug_gui.console_log.update_perf_stats(self.perf_stats.get());
                 delta = now.elapsed();
             }
 
@@ -515,15 +515,17 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                       input_handler: &InputHandler,
                       mut fixed_updates: u128
     ) -> ObjectTracker<ObjectType> {
-        self.perf_stats.on_update_begin.start();
         let mut object_tracker = ObjectTracker {
             last: self.object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new()
         };
 
+        self.perf_stats.on_gui.start();
         self.update_gui(input_handler, &mut object_tracker);
+        self.perf_stats.on_gui.stop();
 
+        self.perf_stats.on_update_begin.start();
         self.iter_with_other_map(input_handler, &mut object_tracker,
                                  |mut obj, ctx| {
                                      obj.on_update_begin(ctx);
@@ -701,8 +703,10 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
 }
 
+#[derive(Clone)]
 struct UpdatePerfStats {
     total_stats: TimeIt,
+    on_gui: TimeIt,
     on_update_begin: TimeIt,
     coroutines: TimeIt,
     on_update: TimeIt,
@@ -713,13 +717,15 @@ struct UpdatePerfStats {
     remove_objects: TimeIt,
     add_objects: TimeIt,
     render_infos: TimeIt,
+    last_perf_stats: Option<Box<UpdatePerfStats>>,
     last_report: Instant,
 }
 
 impl UpdatePerfStats {
     fn new() -> Self {
         Self {
-            total_stats: TimeIt::new("total (update)"),
+            total_stats: TimeIt::new("total"),
+            on_gui: TimeIt::new("on_gui"),
             on_update_begin: TimeIt::new("on_update_begin"),
             coroutines: TimeIt::new("coroutines"),
             on_update: TimeIt::new("on_update"),
@@ -730,25 +736,48 @@ impl UpdatePerfStats {
             remove_objects: TimeIt::new("remove objects"),
             add_objects: TimeIt::new("add objects"),
             render_infos: TimeIt::new("render_infos"),
+            last_perf_stats: None,
             last_report: Instant::now(),
         }
     }
 
-    fn report(&mut self) {
-        if self.last_report.elapsed().as_secs() >= 5 {
-            self.on_update_begin.report_ms_if_at_least(2.);
-            self.coroutines.report_ms_if_at_least(2.);
-            self.on_update.report_ms_if_at_least(2.);
-            self.on_update_end.report_ms_if_at_least(2.);
-            self.fixed_update.report_ms_if_at_least(2.);
-            self.detect_collision.report_ms_if_at_least(2.);
-            self.on_collision.report_ms_if_at_least(2.);
-            self.remove_objects.report_ms_if_at_least(2.);
-            self.add_objects.report_ms_if_at_least(2.);
-            self.render_infos.report_ms_if_at_least(2.);
-            self.total_stats.report_ms_if_at_least(2.);
+    fn get(&mut self) -> Option<Self> {
+        if self.last_report.elapsed().as_secs() >= 2 {
+            self.last_perf_stats = Some(Box::new(Self {
+                total_stats: self.total_stats.report_take(),
+                on_gui: self.on_gui.report_take(),
+                on_update_begin: self.on_update_begin.report_take(),
+                coroutines: self.coroutines.report_take(),
+                on_update: self.on_update.report_take(),
+                on_update_end: self.on_update_end.report_take(),
+                fixed_update: self.fixed_update.report_take(),
+                detect_collision: self.detect_collision.report_take(),
+                on_collision: self.on_collision.report_take(),
+                remove_objects: self.remove_objects.report_take(),
+                add_objects: self.add_objects.report_take(),
+                render_infos: self.render_infos.report_take(),
+                last_perf_stats: None,
+                last_report: Instant::now(),
+            }));
             self.last_report = Instant::now();
         }
+        self.last_perf_stats.clone().map(|s| *s)
+    }
+
+    fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
+        vec![
+            self.total_stats.as_tuple_ms(),
+            self.on_gui.as_tuple_ms(),
+            self.on_update_begin.as_tuple_ms(),
+            self.coroutines.as_tuple_ms(),
+            self.on_update.as_tuple_ms(),
+            self.on_update_end.as_tuple_ms(),
+            self.fixed_update.as_tuple_ms(),
+            self.detect_collision.as_tuple_ms(),
+            self.remove_objects.as_tuple_ms(),
+            self.add_objects.as_tuple_ms(),
+            self.render_infos.as_tuple_ms(),
+        ]
     }
 }
 
