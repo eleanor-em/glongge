@@ -208,6 +208,48 @@ pub mod gg_iter {
     impl<T> GgIter for T where T: Iterator + ?Sized {}
 }
 
+pub mod gg_err {
+    use anyhow::Result;
+    use tracing::error;
+
+    pub fn is_some_and_log<T>(result: Result<Option<T>>) -> bool {
+        match result {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                error!("{e:?}");
+                false
+            }
+        }
+    }
+
+    pub fn ok_and_log<T>(result: Result<Option<T>>) -> Option<T> {
+        match result {
+            Ok(o) => o,
+            Err(e) => {
+                error!("{e:?}");
+                None
+            }
+        }
+    }
+
+    pub fn log_unwrap_or<T, U: Into<T>>(default: U, result: Result<T>) -> T {
+        match result {
+            Ok(v) => v,
+            Err(e) => {
+                error!("{e:?}");
+                default.into()
+            }
+        }
+    }
+
+    pub fn log_err(result: Result<()>) {
+        if let Err(e) = result {
+            error!("{e:?}");
+        }
+    }
+}
+
 pub mod gg_range {
     use std::ops::Range;
 

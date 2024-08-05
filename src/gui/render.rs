@@ -52,12 +52,12 @@ use vulkano::memory::DeviceAlignment;
 use vulkano::sync::GpuFuture;
 use crate::{
     core::{
+        prelude::*,
         util::UniqueShared,
         vk::{AdjustedViewport, VulkanoContext}
     },
     shader::VkVertex,
 };
-use crate::core::prelude::AxisAlignedExtent;
 
 pub mod vs {
     vulkano_shaders::shader!{
@@ -495,11 +495,13 @@ impl GuiRenderer {
                     mesh.indices.len() as u32,
                     1,
                     index_cursor,
-                    vertex_cursor as i32,
+                    vertex_cursor,
                     0
                 )?;
             index_cursor += mesh.indices.len() as u32;
-            vertex_cursor += mesh.vertices.len() as u32;
+            vertex_cursor += i32::try_from(mesh.vertices.len())
+                .map_err(|_| anyhow!("overflowed vertex_cursor: {}", mesh.vertices.len()))?;
+
         }
         Ok(())
     }

@@ -16,7 +16,7 @@ use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::ObjectHandler;
-use crate::core::util::NonemptyVec;
+use crate::core::util::{gg_err, NonemptyVec};
 use crate::gui::GuiUi;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -72,14 +72,15 @@ impl GuiObjectView {
         &mut self,
         object_handler: &ObjectHandler<O>,
         selected_id: ObjectId
-    ) {
-        if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id) {
+    ) -> Result<()> {
+        if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id)? {
             c.hide_wireframe();
         }
         self.object_id = selected_id;
-        if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id) {
+        if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id)? {
             c.show_wireframe();
         }
+        Ok(())
     }
 
     fn build_closure<O: ObjectTypeEnum>(
@@ -88,21 +89,28 @@ impl GuiObjectView {
         mut gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
         frame: Frame,
         enabled: bool
-    ) -> Box<GuiClosure> {
+    ) -> Result<Box<GuiClosure>> {
         let object_id = self.object_id;
         let mut name = None;
         let mut absolute_transform = None;
         let mut relative_transform = None;
         let mut gui_cmd = None;
         if !object_id.is_root() {
-            let object = object_handler.get_object_or_panic(object_id).borrow();
-            name = Some(object.name());
-            absolute_transform = object_handler.absolute_transforms.get(&object_id).copied();
-            relative_transform = Some(object.transform());
-            gui_cmd = gui_cmds.remove(&object_id);
+            match object_handler.get_object(object_id)? {
+                Some(object) => {
+                    let object = object.borrow();
+                    name = Some(object.name());
+                    absolute_transform = object_handler.absolute_transforms.get(&object_id).copied();
+                    relative_transform = Some(object.transform());
+                    gui_cmd = gui_cmds.remove(&object_id);
+                }
+                None => {
+                    return Err(anyhow!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))
+                }
+            }
         }
 
-        Box::new(move |ctx| {
+        Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
                 .frame(frame)
                 .show_animated(ctx, enabled && !object_id.is_root(), |ui| {
@@ -138,7 +146,7 @@ impl GuiObjectView {
                             }
                         });
                 });
-        })
+        }))
     }
 }
 
@@ -170,10 +178,10 @@ impl GuiObjectTreeNode {
     fn refresh_label<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         if !self.object_id.is_root() {
             let mut tags = String::new();
-            if object_handler.get_collision_shape(self.object_id).is_some() {
+            if gg_err::is_some_and_log(object_handler.get_collision_shape(self.object_id)) {
                 tags += "▣ ";
             }
-            if object_handler.get_sprite(self.object_id).is_some() {
+            if gg_err::is_some_and_log(object_handler.get_sprite(self.object_id)) {
                 tags += "👾 ";
             }
             self.label.set_tags(tags.trim());
@@ -269,31 +277,38 @@ impl GuiObjectTree {
 
     pub fn on_add_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, object: &SceneObjectWithId<O>) {
         let mut tree = &mut self.root;
-        for id in object_handler.get_parent_chain_or_panic(object.object_id).into_iter().rev() {
-            if tree.displayed.contains_key(&id) {
-                tree = tree.displayed.get_mut(&id).unwrap();
-            } else {
-                let child = tree.child(object);
-                tree.displayed.insert(object.object_id, child);
-                return;
-            }
-        };
+        match object_handler.get_parent_chain(object.object_id) {
+            Ok(chain) => for id in chain.into_iter().rev() {
+                if tree.displayed.contains_key(&id) {
+                    tree = tree.displayed.get_mut(&id).unwrap();
+                } else {
+                    let child = tree.child(object);
+                    tree.displayed.insert(object.object_id, child);
+                    return;
+                }
+            },
+            Err(e) => error!("{e:?}"),
+        }
     }
 
     pub fn on_remove_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, removed_id: ObjectId) {
-        let mut chain = object_handler.get_parent_chain_or_panic(removed_id);
-        let mut tree = &mut self.root;
-        let mut id = chain.pop().unwrap();
-        while id != removed_id {
-            if let Some(next) = tree.displayed.get_mut(&id) {
-                tree = next;
-            } else {
-                // Orphaned object, nothing to remove
-                return;
-            }
-            id = chain.pop().unwrap();
+        match object_handler.get_parent_chain(removed_id) {
+            Ok(mut chain) => {
+                let mut tree = &mut self.root;
+                let mut id = chain.pop().unwrap();
+                while id != removed_id {
+                    if let Some(next) = tree.displayed.get_mut(&id) {
+                        tree = next;
+                    } else {
+                        // Orphaned object, nothing to remove
+                        return;
+                    }
+                    id = chain.pop().unwrap();
+                }
+                tree.displayed.remove(&id);
+            },
+            Err(e) => error!("{e:?}"),
         }
-        tree.displayed.remove(&id);
     }
 
     pub fn refresh_labels<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
@@ -455,7 +470,7 @@ impl DebugGui {
         object_handler: &ObjectHandler<O>
     ) {
         self.wireframe_mouseovers.drain(..)
-            .filter_map(|o| object_handler.get_collision_shape_mut(o))
+            .filter_map(|o| gg_err::ok_and_log(object_handler.get_collision_shape_mut(o)))
             .for_each(|mut c| c.hide_wireframe());
     }
 
@@ -466,11 +481,10 @@ impl DebugGui {
     ) {
         self.wireframe_mouseovers = collisions.into_iter()
             .map(|c| c.other.object_id)
-            .map(|o| {
-                if let Some(mut c) = object_handler.get_collision_shape_mut(o) {
+            .inspect(|&o| {
+                if let Some(mut c) = gg_err::ok_and_log(object_handler.get_collision_shape_mut(o)) {
                     c.show_wireframe();
                 }
-                o
             })
             .collect_vec();
     }
@@ -481,18 +495,24 @@ impl DebugGui {
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
         if !self.object_tree.selected_id.is_root() {
-            self.object_view.update_selection(object_handler, self.object_tree.selected_id);
+            gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
         }
 
         let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
-        let build_object_view = self.object_view.build_closure(
-            object_handler, gui_cmds, self.frame, self.enabled
-        );
+        let build_object_view = match self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                error!("{e:?}");
+                None
+            }
+        };
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);
-            build_object_view(ctx);
+            if let Some(build_object_view) = build_object_view {
+                build_object_view(ctx);
+            }
         })
     }
 

@@ -703,13 +703,13 @@ impl CompoundCollider {
             .filter_map(|(a, b)| {
                 Vec2::intersect(origin, (origin - prev).normed(), *a, (*b - *a).normed())
             })
-            .min_by(|a, b| a.cmp_by_length(b));
+            .min_by(Vec2::cmp_by_length);
 
         let intersections_2 = filtered_edges.iter()
             .filter_map(|(a, b)| {
                 Vec2::intersect(origin, (origin - next).normed(), *a, (*b - *a).normed())
             })
-            .min_by(|a, b| a.cmp_by_length(b));
+            .min_by(Vec2::cmp_by_length);
 
         if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
             let centre: Vec2 = (start + end) / 2;

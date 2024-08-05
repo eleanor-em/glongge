@@ -87,18 +87,22 @@ impl CollisionHandler {
         }
 
         for (tag, emitters) in new_object_ids_by_emitting_tag {
-            let listeners = self.object_ids_by_listening_tag.get(tag)
-                .unwrap_or_else(|| panic!("object_ids_by_listening tag missing tag: {tag}"));
-            let new_possible_collisions = emitters.into_iter().cartesian_product(listeners.iter())
-                .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(emitter, *listener));
-            self.possible_collisions.extend(new_possible_collisions);
+            if let Some(listeners) = self.object_ids_by_listening_tag.get(tag) {
+                let new_possible_collisions = emitters.into_iter().cartesian_product(listeners.iter())
+                    .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(emitter, *listener));
+                self.possible_collisions.extend(new_possible_collisions);
+            } else {
+                error!("object_ids_by_listening tag missing tag: {tag}");
+            }
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
-            let emitters = self.object_ids_by_emitting_tag.get(tag)
-                .unwrap_or_else(|| panic!("object_ids_by_tag tag missing tag: {tag}"));
-            let new_possible_collisions = emitters.iter().cartesian_product(listeners.into_iter())
-                .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(*emitter, listener));
-            self.possible_collisions.extend(new_possible_collisions);
+            if let Some(emitters) = self.object_ids_by_emitting_tag.get(tag) {
+                let new_possible_collisions = emitters.iter().cartesian_product(listeners.into_iter())
+                    .filter_map(|(emitter, listener)| UnorderedPair::new_distinct(*emitter, listener));
+                self.possible_collisions.extend(new_possible_collisions);
+            } else {
+                error!("object_ids_by_tag tag missing tag: {tag}");
+            }
         }
     }
     pub(crate) fn remove_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
@@ -119,43 +123,11 @@ impl CollisionHandler {
         let collisions = self.get_collisions_inner(absolute_transforms, objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
-            let this_id = parents.get(&ids.fst())
-                .unwrap_or_else(|| panic!("missing object_id in parents: {:?}", ids.fst()));
-            let other_id = parents.get(&ids.snd())
-                .unwrap_or_else(|| panic!("missing object_id in parents: {:?}", ids.snd()));
-
-            let this = SceneObjectWithId::new(*this_id, objects[this_id].clone());
-            let (this_listening, this_emitting) = {
-                let this = this.inner.borrow();
-                (this.listening_tags(), this.emitting_tags())
-            };
-            let other = SceneObjectWithId::new(*other_id, objects[other_id].clone());
-            let (other_listening, other_emitting) = {
-                let other = other.inner.borrow();
-                (other.listening_tags(), other.emitting_tags())
-            };
-            if !this_listening.into_iter().chain(other_emitting).all_unique() {
-                rv.push(CollisionNotification {
-                    this: this.clone(),
-                    other: other.clone(),
-                    mtv,
-                });
-            };
-            if !other_listening.into_iter().chain(this_emitting).all_unique() {
-                rv.push(CollisionNotification {
-                    this: other,
-                    other: this,
-                    mtv: -mtv,
-                });
+            if let Err(e) = Self::process_collision_inner(parents, objects, &mut rv, &ids, mtv) {
+                error!("{e:?}");
             }
         }
         rv
-    }
-
-    pub fn all_tags(&self) -> Vec<&'static str> {
-        self.object_ids_by_emitting_tag.keys().copied()
-            .chain(self.object_ids_by_listening_tag.keys().copied())
-            .collect()
     }
 
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
@@ -165,21 +137,74 @@ impl CollisionHandler {
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions.iter()
             .filter_map(|ids| {
-                let this = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>().collider()
-                    .transformed(absolute_transforms
-                        .get(&ids.fst())
-                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.fst())));
-                let other = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>().collider()
-                    .transformed(absolute_transforms
-                        .get(&ids.snd())
-                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", ids.snd())));
+                let this_transform = absolute_transforms.get(&ids.fst())
+                    .or_else(|| {
+                        error!("missing object_id in absolute_transforms: {:?}", ids.fst());
+                        None
+                    })?;
+                let other_transform = absolute_transforms.get(&ids.snd())
+                    .or_else(|| {
+                        error!("missing object_id in absolute_transforms: {:?}", ids.snd());
+                        None
+                    })?;
+                let this = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>()
+                    .collider()
+                    .transformed(this_transform);
+                let other = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>()
+                    .collider()
+                    .transformed(other_transform);
                 this.collides_with(&other).map(|mtv| (*ids, mtv))
             })
             .collect()
     }
 
-    pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> &BTreeSet<ObjectId> {
+    fn process_collision_inner<ObjectType: ObjectTypeEnum>(
+        parents: &BTreeMap<ObjectId, ObjectId>,
+        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+        rv: &mut Vec<CollisionNotification<ObjectType>>,
+        ids: &UnorderedPair<ObjectId>,
+        mtv: Vec2
+    ) -> Result<()> {
+        let this_id = parents.get(&ids.fst())
+            .ok_or_else(|| anyhow!("missing object_id in parents: {:?}", ids.fst()))?;
+        let other_id = parents.get(&ids.snd())
+            .ok_or_else(|| anyhow!("missing object_id in parents: {:?}", ids.snd()))?;
+
+        let this = SceneObjectWithId::new(*this_id, objects[this_id].clone());
+        let (this_listening, this_emitting) = {
+            let this = this.inner.borrow();
+            (this.listening_tags(), this.emitting_tags())
+        };
+        let other = SceneObjectWithId::new(*other_id, objects[other_id].clone());
+        let (other_listening, other_emitting) = {
+            let other = other.inner.borrow();
+            (other.listening_tags(), other.emitting_tags())
+        };
+        if !this_listening.into_iter().chain(other_emitting).all_unique() {
+            rv.push(CollisionNotification {
+                this: this.clone(),
+                other: other.clone(),
+                mtv,
+            });
+        };
+        if !other_listening.into_iter().chain(this_emitting).all_unique() {
+            rv.push(CollisionNotification {
+                this: other,
+                other: this,
+                mtv: -mtv,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn all_tags(&self) -> Vec<&'static str> {
+        self.object_ids_by_emitting_tag.keys().copied()
+            .chain(self.object_ids_by_listening_tag.keys().copied())
+            .collect()
+    }
+
+    pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> Result<&BTreeSet<ObjectId>> {
         self.object_ids_by_emitting_tag.get(tag)
-            .unwrap_or_else(|| panic!("missing tag in object_ids_by_emitting_tag: {tag}"))
+            .ok_or_else(|| anyhow!("missing tag in object_ids_by_emitting_tag: {tag}"))
     }
 }
