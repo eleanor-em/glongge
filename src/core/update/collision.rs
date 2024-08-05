@@ -75,15 +75,13 @@ impl CollisionHandler {
             }
         }
 
-        for tag in new_object_ids_by_emitting_tag.keys() {
-            self.object_ids_by_emitting_tag.entry(tag).or_default().extend(
-                new_object_ids_by_emitting_tag.get(tag).unwrap());
+        for (tag, new_object_ids) in &new_object_ids_by_emitting_tag {
+            self.object_ids_by_emitting_tag.entry(tag).or_default().extend(new_object_ids);
             self.object_ids_by_listening_tag.entry(tag).or_default();
         }
-        for tag in new_object_ids_by_listening_tag.keys() {
+        for (tag, new_object_ids) in &new_object_ids_by_listening_tag {
             self.object_ids_by_emitting_tag.entry(tag).or_default();
-            self.object_ids_by_listening_tag.entry(tag).or_default().extend(
-                new_object_ids_by_listening_tag.get(tag).unwrap());
+            self.object_ids_by_listening_tag.entry(tag).or_default().extend(new_object_ids);
         }
 
         for (tag, emitters) in new_object_ids_by_emitting_tag {
@@ -166,9 +164,9 @@ impl CollisionHandler {
         mtv: Vec2
     ) -> Result<()> {
         let this_id = parents.get(&ids.fst())
-            .ok_or_else(|| anyhow!("missing object_id in parents: {:?}", ids.fst()))?;
+            .with_context(|| format!("missing object_id in parents: {:?}", ids.fst()))?;
         let other_id = parents.get(&ids.snd())
-            .ok_or_else(|| anyhow!("missing object_id in parents: {:?}", ids.snd()))?;
+            .with_context(|| format!("missing object_id in parents: {:?}", ids.snd()))?;
 
         let this = SceneObjectWithId::new(*this_id, objects[this_id].clone());
         let (this_listening, this_emitting) = {
@@ -205,6 +203,6 @@ impl CollisionHandler {
 
     pub(crate) fn get_object_ids_by_emitting_tag(&self, tag: &'static str) -> Result<&BTreeSet<ObjectId>> {
         self.object_ids_by_emitting_tag.get(tag)
-            .ok_or_else(|| anyhow!("missing tag in object_ids_by_emitting_tag: {tag}"))
+            .with_context(|| format!("missing tag in object_ids_by_emitting_tag: {tag}"))
     }
 }

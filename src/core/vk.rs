@@ -845,7 +845,7 @@ impl WindowEventHandler {
                         SwapchainPresentInfo::swapchain_image_index(
                             self.vk_ctx.swapchain(),
                             u32::try_from(image_idx)
-                                .unwrap_or_else(|_| panic!("too large image_idx: {image_idx}"))
+                                .context("image_idx overflowed: {image_idx}")?
                         ),
                     )
                     .then_signal_fence(),

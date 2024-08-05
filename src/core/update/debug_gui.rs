@@ -91,24 +91,16 @@ impl GuiObjectView {
         enabled: bool
     ) -> Result<Box<GuiClosure>> {
         let object_id = self.object_id;
-        let mut name = None;
-        let mut absolute_transform = None;
-        let mut relative_transform = None;
-        let mut gui_cmd = None;
-        if !object_id.is_root() {
-            match object_handler.get_object(object_id)? {
-                Some(object) => {
-                    let object = object.borrow();
-                    name = Some(object.name());
-                    absolute_transform = object_handler.absolute_transforms.get(&object_id).copied();
-                    relative_transform = Some(object.transform());
-                    gui_cmd = gui_cmds.remove(&object_id);
-                }
-                None => {
-                    return Err(anyhow!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))
-                }
-            }
-        }
+        if object_id.is_root() { return Ok(Box::new(|_| {})); }
+
+        let object = gg_err::ok_and_log(object_handler.get_object(object_id))
+            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?
+            .borrow();
+        let name = object.name();
+        let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
+            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+        let relative_transform = object.transform();
+        let gui_cmd = gui_cmds.remove(&object_id);
 
         Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
@@ -122,7 +114,7 @@ impl GuiObjectView {
                                     justify: true,
                                     ..Default::default()
                                 };
-                                layout_job.append(name.unwrap().as_str(), 0., TextFormat {
+                                layout_job.append(name.as_str(), 0., TextFormat {
                                     color: Color32::from_gray(255),
                                     ..Default::default()
                                 });
@@ -133,12 +125,12 @@ impl GuiObjectView {
                             egui::CollapsingHeader::new("Absolute transform")
                                 .default_open(true)
                                 .show(ui, |ui| {
-                                    absolute_transform.unwrap().build_gui(ui);
+                                    absolute_transform.build_gui(ui);
                                 });
                             egui::CollapsingHeader::new("Relative transform")
                                 .default_open(true)
                                 .show(ui, |ui| {
-                                    relative_transform.unwrap().build_gui(ui);
+                                    relative_transform.build_gui(ui);
                                 });
                             if let Some(gui_cmd) = gui_cmd {
                                 ui.separator();

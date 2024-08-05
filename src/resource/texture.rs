@@ -15,6 +15,7 @@ use std::{
         atomic::{AtomicUsize, Ordering}
     },
 };
+use num_traits::Zero;
 
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -287,13 +288,13 @@ impl TextureHandler {
     fn load_file_inner(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
         let path = Path::new(filename);
         let ext = path.extension()
-            .ok_or_else(|| anyhow!("no file extension: {}", filename))?
+            .with_context(|| format!("no file extension: {filename}"))?
             .to_str()
-            .ok_or_else(|| anyhow!("failed conversion from OsStr: {}", filename))?;
+            .with_context(|| format!("failed conversion from OsStr: {filename}"))?;
         match ext {
             "png" => self.load_file_inner_png(filename),
-            "aseprite" => unimplemented!("TODO: use asefile crate"),
-            ext => bail!("unknown file extension: {} (while loading {})", ext, filename),
+            "aseprite" => todo!("use asefile crate"),
+            ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
     fn load_file_inner_png(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
@@ -429,6 +430,13 @@ impl TextureHandler {
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
     pub(crate) fn get(&self, texture_id: TextureId) -> Option<CachedTexture> {
         self.cached_textures.read().unwrap().get(&texture_id).cloned()
+    }
+    pub(crate) fn get_nonblank(&self, texture_id: TextureId) -> Option<CachedTexture> {
+        if texture_id.is_zero() {
+            None
+        } else {
+            self.get(texture_id)
+        }
     }
 }
 

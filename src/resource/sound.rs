@@ -119,7 +119,7 @@ impl SoundHandler {
     pub fn new() -> Result<Self> {
         let engine = SoundEngine::new()
             // SoundEngine::new() returns Box<dyn Error> which is not Send, so expect() here.
-            .map_err(|err| anyhow!("fyrox-sound error: SoundEngine::new(): {:?}", err))?;
+            .map_err(|err| anyhow!("fyrox-sound error: SoundEngine::new(): {err:?}"))?;
         let ctx = SoundContext::new();
         engine.state().add_context(ctx.clone());
         Ok(Self {
@@ -184,7 +184,7 @@ impl Loader<Sound> for SoundHandler {
         for handle in handles {
             handle.join()
                 // XXX: not sure why this is needed.
-                .map_err(|e| anyhow!("join error: {:?}", e))?;
+                .map_err(|e| anyhow!("join error: {e:?}"))?;
         }
         Ok(())
     }

@@ -78,7 +78,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
     fn get_object_type_string(&self, id: ObjectId) -> Result<String> {
         let object_type = self.objects.get(&id)
-            .ok_or_else(|| anyhow!("missing object_id from objects: {id:?}"))?
+            .with_context(|| format!("missing object_id from objects: {id:?}"))?
             .borrow().get_type();
         Ok(format!("{object_type:?}"))
     }
@@ -88,8 +88,8 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         } else if let Some(object) = self.objects.get(&id) {
             Ok(Some(object))
         } else {
-            Err(anyhow!("missing object_id from objects: {:?} [{:?}]",
-                id, self.get_object_type_string(id)?))
+            bail!("missing object_id from objects: {:?} [{:?}]",
+                id, self.get_object_type_string(id)?)
         }
     }
 
@@ -98,9 +98,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Ok(*parent)
         } else {
             let object_type = self.objects.get(&id)
-                .ok_or_else(|| anyhow!("missing object_id from objects: {id:?}"))?
+                .with_context(|| format!("missing object_id from objects: {id:?}"))?
                 .borrow().get_type();
-            Err(anyhow!("missing object_id from parents: {:?} [{:?}]", id, object_type))
+            bail!("missing object_id from parents: {:?} [{:?}]", id, object_type)
         }
     }
     fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
@@ -116,9 +116,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Ok(child)
         } else {
             let object_type = self.objects.get(&id)
-                .ok_or_else(|| anyhow!("missing object_id from objects: {id:?}"))?
+                .with_context(|| format!("missing object_id from objects: {id:?}"))?
                 .borrow().get_type();
-            Err(anyhow!("missing object_id from children: {:?} [{:?}]", id, object_type))
+            bail!("missing object_id from children: {:?} [{:?}]", id, object_type)
         }
     }
     fn get_children_mut(&mut self, id: ObjectId) -> Result<&mut Vec<SceneObjectWithId<ObjectType>>> {
@@ -126,9 +126,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Ok(child)
         } else {
             let object_type = self.objects.get(&id)
-                .ok_or_else(|| anyhow!("missing object_id from objects: {id:?}"))?
+                .with_context(|| format!("missing object_id from objects: {id:?}"))?
                 .borrow().get_type();
-            Err(anyhow!("missing object_id from children: {:?} [{:?}]", id, object_type))
+            bail!("missing object_id from children: {:?} [{:?}]", id, object_type)
         }
     }
     fn get_sprite(&self, id: ObjectId) -> Result<Option<Ref<GgInternalSprite>>> {
@@ -446,13 +446,14 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         new_ids: RangeInclusive<usize>
     ) {
         for this_id in new_ids.into_iter().map(ObjectId) {
-            let this = self.object_handler.objects.get_mut(&this_id)
-                .unwrap_or_else(|| panic!("tried to call on_ready() for nonexistent added object: {this_id:?}"))
-                .clone();
-            match UpdateContext::new(self, input_handler, this_id, object_tracker) {
-                Ok(mut ctx) => this.borrow_mut().on_ready(&mut ctx),
-                Err(e) => error!("{e:?}"),
-            }
+            gg_err::log_err(self.object_handler.objects.get_mut(&this_id)
+                .with_context(|| format!("tried to call on_ready() for nonexistent added object: {this_id:?}"))
+                .cloned()
+                .and_then(|this| {
+                    let mut ctx = UpdateContext::new(self, input_handler, this_id, object_tracker)?;
+                    this.borrow_mut().on_ready(&mut ctx);
+                    Ok(())
+                }));
         }
     }
 
@@ -1000,13 +1001,21 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     }
 
     pub fn absolute_transform(&self) -> Transform {
-        *self.all_absolute_transforms.get(&self.this_id)
-            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: this={:?}", self.this_id))
+        self.all_absolute_transforms.get(&self.this_id)
+            .copied()
+            .unwrap_or_else(|| {
+                error!("missing object_id in absolute_transforms: this={:?}", self.this_id);
+                Transform::default()
+            })
     }
     pub fn absolute_transform_of(&self, other: &SceneObjectWithId<ObjectType>) -> Transform {
         // Should not be possible to get an invalid object_id here if called from public.
-        *self.all_absolute_transforms.get(&other.object_id)
-            .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {:?}", other.object_id))
+        self.all_absolute_transforms.get(&other.object_id)
+            .copied()
+            .unwrap_or_else(|| {
+                error!("missing object_id in absolute_transforms: {:?}", other.object_id);
+                Transform::default()
+            })
     }
     pub fn rect(&self) -> Rect {
         self.collider()
@@ -1032,30 +1041,31 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .aa_extent()
     }
     pub fn collider(&self) -> Option<GenericCollider> {
-        self.collider_of_inner(self.this_id)
+        gg_err::ok_and_log(self.collider_of_inner(self.this_id))
     }
     pub fn collider_of(&self, other: &SceneObjectWithId<ObjectType>) -> Option<GenericCollider> {
-        self.collider_of_inner(other.object_id)
+        gg_err::ok_and_log(self.collider_of_inner(other.object_id))
     }
-    fn collider_of_inner(&self, object_id: ObjectId) -> Option<GenericCollider> {
+    fn collider_of_inner(&self, object_id: ObjectId) -> Result<Option<GenericCollider>> {
         let children = if object_id == self.this_id {
             &self.children
         } else {
             self.all_children.get(&object_id)
-                .unwrap_or_else(|| panic!("missing object_id in children: {object_id:?}"))
+                .with_context(|| format!("missing object_id in children: {object_id:?}"))?
         };
-        children.iter()
+        if let Some((collision_shape_id, collision_shape)) = children.iter()
             .find_map(|obj| {
                 obj.downcast::<GgInternalCollisionShape>()
                     .map(|inner| (obj.object_id, inner))
-            })
-            .map(|(collision_shape_id, collision_shape)| {
-                collision_shape.collider().transformed(
-                    self.all_absolute_transforms
-                        .get(&collision_shape_id)
-                        .unwrap_or_else(|| panic!("missing object_id in absolute_transforms: {collision_shape_id:?}"))
-                )
-            })
+            }) {
+            if let Some(t) = self.all_absolute_transforms.get(&collision_shape_id) {
+                Ok(Some(collision_shape.collider().transformed(t)))
+            } else {
+                bail!("missing object_id in absolute_transforms: {collision_shape_id:?}");
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
@@ -1154,16 +1164,16 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                             other_id: ObjectId
     ) -> Result<Option<Collision<ObjectType>>> {
         let other = self.object_tracker.get(other_id)
-            .ok_or_else(|| anyhow!("missing object_id in objects: {other_id:?}"))?;
+            .with_context(|| format!("missing object_id in objects: {other_id:?}"))?;
         let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
             .collider()
             .transformed(
                 self.all_absolute_transforms.get(&other_id)
-                    .ok_or_else(|| anyhow!("missing object_id in absolute_transforms: {other_id:?}"))?
+                    .with_context(|| format!("missing object_id in absolute_transforms: {other_id:?}"))?
             );
         if let Some(mtv) = collider.collides_with(&other_collider) {
             let other = self.lookup_parent(other_id)
-                .ok_or_else(|| anyhow!("orphaned GgInternalCollisionShape: {other_id:?}"))?;
+                .with_context(|| format!("orphaned GgInternalCollisionShape: {other_id:?}"))?;
             Ok(Some(Collision { other, mtv }))
         } else {
             Ok(None)

@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use egui::{ClippedPrimitive, Mesh};
 use egui::epaint::Primitive;
 use itertools::Itertools;
-use tracing::warn;
 use vulkano::{
     buffer::Buffer,
     buffer::BufferContents,
@@ -245,8 +244,9 @@ impl GuiRenderer {
         sampler_create_info: SamplerCreateInfo,
     ) -> Result<egui::TextureId> {
         let pipeline = self.get_or_create_pipeline()?;
-        let layout = pipeline.layout().set_layouts().first().unwrap();
-        let sampler = Sampler::new(self.vk_ctx.device(), sampler_create_info).unwrap();
+        let layout = pipeline.layout().set_layouts().first()
+            .context("pipeline layout missing descriptor set layout")?;
+        let sampler = Sampler::new(self.vk_ctx.device(), sampler_create_info)?;
         let desc_set = PersistentDescriptorSet::new(
             &self.vk_ctx.descriptor_set_allocator(),
             layout.clone(),
@@ -293,11 +293,9 @@ impl GuiRenderer {
 
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
-            let Some(existing_image) = self.texture_images.get(&id) else {
-                // Egui wants us to update this texture but we don't have it to begin with!
-                panic!("attempt to write into non-existing image");
-            };
-            assert_eq!(existing_image.format(), Format::R8G8B8A8_SRGB);
+            let existing_image = self.texture_images.get(&id)
+                .context("attempt to write into non-existing image")?;
+            check_eq!(existing_image.format(), Format::R8G8B8A8_SRGB);
 
             // Defer upload of data
             cbb.copy_buffer_to_image(CopyBufferToImageInfo {
@@ -334,11 +332,11 @@ impl GuiRenderer {
                 )
                     .unwrap()
             };
-            cbb.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(stage, img.clone()))
-                .unwrap();
+            cbb.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(stage, img.clone()))?;
             let view = ImageView::new(img.clone(), ImageViewCreateInfo::from_image(&img))?;
             let pipeline = self.get_or_create_pipeline()?;
-            let layout = pipeline.layout().set_layouts().first().unwrap();
+            let layout = pipeline.layout().set_layouts().first()
+                .context("no descriptor sets in pipeline layout")?;
             let desc_set = PersistentDescriptorSet::new(
                 &self.vk_ctx.descriptor_set_allocator(),
                 layout.clone(),
@@ -352,10 +350,8 @@ impl GuiRenderer {
     }
     /// Write the entire texture delta for this frame.
     pub fn update_textures(&mut self, sets: &[(egui::TextureId, egui::epaint::ImageDelta)]) -> Result<()> {
-        // Allocate enough memory to upload every delta at once.
         let total_size_bytes =
             sets.iter().map(|(_, set)| image_size_bytes(set)).sum::<usize>() * 4;
-        // Infallible - unless we're on a 128 bit machine? :P
         let total_size_bytes = u64::try_from(total_size_bytes)?;
         let Ok(total_size_bytes) = vulkano::NonZeroDeviceSize::try_from(total_size_bytes) else {
             // Nothing to upload!
@@ -369,8 +365,8 @@ impl GuiRenderer {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            // Bytes, align of one, infallible.
-            DeviceLayout::new(total_size_bytes, DeviceAlignment::MIN).unwrap(),
+            DeviceLayout::new(total_size_bytes, DeviceAlignment::MIN)
+                .context("overflowed total_size_bytes: {total_size_bytes}")?,
         )?;
         let buffer = Subbuffer::new(buffer);
 
@@ -382,21 +378,14 @@ impl GuiRenderer {
         )?;
 
         {
-            // Scoped to keep writer lock bounded
-            // Should be infallible - Just made the buffer so it's exclusive, and we have host access to it.
-            let mut writer = buffer.write().unwrap();
-
-            // Keep track of where to write the next image to into the staging buffer.
+            let mut writer = buffer.write()?;
             let mut past_buffer_end = 0usize;
 
             for (id, delta) in sets {
                 let image_size_bytes = image_size_bytes(delta);
                 let range = past_buffer_end..(image_size_bytes + past_buffer_end);
-
-                // Bump for next loop
                 past_buffer_end += image_size_bytes;
 
-                // Represents the same memory in two ways. Writable memmap, and gpu-side description.
                 let stage = buffer.clone().slice(range.start as u64..range.end as u64);
                 let mapped_stage = &mut writer[range];
 
@@ -404,10 +393,7 @@ impl GuiRenderer {
             }
         }
 
-        // Execute every upload at once and await:
-        let command_buffer = cbb.build().unwrap();
-        // Executing on the graphics queue not only since it's what we have, but
-        // we must guarantee a transfer granularity of [1,1,x] which graphics queue is required to have.
+        let command_buffer = cbb.build()?;
         command_buffer
             .execute(self.vk_ctx.queue())?
             .then_signal_fence_and_flush()?
@@ -468,41 +454,56 @@ impl GuiRenderer {
         let (vertex_buffer, index_buffer) = self.create_vertex_index_buffers(&meshes)?;
         let mut vertex_cursor = 0;
         let mut index_cursor = 0;
-        let mut current_texture = None;
         for mesh in meshes {
-            let pipeline = self.get_or_create_pipeline()?;
-            if current_texture != Some(mesh.texture_id) {
-                if !self.texture_desc_sets.contains_key(&mesh.texture_id) {
-                    warn!("texture no longer exists: {:?}", mesh.texture_id);
-                    continue;
-                }
-                current_texture = Some(mesh.texture_id);
-            }
-            let desc_set = self.texture_desc_sets.get(&mesh.texture_id).unwrap();
-            let layout = pipeline.layout().clone();
-            builder
-                .bind_pipeline_graphics(pipeline.clone())?
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Graphics,
-                    layout.clone(),
-                    0,
-                    desc_set.clone(),
-                )?
-                .bind_vertex_buffers(0, vertex_buffer.clone())?
-                .bind_index_buffer(index_buffer.clone())?
-                .push_constants(layout, 0, push_constants)?
-                .draw_indexed(
+            if let Err(e) = self.prepare_mesh_draw(
+                builder,
+                push_constants,
+                vertex_buffer.clone(),
+                index_buffer.clone(),
+                &mesh
+            ) {
+                error!("{e:?}");
+            } else {
+                builder.draw_indexed(
                     mesh.indices.len() as u32,
                     1,
                     index_cursor,
                     vertex_cursor,
                     0
                 )?;
+            }
             index_cursor += mesh.indices.len() as u32;
             vertex_cursor += i32::try_from(mesh.vertices.len())
-                .map_err(|_| anyhow!("overflowed vertex_cursor: {}", mesh.vertices.len()))?;
-
+                .with_context(|| format!("overflowed vertex_cursor: {}", mesh.vertices.len()))?;
         }
+        Ok(())
+    }
+
+    fn prepare_mesh_draw(&mut self,
+                         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+                         push_constants: vs::VertPC,
+                         vertex_buffer: EguiVertexBuffer,
+                         index_buffer: EguiIndexBuffer,
+                         mesh: &Mesh
+    ) -> Result<()> {
+        let pipeline = self.get_or_create_pipeline()?;
+        let desc_set = if let Some(desc) = self.texture_desc_sets.get(&mesh.texture_id) {
+            desc.clone()
+        } else {
+            bail!("texture no longer exists: {:?}", mesh.texture_id);
+        };
+        let layout = pipeline.layout().clone();
+        builder
+            .bind_pipeline_graphics(pipeline)?
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                layout.clone(),
+                0,
+                desc_set,
+            )?
+            .bind_vertex_buffers(0, vertex_buffer)?
+            .bind_index_buffer(index_buffer)?
+            .push_constants(layout, 0, push_constants)?;
         Ok(())
     }
 }

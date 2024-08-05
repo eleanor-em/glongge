@@ -4,8 +4,6 @@ use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
 
-use anyhow::{anyhow, Result};
-
 use ab_glyph::{point, Glyph, ScaleFont, OutlinedGlyph, FontVec, PxScaleFont};
 use crate::{
     core::{
@@ -135,7 +133,7 @@ impl GlyphReader {
                 b.max.y = b.max.y.max(next.max.y);
                 b
             })
-            .ok_or(anyhow!("could not get outline of glyphs"))?;
+            .context("could not get outline of glyphs")?;
         check_ge!(all_px_bounds.min.x, 0.);
         check_ge!(all_px_bounds.min.y, 0.);
         check_ge!(all_px_bounds.max.x, 0.);
@@ -163,10 +161,15 @@ impl Read for GlyphReader {
             let img_left = bounds.min.x as u32 - self.all_px_bounds.min.x as u32;
             let img_top = bounds.min.y as u32 - self.all_px_bounds.min.y as u32;
             glyph.draw(|x, y, v| {
-                let px = Vec2Int {
-                    x: (img_left + x).to_i32().unwrap(),
-                    y: (img_top + y).to_i32().unwrap(),
-                }.as_index(self.width(), self.height()) * 4;
+                let Some(x) = (img_left + x).to_i32() else {
+                    warn!("glyph x out of range: {}", img_left + x);
+                    return;
+                };
+                let Some(y) = (img_top + y).to_i32() else {
+                    warn!("glyph y out of range: {}", img_top + y);
+                    return;
+                };
+                let px = Vec2Int { x, y }.as_index(self.width(), self.height()) * 4;
 
                 buf[px] = self.col[0];
                 buf[px + 1] = self.col[1];

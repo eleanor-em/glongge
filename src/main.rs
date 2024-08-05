@@ -34,8 +34,7 @@ fn main() -> Result<()> {
         .write(true)
         .truncate(true)
         .create(true)
-        .open("run.log")
-        .unwrap();
+        .open("run.log")?;
     let timer = OffsetTime::new(
         time::UtcOffset::UTC,
         time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]")

@@ -3,7 +3,6 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use anyhow::{Context, Result};
 use itertools::Itertools;
-use num_traits::Zero;
 use tracing::error;
 use vulkano::{pipeline::{
     graphics::{
@@ -80,8 +79,11 @@ pub fn register_shader<S: Shader + Sized>() -> ShaderId {
         .or_insert_with(ShaderId::next)
 }
 pub fn get_shader(name: ShaderName) -> ShaderId {
-    *SHADER_IDS_FINAL.get(&name)
-        .unwrap_or_else(|| panic!("unknown shader: {name:?}"))
+    SHADER_IDS_FINAL.get(&name).copied()
+        .unwrap_or_else(|| {
+            error!("unknown shader: {name:?}");
+            ShaderId::default()
+        })
 }
 pub(crate) fn ensure_shaders_locked() {
     SHADERS_LOCKED.swap(true, Ordering::Release);
@@ -122,8 +124,10 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
 
     fn write(&mut self, data: &[T]) -> Result<()> {
         let buf_len = usize::try_from(self.inner.len())
-            .unwrap_or_else(|_| panic!("inexplicable: self.inner.len() = {}", self.inner.len()));
-        check_le!(self.begin, buf_len);
+            .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+        if self.begin > buf_len {
+            bail!("self.begin accounting wrong? {} > {buf_len}", self.begin)
+        }
         self.begin += self.len();
         if self.begin == buf_len {
             self.begin = 0;
@@ -152,10 +156,15 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
 
     fn draw(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
         let vertex_count = u32::try_from(self.vertex_count)
-            .unwrap_or_else(|_| panic!("tried to draw too many vertices: {}", self.vertex_count));
+            .with_context(|| format!("tried to draw too many vertices: {}", self.vertex_count))?;
         let begin = u32::try_from(self.begin)
-            .unwrap_or_else(|_| panic!("inexplicable: self.begin = {}", self.begin));
-        check_le!(begin + vertex_count, self.inner.len() as u32);
+            .with_context(|| format!("self.begin overflowed: {}", self.begin))?;
+        let buf_len = u32::try_from(self.inner.len())
+            .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+        if begin + vertex_count >= buf_len {
+            bail!("too many vertices: {begin} + {vertex_count} = {} >= {buf_len}",
+                       begin + vertex_count);
+        }
         builder.bind_vertex_buffers(0, self.inner.clone())?
             .draw(vertex_count, 1, begin, 0)?;
         Ok(())
@@ -304,15 +313,16 @@ impl Shader for SpriteShader {
 
                 let mut blend_col = render_info.inner.col;
                 let mut uv = vertex.uv;
-                let maybe_tex = self.resource_handler.texture.get(render_info.inner.texture_id);
-                if maybe_tex.is_none() || render_info.inner.texture_id.is_zero() {
+                if let Some(tex) = self.resource_handler.texture.get_nonblank(render_info.inner.texture_id) {
+                    if let Some(tex) = tex.ready() {
+                        uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
+                    } else {
+                        warn!("texture not ready: {}", render_info.inner.texture_id);
+                        blend_col = Colour::empty().into();
+                    }
+                } else {
                     error!("missing texture: {}", render_info.inner.texture_id);
                     blend_col = Colour::magenta().into();
-                } else if let Some(tex) = maybe_tex.unwrap().ready() {
-                        uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
-                } else {
-                    warn!("texture not ready: {}", render_info.inner.texture_id);
-                    blend_col = Colour::empty().into();
                 }
 
                 vertices.push(sprite::Vertex {

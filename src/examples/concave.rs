@@ -41,7 +41,7 @@ impl SceneObject<ObjectType> for ConvexHull {
             Vec2 { x: 10., y: 12. } * 2,
             Vec2 { x: 1., y: 4. } * 2,
             Vec2 { x: -8., y: 14. } * 2,
-        ]), &[], &[]);
+        ]).unwrap(), &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
     }
@@ -67,12 +67,12 @@ impl SceneObject<ObjectType> for Compound {
                 Vec2 { x: 0., y: 8. },
                 Vec2 { x: 4., y: 0. },
                 Vec2 { x: 8., y: 8. },
-            ]),
+            ]).unwrap(),
             ConvexCollider::convex_hull_of(vec![
                 Vec2 { x: 24., y: 8. },
                 Vec2 { x: 28., y: 0. },
                 Vec2 { x: 32., y: 8. },
-            ]),
+            ]).unwrap(),
         ]), &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
@@ -98,7 +98,7 @@ impl SceneObject<ObjectType> for TrivialDecomposed {
             Vec2 { x: 10., y: 12. } * 2,
             Vec2 { x: 1., y: 4. } * 2,
             Vec2 { x: -8., y: 14. } * 2,
-        ]).vertices());
+        ]).unwrap().vertices());
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);

@@ -89,9 +89,9 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
                 data
             );
             let instruction = update_handler
-                .unwrap_or_else(|_| panic!("failed to create scene: {this_name:?}"))
+                .context("failed to create scene: {this_name:?}").unwrap()
                 .consume()
-                .unwrap_or_else(|_| panic!("scene exited with error: {this_name:?}"));
+                .context("scene exited with error: {this_name:?}").unwrap();
             current_scene_name.lock().unwrap().take();
             this.tx.send(instruction).expect("failed to send scene instruction");
         });
@@ -198,9 +198,9 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
         }
     }
     fn run_scene(&mut self, name: SceneName, entrance_id: usize) {
-        if let Some(scene) = self.scenes.get(&name) {
+        if let (Some(scene), Some(scene_data)) = (self.scenes.get(&name), self.scene_data.get(&name)) {
             info!("starting scene: {:?} [entrance {}]", name, entrance_id);
-            scene.run(self.scene_data.get(&name).unwrap().clone(),
+            scene.run(scene_data.clone(),
                       entrance_id,
                       self.current_scene_name.clone());
         } else {

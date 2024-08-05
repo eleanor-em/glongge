@@ -47,11 +47,11 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     fn collides_with(&self, other: &GenericCollider) -> Option<Vec2> {
         match other.get_type() {
             ColliderType::Null => None,
-            ColliderType::Box => self.collides_with_box(other.as_any().downcast_ref().unwrap()),
-            ColliderType::OrientedBox => self.collides_with_oriented_box(other.as_any().downcast_ref().unwrap()),
-            ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref().unwrap()),
+            ColliderType::Box => self.collides_with_box(other.as_any().downcast_ref()?),
+            ColliderType::OrientedBox => self.collides_with_oriented_box(other.as_any().downcast_ref()?),
+            ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref()?),
             ColliderType::Compound => {
-                other.as_any().downcast_ref::<CompoundCollider>().unwrap().inner.iter()
+                other.as_any().downcast_ref::<CompoundCollider>()?.inner.iter()
                      .find_map(|other| self.collides_with(&other.as_generic()))
             },
         }
@@ -112,6 +112,7 @@ mod polygon {
     use std::ops::Range;
     use itertools::Itertools;
     use num_traits::Zero;
+    use tracing::warn;
     use crate::core::prelude::Vec2;
     use crate::core::util::{gg_iter, gg_range};
 
@@ -141,15 +142,20 @@ mod polygon {
         }
     }
     pub fn normals_of(mut vertices: Vec<Vec2>) -> Vec<Vec2> {
-        vertices.push(*vertices.first().unwrap());
-        vertices.windows(2)
-            .map(|vs| {
-                Vec2 {
-                    x: vs[1].x - vs[0].x,
-                    y: vs[1].y - vs[0].y,
-                }.orthog().normed()
-            })
-            .collect()
+        if let Some(first) = vertices.first() {
+            vertices.push(*first);
+            vertices.windows(2)
+                .map(|vs| {
+                    Vec2 {
+                        x: vs[1].x - vs[0].x,
+                        y: vs[1].y - vs[0].y,
+                    }.orthog().normed()
+                })
+                .collect()
+        } else {
+            warn!("asked for normals of empty vertex set");
+            Vec::new()
+        }
     }
     pub fn centre_of(mut vertices: Vec<Vec2>) -> Vec2 {
         if let Some(vertex) = vertices.first() {
@@ -560,40 +566,42 @@ impl ConvexCollider {
         Self { vertices, normals, centre, extent }
     }
 
-    pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Self {
+    pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Result<Self> {
         check_false!(vertices.is_empty());
         let centre = polygon::centre_of(vertices.clone());
-        vertices.sort_unstable_by(|&a, &b| {
+        for (a, b) in vertices.iter().sorted().tuple_windows() {
             if a == b {
-                panic!("duplicate vertices: {a}");
+                bail!("duplicate vertices: {a}");
+            }
+        }
+        // Sort by clockwise winding order.
+        vertices.sort_unstable_by(|&a, &b| {
+            let det = (a - centre).cross(b - centre);
+            if det > 0. {
+                Ordering::Less
+            } else if det < 0. {
+                Ordering::Greater
             } else {
-                let det = (a - centre).cross(b - centre);
-                if det > 0. {
-                    Ordering::Less
-                } else if det < 0. {
-                    Ordering::Greater
-                } else {
-                    a.len_squared().total_cmp(&b.len_squared())
-                }
+                a.len_squared().total_cmp(&b.len_squared())
             }
         });
         if vertices.len() <= 1 {
-            return Self::from_vertices_unchecked(vertices);
+            return Ok(Self::from_vertices_unchecked(vertices));
         }
 
         let mut lower = polygon::hull(vertices.iter().copied());
         let mut upper = polygon::hull(vertices.into_iter().rev());
-        check_eq!(lower.last().unwrap(), upper.first().unwrap());
-        check_eq!(lower.first().unwrap(), upper.last().unwrap());
-        lower.pop();
-        upper.pop();
+        check_eq!(lower.last(), upper.first());
+        check_eq!(lower.first(), upper.last());
+        check_is_some!(lower.pop());
+        check_is_some!(upper.pop());
 
         let vertices = lower.into_iter().chain(upper).collect_vec();
-        Self::from_vertices_unchecked(vertices)
+        Ok(Self::from_vertices_unchecked(vertices))
     }
 
     pub fn is_convex(vertices: &[Vec2]) -> Option<ConvexCollider> {
-        let hull = Self::convex_hull_of(vertices.to_vec());
+        let hull = Self::convex_hull_of(vertices.to_vec()).ok()?;
         let hull_sorted = hull.vertices.iter().collect::<BTreeSet<_>>();
         let vertices_sorted = vertices.iter().collect::<BTreeSet<_>>();
         if hull_sorted.is_subset(&vertices_sorted) {

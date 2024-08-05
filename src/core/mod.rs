@@ -67,6 +67,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
                 check_ne!(value.as_typeid(), actual,
                     format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value));
             }
+            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
         }
         obj.as_any_mut().downcast_mut::<T>().unwrap()
     }
