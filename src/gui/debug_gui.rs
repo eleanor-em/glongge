@@ -1,11 +1,9 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
-use std::str::FromStr;
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
 use egui::style::ScrollStyle;
@@ -20,7 +18,7 @@ use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
-use crate::gui::{GuiUi, Vec2Output};
+use crate::gui::{EditCell, GuiUi};
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -58,55 +56,6 @@ impl ObjectLabel {
         match self {
             ObjectLabel::Root => "",
             ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) =>  tags.as_str()
-        }
-    }
-}
-
-#[derive(Clone)]
-struct EditCell<T> {
-    live: Arc<Mutex<T>>,
-    edited: Arc<Mutex<Option<String>>>,
-    done: Arc<Mutex<bool>>,
-}
-
-impl<T: Clone + Default + Display + FromStr> EditCell<T> {
-    fn new() -> Self { Self {
-        live: Arc::new(Mutex::new(T::default())),
-        edited: Arc::new(Mutex::new(None)),
-        done: Arc::new(Mutex::new(false)),
-    } }
-
-    fn update_live(&mut self, live: T) {
-        *self.live.lock().unwrap() = live.clone();
-    }
-    fn update_edit(&mut self, edited: String) {
-        *self.edited.lock().unwrap() = Some(edited);
-    }
-    fn update_done(&mut self) { *self.done.lock().unwrap() = true; }
-    fn take(&mut self) -> Option<T> {
-        let mut done = self.done.lock().unwrap();
-        if *done {
-            *done = false;
-            self.edited.lock().unwrap().take()
-                .and_then(|s| s.parse().ok())
-        } else {
-            None
-        }
-    }
-
-    fn text(&self) -> String {
-        if let Some(edited) = self.edited.lock().unwrap().as_ref() {
-            edited.clone()
-        } else {
-            self.live.lock().unwrap().to_string()
-        }
-    }
-    fn is_valid(&self) -> bool {
-        let maybe_edited = self.edited.lock().unwrap().clone();
-        if let Some(edited) = maybe_edited {
-            edited.parse::<T>().is_ok()
-        } else {
-            true
         }
     }
 }
@@ -154,16 +103,12 @@ impl GuiObjectView {
         let object = gg_err::ok_and_log(object_handler.get_object_mut(object_id))
             .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?;
         let name = object.name();
-        let relative_transform = object.transform();
         let gui_cmd = gui_cmds.remove(&object_id);
 
-        let mut text = {
-            if let Some(next) = self.centre_x.take() {
-                object.transform_mut().centre.x = next;
-            }
-            self.centre_x.update_live(relative_transform.centre.x);
-            self.centre_x.text()
-        };
+        if let Some(next) = self.centre_x.take() {
+            object.transform_mut().centre.x = next;
+        }
+        self.centre_x.update_live(object.transform().centre.x);
         let mut centre_x = self.centre_x.clone();
 
         Ok(Box::new(move |ctx| {
@@ -188,16 +133,17 @@ impl GuiObjectView {
                             });
 
                             ui.add(egui::Label::new("x: ").selectable(false));
-                            let response = egui::TextEdit::singleline(&mut text)
-                                .text_color(if centre_x.is_valid() {
-                                    Color32::from_gray(240)
-                                } else {
-                                    Color32::from_rgb(240, 0, 0)
-                                })
+                            let col = if centre_x.is_valid() {
+                                Color32::from_gray(240)
+                            } else {
+                                Color32::from_rgb(240, 0, 0)
+                            };
+                            let response = egui::TextEdit::singleline(&mut centre_x.text)
+                                .text_color(col)
                                 .show(ui)
                                 .response;
                             if response.gained_focus() || response.changed() {
-                                centre_x.update_edit(text);
+                                centre_x.update_edit();
                             }
                             if response.lost_focus() {
                                 centre_x.update_done();

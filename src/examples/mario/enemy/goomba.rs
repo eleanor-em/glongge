@@ -59,6 +59,7 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2Int { x: 36, y: 16 }
         )
             .with_hidden();
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -82,13 +83,13 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         let in_view = ctx.viewport().contains_point(self.top_left) ||
-            ctx.viewport().contains_point(self.top_left + self.sprite.aa_extent());
+            ctx.viewport().contains_point(ctx.object().transform().centre + self.sprite.half_widths());
         if !self.dead && in_view {
             self.vel.y += self.v_accel;
-            self.top_left += self.vel;
+            ctx.object().transform_mut().centre += self.vel;
         }
     }
-    fn on_collision(&mut self, _ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
+    fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
         }
@@ -99,7 +100,7 @@ impl SceneObject<ObjectType> for Goomba {
             self.vel.y = 0.;
         }
         if other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
-            self.top_left += mtv;
+            ctx.object().transform_mut().centre += mtv;
         }
         CollisionResponse::Done
     }
@@ -115,7 +116,6 @@ impl SceneObject<ObjectType> for Goomba {
             self.sprite.hide();
             self.die_sprite.show();
         }
-        ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {
