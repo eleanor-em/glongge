@@ -18,20 +18,20 @@ pub use crate::{
             ObjectContext,
             UpdateContext,
         },
-        util::{
-            assert::*,
-            collision::{
-                Collider,
-                CollisionShape,
-                GenericCollider,
-            },
-            colour::Colour,
-            linalg,
-            linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2Int},
-        },
         AnySceneObject,
         DowncastRef,
         SceneObjectWithId,
     },
     resource::{Loader, ResourceHandler},
+    util::{
+        assert::*,
+        collision::{
+            Collider,
+            CollisionShape,
+            GenericCollider,
+        },
+        colour::Colour,
+        linalg,
+        linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2Int},
+    },
 };

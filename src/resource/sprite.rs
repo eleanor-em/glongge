@@ -7,15 +7,15 @@ use crate::{
         AnySceneObject,
         ObjectTypeEnum,
         prelude::*,
-        util::{
-            collision::BoxCollider,
-            gg_iter::GgIter
-        }
     },
     resource::texture::{Texture, TextureSubArea}
 };
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
+use crate::util::{
+    collision::BoxCollider,
+    gg_iter::GgIter
+};
 use crate::shader::{get_shader, Shader, SpriteShader, vertex};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]

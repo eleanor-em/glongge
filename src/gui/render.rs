@@ -52,10 +52,10 @@ use vulkano::sync::GpuFuture;
 use crate::{
     core::{
         prelude::*,
-        util::UniqueShared,
         vk::{AdjustedViewport, VulkanoContext}
     },
     shader::VkVertex,
+    util::UniqueShared,
 };
 
 pub mod vs {

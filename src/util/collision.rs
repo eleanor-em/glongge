@@ -12,18 +12,19 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         prelude::*,
-        util::{
-            gg_range,
-            linalg::{
-                Vec2,
-                AxisAlignedExtent,
-                Transform
-            }
-        },
+
         ObjectTypeEnum,
         scene::SceneObject
     },
-    resource::sprite::Sprite
+    resource::sprite::Sprite,
+    util::{
+        gg_range,
+        linalg::{
+            Vec2,
+            AxisAlignedExtent,
+            Transform
+        }
+    },
 };
 use crate::core::scene::{GuiInsideClosure, GuiObject};
 
@@ -114,7 +115,7 @@ mod polygon {
     use num_traits::Zero;
     use tracing::warn;
     use crate::core::prelude::Vec2;
-    use crate::core::util::{gg_iter, gg_range};
+    use crate::util::{gg_iter, gg_range};
 
     pub fn hull<I: Iterator<Item=Vec2>>(vertices: I) -> Vec<Vec2> {
         let mut hull: Vec<Vec2> = Vec::new();
@@ -739,7 +740,7 @@ impl CompoundCollider {
 
         let cycled_vertices = vertices.iter().cycle().take(vertices.len() + 2).copied().collect_vec();
         let edges = cycled_vertices.iter().copied().tuple_windows().collect_vec();
-        let angles = cycled_vertices.iter().copied().triple_windows().collect_vec();
+        let angles = cycled_vertices.iter().copied().tuple_windows().collect_vec();
         let (prev, origin, next) = angles.into_iter()
             .find(|(prev, origin, next)| {
                 (*origin - *prev).cross(*origin - *next) > 0.
@@ -1154,7 +1155,6 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
-use crate::core::util::canvas::Canvas;
-use crate::core::util::gg_iter;
-use crate::core::util::gg_iter::GgIter;
+use crate::util::canvas::Canvas;
+use crate::util::gg_iter;
 use crate::shader::{get_shader, Shader, WireframeShader};

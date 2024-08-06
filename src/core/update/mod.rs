@@ -24,17 +24,8 @@ use serde::{
 };
 use num_traits::{FromPrimitive, Zero};
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
-use crate::{core::{
-    AnySceneObject,
-    config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
-    coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
-    input::InputHandler,
-    ObjectId,
-    ObjectTypeEnum,
-    prelude::*,
-    render::{RenderDataChannel, RenderInfoFull, RenderItem, VertexMap},
-    scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
-    SceneObjectWithId,
+use crate::{
+    util::collision::BoxCollider,
     util::{
         collision::{
             Collider,
@@ -47,16 +38,28 @@ use crate::{core::{
         linalg::Transform,
         NonemptyVec,
     },
-    vk::AdjustedViewport
-}, resource::ResourceHandler};
-use crate::core::render::StoredRenderItem;
-use crate::core::scene::GuiClosure;
-use crate::gui::debug_gui::DebugGui;
-use crate::core::util::collision::BoxCollider;
-use crate::core::util::{gg_err, gg_iter};
-use crate::core::vk::RenderPerfStats;
-use crate::resource::sprite::GgInternalSprite;
-use crate::shader::{BasicShader, get_shader, Shader};
+    gui::debug_gui::DebugGui,
+    core::scene::GuiClosure,
+    core::render::StoredRenderItem,
+    core::{
+        AnySceneObject,
+        config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
+        coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
+        input::InputHandler,
+        ObjectId,
+        ObjectTypeEnum,
+        prelude::*,
+        render::{RenderDataChannel, RenderInfoFull, RenderItem, VertexMap},
+        scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
+        SceneObjectWithId,
+        vk::AdjustedViewport
+    },
+    resource::ResourceHandler,
+    util::{gg_err, gg_iter},
+    core::vk::RenderPerfStats,
+    resource::sprite::GgInternalSprite,
+    shader::{BasicShader, get_shader, Shader}
+};
 
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
@@ -267,7 +270,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         let mut render_infos = Vec::with_capacity(vertex_map.len());
         let mut start = 0;
         for item in vertex_map.render_items() {
-            let mut render_info = if let Some(o) = gg_err::ok_and_log(self.get_object(item.object_id))
+            let mut render_info = if let Some(o) = gg_err::log_err_then(self.get_object(item.object_id))
                 .and_then(|o| {
                     RefMut::filter_map(o.borrow_mut(), |o| {
                         o.as_renderable_object()
@@ -1134,10 +1137,10 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .aa_extent()
     }
     pub fn collider(&self) -> Option<GenericCollider> {
-        gg_err::ok_and_log(self.collider_of_inner(self.this_id))
+        gg_err::log_err_then(self.collider_of_inner(self.this_id))
     }
     pub fn collider_of(&self, other: &SceneObjectWithId<ObjectType>) -> Option<GenericCollider> {
-        gg_err::ok_and_log(self.collider_of_inner(other.object_id))
+        gg_err::log_err_then(self.collider_of_inner(other.object_id))
     }
     fn collider_of_inner(&self, object_id: ObjectId) -> Result<Option<GenericCollider>> {
         let children = if object_id == self.this_id {
@@ -1243,7 +1246,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                 Ok(colliding_ids) => {
                     rv.extend(colliding_ids.iter()
                         .filter_map(|other_id| {
-                            gg_err::ok_and_log(self.test_collision_inner(collider, *other_id))
+                            gg_err::log_err_then(self.test_collision_inner(collider, *other_id))
                         }));
                 },
                 Err(e) => error!("{}", e.root_cause()),

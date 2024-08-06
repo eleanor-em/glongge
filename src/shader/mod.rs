@@ -28,9 +28,9 @@ use crate::{
     core::{
         prelude::*,
         vk::{AdjustedViewport, VulkanoContext},
-        util::UniqueShared
     },
     shader::glsl::{basic, sprite, wireframe},
+    util::UniqueShared
 };
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 use crate::core::render::ShaderRenderFrame;

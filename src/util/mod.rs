@@ -145,7 +145,6 @@ pub mod gg_time {
 pub mod gg_iter {
     use std::cmp;
     use std::ops::Add;
-    use itertools::Itertools;
 
     pub fn sum_tuple3<T: Add<Output=T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
         (acc.0 + x.0, acc.1 + x.1, acc.2 + x.2)
@@ -212,23 +211,61 @@ pub mod gg_iter {
                 cum_sum: None,
             }
         }
-
-        fn triple_windows(self) -> impl Iterator<Item=(<Self as Iterator>::Item, <Self as Iterator>::Item, <Self as Iterator>::Item)>
-        where
-            Self: Sized,
-            <Self as Iterator>::Item: Clone,
-        {
-            self.tuple_windows()
-        }
     }
 
     impl<T> GgIter for T where T: Iterator + ?Sized {}
 }
 
+#[allow(dead_code)]
 pub mod gg_err {
     use anyhow::Result;
-    use tracing::error;
+    use tracing::{error, warn};
 
+    pub fn is_some_and_warn<T>(result: Result<Option<T>>) -> bool {
+        match result {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(e) => {
+                warn!("{}", e.root_cause());
+                false
+            }
+        }
+    }
+
+    pub fn warn_err_then<T>(result: Result<Option<T>>) -> Option<T> {
+        match result {
+            Ok(o) => o,
+            Err(e) => {
+                warn!("{}", e.root_cause());
+                None
+            }
+        }
+    }
+
+    pub fn warn_unwrap_or<T, U: Into<T>>(default: U, result: Result<T>) -> T {
+        match result {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("{}", e.root_cause());
+                default.into()
+            }
+        }
+    }
+
+    pub fn warn_and_ok<T>(result: Result<T>) -> Option<T> {
+        match result {
+            Ok(v) => Some(v),
+            Err(e) => {
+                warn!("{}", e.root_cause());
+                None
+            }
+        }
+    }
+    pub fn warn_err(result: Result<()>) {
+        if let Err(e) = result {
+            warn!("{}", e.root_cause());
+        }
+    }
     pub fn is_some_and_log<T>(result: Result<Option<T>>) -> bool {
         match result {
             Ok(Some(_)) => true,
@@ -240,7 +277,7 @@ pub mod gg_err {
         }
     }
 
-    pub fn ok_and_log<T>(result: Result<Option<T>>) -> Option<T> {
+    pub fn log_err_then<T>(result: Result<Option<T>>) -> Option<T> {
         match result {
             Ok(o) => o,
             Err(e) => {
@@ -260,6 +297,15 @@ pub mod gg_err {
         }
     }
 
+    pub fn log_and_ok<T>(result: Result<T>) -> Option<T> {
+        match result {
+            Ok(v) => Some(v),
+            Err(e) => {
+                error!("{}", e.root_cause());
+                None
+            }
+        }
+    }
     pub fn log_err(result: Result<()>) {
         if let Err(e) = result {
             error!("{}", e.root_cause());

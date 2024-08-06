@@ -31,7 +31,7 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
-use crate::core::util::UniqueShared;
+use crate::util::UniqueShared;
 use crate::core::vk::RenderPerfStats;
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;

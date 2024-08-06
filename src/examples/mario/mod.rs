@@ -29,7 +29,7 @@ use background::hill4::*;
 use background::castle::*;
 use glongge::core::builtin::{Container, StaticSprite};
 use glongge::core::render::VertexDepth;
-use glongge::core::util::canvas::Canvas;
+use glongge::util::canvas::Canvas;
 use crate::object_type::ObjectType;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {

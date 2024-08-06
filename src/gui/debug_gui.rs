@@ -16,7 +16,7 @@ use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
-use crate::core::util::{gg_err, gg_iter, NonemptyVec};
+use crate::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
 use crate::gui::{GuiUi, TransformCell};
 
@@ -112,7 +112,7 @@ impl GuiObjectView {
 
         let mut absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
             .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
-        let object = gg_err::ok_and_log(object_handler.get_object_mut(object_id))
+        let object = gg_err::log_err_then(object_handler.get_object_mut(object_id))
             .with_context(|| {
                 self.clear_selection();
                 format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
@@ -353,7 +353,7 @@ impl GuiObjectTree {
                 if let Some(object_id) = object_handler.get_first_object_id() {
                     self.selected_tx.send(object_id).unwrap();
                 }
-            } else if let Some(child) = gg_err::ok_and_log(object_handler.get_children(self.selected_id)
+            } else if let Some(child) = gg_err::log_err_then(object_handler.get_children(self.selected_id)
                 .map(|v| v.first())) {
                 self.selected_tx.send(child.object_id).unwrap();
             } else {
@@ -364,14 +364,14 @@ impl GuiObjectTree {
             self.select_next_sibling(object_handler);
         }
         if input_handler.pressed(KeyCode::KeyP) {
-            if let Some(parent) = gg_err::ok_and_log(object_handler.get_parent(self.selected_id)) {
+            if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id)) {
                 self.selected_tx.send(parent.object_id).unwrap();
             }
         }
     }
 
     fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
-        if let Some(sibling_id) = gg_err::ok_and_log(object_handler.get_parent(self.selected_id))
+        if let Some(sibling_id) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
             .and_then(|parent| {
                 let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent.object_id))
                     .iter()
@@ -729,7 +729,7 @@ impl DebugGui {
     ) {
         self.wireframe_mouseovers.drain(..)
             .filter(|o| self.object_tree.selected_id != *o)
-            .filter_map(|o| gg_err::ok_and_log(object_handler.get_collision_shape_mut(o)))
+            .filter_map(|o| gg_err::log_err_then(object_handler.get_collision_shape_mut(o)))
             .for_each(|mut c| c.hide_wireframe());
     }
 
@@ -741,7 +741,7 @@ impl DebugGui {
         self.wireframe_mouseovers = collisions.into_iter()
             .map(|c| c.other.object_id)
             .inspect(|&o| {
-                if let Some(mut c) = gg_err::ok_and_log(object_handler.get_collision_shape_mut(o)) {
+                if let Some(mut c) = gg_err::log_err_then(object_handler.get_collision_shape_mut(o)) {
                     c.show_wireframe();
                 }
             })
@@ -756,7 +756,7 @@ impl DebugGui {
     ) -> Box<GuiClosure> {
         self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
         if !self.object_tree.selected_id.is_root() {
-            if gg_err::ok_and_log(object_handler.get_object(self.object_tree.selected_id)).is_some() {
+            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
                 gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
             } else {
                 self.object_tree.selected_id = ObjectId::root();
@@ -765,13 +765,9 @@ impl DebugGui {
         }
 
         let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
-        let build_object_view = match self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                error!("{}", e.root_cause());
-                None
-            }
-        };
+        let build_object_view = gg_err::log_and_ok(
+            self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled)
+        );
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);

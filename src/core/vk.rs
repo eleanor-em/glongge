@@ -54,16 +54,12 @@ use egui_winit::winit::keyboard::PhysicalKey;
 use crate::{
     core::{
         input::InputHandler,
-        util::{
-            linalg::{
-                Vec2,
-                AxisAlignedExtent
-            },
-            gg_time::TimeIt
-        },
         prelude::*,
     },
     resource::ResourceHandler,
+    util::{
+        gg_time::TimeIt
+    },
 };
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;

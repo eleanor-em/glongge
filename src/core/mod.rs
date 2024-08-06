@@ -11,15 +11,12 @@ use std::{
 };
 use scene::SceneObject;
 use crate::{
-    core::{
-        prelude::*,
-        util::linalg::Transform
-    },
+    core::prelude::*,
     resource::ResourceHandler,
+    util::linalg::Transform
 };
 
 pub mod input;
-pub mod util;
 pub mod vk;
 pub mod prelude;
 pub mod config;

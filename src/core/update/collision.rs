@@ -10,13 +10,11 @@ use crate::core::{
     ObjectId,
     ObjectTypeEnum,
     SceneObjectWithId,
-    util::{
-        linalg::Vec2,
-        UnorderedPair,
-        collision::Collider
-    }
 };
-use crate::core::util::collision::GgInternalCollisionShape;
+use crate::util::{
+    UnorderedPair,
+    collision::{Collider, GgInternalCollisionShape}
+};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {

@@ -3,8 +3,8 @@ use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
 };
-use glongge::core::util::canvas::Canvas;
-use glongge::core::util::collision::{Polygonal, BoxCollider, CompoundCollider, ConvexCollider};
+use glongge::util::canvas::Canvas;
+use glongge::util::collision::{Polygonal, BoxCollider, CompoundCollider, ConvexCollider};
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]

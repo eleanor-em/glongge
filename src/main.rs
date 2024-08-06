@@ -13,7 +13,7 @@ use glongge::core::{
     vk::{VulkanoContext, WindowContext, WindowEventHandler},
     ObjectTypeEnum,
 };
-use glongge::core::util::UniqueShared;
+use glongge::util::UniqueShared;
 use glongge::gui::GuiContext;
 use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
