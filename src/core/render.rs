@@ -68,6 +68,7 @@ pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithUV>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
+    pub(crate) gui_enabled: bool,
     viewport: AdjustedViewport,
     clear_col: Colour,
     pub(crate) last_render_stats: Option<RenderPerfStats>,
@@ -78,6 +79,7 @@ impl RenderDataChannel {
             vertices: Vec::new(),
             render_infos: Vec::new(),
             gui_commands: Vec::new(),
+            gui_enabled: false,
             viewport,
             clear_col: Colour::black(),
             last_render_stats: None,
@@ -195,7 +197,10 @@ impl RenderHandler {
         framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
-        let render_frame = self.render_data_channel.lock().unwrap().next_frame();
+        let (render_frame, gui_enabled) = {
+            let rx = self.render_data_channel.lock().unwrap();
+            (rx.next_frame(), rx.gui_enabled)
+        };
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
             let shader_id = shader.id();
             shader.on_render(render_frame.for_shader(shader_id))?;
@@ -219,7 +224,7 @@ impl RenderHandler {
         }
 
         let primitives = self.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-        self.gui_shader.get().build_render_pass(&mut builder, &primitives)?;
+        self.gui_shader.get().build_render_pass(&mut builder, gui_enabled, &primitives)?;
 
         builder.end_render_pass(SubpassEndInfo::default())?;
         Ok(builder.build().map_err(Validated::unwrap)?)

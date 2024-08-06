@@ -643,7 +643,7 @@ impl GuiConsoleLog {
 }
 
 pub(crate) struct DebugGui {
-    pub(crate) enabled: bool,
+    enabled: bool,
     pub(crate) object_tree: GuiObjectTree,
     object_view: GuiObjectView,
     pub(crate) console_log: GuiConsoleLog,
@@ -719,5 +719,12 @@ impl DebugGui {
         })
     }
 
-    pub fn toggle(&mut self) { self.enabled = !self.enabled; }
+    pub fn toggle<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        self.enabled = !self.enabled;
+        if !self.enabled {
+            self.object_tree.selected_id = ObjectId::root();
+            gg_err::log_err(self.object_view.update_selection(object_handler, ObjectId::root()));
+        }
+    }
+    pub fn enabled(&self) -> bool { self.enabled }
 }

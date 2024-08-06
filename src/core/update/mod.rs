@@ -586,24 +586,26 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_gui(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
         if input_handler.pressed(KeyCode::Backquote) {
-            self.debug_gui.toggle();
+            self.debug_gui.toggle(&self.object_handler);
         }
 
-        if self.debug_gui.enabled {
+        if USE_DEBUG_GUI {
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
-            let mouse_pos = self.viewport.top_left() + input_handler.screen_mouse_pos();
-            let maybe_collisions = match UpdateContext::new(
-                self, input_handler, ObjectId::root(), object_tracker
-            ) {
-                Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
-                Err(e) => {
-                    error!("{e:?}");
-                    None
-                },
-            };
-            if let Some(collisions) = maybe_collisions {
-                self.debug_gui.on_mouseovers(&self.object_handler, collisions);
+            if self.debug_gui.enabled() {
+                let mouse_pos = self.viewport.top_left() + input_handler.screen_mouse_pos();
+                let maybe_collisions = match UpdateContext::new(
+                    self, input_handler, ObjectId::root(), object_tracker
+                ) {
+                    Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
+                    Err(e) => {
+                        error!("{e:?}");
+                        None
+                    },
+                };
+                if let Some(collisions) = maybe_collisions {
+                    self.debug_gui.on_mouseovers(&self.object_handler, collisions);
+                }
             }
             let gui_objects = self.object_handler.objects.iter()
                 .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
@@ -713,6 +715,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         let mut render_data_channel = self.render_data_channel.lock().unwrap();
         self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
         render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
+        render_data_channel.gui_enabled = self.debug_gui.enabled();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;
         }
@@ -826,7 +829,6 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
-                debug_enabled: &mut caller.debug_gui.enabled,
             },
             object: ObjectContext {
                 collision_handler: &caller.object_handler.collision_handler,
@@ -923,7 +925,6 @@ pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     scene_data: Arc<Mutex<Vec<u8>>>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine<ObjectType>>,
     pending_removed_coroutines: BTreeSet<CoroutineId>,
-    debug_enabled: &'a mut bool,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
@@ -969,9 +970,6 @@ impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
     pub fn cancel_coroutine(&mut self, id: CoroutineId) {
         self.pending_removed_coroutines.insert(id);
     }
-
-    pub fn is_debug_enabled(&self) -> bool { *self.debug_enabled }
-    pub fn set_debug_enabled(&mut self, value: bool) { *self.debug_enabled = value; }
 }
 
 #[derive(Clone)]

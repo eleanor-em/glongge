@@ -442,6 +442,7 @@ impl GuiRenderer {
     pub fn build_render_pass(
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        gui_enabled: bool,
         primitives: &[ClippedPrimitive]
     ) -> Result<()> {
         let meshes = primitives.iter().filter_map(|mesh| match &mesh.primitive {
@@ -452,7 +453,9 @@ impl GuiRenderer {
         // macOS (I think due to some obscure race condition in Metal/MoltenVK).
         if !meshes.is_empty() {
             self.last_frame = Some(self.create_frame(meshes)?);
-        };
+        } else if !gui_enabled && meshes.is_empty() {
+            self.last_frame.take();
+        }
         let Some(frame) = self.last_frame.take() else { return Ok(()); };
 
         let push_constants = {
