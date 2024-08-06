@@ -1,5 +1,4 @@
 pub mod collision;
-pub mod builtin;
 
 use std::{
     cell::{
@@ -7,48 +6,48 @@ use std::{
         RefMut
     },
     collections::{BTreeMap, BTreeSet},
+    ops::RangeInclusive,
     sync::{
         Arc,
         mpsc,
-        Mutex,
-        mpsc::{Receiver, Sender}
+        mpsc::{Receiver, Sender},
+        Mutex
     },
-    time::{Duration, Instant},
-    ops::RangeInclusive
+    time::{Duration, Instant}
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use tracing::{warn};
+use tracing::warn;
 use serde::{
-    Serialize,
-    de::DeserializeOwned
+    de::DeserializeOwned,
+    Serialize
 };
 use num_traits::{FromPrimitive, Zero};
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use crate::{core::{
-    prelude::*,
     AnySceneObject,
-    ObjectId,
-    ObjectTypeEnum,
-    SceneObjectWithId,
     config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
     coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
     input::InputHandler,
-    render::{RenderInfoFull, RenderDataChannel, RenderItem, VertexMap},
-    scene::{SceneHandlerInstruction, SceneInstruction, SceneName, SceneDestination},
-    vk::AdjustedViewport,
+    ObjectId,
+    ObjectTypeEnum,
+    prelude::*,
+    render::{RenderDataChannel, RenderInfoFull, RenderItem, VertexMap},
+    scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
+    SceneObjectWithId,
     util::{
         collision::{
-            GenericCollider,
             Collider,
+            GenericCollider,
             GgInternalCollisionShape
         },
+        colour::Colour,
         gg_time::TimeIt,
         linalg::{AxisAlignedExtent, Vec2},
-        colour::Colour,
-        NonemptyVec,
         linalg::Transform,
-    }
+        NonemptyVec,
+    },
+    vk::AdjustedViewport
 }, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
 use crate::core::scene::GuiClosure;

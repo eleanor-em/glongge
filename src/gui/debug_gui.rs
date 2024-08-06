@@ -308,6 +308,7 @@ impl GuiObjectTree {
         );
         Box::new(move |ctx| {
             egui::SidePanel::left(Id::new("object-tree"))
+                .default_width(250.)
                 .frame(frame)
                 .show_animated(ctx, enabled, |ui| {
                     ui.spacing_mut().scroll = ScrollStyle {
@@ -573,6 +574,7 @@ impl GuiConsoleLog {
 
     fn build_update_perf(ui: &mut Ui, view_perf: ViewPerfMode, frame: Frame, update_perf_stats: Option<UpdatePerfStats>) {
         egui::SidePanel::right("perf-update")
+            .default_width(160.)
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Update, |ui| {
                 ui.vertical_centered(|ui| {

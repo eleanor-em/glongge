@@ -6,7 +6,6 @@ use glongge::core::{
 };
 
 pub mod player;
-pub mod floor;
 pub mod underground_floor;
 pub mod enemy;
 pub mod background;
@@ -14,7 +13,6 @@ pub mod block;
 pub mod text_display;
 
 use player::*;
-use floor::*;
 use underground_floor::*;
 use text_display::*;
 use block::question_block::*;
@@ -25,12 +23,12 @@ use block::pipe::*;
 use block::flagpole::*;
 use block::decorative_pipe::*;
 use enemy::goomba::*;
-use background::hill1::*;
 use background::hill2::*;
 use background::hill3::*;
 use background::hill4::*;
 use background::castle::*;
-use glongge::core::update::builtin::Container;
+use glongge::core::builtin::{Container, StaticSprite};
+use glongge::core::render::VertexDepth;
 use glongge::core::util::canvas::Canvas;
 use crate::object_type::ObjectType;
 
@@ -72,6 +70,28 @@ impl AliveEnemyMap {
     }
 }
 
+fn create_hill1(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_coords(
+            Vec2Int { x: 112, y: 716 },
+            Vec2Int { x: 192, y: 764 }
+        )
+        .named("Hill1")
+        .build()
+}
+fn create_floor(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_extent(
+            Vec2Int { x: 16, y: 16 },
+            Vec2Int { x: 0, y: 16 }
+        )
+        .with_depth(VertexDepth::Front(2000))
+        .named("Floor")
+        .build_colliding(vec![BLOCK_COLLISION_TAG], vec![])
+}
+
 #[derive(Copy, Clone)]
 pub struct MarioOverworldScene;
 
@@ -96,7 +116,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                 }, false),
             },
             Container::create("background", vec![
-                Hill1::create(Vec2Int {
+                create_hill1(Vec2Int {
                     x: 16,
                     y: 384 - 2 * 16 - 48,
                 }),
@@ -112,7 +132,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     x: 24 * 16,
                     y: 384 - 2 * 16 - 16,
                 }),
-                Hill1::create(Vec2Int {
+                create_hill1(Vec2Int {
                     x: 49 * 16,
                     y: 384 - 2 * 16 - 48,
                 }),
@@ -120,7 +140,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     x: 60 * 16,
                     y: 384 - 2 * 16 - 16,
                 }),
-                Hill1::create(Vec2Int {
+                create_hill1(Vec2Int {
                     x: 64 * 16,
                     y: 384 - 2 * 16 - 32,
                 }),
@@ -302,28 +322,28 @@ impl Scene<ObjectType> for MarioOverworldScene {
             ].into_iter()
                 .chain(Vec2Int::range_from_zero([1, 25])
                     .map(|(tile_x, tile_y)| {
-                        Floor::create(Vec2Int {
+                        create_floor(Vec2Int {
                             x: tile_x * 16,
                             y: tile_y * 16,
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([69, 3])
                     .map(|(tile_x, tile_y)| {
-                        Floor::create(Vec2Int {
+                        create_floor(Vec2Int {
                             x: (tile_x + 1) * 16,
                             y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([15, 3])
                     .map(|(tile_x, tile_y)| {
-                        Floor::create(Vec2Int {
+                        create_floor(Vec2Int {
                             x: (tile_x + 72) * 16,
                             y: 400 - (tile_y + 1) * 16
                         })
                     }))
                 .chain(Vec2Int::range_from_zero([80, 3])
                     .map(|(tile_x, tile_y)| {
-                        Floor::create(Vec2Int {
+                        create_floor(Vec2Int {
                             x: (tile_x + 155) * 16,
                             y: 400 - (tile_y + 1) * 16
                         })
@@ -337,7 +357,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     }))
                 .chain(Vec2Int::range_from_zero([63, 3])
                     .map(|(tile_x, tile_y)| {
-                        Floor::create(Vec2Int {
+                        create_floor(Vec2Int {
                             x: (tile_x + 90) * 16,
                             y: 400 - (tile_y + 1) * 16
                         })

@@ -1,21 +1,19 @@
 use std::{
-    any::{TypeId},
+    any::TypeId,
     cell::{Ref, RefCell, RefMut},
     fmt::{
         Debug,
         Formatter
     },
+    ops::Deref,
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
-    ops::Deref,
 };
 use scene::SceneObject;
 use crate::{
     core::{
         prelude::*,
-        util::{
-            linalg::Transform
-        }
+        util::linalg::Transform
     },
     resource::ResourceHandler,
 };
@@ -29,6 +27,7 @@ pub mod coroutine;
 pub mod render;
 pub mod scene;
 pub mod update;
+pub mod builtin;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static + Send {
     fn as_default(self) -> AnySceneObject<Self>;
@@ -39,6 +38,8 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn gg_canvas() -> Self;
     fn gg_canvas_item() -> Self;
     fn gg_container() -> Self;
+    fn gg_static_sprite() -> Self;
+    fn gg_colliding_sprite() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
