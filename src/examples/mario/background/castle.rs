@@ -30,12 +30,7 @@ impl SceneObject<ObjectType> for Castle {
             Vec2Int { x: 24, y: 684 },
             Vec2Int { x: 104, y: 764 }
         ).with_depth(VertexDepth::Back(0));
+        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
-    }
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
     }
 }

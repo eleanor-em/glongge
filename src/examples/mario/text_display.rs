@@ -33,13 +33,10 @@ impl SceneObject<ObjectType> for WinTextDisplay {
                 TextWrapMode::WrapAnywhere
             )?;
         self.font = Some(font);
+        object_ctx.transform_mut().inspect_mut(|t| {
+            t.centre = self.centre;
+            t.scale = Vec2::one() / self.font.as_ref().map_or_else(|| 1., |f| f.sample_ratio());
+        });
         Ok(None)
-    }
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.centre,
-            scale: Vec2::one() / self.font.as_ref().map_or_else(|| 1., |f| f.sample_ratio()),
-            ..Default::default()
-        }
     }
 }

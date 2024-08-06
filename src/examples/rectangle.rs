@@ -83,12 +83,8 @@ impl SceneObject<ObjectType> for RectanglePlayer {
     fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         self.pos += self.vel;
     }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.pos,
-            ..Default::default()
-        }
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.pos);
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
@@ -186,12 +182,11 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         CollisionResponse::Continue
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.pos,
-            rotation: self.rotation(),
-            ..Default::default()
-        }
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().transform_mut().inspect_mut(|t| {
+            t.centre = self.pos;
+            t.rotation = self.rotation();
+        });
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()

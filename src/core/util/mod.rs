@@ -225,6 +225,40 @@ pub mod gg_iter {
     impl<T> GgIter for T where T: Iterator + ?Sized {}
 }
 
+pub mod gg_ref {
+    use std::cell::{RefCell, RefMut};
+    use std::ops::Deref;
+    use std::rc::Rc;
+    use tracing::error;
+
+    pub struct OptionRefMut<'a, T> {
+        inner: Option<RefMut<'a, T>>
+    }
+
+    impl<'a, T> OptionRefMut<'a, T> {
+        pub fn new(mut from: Option<&'a Rc<RefCell<T>>>) -> Self {
+            Self { inner: from.as_mut().map(|rc| rc.borrow_mut()) }
+        }
+
+        pub fn inspect_mut<F, U>(&mut self, f: F)
+        where
+            F: FnOnce(&mut T) -> U
+        {
+            if let Some(inner) = self.inner.as_mut() {
+                f(inner);
+            }
+        }
+    }
+
+    impl<'a, T> Deref for OptionRefMut<'a, T> {
+        type Target = Option<RefMut<'a, T>>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.inner
+        }
+    }
+}
+
 pub mod gg_err {
     use anyhow::Result;
     use tracing::error;

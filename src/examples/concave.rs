@@ -42,15 +42,9 @@ impl SceneObject<ObjectType> for ConvexHull {
             Vec2 { x: 1., y: 4. } * 2,
             Vec2 { x: -8., y: 14. } * 2,
         ]).unwrap(), &[], &[]);
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [100., 100.].into());
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [100., 100.].into(),
-            ..Default::default()
-        }
     }
 }
 
@@ -76,13 +70,7 @@ impl SceneObject<ObjectType> for Compound {
         ]), &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [200., 100.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [200., 100.].into());
     }
 }
 
@@ -102,13 +90,7 @@ impl SceneObject<ObjectType> for TrivialDecomposed {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [100., 200.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [100., 200.].into());
     }
 }
 
@@ -131,13 +113,7 @@ impl SceneObject<ObjectType> for Decomposed {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [300., 100.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [300., 100.].into());
     }
 }
 
@@ -159,13 +135,7 @@ impl SceneObject<ObjectType> for DecomposedCorner {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [200., 300.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [200., 300.].into());
     }
 }
 
@@ -189,13 +159,7 @@ impl SceneObject<ObjectType> for DecomposedTee {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [200., 200.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [200., 200.].into());
     }
 }
 
@@ -219,13 +183,7 @@ impl SceneObject<ObjectType> for DecomposedU {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [300., 200.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [300., 200.].into());
     }
 }
 
@@ -249,13 +207,7 @@ impl SceneObject<ObjectType> for DecomposedCompound {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [200., 250.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [200., 250.].into());
     }
 }
 
@@ -279,12 +231,6 @@ impl SceneObject<ObjectType> for DecomposedBigU {
         let collider = CollisionShape::from_collider(compound, &[], &[]);
         collider.checked_downcast_mut::<CollisionShape>().show_wireframe();
         ctx.object_mut().add_child(collider);
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: [300., 300.].into(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = [300., 300.].into());
     }
 }

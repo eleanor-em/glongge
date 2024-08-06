@@ -31,6 +31,7 @@ impl SceneObject<ObjectType> for Floor {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 0, y: 16 }
         ).with_depth(VertexDepth::Front(2000));
+        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -41,12 +42,6 @@ impl SceneObject<ObjectType> for Floor {
         ));
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
     }

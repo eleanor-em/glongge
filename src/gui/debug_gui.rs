@@ -95,8 +95,7 @@ impl GuiObjectView {
         if object_id.is_root() { return Ok(Box::new(|_| {})); }
 
         let object = gg_err::ok_and_log(object_handler.get_object(object_id))
-            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?
-            .borrow();
+            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?;
         let name = object.name();
         let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
             .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
@@ -613,7 +612,11 @@ impl GuiConsoleLog {
                         for segment in segments.filter(|s| !s.is_empty()) {
                             let sep = segment.find('m').unwrap();
                             let colour_code = &segment[..sep];
-                            let col = colour_code.parse::<i32>().unwrap();
+                            let col = colour_code.parse::<i32>()
+                                .unwrap_or(
+                                    // Probably a log line with a newline?
+                                    2
+                                );
                             let text = &segment[sep + 1..];
                             egui::RichText::new(text)
                                 .color(match col {

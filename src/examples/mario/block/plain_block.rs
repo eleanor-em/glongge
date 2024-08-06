@@ -54,11 +54,8 @@ impl SceneObject<ObjectType> for Block {
             self.v_accel = 0.;
         }
     }
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

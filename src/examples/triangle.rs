@@ -144,14 +144,10 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                 }
             }
         }
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.pos,
-            rotation: self.rotation(),
-            ..Default::default()
-        }
+        ctx.object().transform_mut().inspect_mut(|t| {
+            t.centre = self.pos;
+            t.rotation = self.rotation();
+        });
     }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {

@@ -31,6 +31,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
             Vec2Int { x: 224, y: 324 },
             Vec2Int { x: 256, y: 676}
         );
+        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -41,12 +42,6 @@ impl SceneObject<ObjectType> for DecorativePipe {
         ));
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
     }

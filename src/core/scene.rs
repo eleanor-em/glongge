@@ -241,7 +241,6 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
         CollisionResponse::Done
     }
 
-    fn transform(&self) -> Transform { Transform::default() }
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         None
     }

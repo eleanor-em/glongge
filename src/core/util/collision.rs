@@ -1100,6 +1100,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         }
     }
 
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.collider.centre());
+    }
+
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
 
     fn emitting_tags(&self) -> Vec<&'static str> {
@@ -1107,13 +1111,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     }
     fn listening_tags(&self) -> Vec<&'static str> {
         self.listening_tags.clone()
-    }
-
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.collider.centre(),
-            ..Default::default()
-        }
     }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {

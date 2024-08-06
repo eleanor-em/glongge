@@ -52,6 +52,7 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2Int { x: 256, y: 676}
             )
         }.with_depth(VertexDepth::Front(1000));
+        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
 
@@ -59,12 +60,6 @@ impl SceneObject<ObjectType> for Pipe {
         ctx.object_mut().add_child(CollisionShape::from_object_sprite(self, &self.sprite));
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PIPE_COLLISION_TAG, BLOCK_COLLISION_TAG].into()
     }

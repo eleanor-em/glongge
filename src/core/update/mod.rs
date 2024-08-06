@@ -16,6 +16,7 @@ use std::{
     time::{Duration, Instant},
     ops::RangeInclusive
 };
+use std::cell::RefCell;
 use tracing::{warn};
 use serde::{
     Serialize,
@@ -53,6 +54,7 @@ use crate::core::scene::GuiClosure;
 use crate::gui::debug_gui::DebugGui;
 use crate::core::util::collision::BoxCollider;
 use crate::core::util::{gg_err, gg_iter};
+use crate::core::util::gg_ref::OptionRefMut;
 use crate::core::vk::RenderPerfStats;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
@@ -187,7 +189,6 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         let new_object = SceneObjectWithId::new(new_id, new_obj.inner);
         let children = self.get_children_mut(new_obj.parent_id)?;
         children.push(new_object.clone());
-
         Ok(new_object)
     }
 
@@ -450,7 +451,9 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             let mut object_tracker = ObjectTracker::new(&self.object_handler);
             self.object_handler.collision_handler.add_objects(pending_add.iter());
             self.load_new_objects(&mut object_tracker, pending_add)?;
+            self.object_handler.update_all_transforms();
             self.call_on_ready(&mut object_tracker, input_handler, first_new_id..=last_new_id);
+            self.object_handler.update_all_transforms();
 
             let (pending_add, pending_remove) = object_tracker.into_pending();
             pending_add_objects = pending_add;
@@ -499,6 +502,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     continue;
                 }
             };
+            object_tracker.last.insert(new_id, new_obj.inner.clone());
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
                 this_id: new_id,
@@ -996,6 +1000,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
     fn get(&self, object_id: ObjectId) -> Option<&AnySceneObject<ObjectType>> {
         self.last.get(&object_id)
     }
+    fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut AnySceneObject<ObjectType>> {
+        self.last.get_mut(&object_id)
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
@@ -1048,6 +1055,30 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .find_map(|(_, obj)| obj.downcast_mut())
     }
 
+    pub fn transform(&self) -> Transform {
+        self.object_tracker.get(self.this_id)
+            .map(|o| o.transform.borrow().clone())
+            .unwrap_or_else(|| {
+                error!("missing object_id in objects: this={:?}", self.this_id);
+                Transform::default()
+            })
+    }
+    pub fn transform_of(&self, other: &SceneObjectWithId<ObjectType>) -> Transform {
+        self.object_tracker.get(other.object_id)
+            .map(|o| o.transform.borrow().clone())
+            .unwrap_or_else(|| {
+                error!("missing object_id in objects: this={:?}", self.this_id);
+                Transform::default()
+            })
+    }
+    pub fn transform_mut(&self) -> OptionRefMut<Transform> {
+        let rv = OptionRefMut::new(self.object_tracker.get(self.this_id)
+            .map(|o| &o.transform));
+        if rv.is_none() {
+            error!("missing object_id in objects: this={:?}", self.this_id);
+        }
+        rv
+    }
     pub fn absolute_transform(&self) -> Transform {
         self.all_absolute_transforms.get(&self.this_id)
             .copied()

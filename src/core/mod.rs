@@ -86,23 +86,35 @@ impl ObjectId {
 
 
 #[derive(Clone)]
-pub struct AnySceneObject<ObjectType>(Rc<RefCell<dyn SceneObject<ObjectType>>>);
+pub struct AnySceneObject<ObjectType> {
+    transform: Rc<RefCell<Transform>>,
+    inner: Rc<RefCell<dyn SceneObject<ObjectType>>>,
+}
 
 impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
     pub fn new<O: SceneObject<ObjectType>>(inner: O) -> Self {
-        Self(Rc::new(RefCell::new(inner)))
+        Self {
+            transform: Rc::new(RefCell::new(Transform::default())),
+            inner: Rc::new(RefCell::new(inner))
+        }
     }
 
     pub(crate) fn from_rc<O: SceneObject<ObjectType>>(rc: Rc<RefCell<O>>) -> Self {
-        Self(rc)
+        Self {
+            transform: Rc::new(RefCell::new(Transform::default())),
+            inner: rc
+        }
     }
+
+    pub(crate) fn name(&self) -> String { self.inner.borrow().name() }
+    pub(crate) fn transform(&self) -> Transform { self.transform.borrow().clone() }
 }
 
 impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
     type Target = Rc<RefCell<dyn SceneObject<ObjectType>>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
@@ -123,7 +135,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
 
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
 
-    pub fn transform(&self) -> Transform { self.inner.borrow().transform() }
+    pub fn transform(&self) -> Transform { self.inner.transform() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
     pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
 }

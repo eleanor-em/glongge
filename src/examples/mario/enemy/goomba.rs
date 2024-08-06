@@ -115,14 +115,9 @@ impl SceneObject<ObjectType> for Goomba {
             self.sprite.hide();
             self.die_sprite.show();
         }
+        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [ENEMY_COLLISION_TAG].into()
     }

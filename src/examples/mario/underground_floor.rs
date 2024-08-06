@@ -28,6 +28,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 147, y: 16 }
         );
+        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
 
@@ -39,12 +40,6 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         ));
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.top_left + self.sprite.half_widths(),
-            ..Default::default()
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
     }

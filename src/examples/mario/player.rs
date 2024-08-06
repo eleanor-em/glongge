@@ -335,21 +335,21 @@ impl Player {
         if ctx.input().down(KeyCode::ArrowDown) {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
-                let pipe = collisions.first().other.checked_downcast::<Pipe>();
-                if !pipe.orientation().dot(Vec2::down()).is_zero() {
-                    if let Some(instruction) = pipe.destination() {
-                        self.start_pipe(ctx, Vec2::down(), pipe.transform().centre, instruction);
+                let pipe = &collisions.first().other;
+                if !pipe.checked_downcast::<Pipe>().orientation().dot(Vec2::down()).is_zero() {
+                    if let Some(instruction) = pipe.checked_downcast::<Pipe>().destination() {
+                        self.start_pipe(ctx, Vec2::down(), ctx.object().transform_of(pipe).centre, instruction);
                     }
                 }
             }
         } else if ctx.input().down(KeyCode::ArrowRight) {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
-                let pipe = collisions.first().other.checked_downcast::<Pipe>();
-                if let Some(instruction) = pipe.destination() {
-                    if !pipe.orientation().dot(Vec2::right()).is_zero() &&
+                let pipe = &collisions.first().other;
+                if let Some(instruction) = pipe.checked_downcast::<Pipe>().destination() {
+                    if !pipe.checked_downcast::<Pipe>().orientation().dot(Vec2::right()).is_zero() &&
                             !collisions.first().mtv.dot(Vec2::right()).is_zero() {
-                        self.start_pipe(ctx, Vec2::right(), pipe.transform().centre, instruction);
+                        self.start_pipe(ctx, Vec2::right(), ctx.object().transform_of(pipe).centre, instruction);
                     }
                 }
             }
@@ -693,6 +693,14 @@ impl SceneObject<ObjectType> for Player {
             self.start_die(ctx);
         }
 
+        ctx.object().transform_mut().inspect_mut(|t| {
+            t.centre = self.centre;
+            t.scale = Vec2 {
+                x: self.last_nonzero_dir.x,
+                y: 1.,
+            };
+        });
+
         if self.state != self.last_state {
             self.walk_sprite.hide();
             self.run_sprite.hide();
@@ -706,16 +714,6 @@ impl SceneObject<ObjectType> for Player {
         }
     }
 
-    fn transform(&self) -> Transform {
-        Transform {
-            centre: self.centre,
-            rotation: 0.,
-            scale: Vec2 {
-                x: self.last_nonzero_dir.x,
-                y: 1.,
-            }
-        }
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [PLAYER_COLLISION_TAG].into()
     }
