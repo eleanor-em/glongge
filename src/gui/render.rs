@@ -147,6 +147,12 @@ fn image_size_bytes(delta: &egui::epaint::ImageDelta) -> usize {
     }
 }
 
+struct GuiFrame {
+    meshes: Vec<Mesh>,
+    vertex_buffer: EguiVertexBuffer,
+    index_buffer: EguiIndexBuffer,
+}
+
 pub struct GuiRenderer {
     vk_ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
@@ -158,6 +164,8 @@ pub struct GuiRenderer {
     texture_desc_sets: BTreeMap<egui::TextureId, Arc<PersistentDescriptorSet>>,
     texture_images: BTreeMap<egui::TextureId, Arc<ImageView>>,
     next_native_tex_id: u64,
+
+    last_frame: Option<GuiFrame>,
 }
 
 impl GuiRenderer {
@@ -183,6 +191,7 @@ impl GuiRenderer {
             texture_desc_sets: BTreeMap::new(),
             texture_images: BTreeMap::new(),
             next_native_tex_id: 0,
+            last_frame: None,
         }))
     }
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -401,7 +410,7 @@ impl GuiRenderer {
         Ok(())
     }
 
-    fn create_vertex_index_buffers(&mut self, meshes: &[Mesh]) -> Result<(EguiVertexBuffer, EguiIndexBuffer)> {
+    fn create_frame(&mut self, meshes: Vec<Mesh>) -> Result<GuiFrame> {
         let vertex_buffer = Buffer::from_iter(
             self.vk_ctx.memory_allocator(),
             BufferCreateInfo {
@@ -428,7 +437,7 @@ impl GuiRenderer {
             },
             meshes.iter().flat_map(|m| m.indices.clone()).collect_vec()
         ).map_err(Validated::unwrap)?;
-        Ok((vertex_buffer, index_buffer))
+        Ok(GuiFrame { meshes, vertex_buffer, index_buffer })
     }
     pub fn build_render_pass(
         &mut self,
@@ -439,9 +448,12 @@ impl GuiRenderer {
             Primitive::Mesh(m) => Some(m),
             Primitive::Callback(_) => None,
         }).cloned().collect_vec();
-        if meshes.is_empty() {
-            return Ok(());
-        }
+        // This `last_frame` infrastructure is a bit odd, but required to prevent flickering on
+        // macOS (I think due to some obscure race condition in Metal/MoltenVK).
+        if !meshes.is_empty() {
+            self.last_frame = Some(self.create_frame(meshes)?);
+        };
+        let Some(frame) = self.last_frame.take() else { return Ok(()); };
 
         let push_constants = {
             let viewport = self.viewport.get();
@@ -451,16 +463,15 @@ impl GuiRenderer {
                 u_screen_size: (viewport_extent * scale_factor).as_f32_lossy()
             }
         };
-        let (vertex_buffer, index_buffer) = self.create_vertex_index_buffers(&meshes)?;
         let mut vertex_cursor = 0;
         let mut index_cursor = 0;
-        for mesh in meshes {
+        for mesh in &frame.meshes {
             if let Err(e) = self.prepare_mesh_draw(
                 builder,
                 push_constants,
-                vertex_buffer.clone(),
-                index_buffer.clone(),
-                &mesh
+                mesh,
+                frame.vertex_buffer.clone(),
+                frame.index_buffer.clone(),
             ) {
                 error!("{e:?}");
             } else {
@@ -476,15 +487,16 @@ impl GuiRenderer {
             vertex_cursor += i32::try_from(mesh.vertices.len())
                 .with_context(|| format!("overflowed vertex_cursor: {}", mesh.vertices.len()))?;
         }
+        self.last_frame = Some(frame);
         Ok(())
     }
 
     fn prepare_mesh_draw(&mut self,
                          builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
                          push_constants: vs::VertPC,
+                         mesh: &Mesh,
                          vertex_buffer: EguiVertexBuffer,
                          index_buffer: EguiIndexBuffer,
-                         mesh: &Mesh
     ) -> Result<()> {
         let pipeline = self.get_or_create_pipeline()?;
         let desc_set = if let Some(desc) = self.texture_desc_sets.get(&mesh.texture_id) {
