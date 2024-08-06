@@ -108,6 +108,7 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
 
     pub(crate) fn name(&self) -> String { self.inner.borrow().name() }
     pub(crate) fn transform(&self) -> Transform { self.transform.borrow().clone() }
+    pub(crate) fn transform_mut(&mut self) -> RefMut<Transform> { self.transform.borrow_mut() }
 }
 
 impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {

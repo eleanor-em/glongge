@@ -16,7 +16,6 @@ use std::{
     time::{Duration, Instant},
     ops::RangeInclusive
 };
-use std::cell::RefCell;
 use tracing::{warn};
 use serde::{
     Serialize,
@@ -103,6 +102,16 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         } else {
             bail!("missing object_id from objects: {:?} [{:?}]",
                 id, self.get_object_type_string(id)?)
+        }
+    }
+    pub(crate) fn get_object_mut(&mut self, id: ObjectId) -> Result<Option<&mut AnySceneObject<ObjectType>>> {
+        if id.is_root() {
+            Ok(None)
+        } else if let Some(object) = self.objects.get_mut(&id) {
+            Ok(Some(object))
+        } else {
+            bail!("missing object_id from objects: {:?}",
+                id, /* borrow checker problems: self.get_object_type_string(id)? */)
         }
     }
 
@@ -628,7 +637,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     }
                 })
                 .collect();
-            self.gui_cmd = Some(self.debug_gui.build(input_handler, &self.object_handler, gui_cmds));
+            self.gui_cmd = Some(self.debug_gui.build(input_handler, &mut self.object_handler, gui_cmds));
+            self.object_handler.update_all_transforms();
         }
     }
 

@@ -144,7 +144,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                 }
             }
         }
-        ctx.object().transform_mut().inspect_mut(|t| {
+        ctx.object().transform_mut().update(|t| {
             t.centre = self.pos;
             t.rotation = self.rotation();
         });

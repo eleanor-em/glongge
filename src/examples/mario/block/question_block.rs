@@ -34,14 +34,6 @@ impl QuestionBlock {
             ..Default::default()
         })
     }
-
-    fn current_sprite(&self) -> &Sprite {
-        if self.is_empty {
-            &self.empty_sprite
-        } else {
-            &self.sprite
-        }
-    }
 }
 
 #[partially_derive_scene_object]
@@ -64,6 +56,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
             Vec2Int { x: 349, y: 78 }
         )
             .with_hidden();
+        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -74,17 +67,16 @@ impl SceneObject<ObjectType> for QuestionBlock {
         ));
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;
-        self.top_left.y += self.v_speed;
-        if self.top_left.y > self.initial_y {
-            self.top_left.y = self.initial_y;
+        let mut next_y = ctx.object().transform().centre.y;
+        next_y += self.v_speed;
+        if next_y > self.initial_y {
+            next_y = self.initial_y;
             self.v_speed = 0.;
             self.v_accel = 0.;
         }
-    }
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
+        ctx.object().transform_mut().update(|t| t.centre.y = next_y);
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

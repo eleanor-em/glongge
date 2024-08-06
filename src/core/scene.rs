@@ -11,9 +11,6 @@ use std::{
 use crate::{
     resource::ResourceHandler,
     core::{
-        util::{
-            linalg::{Transform, Vec2}
-        },
         update::{
             collision::CollisionResponse,
             ObjectContext,

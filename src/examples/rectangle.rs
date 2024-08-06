@@ -84,7 +84,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.pos += self.vel;
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().transform_mut().inspect_mut(|t| t.centre = self.pos);
+        ctx.object().transform_mut().update(|t| t.centre = self.pos);
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
@@ -183,7 +183,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().transform_mut().inspect_mut(|t| {
+        ctx.object().transform_mut().update(|t| {
             t.centre = self.pos;
             t.rotation = self.rotation();
         });

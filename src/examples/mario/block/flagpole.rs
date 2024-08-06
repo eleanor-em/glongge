@@ -30,7 +30,7 @@ impl SceneObject<ObjectType> for Flagpole {
             texture,
             Vec2Int { x: 0, y: 588},
             Vec2Int { x: 16, y: 748 });
-        object_ctx.transform_mut().inspect_mut(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

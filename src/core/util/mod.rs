@@ -229,7 +229,6 @@ pub mod gg_ref {
     use std::cell::{RefCell, RefMut};
     use std::ops::Deref;
     use std::rc::Rc;
-    use tracing::error;
 
     pub struct OptionRefMut<'a, T> {
         inner: Option<RefMut<'a, T>>
@@ -240,7 +239,7 @@ pub mod gg_ref {
             Self { inner: from.as_mut().map(|rc| rc.borrow_mut()) }
         }
 
-        pub fn inspect_mut<F, U>(&mut self, f: F)
+        pub fn update<F, U>(&mut self, f: F)
         where
             F: FnOnce(&mut T) -> U
         {

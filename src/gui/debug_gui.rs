@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::str::FromStr;
+use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver, Sender};
 use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
 use egui::style::ScrollStyle;
@@ -18,7 +20,7 @@ use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
-use crate::gui::GuiUi;
+use crate::gui::{GuiUi, Vec2Output};
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -60,13 +62,66 @@ impl ObjectLabel {
     }
 }
 
+#[derive(Clone)]
+struct EditCell<T> {
+    live: Arc<Mutex<T>>,
+    edited: Arc<Mutex<Option<String>>>,
+    done: Arc<Mutex<bool>>,
+}
+
+impl<T: Clone + Default + Display + FromStr> EditCell<T> {
+    fn new() -> Self { Self {
+        live: Arc::new(Mutex::new(T::default())),
+        edited: Arc::new(Mutex::new(None)),
+        done: Arc::new(Mutex::new(false)),
+    } }
+
+    fn update_live(&mut self, live: T) {
+        *self.live.lock().unwrap() = live.clone();
+    }
+    fn update_edit(&mut self, edited: String) {
+        *self.edited.lock().unwrap() = Some(edited);
+    }
+    fn update_done(&mut self) { *self.done.lock().unwrap() = true; }
+    fn take(&mut self) -> Option<T> {
+        let mut done = self.done.lock().unwrap();
+        if *done {
+            *done = false;
+            self.edited.lock().unwrap().take()
+                .and_then(|s| s.parse().ok())
+        } else {
+            None
+        }
+    }
+
+    fn text(&self) -> String {
+        if let Some(edited) = self.edited.lock().unwrap().as_ref() {
+            edited.clone()
+        } else {
+            self.live.lock().unwrap().to_string()
+        }
+    }
+    fn is_valid(&self) -> bool {
+        let maybe_edited = self.edited.lock().unwrap().clone();
+        if let Some(edited) = maybe_edited {
+            edited.parse::<T>().is_ok()
+        } else {
+            true
+        }
+    }
+}
+
 struct GuiObjectView {
     object_id: ObjectId,
+    centre_x: EditCell<f64>,
 }
 
 impl GuiObjectView {
     fn new() -> Self {
-        Self { object_id: ObjectId::root() }
+        Self {
+            object_id: ObjectId::root(),
+            centre_x: EditCell::new(),
+        }
     }
 
     fn update_selection<O: ObjectTypeEnum>(
@@ -86,7 +141,7 @@ impl GuiObjectView {
 
     fn build_closure<O: ObjectTypeEnum>(
         &mut self,
-        object_handler: &ObjectHandler<O>,
+        object_handler: &mut ObjectHandler<O>,
         mut gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
         frame: Frame,
         enabled: bool
@@ -94,13 +149,22 @@ impl GuiObjectView {
         let object_id = self.object_id;
         if object_id.is_root() { return Ok(Box::new(|_| {})); }
 
-        let object = gg_err::ok_and_log(object_handler.get_object(object_id))
-            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?;
-        let name = object.name();
         let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
             .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+        let object = gg_err::ok_and_log(object_handler.get_object_mut(object_id))
+            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?;
+        let name = object.name();
         let relative_transform = object.transform();
         let gui_cmd = gui_cmds.remove(&object_id);
+
+        let mut text = {
+            if let Some(next) = self.centre_x.take() {
+                object.transform_mut().centre.x = next;
+            }
+            self.centre_x.update_live(relative_transform.centre.x);
+            self.centre_x.text()
+        };
+        let mut centre_x = self.centre_x.clone();
 
         Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
@@ -122,16 +186,23 @@ impl GuiObjectView {
                                     .selectable(false));
                                 ui.separator();
                             });
-                            egui::CollapsingHeader::new("Absolute transform")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    absolute_transform.build_gui(ui);
-                                });
-                            egui::CollapsingHeader::new("Relative transform")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    relative_transform.build_gui(ui);
-                                });
+
+                            ui.add(egui::Label::new("x: ").selectable(false));
+                            let response = egui::TextEdit::singleline(&mut text)
+                                .text_color(if centre_x.is_valid() {
+                                    Color32::from_gray(240)
+                                } else {
+                                    Color32::from_rgb(240, 0, 0)
+                                })
+                                .show(ui)
+                                .response;
+                            if response.gained_focus() || response.changed() {
+                                centre_x.update_edit(text);
+                            }
+                            if response.lost_focus() {
+                                centre_x.update_done();
+                            }
+
                             if let Some(gui_cmd) = gui_cmd {
                                 ui.separator();
                                 gui_cmd(ui);
@@ -696,7 +767,7 @@ impl DebugGui {
     pub fn build<O: ObjectTypeEnum>(
         &mut self,
         input_handler: &InputHandler,
-        object_handler: &ObjectHandler<O>,
+        object_handler: &mut ObjectHandler<O>,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
         self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
