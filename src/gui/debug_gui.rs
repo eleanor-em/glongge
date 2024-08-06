@@ -62,7 +62,7 @@ impl ObjectLabel {
 
 struct GuiObjectView {
     object_id: ObjectId,
-    _absolute_cell: TransformCell,
+    absolute_cell: TransformCell,
     relative_cell: TransformCell,
 }
 
@@ -70,9 +70,15 @@ impl GuiObjectView {
     fn new() -> Self {
         Self {
             object_id: ObjectId::root(),
-            _absolute_cell: TransformCell::new(),
-            relative_cell: TransformCell::new()
+            absolute_cell: TransformCell::new(),
+            relative_cell: TransformCell::new(),
         }
+    }
+
+    fn clear_selection(&mut self) {
+        self.absolute_cell.reset();
+        self.relative_cell.reset();
+        self.object_id = ObjectId::root();
     }
 
     fn update_selection<O: ObjectTypeEnum>(
@@ -80,12 +86,16 @@ impl GuiObjectView {
         object_handler: &ObjectHandler<O>,
         selected_id: ObjectId
     ) -> Result<()> {
-        if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id)? {
-            c.hide_wireframe();
-        }
-        self.object_id = selected_id;
-        if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id)? {
-            c.show_wireframe();
+        if self.object_id != selected_id {
+            if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id)? {
+                c.hide_wireframe();
+            }
+            self.absolute_cell.reset();
+            self.relative_cell.reset();
+            self.object_id = selected_id;
+            if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id)? {
+                c.show_wireframe();
+            }
         }
         Ok(())
     }
@@ -100,19 +110,36 @@ impl GuiObjectView {
         let object_id = self.object_id;
         if object_id.is_root() { return Ok(Box::new(|_| {})); }
 
-        // let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
-        //     .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+        let mut absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
+            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
         let object = gg_err::ok_and_log(object_handler.get_object_mut(object_id))
             .with_context(|| {
-                self.object_id = ObjectId::root();
+                self.clear_selection();
                 format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
             })?;
         let name = object.name();
         let gui_cmd = gui_cmds.remove(&object_id);
 
-        self.relative_cell.maybe_take(&mut object.transform_mut());
+        self.absolute_cell.update_live(absolute_transform);
+        {
+            let next = self.absolute_cell.recv();
+            let dx = next.centre - absolute_transform.centre;
+            let dt = next.rotation - absolute_transform.rotation;
+            let ds = next.scale - absolute_transform.scale;
+            let mut transform = object.transform_mut();
+            transform.centre += dx;
+            transform.rotation += dt;
+            transform.scale += ds;
+            absolute_transform = next;
+        }
+
         let relative_transform = object.transform();
-        let relative_cell = self.relative_cell.clone();
+        self.relative_cell.update_live(relative_transform);
+        let next = self.relative_cell.recv();
+        *object.transform_mut() = next;
+
+        let absolute_sender = self.absolute_cell.sender();
+        let relative_sender = self.relative_cell.sender();
 
         Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
@@ -121,11 +148,7 @@ impl GuiObjectView {
                     egui::ScrollArea::vertical()
                         .show(ui, |ui| {
                             ui.vertical_centered(|ui| {
-                                let mut layout_job = LayoutJob {
-                                    halign: Align::Center,
-                                    justify: true,
-                                    ..Default::default()
-                                };
+                                let mut layout_job = LayoutJob::default();
                                 layout_job.append(format!("{name} ({})", object_id.0).as_str(), 0., TextFormat {
                                     color: Color32::from_gray(255),
                                     ..Default::default()
@@ -135,7 +158,24 @@ impl GuiObjectView {
                                 ui.separator();
                             });
 
-                            relative_transform.build_gui(ui, relative_cell);
+                            let mut layout_job = LayoutJob::default();
+                            layout_job.append("Absolute transform:", 0., TextFormat {
+                                color: Color32::from_gray(255),
+                                ..Default::default()
+                            });
+                            ui.add(egui::Label::new(layout_job)
+                                .selectable(false));
+                            absolute_transform.build_gui(ui, absolute_sender);
+                            ui.separator();
+                            let mut layout_job = LayoutJob::default();
+                            layout_job.append("Relative transform:", 0., TextFormat {
+                                color: Color32::from_gray(255),
+                                ..Default::default()
+                            });
+                            ui.add(egui::Label::new(layout_job)
+                                .selectable(false));
+                            relative_transform.build_gui(ui, relative_sender);
+                            ui.separator();
 
                             if let Some(gui_cmd) = gui_cmd {
                                 ui.separator();
@@ -277,8 +317,16 @@ impl GuiObjectTree {
                     };
                     egui::ScrollArea::vertical()
                         .show(ui, |ui| {
-                            ui.add(egui::Label::new("Object Tree 🌳"));
-                            ui.separator();
+                            ui.vertical_centered(|ui| {
+                                let mut layout_job = LayoutJob::default();
+                                layout_job.append("Object Tree 🌳", 0., TextFormat {
+                                    color: Color32::from_gray(255),
+                                    ..Default::default()
+                                });
+                                ui.add(egui::Label::new(layout_job)
+                                    .selectable(false));
+                                ui.separator();
+                            });
                             root.build(ui);
                         });
                 });
@@ -527,19 +575,17 @@ impl GuiConsoleLog {
         egui::SidePanel::right("perf-update")
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Update, |ui| {
-                let mut layout_job = LayoutJob {
-                    halign: Align::Center,
-                    justify: true,
-                    ..Default::default()
-                };
-                layout_job.append("Update Performance", 0., TextFormat {
-                    color: Color32::from_gray(255),
-                    ..Default::default()
+                ui.vertical_centered(|ui| {
+                    let mut layout_job = LayoutJob::default();
+                    layout_job.append("Update Performance", 0., TextFormat {
+                        color: Color32::from_gray(255),
+                        ..Default::default()
+                    });
+                    ui.add(egui::Label::new(layout_job)
+                        .extend()
+                        .selectable(false));
+                    ui.separator();
                 });
-                ui.add(egui::Label::new(layout_job)
-                    .extend()
-                    .selectable(false));
-                ui.separator();
                 if let Some(perf_stats) = update_perf_stats {
                     egui::Grid::new("perf-update-data")
                         .num_columns(3)
@@ -563,19 +609,17 @@ impl GuiConsoleLog {
         egui::SidePanel::right("perf-render")
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Render, |ui| {
-                let mut layout_job = LayoutJob {
-                    halign: Align::Center,
-                    justify: true,
-                    ..Default::default()
-                };
-                layout_job.append("Render Performance", 0., TextFormat {
-                    color: Color32::from_gray(255),
-                    ..Default::default()
+                ui.vertical_centered(|ui| {
+                    let mut layout_job = LayoutJob::default();
+                    layout_job.append("Render Performance", 0., TextFormat {
+                        color: Color32::from_gray(255),
+                        ..Default::default()
+                    });
+                    ui.add(egui::Label::new(layout_job)
+                        .extend()
+                        .selectable(false));
+                    ui.separator();
                 });
-                ui.add(egui::Label::new(layout_job)
-                    .extend()
-                    .selectable(false));
-                ui.separator();
                 if let Some(perf_stats) = render_perf_stats {
                     egui::Grid::new("perf-render-data")
                         .num_columns(3)
@@ -682,6 +726,7 @@ impl DebugGui {
         object_handler: &ObjectHandler<O>
     ) {
         self.wireframe_mouseovers.drain(..)
+            .filter(|o| self.object_tree.selected_id != *o)
             .filter_map(|o| gg_err::ok_and_log(object_handler.get_collision_shape_mut(o)))
             .for_each(|mut c| c.hide_wireframe());
     }
@@ -713,6 +758,7 @@ impl DebugGui {
                 gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
             } else {
                 self.object_tree.selected_id = ObjectId::root();
+                self.object_view.clear_selection();
             }
         }
 
