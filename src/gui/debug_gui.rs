@@ -18,7 +18,7 @@ use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
-use crate::gui::{EditCell, GuiUi};
+use crate::gui::{GuiUi, TransformCell};
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -62,14 +62,16 @@ impl ObjectLabel {
 
 struct GuiObjectView {
     object_id: ObjectId,
-    centre_x: EditCell<f64>,
+    _absolute_cell: TransformCell,
+    relative_cell: TransformCell,
 }
 
 impl GuiObjectView {
     fn new() -> Self {
         Self {
             object_id: ObjectId::root(),
-            centre_x: EditCell::new(),
+            _absolute_cell: TransformCell::new(),
+            relative_cell: TransformCell::new()
         }
     }
 
@@ -98,18 +100,19 @@ impl GuiObjectView {
         let object_id = self.object_id;
         if object_id.is_root() { return Ok(Box::new(|_| {})); }
 
-        let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
-            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+        // let absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
+        //     .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
         let object = gg_err::ok_and_log(object_handler.get_object_mut(object_id))
-            .with_context(|| format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}"))?;
+            .with_context(|| {
+                self.object_id = ObjectId::root();
+                format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
+            })?;
         let name = object.name();
         let gui_cmd = gui_cmds.remove(&object_id);
 
-        if let Some(next) = self.centre_x.take() {
-            object.transform_mut().centre.x = next;
-        }
-        self.centre_x.update_live(object.transform().centre.x);
-        let mut centre_x = self.centre_x.clone();
+        self.relative_cell.maybe_take(&mut object.transform_mut());
+        let relative_transform = object.transform();
+        let relative_cell = self.relative_cell.clone();
 
         Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
@@ -123,7 +126,7 @@ impl GuiObjectView {
                                     justify: true,
                                     ..Default::default()
                                 };
-                                layout_job.append(name.as_str(), 0., TextFormat {
+                                layout_job.append(format!("{name} ({})", object_id.0).as_str(), 0., TextFormat {
                                     color: Color32::from_gray(255),
                                     ..Default::default()
                                 });
@@ -132,22 +135,7 @@ impl GuiObjectView {
                                 ui.separator();
                             });
 
-                            ui.add(egui::Label::new("x: ").selectable(false));
-                            let col = if centre_x.is_valid() {
-                                Color32::from_gray(240)
-                            } else {
-                                Color32::from_rgb(240, 0, 0)
-                            };
-                            let response = egui::TextEdit::singleline(&mut centre_x.text)
-                                .text_color(col)
-                                .show(ui)
-                                .response;
-                            if response.gained_focus() || response.changed() {
-                                centre_x.update_edit();
-                            }
-                            if response.lost_focus() {
-                                centre_x.update_done();
-                            }
+                            relative_transform.build_gui(ui, relative_cell);
 
                             if let Some(gui_cmd) = gui_cmd {
                                 ui.separator();
@@ -361,7 +349,7 @@ impl GuiObjectTree {
                     return;
                 }
             },
-            Err(e) => error!("{e:?}"),
+            Err(e) => error!("{}", e.root_cause()),
         }
     }
 
@@ -381,7 +369,7 @@ impl GuiObjectTree {
                 }
                 tree.displayed.remove(&id);
             },
-            Err(e) => error!("{e:?}"),
+            Err(e) => error!("{}", e.root_cause()),
         }
     }
 
@@ -627,7 +615,10 @@ impl GuiConsoleLog {
                         }.split("\x1b[");
                         let style = Style::default();
                         for segment in segments.filter(|s| !s.is_empty()) {
-                            let sep = segment.find('m').unwrap();
+                            let Some(sep) = segment.find('m') else {
+                                println!("no 'm' in {segment:?}");
+                                continue;
+                            };
                             let colour_code = &segment[..sep];
                             let col = colour_code.parse::<i32>()
                                 .unwrap_or(
@@ -718,14 +709,18 @@ impl DebugGui {
     ) -> Box<GuiClosure> {
         self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
         if !self.object_tree.selected_id.is_root() {
-            gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
+            if gg_err::ok_and_log(object_handler.get_object(self.object_tree.selected_id)).is_some() {
+                gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
+            } else {
+                self.object_tree.selected_id = ObjectId::root();
+            }
         }
 
         let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
         let build_object_view = match self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled) {
             Ok(c) => Some(c),
             Err(e) => {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
                 None
             }
         };

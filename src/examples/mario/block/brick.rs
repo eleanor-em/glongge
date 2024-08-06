@@ -43,6 +43,7 @@ impl SceneObject<ObjectType> for Brick {
             Vec2Int { x: 16, y: 16},
             Vec2Int { x: 17, y: 16 });
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
+        self.initial_y += self.sprite.half_widths().y;
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -54,15 +55,14 @@ impl SceneObject<ObjectType> for Brick {
     }
 
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let mut transform = ctx.object().transform_mut();
         self.v_speed += self.v_accel;
-        let mut next_y = ctx.object().transform().centre.y;
-        next_y += self.v_speed;
-        if next_y > self.initial_y {
-            next_y = self.initial_y;
+        transform.centre.y += self.v_speed;
+        if transform.centre.y > self.initial_y {
+            transform.centre.y = self.initial_y;
             self.v_speed = 0.;
             self.v_accel = 0.;
         }
-        ctx.object().transform_mut().centre.y = next_y;
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

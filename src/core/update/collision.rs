@@ -122,7 +122,7 @@ impl CollisionHandler {
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
             if let Err(e) = Self::process_collision_inner(parents, objects, &mut rv, &ids, mtv) {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
             }
         }
         rv

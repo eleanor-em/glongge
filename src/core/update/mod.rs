@@ -182,7 +182,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                 self.parents.remove(&remove_id);
                 Ok(())
             }) {
-            error!("{e:?}");
+            error!("{}", e.root_cause());
         }
     }
     fn add_object(&mut self,
@@ -238,7 +238,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                         child_stack.push((child.object_id, child.transform() * parent_transform));
                     }
                 },
-                Err(e) => error!("{e:?}"),
+                Err(e) => error!("{}", e.root_cause()),
             }
         }
     }
@@ -501,14 +501,14 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             let parent = match self.object_handler.get_parent(new_obj.parent_id) {
                 Ok(p) => p,
                 Err(e) => {
-                    error!("{e:?}");
+                    error!("{}", e.root_cause());
                     continue;
                 }
             };
             let new_obj = match self.object_handler.add_object(new_id, new_obj.clone()) {
                 Ok(o) => o,
                 Err(e) => {
-                    error!("{e:?}");
+                    error!("{}", e.root_cause());
                     continue;
                 }
             };
@@ -614,7 +614,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 ) {
                     Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
                     Err(e) => {
-                        error!("{e:?}");
+                        error!("{}", e.root_cause());
                         None
                     },
                 };
@@ -633,7 +633,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     ) {
                         Ok(ctx) => Some((id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))),
                         Err(e) => {
-                            error!("{e:?}");
+                            error!("{}", e.root_cause());
                             None
                         }
                     }
@@ -662,7 +662,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                         CollisionResponse::Continue => {},
                         CollisionResponse::Done => { done_with_collisions.insert(this.object_id); },
                     },
-                    Err(e) => error!("{e:?}"),
+                    Err(e) => error!("{}", e.root_cause()),
                 }
             }
         }
@@ -688,7 +688,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                             ctx.scene.coroutines.insert(id, coroutine);
                         }
                     },
-                    Err(e) => error!("{e:?}"),
+                    Err(e) => error!("{}", e.root_cause()),
                 }
             }
         }
@@ -707,7 +707,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 object_tracker
             ) {
                 Ok(mut ctx) => call_obj_event(this.inner.borrow_mut(), &mut ctx),
-                Err(e) => error!("{e:?}"),
+                Err(e) => error!("{}", e.root_cause()),
             }
         }
     }
@@ -1013,9 +1013,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
     fn get(&self, object_id: ObjectId) -> Option<&AnySceneObject<ObjectType>> {
         self.last.get(&object_id)
     }
-    fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut AnySceneObject<ObjectType>> {
-        self.last.get_mut(&object_id)
-    }
+    // fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut AnySceneObject<ObjectType>> {
+    //     self.last.get_mut(&object_id)
+    // }
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
@@ -1247,7 +1247,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                             gg_err::ok_and_log(self.test_collision_inner(collider, *other_id))
                         }));
                 },
-                Err(e) => error!("{e:?}"),
+                Err(e) => error!("{}", e.root_cause()),
             }
         }
         NonemptyVec::try_from_vec(rv)

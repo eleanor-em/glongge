@@ -57,6 +57,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         )
             .with_hidden();
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
+        self.initial_y += self.sprite.half_widths().y;
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

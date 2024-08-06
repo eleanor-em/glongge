@@ -476,7 +476,7 @@ impl GuiRenderer {
                 frame.vertex_buffer.clone(),
                 frame.index_buffer.clone(),
             ) {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
             } else {
                 builder.draw_indexed(
                     mesh.indices.len() as u32,

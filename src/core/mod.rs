@@ -76,7 +76,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
 // ObjectId(0) represents the root object.
 static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ObjectId(usize);
+pub struct ObjectId(pub(crate) usize);
 
 impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }

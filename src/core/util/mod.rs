@@ -234,7 +234,7 @@ pub mod gg_err {
             Ok(Some(_)) => true,
             Ok(None) => false,
             Err(e) => {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
                 false
             }
         }
@@ -244,7 +244,7 @@ pub mod gg_err {
         match result {
             Ok(o) => o,
             Err(e) => {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
                 None
             }
         }
@@ -254,7 +254,7 @@ pub mod gg_err {
         match result {
             Ok(v) => v,
             Err(e) => {
-                error!("{e:?}");
+                error!("{}", e.root_cause());
                 default.into()
             }
         }
@@ -262,7 +262,7 @@ pub mod gg_err {
 
     pub fn log_err(result: Result<()>) {
         if let Err(e) = result {
-            error!("{e:?}");
+            error!("{}", e.root_cause());
         }
     }
 }
