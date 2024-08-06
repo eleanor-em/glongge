@@ -115,7 +115,7 @@ impl SceneObject<ObjectType> for Goomba {
             self.sprite.hide();
             self.die_sprite.show();
         }
-        ctx.object().transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {

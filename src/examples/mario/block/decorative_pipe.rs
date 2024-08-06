@@ -31,7 +31,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
             Vec2Int { x: 224, y: 324 },
             Vec2Int { x: 256, y: 676}
         );
-        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

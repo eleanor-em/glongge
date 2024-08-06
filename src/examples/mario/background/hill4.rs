@@ -30,7 +30,7 @@ impl SceneObject<ObjectType> for Hill4 {
             Vec2Int { x: 200, y: 692 },
             Vec2Int { x: 248, y: 708 }
         ).with_depth(VertexDepth::Back(0));
-        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
 }

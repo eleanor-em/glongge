@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
     ops::RangeInclusive
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 use tracing::{warn};
 use serde::{
     Serialize,
@@ -53,7 +55,6 @@ use crate::core::scene::GuiClosure;
 use crate::gui::debug_gui::DebugGui;
 use crate::core::util::collision::BoxCollider;
 use crate::core::util::{gg_err, gg_iter};
-use crate::core::util::gg_ref::OptionRefMut;
 use crate::core::vk::RenderPerfStats;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
@@ -521,6 +522,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 all_absolute_transforms: &self.object_handler.absolute_transforms,
                 all_parents: &self.object_handler.parents,
                 all_children: &self.object_handler.children,
+                dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
             if let Some(new_vertices) = new_obj.inner.borrow_mut()
                 .on_load(&mut object_ctx, &mut self.resource_handler)? {
@@ -853,6 +855,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 all_absolute_transforms: &caller.object_handler.absolute_transforms,
                 all_parents: &caller.object_handler.parents,
                 all_children: &caller.object_handler.children,
+                dummy_transform: Rc::new(RefCell::new(Transform::default())),
             },
             viewport: ViewportContext {
                 viewport: &mut caller.viewport,
@@ -1030,6 +1033,8 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     all_absolute_transforms: &'a BTreeMap<ObjectId, Transform>,
     all_parents: &'a BTreeMap<ObjectId, ObjectId>,
     all_children: &'a BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
+    // Used if a mutable lookup fails.
+    dummy_transform: Rc<RefCell<Transform>>,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
@@ -1081,13 +1086,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                 Transform::default()
             })
     }
-    pub fn transform_mut(&self) -> OptionRefMut<Transform> {
-        let rv = OptionRefMut::new(self.object_tracker.get(self.this_id)
-            .map(|o| &o.transform));
-        if rv.is_none() {
-            error!("missing object_id in objects: this={:?}", self.this_id);
-        }
-        rv
+    pub fn transform_mut(&self) -> RefMut<Transform> {
+        self.object_tracker.get(self.this_id)
+            .map(|o| o.transform.borrow_mut())
+            .unwrap_or_else(|| {
+                error!("missing object_id in objects: this={:?}", self.this_id);
+                self.dummy_transform.borrow_mut()
+            })
     }
     pub fn absolute_transform(&self) -> Transform {
         self.all_absolute_transforms.get(&self.this_id)

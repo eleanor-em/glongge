@@ -1101,7 +1101,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object().transform_mut().update(|t| t.centre = self.collider.centre());
+        ctx.object().transform_mut().centre = self.collider.centre();
     }
 
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }

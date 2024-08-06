@@ -28,7 +28,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
             Vec2Int { x: 16, y: 16 },
             Vec2Int { x: 147, y: 16 }
         );
-        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
 

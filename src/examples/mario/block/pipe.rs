@@ -52,7 +52,7 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2Int { x: 256, y: 676}
             )
         }.with_depth(VertexDepth::Front(1000));
-        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
 

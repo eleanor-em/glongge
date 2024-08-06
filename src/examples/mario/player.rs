@@ -693,13 +693,12 @@ impl SceneObject<ObjectType> for Player {
             self.start_die(ctx);
         }
 
-        ctx.object().transform_mut().update(|t| {
-            t.centre = self.centre;
-            t.scale = Vec2 {
-                x: self.last_nonzero_dir.x,
-                y: 1.,
-            };
-        });
+        let mut transform = ctx.object().transform_mut();
+        transform.centre = self.centre;
+        transform.scale = Vec2 {
+            x: self.last_nonzero_dir.x,
+            y: 1.,
+        };
 
         if self.state != self.last_state {
             self.walk_sprite.hide();

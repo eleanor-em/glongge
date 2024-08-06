@@ -41,7 +41,7 @@ impl SceneObject<ObjectType> for UndergroundBrick {
             texture,
             Vec2Int { x: 16, y: 16},
             Vec2Int { x: 164, y: 16 });
-        object_ctx.transform_mut().update(|t| t.centre = self.top_left + self.sprite.half_widths());
+        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -60,7 +60,7 @@ impl SceneObject<ObjectType> for UndergroundBrick {
             self.v_speed = 0.;
             self.v_accel = 0.;
         }
-        ctx.object().transform_mut().update(|t| t.centre.y = next_y);
+        ctx.object().transform_mut().centre.y = next_y;
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()
