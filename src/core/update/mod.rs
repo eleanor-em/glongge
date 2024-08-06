@@ -1,5 +1,4 @@
 pub mod collision;
-mod debug_gui;
 pub mod builtin;
 
 use std::{
@@ -51,17 +50,17 @@ use crate::{core::{
 }, resource::ResourceHandler};
 use crate::core::render::StoredRenderItem;
 use crate::core::scene::GuiClosure;
-use crate::core::update::debug_gui::DebugGui;
+use crate::gui::debug_gui::DebugGui;
 use crate::core::util::collision::BoxCollider;
 use crate::core::util::{gg_err, gg_iter};
 use crate::core::vk::RenderPerfStats;
 use crate::resource::sprite::GgInternalSprite;
 use crate::shader::{BasicShader, get_shader, Shader};
 
-struct ObjectHandler<ObjectType: ObjectTypeEnum> {
+pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
     parents: BTreeMap<ObjectId, ObjectId>,
-    absolute_transforms: BTreeMap<ObjectId, Transform>,
+    pub(crate) absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
 
     collision_handler: CollisionHandler,
@@ -83,10 +82,10 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .borrow().get_type();
         Ok(format!("{object_type:?}"))
     }
-    fn get_first_object_id(&self) -> Option<ObjectId> {
+    pub(crate) fn get_first_object_id(&self) -> Option<ObjectId> {
         self.objects.first_key_value().map(|o| o.0).copied()
     }
-    fn get_next_object_id(&self, source: ObjectId) -> Option<ObjectId> {
+    pub(crate) fn get_next_object_id(&self, source: ObjectId) -> Option<ObjectId> {
         let object_ids = self.objects.keys().copied().collect_vec();
         let i = gg_iter::index_of(&object_ids, &source)?;
         Some(object_ids[(i + 1) % object_ids.len()])
@@ -94,7 +93,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     // fn get_first_object(&self) -> Option<&AnySceneObject<ObjectType>> {
     //     self.objects.first_key_value().map(|o| o.1)
     // }
-    fn get_object(&self, id: ObjectId) -> Result<Option<&AnySceneObject<ObjectType>>> {
+    pub(crate) fn get_object(&self, id: ObjectId) -> Result<Option<&AnySceneObject<ObjectType>>> {
         if id.is_root() {
             Ok(None)
         } else if let Some(object) = self.objects.get(&id) {
@@ -115,7 +114,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             bail!("missing object_id from parents: {:?} [{:?}]", id, object_type)
         }
     }
-    fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
+    pub(crate) fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
         let mut parents = Vec::new();
         while !id.is_root() {
             parents.push(id);
@@ -123,7 +122,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         }
         Ok(parents)
     }
-    fn get_children(&self, id: ObjectId) -> Result<&Vec<SceneObjectWithId<ObjectType>>> {
+    pub(crate) fn get_children(&self, id: ObjectId) -> Result<&Vec<SceneObjectWithId<ObjectType>>> {
         if let Some(child) = self.children.get(&id) {
             Ok(child)
         } else {
@@ -143,19 +142,19 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             bail!("missing object_id from children: {:?} [{:?}]", id, object_type)
         }
     }
-    fn get_sprite(&self, id: ObjectId) -> Result<Option<Ref<GgInternalSprite>>> {
+    pub(crate) fn get_sprite(&self, id: ObjectId) -> Result<Option<Ref<GgInternalSprite>>> {
         Ok(self.get_object(id)?
             .and_then(AnySceneObject::downcast::<GgInternalSprite>)
             .or(self.get_children(id)?.iter()
                 .find_map(SceneObjectWithId::downcast::<GgInternalSprite>)))
     }
-    fn get_collision_shape(&self, id: ObjectId) -> Result<Option<Ref<CollisionShape>>> {
+    pub(crate) fn get_collision_shape(&self, id: ObjectId) -> Result<Option<Ref<CollisionShape>>> {
         Ok(self.get_object(id)?
             .and_then(AnySceneObject::downcast::<CollisionShape>)
                .or(self.get_children(id)?.iter()
                    .find_map(SceneObjectWithId::downcast::<CollisionShape>)))
     }
-    fn get_collision_shape_mut(&self, id: ObjectId) -> Result<Option<RefMut<CollisionShape>>> {
+    pub(crate) fn get_collision_shape_mut(&self, id: ObjectId) -> Result<Option<RefMut<CollisionShape>>> {
         Ok(self.get_object(id)?
             .and_then(AnySceneObject::downcast_mut::<CollisionShape>)
             .or(self.get_children(id)?.iter()
@@ -197,7 +196,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         self.collision_handler.get_collisions(&self.absolute_transforms, &self.parents, &self.objects)
     }
 
-    fn get_parent(&self, this_id: ObjectId) -> Result<Option<SceneObjectWithId<ObjectType>>> {
+    pub(crate) fn get_parent(&self, this_id: ObjectId) -> Result<Option<SceneObjectWithId<ObjectType>>> {
         if this_id.0 == 0 {
             return Ok(None);
         }
@@ -726,7 +725,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 }
 
 #[derive(Clone)]
-struct UpdatePerfStats {
+pub(crate) struct UpdatePerfStats {
     total_stats: TimeIt,
     on_gui: TimeIt,
     on_update_begin: TimeIt,
@@ -786,7 +785,7 @@ impl UpdatePerfStats {
         self.last_perf_stats.clone().map(|s| *s)
     }
 
-    fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
         vec![
             self.total_stats.as_tuple_ms(),
             self.on_gui.as_tuple_ms(),

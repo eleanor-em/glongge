@@ -15,7 +15,6 @@ use crate::core::input::InputHandler;
 use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
-use crate::core::update::debug_gui::ObjectLabel::Disambiguated;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::util::{gg_err, gg_iter, NonemptyVec};
 use crate::core::vk::RenderPerfStats;
@@ -32,7 +31,7 @@ impl ObjectLabel {
     fn name(&self) -> &str {
         match self {
             ObjectLabel::Root => "<root>",
-            ObjectLabel::Unique(name, _) | Disambiguated(name, _, _) => name.as_str(),
+            ObjectLabel::Unique(name, _) | ObjectLabel::Disambiguated(name, _, _) => name.as_str(),
         }
     }
 
@@ -40,14 +39,14 @@ impl ObjectLabel {
         match self {
             ObjectLabel::Root => "<root>".to_string(),
             ObjectLabel::Unique(name, _) => name.clone(),
-            Disambiguated(name, _, count) => format!("{name} {count}"),
+            ObjectLabel::Disambiguated(name, _, count) => format!("{name} {count}"),
         }
     }
 
     fn set_tags(&mut self, new_tags: impl AsRef<str>) {
         match self {
             ObjectLabel::Root => {},
-            ObjectLabel::Unique(_, tags) | Disambiguated(_, tags, _) => {
+            ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) => {
                 *tags = new_tags.as_ref().to_string();
             },
         }
@@ -56,7 +55,7 @@ impl ObjectLabel {
     fn get_tags(&self) -> &str {
         match self {
             ObjectLabel::Root => "",
-            ObjectLabel::Unique(_, tags) | Disambiguated(_, tags, _) =>  tags.as_str()
+            ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) =>  tags.as_str()
         }
     }
 }

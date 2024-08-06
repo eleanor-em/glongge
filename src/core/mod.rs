@@ -80,9 +80,8 @@ pub struct ObjectId(usize);
 
 impl ObjectId {
     fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
-
-    fn is_root(self) -> bool { self.0 == 0 }
-    fn root() -> Self { ObjectId(0) }
+    pub(crate) fn is_root(self) -> bool { self.0 == 0 }
+    pub(crate) fn root() -> Self { ObjectId(0) }
 }
 
 
@@ -108,8 +107,8 @@ impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
 }
 
 pub struct SceneObjectWithId<ObjectType> {
-    object_id: ObjectId,
-    inner: AnySceneObject<ObjectType>,
+    pub(crate) object_id: ObjectId,
+    pub(crate) inner: AnySceneObject<ObjectType>,
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
