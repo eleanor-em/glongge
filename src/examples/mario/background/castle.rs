@@ -15,7 +15,7 @@ pub struct Castle {
 }
 
 impl Castle {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self { top_left: top_left.into(), ..Default::default() })
     }
 }
@@ -27,8 +27,8 @@ impl SceneObject<ObjectType> for Castle {
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
-            Vec2Int { x: 24, y: 684 },
-            Vec2Int { x: 104, y: 764 }
+            Vec2i { x: 24, y: 684 },
+            Vec2i { x: 104, y: 764 }
         ).with_depth(VertexDepth::Back(0));
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)

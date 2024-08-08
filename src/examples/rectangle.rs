@@ -60,10 +60,10 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,
-            Vec2Int { x: 3, y: 1 },
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 0 },
-            Vec2Int { x: 2, y: 0 }
+            Vec2i { x: 3, y: 1 },
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 0, y: 0 },
+            Vec2i { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(100);
         Ok(None)
     }
@@ -133,10 +133,10 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,
-            Vec2Int{ x: 2, y: 1 },
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 0 },
-            Vec2Int { x: 2, y: 0 }
+            Vec2i{ x: 2, y: 1 },
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 0, y: 0 },
+            Vec2i { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(500);
 
         Ok(None)

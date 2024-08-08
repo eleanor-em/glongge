@@ -37,6 +37,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn gg_container() -> Self;
     fn gg_static_sprite() -> Self;
     fn gg_colliding_sprite() -> Self;
+    fn gg_tileset() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
@@ -133,6 +134,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     }
 
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
+    pub fn name(&self) -> String { self.inner.borrow().name() }
 
     pub fn transform(&self) -> Transform { self.inner.transform() }
     pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }

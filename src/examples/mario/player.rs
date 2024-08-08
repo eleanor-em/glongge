@@ -114,7 +114,7 @@ impl Player {
     const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
 
-    pub fn create(centre: Vec2Int, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
+    pub fn create(centre: Vec2i, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             centre: centre.into(),
             // Prevents player getting "stuck" on ground when level starts in air.
@@ -321,6 +321,8 @@ impl Player {
                 if ctx.object().test_collision(vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;
+                    this.speed = 0.;
+                    this.dir = Vec2::zero();
                     // Snap to top of pipe.
                     this.centre.y = (this.centre.y / 8.).round() * 8.;
                     CoroutineResponse::Complete
@@ -455,17 +457,17 @@ impl SceneObject<ObjectType> for Player {
         self.idle_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 8 },
+            Vec2i { x: 0, y: 8 },
+            Vec2i { x: 16, y: 16 },
         )
             .with_name("Sprite[Idle]");
         self.walk_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 3, y: 1 },
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 20, y: 8 },
-            Vec2Int { x: 2, y: 0 }
+            Vec2i { x: 3, y: 1 },
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 20, y: 8 },
+            Vec2i { x: 2, y: 0 }
         )
             .with_fixed_ms_per_frame(110)
             .with_hidden()
@@ -473,10 +475,10 @@ impl SceneObject<ObjectType> for Player {
         self.run_sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 3, y: 1 },
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 20, y: 8 },
-            Vec2Int { x: 2, y: 0 }
+            Vec2i { x: 3, y: 1 },
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 20, y: 8 },
+            Vec2i { x: 2, y: 0 }
         )
             .with_fixed_ms_per_frame(60)
             .with_hidden()
@@ -484,32 +486,32 @@ impl SceneObject<ObjectType> for Player {
         self.skid_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 76, y: 8 },
+            Vec2i { x: 76, y: 8 },
+            Vec2i { x: 16, y: 16 },
         )
             .with_hidden()
             .with_name("Sprite[Skid]");
         self.fall_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 96, y: 8 },
+            Vec2i { x: 96, y: 8 },
+            Vec2i { x: 16, y: 16 },
         )
             .with_hidden()
             .with_name("Sprite[Fall]");
         self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 116, y: 8 },
+            Vec2i { x: 116, y: 8 },
+            Vec2i { x: 16, y: 16 },
         )
             .with_hidden()
             .with_name("Sprite[Die]");
         self.flagpole_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 136, y: 8 },
+            Vec2i { x: 136, y: 8 },
+            Vec2i { x: 16, y: 16 },
         )
             .with_hidden()
             .with_name("Sprite[Flagpole]");
@@ -615,6 +617,7 @@ impl SceneObject<ObjectType> for Player {
                     self.state = self.last_ground_state;
                     if self.speed.is_zero() {
                         self.state = PlayerState::Idle;
+                        self.dir = Vec2::zero();
                     }
                 } else if let Some(mut other) = downcast_bumpable_mut(&mut coll.other) {
                     // Collision with a block from below.

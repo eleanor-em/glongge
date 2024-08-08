@@ -112,11 +112,10 @@ impl CollisionHandler {
     }
     pub(crate) fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
-        absolute_transforms: &BTreeMap<ObjectId, Transform>,
         parents: &BTreeMap<ObjectId, ObjectId>,
         objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>
     ) -> Vec<CollisionNotification<ObjectType>> {
-        let collisions = self.get_collisions_inner(absolute_transforms, objects);
+        let collisions = self.get_collisions_inner(objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
             if let Err(e) = Self::process_collision_inner(parents, objects, &mut rv, &ids, mtv) {
@@ -128,28 +127,21 @@ impl CollisionHandler {
 
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
-        absolute_transforms: &BTreeMap<ObjectId, Transform>,
         objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions.iter()
             .filter_map(|ids| {
-                let this_transform = absolute_transforms.get(&ids.fst())
-                    .or_else(|| {
-                        error!("missing object_id in absolute_transforms: {:?}", ids.fst());
-                        None
-                    })?;
-                let other_transform = absolute_transforms.get(&ids.snd())
-                    .or_else(|| {
-                        error!("missing object_id in absolute_transforms: {:?}", ids.snd());
-                        None
-                    })?;
-                let this = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>()
-                    .collider()
-                    .transformed(this_transform);
-                let other = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>()
-                    .collider()
-                    .transformed(other_transform);
-                this.collides_with(&other).map(|mtv| (*ids, mtv))
+                let o1 = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>();
+                let o2 = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>();
+                o1.collider().collides_with(o2.collider())
+                    .map(|mtv| {
+                        if ids.fst().0 == 852 {
+                            info!("player collide with {:?}", ids.snd());
+                        } else if ids.snd().0 == 852 {
+                            info!("player collide with {:?}", ids.fst());
+                        }
+                        (*ids, mtv)
+                    })
             })
             .collect()
     }

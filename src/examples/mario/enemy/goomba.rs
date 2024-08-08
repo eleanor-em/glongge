@@ -11,7 +11,7 @@ use crate::object_type::ObjectType;
 
 #[register_scene_object]
 pub struct Goomba {
-    initial_coord: Vec2Int,
+    initial_coord: Vec2i,
     dead: bool,
     started_death: bool,
     top_left: Vec2,
@@ -22,7 +22,7 @@ pub struct Goomba {
 }
 
 impl Goomba {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             initial_coord: top_left,
             dead: false,
@@ -47,16 +47,16 @@ impl SceneObject<ObjectType> for Goomba {
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 2, y: 1},
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 0, y: 16 },
-            Vec2Int { x: 2, y: 0 }
+            Vec2i { x: 2, y: 1},
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 0, y: 16 },
+            Vec2i { x: 2, y: 0 }
         ).with_fixed_ms_per_frame(200);
         self.die_sprite = Sprite::from_single_extent(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 36, y: 16 }
+            Vec2i { x: 36, y: 16 },
+            Vec2i { x: 16, y: 16 }
         )
             .with_hidden();
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();

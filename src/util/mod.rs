@@ -15,6 +15,7 @@ pub mod colour;
 pub mod assert;
 pub mod collision;
 pub mod canvas;
+pub mod tileset;
 
 #[allow(dead_code)]
 pub mod gg_time {

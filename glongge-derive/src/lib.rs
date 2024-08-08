@@ -34,6 +34,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
             fn gg_container() -> Self { Self::GgInternalContainer }
             fn gg_static_sprite() -> Self { Self::GgInternalStaticSprite }
             fn gg_colliding_sprite() -> Self { Self::GgInternalCollidingSprite }
+            fn gg_tileset() -> Self { Self::GgInternalTileset }
         }
     };
 

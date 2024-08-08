@@ -206,7 +206,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
 
     fn get_collisions(&mut self) -> Vec<CollisionNotification<ObjectType>> {
         self.update_all_transforms();
-        self.collision_handler.get_collisions(&self.absolute_transforms, &self.parents, &self.objects)
+        self.collision_handler.get_collisions(&self.parents, &self.objects)
     }
 
     pub(crate) fn get_parent(&self, this_id: ObjectId) -> Result<Option<SceneObjectWithId<ObjectType>>> {
@@ -1149,19 +1149,11 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             self.all_children.get(&object_id)
                 .with_context(|| format!("missing object_id in children: {object_id:?}"))?
         };
-        if let Some((collision_shape_id, collision_shape)) = children.iter()
+        Ok(children.iter()
             .find_map(|obj| {
                 obj.downcast::<GgInternalCollisionShape>()
-                    .map(|inner| (obj.object_id, inner))
-            }) {
-            if let Some(t) = self.all_absolute_transforms.get(&collision_shape_id) {
-                Ok(Some(collision_shape.collider().transformed(t)))
-            } else {
-                bail!("missing object_id in absolute_transforms: {collision_shape_id:?}");
-            }
-        } else {
-            Ok(None)
-        }
+            })
+            .map(|o| o.collider().clone()))
     }
 
     pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
@@ -1261,13 +1253,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     ) -> Result<Option<Collision<ObjectType>>> {
         let other = self.object_tracker.get(other_id)
             .with_context(|| format!("missing object_id in objects: {other_id:?}"))?;
-        let other_collider = other.checked_downcast::<GgInternalCollisionShape>()
-            .collider()
-            .transformed(
-                self.all_absolute_transforms.get(&other_id)
-                    .with_context(|| format!("missing object_id in absolute_transforms: {other_id:?}"))?
-            );
-        if let Some(mtv) = collider.collides_with(&other_collider) {
+        if let Some(mtv) = collider.collides_with(&other.checked_downcast::<GgInternalCollisionShape>().collider()) {
             let other = self.lookup_parent(other_id)
                 .with_context(|| format!("orphaned GgInternalCollisionShape: {other_id:?}"))?;
             Ok(Some(Collision { other, mtv }))

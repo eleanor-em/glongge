@@ -32,13 +32,6 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer
 }
 
 #[derive(Copy, Clone, Default, Debug)]
-enum StaticSpriteKind {
-    #[default]
-    Full,
-    SingleCoords(Vec2Int, Vec2Int),
-}
-
-#[derive(Copy, Clone, Default, Debug)]
 pub enum CreateCoord {
     #[default]
     Zero,
@@ -51,7 +44,7 @@ pub struct GgInternalStaticSprite {
     filename: String,
     name: Option<String>,
     create_coord: CreateCoord,
-    kind: StaticSpriteKind,
+    tex_segment: Option<Rect>,
     depth: Option<VertexDepth>,
     sprite: Sprite,
 }
@@ -63,7 +56,7 @@ impl GgInternalStaticSprite {
             filename: filename.as_ref().to_string(),
             name: None,
             create_coord: CreateCoord::Zero,
-            kind: StaticSpriteKind::Full,
+            tex_segment: None,
             depth: None,
             sprite: Sprite::default(),
         }
@@ -84,14 +77,14 @@ impl GgInternalStaticSprite {
         self
     }
     #[must_use]
-    pub fn with_single_coords(mut self, top_left: impl Into<Vec2Int>, bottom_right: impl Into<Vec2Int>) -> Self {
-        self.kind = StaticSpriteKind::SingleCoords(top_left.into(), bottom_right.into());
+    pub fn with_single_coords(mut self, top_left: impl Into<Vec2>, bottom_right: impl Into<Vec2>) -> Self {
+        self.tex_segment = Some(Rect::from_coords(top_left.into(), bottom_right.into()));
         self
     }
     #[must_use]
-    pub fn with_single_extent(mut self, extent: impl Into<Vec2Int>, top_left: impl Into<Vec2Int>) -> Self {
+    pub fn with_single_extent(mut self, top_left: impl Into<Vec2>, extent: impl Into<Vec2>) -> Self {
         let top_left = top_left.into();
-        self.kind = StaticSpriteKind::SingleCoords(top_left, top_left + extent.into());
+        self.tex_segment = Some(Rect::from_coords(top_left, top_left + extent.into()));
         self
     }
     #[must_use]
@@ -127,18 +120,15 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
     fn get_type(&self) -> ObjectType { ObjectType::gg_static_sprite() }
 
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let sprite = match self.kind {
-            StaticSpriteKind::Full => {
-                Sprite::from_texture(object_ctx, resource_handler.texture.wait_load_file(self.filename.clone())?)
-            }
-            StaticSpriteKind::SingleCoords(top_left, bottom_right) => {
-                Sprite::from_single_coords(
-                    object_ctx,
-                    resource_handler.texture.wait_load_file(self.filename.clone())?,
-                    top_left,
-                    bottom_right
-                )
-            }
+        let sprite = if let Some(tex_segment) = self.tex_segment {
+            Sprite::from_single_coords(
+                object_ctx,
+                resource_handler.texture.wait_load_file(self.filename.clone())?,
+                tex_segment.top_left().as_vec2int_lossy(),
+                tex_segment.bottom_right().as_vec2int_lossy(),
+            )
+        } else {
+            Sprite::from_texture(object_ctx, resource_handler.texture.wait_load_file(self.filename.clone())?)
         };
         if let Some(depth) = self.depth {
             self.sprite = sprite.with_depth(depth);

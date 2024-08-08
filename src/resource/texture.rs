@@ -113,7 +113,6 @@ pub(crate) struct InternalTexture {
 
 impl InternalTexture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> { self.cached_image_view.clone() }
-    pub fn extent(&self) -> Vec2 { Vec2 { x: f64::from(self.info.extent[0]), y: f64::from(self.info.extent[1]) } }
 
     fn create_image_view(&mut self,
                        ctx: &VulkanoContext,
@@ -136,6 +135,16 @@ impl InternalTexture {
             },
             Some(image_view) => Ok(image_view),
         }
+    }
+}
+
+impl AxisAlignedExtent for InternalTexture {
+    fn aa_extent(&self) -> Vec2 {
+        Vec2 { x: f64::from(self.info.extent[0]), y: f64::from(self.info.extent[1]) }
+    }
+
+    fn centre(&self) -> Vec2 {
+        Vec2::zero()
     }
 }
 
@@ -226,7 +235,7 @@ impl TextureHandlerInner {
             cached_image_view: None,
             ref_count: ref_count.clone(),
         };
-        let extent = internal_texture.extent();
+        let extent = internal_texture.aa_extent();
         if let Some(existing) = self.textures.insert(id, internal_texture) {
             panic!("tried to use texture id {id}, but ref_count={}",
                    existing.ref_count.load(Ordering::Relaxed));
@@ -446,18 +455,18 @@ pub struct TextureSubArea {
 }
 
 impl TextureSubArea {
-    pub fn new(centre: Vec2Int, half_widths: Vec2Int) -> Self {
+    pub fn new(centre: Vec2i, half_widths: Vec2i) -> Self {
         Self::from_rect(Rect::new(centre.into(), half_widths.into()))
     }
     pub fn from_rect(rect: Rect) -> Self {
         Self { rect }
     }
 
-    pub(crate) fn uv(&self, texture: &InternalTexture, raw_uv: Vec2) -> Vec2 {
+    pub(crate) fn uv<T: AxisAlignedExtent>(&self, texture: &T, raw_uv: Vec2) -> Vec2 {
         if self.rect == Rect::default() {
             raw_uv
         } else {
-            let extent = texture.extent();
+            let extent = texture.aa_extent();
             let u0 = self.rect.top_left().x / extent.x;
             let v0 = self.rect.top_left().y / extent.y;
             let u1 = self.rect.bottom_right().x / extent.x;

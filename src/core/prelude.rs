@@ -32,6 +32,6 @@ pub use crate::{
         },
         colour::Colour,
         linalg,
-        linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2Int},
+        linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2i},
     },
 };

@@ -13,7 +13,7 @@ pub struct Flagpole {
 }
 
 impl Flagpole {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             ..Default::default()
@@ -28,8 +28,8 @@ impl SceneObject<ObjectType> for Flagpole {
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
-            Vec2Int { x: 0, y: 588},
-            Vec2Int { x: 16, y: 748 });
+            Vec2i { x: 0, y: 588},
+            Vec2i { x: 16, y: 748 });
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }

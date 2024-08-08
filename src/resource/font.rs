@@ -169,7 +169,7 @@ impl Read for GlyphReader {
                     warn!("glyph y out of range: {}", img_top + y);
                     return;
                 };
-                let px = Vec2Int { x, y }.as_index(self.width(), self.height()) * 4;
+                let px = Vec2i { x, y }.as_index(self.width(), self.height()) * 4;
 
                 buf[px] = self.col[0];
                 buf[px + 1] = self.col[1];

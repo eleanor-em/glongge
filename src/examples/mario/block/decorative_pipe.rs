@@ -13,7 +13,7 @@ pub struct DecorativePipe {
 }
 
 impl DecorativePipe {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             ..Default::default()
@@ -28,8 +28,8 @@ impl SceneObject<ObjectType> for DecorativePipe {
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
-            Vec2Int { x: 224, y: 324 },
-            Vec2Int { x: 256, y: 676}
+            Vec2i { x: 224, y: 324 },
+            Vec2i { x: 256, y: 676}
         );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)

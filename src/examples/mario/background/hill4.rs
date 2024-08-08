@@ -15,7 +15,7 @@ pub struct Hill4 {
 }
 
 impl Hill4 {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self { top_left: top_left.into(), ..Default::default() })
     }
 }
@@ -27,8 +27,8 @@ impl SceneObject<ObjectType> for Hill4 {
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,
-            Vec2Int { x: 200, y: 692 },
-            Vec2Int { x: 248, y: 708 }
+            Vec2i { x: 200, y: 692 },
+            Vec2i { x: 248, y: 708 }
         ).with_depth(VertexDepth::Back(0));
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)

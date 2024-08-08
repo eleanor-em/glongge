@@ -17,7 +17,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             initial_y: top_left.y as f64,
@@ -33,8 +33,8 @@ impl SceneObject<ObjectType> for Block {
         self.sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
-            Vec2Int { x: 16, y: 16},
-            Vec2Int { x: 48, y: 476 });
+            Vec2i { x: 48, y: 476 },
+            Vec2i { x: 16, y: 16});
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {

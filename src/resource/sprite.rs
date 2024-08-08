@@ -64,16 +64,16 @@ impl GgInternalSprite {
     fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
-        tile_count: Vec2Int,
-        tile_size: Vec2Int,
-        offset: Vec2Int,
-        margin: Vec2Int
+        tile_count: Vec2i,
+        tile_size: Vec2i,
+        offset: Vec2i,
+        margin: Vec2i
     ) -> Sprite {
-        let areas = Vec2Int::range_from_zero(tile_count)
+        let areas = Vec2i::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
                 let top_left = offset
-                    + tile_x * (tile_size + margin).x * Vec2Int::right()
-                    + tile_y * (tile_size + margin).y * Vec2Int::down();
+                    + tile_x * (tile_size + margin).x * Vec2i::right()
+                    + tile_y * (tile_size + margin).y * Vec2i::down();
                 TextureSubArea::new(top_left + tile_size / 2, tile_size / 2)
             })
             .collect_vec();
@@ -187,39 +187,39 @@ impl Sprite {
     pub fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
-        tile_count: Vec2Int,
-        tile_size: Vec2Int,
-        offset: Vec2Int,
-        margin: Vec2Int
+        tile_count: Vec2i,
+        tile_size: Vec2i,
+        offset: Vec2i,
+        margin: Vec2i
     ) -> Sprite {
         GgInternalSprite::from_tileset(object_ctx, texture, tile_count, tile_size, offset, margin)
     }
     pub fn from_single_extent<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
-        extent: Vec2Int,
-        top_left: Vec2Int
+        top_left: Vec2i,
+        extent: Vec2i
     ) -> Sprite {
         Self::from_tileset(
             object_ctx,
             texture,
-            Vec2Int::one(),
+            Vec2i::one(),
             extent,
             top_left,
-            Vec2Int::zero()
+            Vec2i::zero()
         )
     }
     pub fn from_single_coords<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
-        top_left: Vec2Int,
-        bottom_right: Vec2Int,
+        top_left: Vec2i,
+        bottom_right: Vec2i,
     ) -> Sprite {
         Self::from_single_extent(
             object_ctx,
             texture,
-            bottom_right - top_left,
-            top_left
+            top_left,
+            bottom_right - top_left
         )
     }
     pub(crate) fn from_texture<ObjectType: ObjectTypeEnum>(
@@ -227,7 +227,7 @@ impl Sprite {
         texture: Texture
     ) -> Sprite {
         let extent = texture.aa_extent().as_vec2int_lossy();
-        Self::from_single_extent(object_ctx, texture, extent, Vec2Int::zero())
+        Self::from_single_extent(object_ctx, texture, Vec2i::zero(), extent)
     }
 
     #[must_use]

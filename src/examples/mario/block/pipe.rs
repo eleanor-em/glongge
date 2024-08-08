@@ -20,7 +20,7 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub fn create(top_left: Vec2Int, orientation: Vec2, destination: Option<SceneDestination>) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i, orientation: Vec2, destination: Option<SceneDestination>) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             orientation,
@@ -41,15 +41,15 @@ impl SceneObject<ObjectType> for Pipe {
             Sprite::from_single_coords(
                 object_ctx,
                 texture,
-                Vec2Int { x: 112, y: 612 },
-                Vec2Int { x: 144, y: 676}
+                Vec2i { x: 112, y: 612 },
+                Vec2i { x: 144, y: 676}
             )
         } else {
             Sprite::from_single_coords(
                 object_ctx,
                 texture,
-                Vec2Int { x: 192, y: 644 },
-                Vec2Int { x: 256, y: 676}
+                Vec2i { x: 192, y: 644 },
+                Vec2i { x: 256, y: 676}
             )
         }.with_depth(VertexDepth::Front(1000));
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();

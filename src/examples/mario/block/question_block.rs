@@ -26,7 +26,7 @@ pub struct QuestionBlock {
 }
 
 impl QuestionBlock {
-    pub fn create(top_left: Vec2Int) -> AnySceneObject<ObjectType> {
+    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             is_empty: false,
@@ -43,17 +43,17 @@ impl SceneObject<ObjectType> for QuestionBlock {
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),
-            Vec2Int { x: 3, y: 1},
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 298, y: 78 },
-            Vec2Int { x: 1, y: 0 })
+            Vec2i { x: 3, y: 1},
+            Vec2i { x: 16, y: 16 },
+            Vec2i { x: 298, y: 78 },
+            Vec2i { x: 1, y: 0 })
             .with_frame_orders(vec![0, 1, 2, 1])
             .with_frame_time_ms(vec![600, 100, 100, 100]);
         self.empty_sprite = Sprite::from_single_extent(
             object_ctx,
             texture,
-            Vec2Int { x: 16, y: 16 },
-            Vec2Int { x: 349, y: 78 }
+            Vec2i { x: 349, y: 78 },
+            Vec2i { x: 16, y: 16 }
         )
             .with_hidden();
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
