@@ -8,7 +8,6 @@ use glongge::core::{
 pub mod player;
 pub mod underground_floor;
 pub mod enemy;
-pub mod background;
 pub mod block;
 pub mod text_display;
 
@@ -23,10 +22,6 @@ use block::pipe::*;
 use block::flagpole::*;
 use block::decorative_pipe::*;
 use enemy::goomba::*;
-use background::hill2::*;
-use background::hill3::*;
-use background::hill4::*;
-use background::castle::*;
 use glongge::core::builtin::{Container, StaticSprite};
 use glongge::core::render::VertexDepth;
 use glongge::util::canvas::Canvas;
@@ -78,7 +73,52 @@ fn create_hill1(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
             Vec2i { x: 112, y: 716 },
             Vec2i { x: 192, y: 764 }
         )
+        .with_depth(VertexDepth::Back(0))
         .named("Hill1")
+        .build()
+}
+fn create_hill2(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_coords(
+            Vec2i { x: 112, y: 692 },
+            Vec2i { x: 192, y: 708 }
+        )
+        .with_depth(VertexDepth::Back(0))
+        .named("Hill2")
+        .build()
+}
+fn create_hill3(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_coords(
+            Vec2i { x: 200, y: 732 },
+            Vec2i { x: 248, y: 764 }
+        )
+        .with_depth(VertexDepth::Back(0))
+        .named("Hill3")
+        .build()
+}
+fn create_hill4(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_coords(
+            Vec2i { x: 200, y: 692 },
+            Vec2i { x: 248, y: 708 }
+        )
+        .with_depth(VertexDepth::Back(0))
+        .named("Hill4")
+        .build()
+}
+fn create_castle(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+    StaticSprite::new("res/world_sheet.png")
+        .at_top_left(top_left)
+        .with_single_coords(
+            Vec2i { x: 24, y: 684 },
+            Vec2i { x: 104, y: 764 }
+        )
+        .with_depth(VertexDepth::Back(0))
+        .named("Castle")
         .build()
 }
 
@@ -93,21 +133,23 @@ impl Scene<ObjectType> for MarioOverworldScene {
     }
 
     fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        let mut ts = TilesetBuilder::new("res/world_sheet.png", 16);
-        let block = ts.create_tile_collision([0, 33], vec![BLOCK_COLLISION_TAG]);
-        let crumble = ts.create_tile_collision([0, 50], vec![BLOCK_COLLISION_TAG]);
-        ts.insert(&block, [19, 10]);
-        ts.insert(&block, [19, 9]);
-        ts.insert(&block, [19, 8]);
-        ts.insert(&block, [20, 10]);
-        ts.insert(&crumble, [21, 10]);
-        ts.insert(&crumble, [21, 9]);
-        ts.insert(&crumble, [21, 8]);
-        ts.insert(&crumble, [20, 8]);
+        let mut ts = TilesetBuilder::new("res/world_sheet.png", 16)
+            .named("Doughnut");
+        let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);
+        let crumble = ts.create_tile_collision([0, 50], &vec![BLOCK_COLLISION_TAG]);
+        ts.insert(&block, [9, 19]);
+        ts.insert(&block, [9, 18]);
+        ts.insert(&block, [9, 17]);
+        ts.insert(&block, [10, 19]);
+        ts.insert(&crumble, [11, 19]);
+        ts.insert(&crumble, [11, 18]);
+        ts.insert(&crumble, [11, 17]);
+        ts.insert(&crumble, [10, 17]);
         let ts = ts.build();
 
-        let mut floor_ts = TilesetBuilder::new("res/world_sheet.png", 16);
-        let floor = floor_ts.create_tile_collision([0, 16], vec![BLOCK_COLLISION_TAG]);
+        let mut floor_ts = TilesetBuilder::new("res/world_sheet.png", 16)
+            .named("Floor");
+        let floor = floor_ts.create_tile_collision([0, 16], &vec![BLOCK_COLLISION_TAG]);
         floor.set_depth(VertexDepth::Front(2000));
         Vec2i::range_from_zero([1, 25])
             .for_each(|(tile_x, tile_y)| {
@@ -149,15 +191,15 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     x: 16,
                     y: 384 - 2 * 16 - 48,
                 }),
-                Hill2::create(Vec2i {
+                create_hill2(Vec2i {
                     x: 12 * 16,
                     y: 384 - 2 * 16 - 16,
                 }),
-                Hill3::create(Vec2i {
+                create_hill3(Vec2i {
                     x: 17 * 16,
                     y: 384 - 2 * 16 - 32,
                 }),
-                Hill4::create(Vec2i {
+                create_hill4(Vec2i {
                     x: 24 * 16,
                     y: 384 - 2 * 16 - 16,
                 }),
@@ -165,7 +207,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     x: 49 * 16,
                     y: 384 - 2 * 16 - 48,
                 }),
-                Hill2::create(Vec2i {
+                create_hill2(Vec2i {
                     x: 60 * 16,
                     y: 384 - 2 * 16 - 16,
                 }),
@@ -173,7 +215,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     x: 64 * 16,
                     y: 384 - 2 * 16 - 32,
                 }),
-                Castle::create(Vec2i {
+                create_castle(Vec2i {
                     x: 202*16,
                     y: 384 - 7*16,
                 }),

@@ -74,12 +74,17 @@ impl<T: Clone + Default + Display + FromStr> EditCellReceiver<T> {
         }
     }
 }
+impl<T: Clone + Default + Display + FromStr> Default for EditCellReceiver<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
     pub fn is_valid(&self) -> bool { self.is_valid }
 
     pub fn singleline(&mut self, ui: &mut GuiUi, label: impl Into<WidgetText>) -> Response {
-        ui.with_layout(ui.layout().clone(), |ui| {
+        ui.with_layout(*ui.layout(), |ui| {
             ui.add(egui::Label::new(label).selectable(false));
             let col = if self.is_valid() {
                 Color32::from_gray(240)
@@ -107,22 +112,22 @@ impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
 }
 
 impl EditCellSender<f64> {
-    fn get_zoom(response: Response, ui: &mut GuiUi) -> Option<f64> {
+    fn get_zoom(response: &Response, ui: &mut GuiUi) -> Option<f64> {
         let mut delta = response.drag_delta().y;
         if delta.is_zero() && response.hovered() {
             ui.input(|i| { delta = i.raw_scroll_delta.y; });
         }
-        if !delta.is_zero() {
-            Some(f64::from(delta))
-        } else {
+        if delta.is_zero() {
             None
+        } else {
+            Some(f64::from(delta))
         }
     }
 
     pub fn singleline_with_drag(&mut self, ui: &mut GuiUi, drag_speed: f64, label: impl Into<WidgetText>) {
         let response = self.singleline(ui, label);
         self.dragging.store(response.dragged(), Ordering::Relaxed);
-        if let Some(dy) = Self::get_zoom(response, ui) {
+        if let Some(dy) = Self::get_zoom(&response, ui) {
             let mut text = self.text.lock().unwrap();
             if let Ok(mut value) = text.parse::<f64>() {
                 value += dy * drag_speed;
@@ -143,8 +148,7 @@ impl Vec2 {
                 x.singleline_with_drag(ui, drag_speed, "x: ");
                 ui.end_row();
                 y.singleline_with_drag(ui, drag_speed, "y: ");
-            })
-            .inner
+            });
     }
 }
 
@@ -200,6 +204,12 @@ impl TransformCell {
     }
 }
 
+impl Default for TransformCell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct TransformCellSender {
     centre_x: EditCellSender<f64>,
     centre_y: EditCellSender<f64>,
@@ -223,6 +233,6 @@ impl Transform {
                 ui.end_row();
                 ui.add(egui::Label::new("Scale").selectable(false));
                 self.scale.build_gui(ui, 0.1, cell.scale_x, cell.scale_y);
-            }).inner
+            });
     }
 }

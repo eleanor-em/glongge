@@ -4,6 +4,7 @@ use std::{
     ops::Range,
 };
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use num_traits::{Float, Zero};
@@ -11,7 +12,6 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
         prelude::*,
-
         ObjectTypeEnum,
         scene::SceneObject
     },
@@ -26,6 +26,7 @@ use crate::{
     },
 };
 use crate::core::scene::{GuiInsideClosure, GuiObject};
+use crate::util::{gg_iter, UnorderedPair};
 
 #[derive(Debug)]
 pub enum ColliderType {
@@ -51,8 +52,13 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
             ColliderType::OrientedBox => self.collides_with_oriented_box(other.as_any().downcast_ref()?),
             ColliderType::Convex => self.collides_with_convex(other.as_any().downcast_ref()?),
             ColliderType::Compound => {
-                other.as_any().downcast_ref::<CompoundCollider>()?.inner.iter()
-                     .find_map(|other| self.collides_with(&other.as_generic()))
+                match self.get_type() {
+                    ColliderType::Null => None,
+                    ColliderType::Box => other.collides_with_box(self.as_any().downcast_ref()?),
+                    ColliderType::OrientedBox => other.collides_with_oriented_box(self.as_any().downcast_ref()?),
+                    ColliderType::Convex => other.collides_with_convex(self.as_any().downcast_ref()?),
+                    ColliderType::Compound => unreachable!(),
+                }.map(|v| -v)
             },
         }
     }
@@ -113,7 +119,7 @@ mod polygon {
     use itertools::Itertools;
     use num_traits::Zero;
     use tracing::warn;
-    use crate::core::prelude::Vec2;
+    use crate::core::prelude::*;
     use crate::util::{gg_iter, gg_range};
 
     pub fn hull<I: Iterator<Item=Vec2>>(vertices: I) -> Vec<Vec2> {
@@ -186,11 +192,13 @@ mod polygon {
         Vec2 { x: max_x - min_x, y: max_y - min_y }
     }
     pub fn is_convex(vertices: &[Vec2]) -> bool {
-        vertices.iter().circular_tuple_windows().map(|(&u, &v, &w)| {
-            let d1 = v - u;
-            let d2 = w - v;
-            d1.cross(d2).signum()
-        }).all_equal()
+        vertices.iter().circular_tuple_windows()
+            .map(|(&u, &v, &w)| {
+                let d1 = v - u;
+                let d2 = w - v;
+                d1.cross(d2).signum()
+            })
+            .all_equal()
     }
 }
 
@@ -214,12 +222,18 @@ pub trait Polygonal {
         let mut min_axis = Vec2::zero();
         let mut min_dist = f64::max_value();
 
-        for axis in self.normals().into_iter().chain(other.normals()) {
+        let mut all_normals= BTreeSet::new();
+        all_normals.extend(self.normals());
+        all_normals.extend(other.normals());
+        for axis in all_normals.iter().copied() {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
             match gg_range::overlap_len_f64(&self_proj, &other_proj) {
-                None | Some(0.) => return None,
+                None => return None,
                 Some(mut dist) => {
+                    if dist.abs() < EPSILON {
+                        return None;
+                    }
                     dist += polygon::adjust_for_containment(&self_proj, &other_proj);
                     if dist < min_dist {
                         min_dist = dist;
@@ -230,6 +244,7 @@ pub trait Polygonal {
         }
 
         let mtv = min_dist * min_axis;
+        check!(all_normals.contains(&min_axis), format!("{all_normals:?}, {min_axis}"));
         if self.polygon_centre().dot(min_axis) < other.polygon_centre().dot(min_axis) {
             Some(-mtv)
         } else {
@@ -305,10 +320,6 @@ impl OrientedBoxCollider {
     }
     pub fn bottom_right_rotated(&self) -> Vec2 {
         self.centre + self.axis_aligned_half_widths.rotated(self.rotation)
-    }
-
-    fn move_top_left(&mut self, new_centre: Vec2) {
-        self.centre = new_centre;
     }
 }
 impl Polygonal for OrientedBoxCollider {
@@ -431,10 +442,6 @@ impl BoxCollider {
 
     pub fn as_convex(&self) -> ConvexCollider {
         ConvexCollider::from_vertices_unchecked(self.vertices())
-    }
-
-    fn move_top_left(&mut self, new_centre: Vec2) {
-        self.centre = new_centre;
     }
 }
 
@@ -568,7 +575,7 @@ impl ConvexCollider {
         let normals = polygon::normals_of(vertices.clone());
         let centre = polygon::centre_of(vertices.clone());
         let extent = polygon::extent_of(vertices.clone());
-        Self { vertices: vertices, normals_cached: normals, centre_cached: centre, extent_cached: extent }
+        Self { vertices, normals_cached: normals, centre_cached: centre, extent_cached: extent }
     }
 
     pub fn convex_hull_of(mut vertices: Vec<Vec2>) -> Result<Self> {
@@ -603,15 +610,6 @@ impl ConvexCollider {
 
         let vertices = lower.into_iter().chain(upper).collect_vec();
         Ok(Self::from_vertices_unchecked(vertices))
-    }
-
-    fn move_centre(&mut self, new_centre: Vec2) {
-        let dx = new_centre - self.centre_cached;
-        if !dx.is_zero() {
-            for v in &mut self.vertices { *v += dx; }
-            self.normals_cached = polygon::normals_of(self.vertices.clone());
-            self.centre_cached = polygon::centre_of(self.vertices.clone());
-        }
     }
 }
 
@@ -664,6 +662,7 @@ impl Collider for ConvexCollider {
         for vertex in &mut rv.vertices {
             *vertex += by;
         }
+        rv.centre_cached = polygon::centre_of(rv.vertices.clone());
         rv.into_generic()
     }
     fn scaled(&self, by: Vec2) -> GenericCollider {
@@ -671,6 +670,7 @@ impl Collider for ConvexCollider {
         for vertex in &mut rv.vertices {
             *vertex = vertex.component_wise(by).abs();
         }
+        rv.extent_cached = polygon::extent_of(rv.vertices.clone());
         rv.into_generic()
     }
     fn rotated(&self, by: f64) -> GenericCollider {
@@ -678,6 +678,7 @@ impl Collider for ConvexCollider {
         for vertex in &mut rv.vertices {
             *vertex = vertex.rotated(by);
         }
+        rv.normals_cached = polygon::normals_of(rv.vertices.clone());
         rv.into_generic()
     }
 
@@ -733,11 +734,12 @@ impl CompoundCollider {
             None
         }
     }
+    #[must_use]
     pub fn decompose(vertices: Vec<Vec2>) -> Self {
         // Sanity checks:
         check_ge!(vertices.len(), 3);
         if polygon::is_convex(&vertices) {
-            return Self { inner: vec![ConvexCollider::convex_hull_of(vertices).unwrap()] };
+            return Self::new(vec![ConvexCollider::convex_hull_of(vertices).unwrap()]);
         }
 
         let cycled_vertices = vertices.iter().cycle().take(vertices.len() + 2).copied().collect_vec();
@@ -792,12 +794,38 @@ impl CompoundCollider {
     pub fn len(&self) -> usize { self.inner.len() }
     pub fn is_empty(&self) -> bool { self.inner.is_empty() }
 
+    #[must_use]
     pub fn combined(mut self, other: CompoundCollider) -> Self {
         self.extend(other);
         self
     }
     pub fn extend(&mut self, mut other: CompoundCollider) {
         self.inner.append(&mut other.inner);
+    }
+
+    fn get_unique_normals(&self) -> Vec<Vec2> {
+        let mut normals = BTreeMap::<Vec2, BTreeMap<UnorderedPair<Vec2>, i32>>::new();
+        for (normal, edge) in self.inner.iter()
+            .flat_map(|c| {
+                let edges = c.vertices().into_iter().circular_tuple_windows()
+                    .map(|(u, v)| UnorderedPair::new(u, v));
+                c.normals().into_iter().zip(edges)
+            }) {
+            if let Some(edge_count) = normals.get_mut(&-normal)
+                .and_then(|edges| edges.get_mut(&edge)) {
+                // duplicate normal
+                *edge_count -= 1;
+                if let Some(other_edge) = normals.entry(normal).or_default().get_mut(&edge) {
+                    *other_edge -= 1;
+                }
+            } else {
+                *normals.entry(normal).or_default().entry(edge).or_default() += 1;
+            }
+        }
+        normals.iter()
+            .filter(|(_, edges)| edges.values().all(|i| *i > 0))
+            .map(|(normal, _)| *normal)
+            .collect()
     }
 }
 
@@ -807,7 +835,7 @@ impl Polygonal for CompoundCollider {
     }
 
     fn normals(&self) -> Vec<Vec2> {
-        polygon::normals_of(self.vertices())
+        self.get_unique_normals()
     }
 
     fn polygon_centre(&self) -> Vec2 {
@@ -840,15 +868,46 @@ impl Collider for CompoundCollider {
     }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.inner.iter().filter_map(|c| c.collides_with_box(other)).next()
+        let normals = self.get_unique_normals();
+        self.inner.iter()
+            .filter_map(|c| {
+                let mut c = c.clone();
+                c.normals_cached.clone_from(&normals);
+                c.collides_with_box(other)
+            })
+            .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
-        self.inner.iter().filter_map(|c| c.collides_with_oriented_box(other)).next()
+        let normals = self.get_unique_normals();
+        self.inner.iter()
+            .filter_map(|c| {
+                let mut c = c.clone();
+                c.normals_cached.clone_from(&normals);
+                c.collides_with_oriented_box(other)
+            })
+            .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.inner.iter().filter_map(|c| c.collides_with_convex(other)).next()
+        let normals = self.get_unique_normals();
+        self.inner.iter()
+            .filter_map(|c| {
+                let mut c = c.clone();
+                c.normals_cached.clone_from(&normals);
+                c.collides_with_convex(other)
+            })
+            .min_by(Vec2::cmp_by_length)
+    }
+
+    fn collides_with(&self, other: &GenericCollider) -> Option<Vec2> {
+        let normals = self.get_unique_normals();
+        self.inner.iter().filter_map(|c| {
+            let mut c = c.clone();
+            c.normals_cached.clone_from(&normals);
+            c.collides_with(other)
+        })
+            .min_by(Vec2::cmp_by_length)
     }
 
     fn into_generic(self) -> GenericCollider
@@ -860,17 +919,24 @@ impl Collider for CompoundCollider {
 
     fn translated(&self, by: Vec2) -> GenericCollider {
         let new_inner = self.inner.clone().into_iter()
+            .map(|c| if let GenericCollider::Convex(c) = c.translated(by) { c } else { unreachable!() })
+            .collect_vec();
+        Self::new(new_inner).into_generic()
+    }
+
+    fn scaled(&self, by: Vec2) -> GenericCollider {
+        let centre = self.centre();
+        let new_inner = self.inner.clone().into_iter()
             .map(|mut c| {
-                c.move_centre(c.centre_cached + by);
+                for v in &mut c.vertices {
+                    *v -= centre;
+                    *v = v.component_wise(by);
+                    *v += centre;
+                }
                 c
             })
             .collect_vec();
-        Self { inner: new_inner }.into_generic()
-    }
-
-    fn scaled(&self, _by: Vec2) -> GenericCollider {
-        warn!("not yet implemented: CompoundCollider::scaled()");
-        self.as_generic()
+        Self::new(new_inner).into_generic()
     }
 
     fn rotated(&self, _by: f64) -> GenericCollider {
@@ -1001,6 +1067,7 @@ impl Display for GenericCollider {
 
 #[register_scene_object]
 pub struct GgInternalCollisionShape {
+    last_transform: Transform,
     collider: GenericCollider,
     emitting_tags: Vec<&'static str>,
     listening_tags: Vec<&'static str>,
@@ -1017,6 +1084,7 @@ impl GgInternalCollisionShape {
         listening_tags: &[&'static str]
     ) -> AnySceneObject<O> {
         let mut rv = Self {
+            last_transform: Transform::default(),
             collider: collider.into_generic(),
             emitting_tags: emitting_tags.to_vec(),
             listening_tags: listening_tags.to_vec(),
@@ -1043,7 +1111,7 @@ impl GgInternalCollisionShape {
         RenderItem::new(
             self.collider.as_triangles().into_flattened()
                 .into_iter()
-                .map(|v| VertexWithUV::from_vertex(v - self.collider.centre()))
+                .map(VertexWithUV::from_vertex)
                 .collect()
         ).with_depth(VertexDepth::max_value())
     }
@@ -1081,17 +1149,17 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_centre(ctx);
+        self.update_transform(ctx);
     }
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_centre(ctx);
+        self.update_transform(ctx);
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_centre(ctx);
+        self.update_transform(ctx);
         if self.show_wireframe {
             let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
             if let GenericCollider::Compound(compound) = &self.collider {
-                let mut colours = vec![Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
+                let mut colours = [Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
                 colours.reverse();
                 for inner in &compound.inner {
                     let col = *colours.last().unwrap();
@@ -1123,7 +1191,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_centre(ctx);
+        self.update_transform(ctx);
     }
 
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
@@ -1144,13 +1212,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
 }
 
 impl GgInternalCollisionShape {
-    fn update_centre<ObjectType: ObjectTypeEnum>(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        match &mut self.collider {
-            GenericCollider::Null => {}
-            GenericCollider::Box(inner) => inner.move_top_left(ctx.object().absolute_transform().centre),
-            GenericCollider::OrientedBox(inner) => inner.move_top_left(ctx.object().absolute_transform().centre),
-            GenericCollider::Convex(inner) => inner.move_centre(ctx.object().absolute_transform().centre),
-            GenericCollider::Compound(_inner) => {}
+    fn update_transform<ObjectType: ObjectTypeEnum>(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        let next_transform = ctx.object().absolute_transform();
+        if self.last_transform != next_transform {
+            self.collider = self.collider.transformed(&self.last_transform.inverse());
+            self.collider = self.collider.transformed(&next_transform);
+            self.last_transform = next_transform;
         }
     }
 }
@@ -1189,5 +1256,4 @@ pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
 use crate::util::canvas::Canvas;
-use crate::util::gg_iter;
 use crate::shader::{get_shader, Shader, WireframeShader};

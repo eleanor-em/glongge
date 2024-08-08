@@ -107,6 +107,7 @@ pub struct Edge2i(pub Vec2i, pub Vec2i);
 
 impl Edge2i {
     pub fn as_tuple(&self) -> (Vec2i, Vec2i) { (self.0, self.1) }
+    #[must_use]
     pub fn reverse(self) -> Self { Self(self.1, self.0) }
 }
 impl fmt::Display for Edge2i {
@@ -221,12 +222,18 @@ impl Neg for &Vec2i {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
 }
 
+impl PartialEq for Vec2 {
+    fn eq(&self, other: &Self) -> bool {
+        (self.x - other.x).abs() < EPSILON &&
+            (self.y - other.y).abs() < EPSILON
+    }
+}
 impl Eq for Vec2 {}
 
 impl PartialOrd<Self> for Vec2 {
@@ -237,23 +244,23 @@ impl PartialOrd<Self> for Vec2 {
 
 impl Ord for Vec2 {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.x.partial_cmp(&other.x) {
-            Some(Ordering::Less) => Ordering::Less,
-            Some(Ordering::Equal) => self.y.partial_cmp(&other.y)
+        if self == other { return Ordering::Equal; }
+        if (self.x - other.x).abs() < EPSILON {
+            return self.y.partial_cmp(&other.y)
                 .unwrap_or_else(|| {
                     warn!("Vec2: partial_cmp() failed for y: {} vs. {}", self, other);
                     self.y.total_cmp(&other.y)
-                }),
+                });
+        }
+        match self.x.partial_cmp(&other.x) {
+            Some(Ordering::Less) => Ordering::Less,
+            Some(Ordering::Equal) => unreachable!(),
             Some(Ordering::Greater) => Ordering::Greater,
             None => {
                 warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
                 match self.x.total_cmp(&other.x) {
                     Ordering::Less => Ordering::Less,
-                    Ordering::Equal => self.y.partial_cmp(&other.y)
-                        .unwrap_or_else(|| {
-                            warn!("Vec2: partial_cmp() failed for y: {} vs. {}", self, other);
-                            self.y.total_cmp(&other.y)
-                        }),
+                    Ordering::Equal => unreachable!(),
                     Ordering::Greater => Ordering::Greater,
                 }
             }
@@ -273,10 +280,13 @@ impl Vec2 {
     pub fn len_squared(&self) -> f64 { self.dot(*self) }
     pub fn len(&self) -> f64 { self.len_squared().sqrt() }
     pub fn normed(&self) -> Vec2 {
-        match self.len() {
+        let mut rv = match self.len() {
             0. => Vec2::zero(),
             len => *self / len
-        }
+        };
+        if rv.x == -0.{ rv.x = 0.; }
+        if rv.y == -0. { rv.y = 0.; }
+        rv
     }
 
     pub fn component_wise(&self, other: Vec2) -> Vec2 {
@@ -300,6 +310,7 @@ impl Vec2 {
     pub fn reflect(&self, normal: Vec2) -> Vec2 {
         *self - 2. * self.dot(normal) * normal
     }
+    pub fn reciprocal(&self) -> Vec2 { Vec2 { x: 1. / self.x, y: 1. / self.y } }
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
     pub fn dist(&self, other: Vec2) -> f64 { (other - *self).len() }
     pub fn dist_squared(&self, other: Vec2) -> f64 { (other - *self).len_squared() }
@@ -938,6 +949,15 @@ impl Transform {
             centre: self.centre.into(),
             rotation: self.rotation as f32,
             scale: self.scale.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn inverse(&self) -> Self {
+        Self {
+            centre: -self.centre,
+            rotation: -self.rotation,
+            scale: self.scale.reciprocal(),
         }
     }
 }

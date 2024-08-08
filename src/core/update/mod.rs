@@ -22,7 +22,7 @@ use serde::{
     de::DeserializeOwned,
     Serialize
 };
-use num_traits::{FromPrimitive, Zero};
+use num_traits::FromPrimitive;
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use crate::{
     util::collision::BoxCollider,
@@ -567,15 +567,18 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                                  |mut obj, ctx| {
                                      obj.on_update_begin(ctx);
                                  });
+        self.object_handler.update_all_transforms();
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
         self.update_coroutines(input_handler, &mut object_tracker);
+        self.object_handler.update_all_transforms();
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
         self.iter_with_other_map(input_handler, &mut object_tracker,
                                  |mut obj, ctx| {
                                      obj.on_update(ctx);
                                  });
+        self.object_handler.update_all_transforms();
         self.perf_stats.on_update.stop();
 
         self.perf_stats.fixed_update.start();
@@ -584,10 +587,14 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                                      |mut obj, ctx| {
                                          obj.on_fixed_update(ctx);
                                      });
+            self.object_handler.update_all_transforms();
             fixed_updates -= 1;
             // Detect collisions after each fixed update: important to prevent glitching through walls etc.
             self.perf_stats.fixed_update.pause();
+            self.perf_stats.detect_collision.start();
             self.handle_collisions(input_handler, &mut object_tracker);
+            self.object_handler.update_all_transforms();
+            self.perf_stats.on_collision.stop();
             self.perf_stats.fixed_update.unpause();
         }
         self.perf_stats.fixed_update.stop();
@@ -597,6 +604,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                                  |mut obj, ctx| {
                                      obj.on_update_end(ctx);
                                  });
+        self.object_handler.update_all_transforms();
         self.perf_stats.on_update_end.stop();
         object_tracker
     }
@@ -647,7 +655,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
 
     fn handle_collisions(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
-        self.perf_stats.detect_collision.start();
         let collisions = self.object_handler.get_collisions();
         self.perf_stats.detect_collision.stop();
         self.perf_stats.on_collision.start();
@@ -668,7 +675,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 }
             }
         }
-        self.perf_stats.on_collision.stop();
     }
 
     fn update_coroutines(&mut self,
@@ -1074,27 +1080,27 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
 
     pub fn transform(&self) -> Transform {
         self.object_tracker.get(self.this_id)
-            .map(|o| o.transform.borrow().clone())
-            .unwrap_or_else(|| {
+            .map_or_else(|| {
                 error!("missing object_id in objects: this={:?}", self.this_id);
                 Transform::default()
-            })
+            }, |o| *o.transform.borrow()
+            )
     }
     pub fn transform_of(&self, other: &SceneObjectWithId<ObjectType>) -> Transform {
         self.object_tracker.get(other.object_id)
-            .map(|o| o.transform.borrow().clone())
-            .unwrap_or_else(|| {
-                error!("missing object_id in objects: this={:?}", self.this_id);
-                Transform::default()
-            })
+            .map_or_else(|| {
+                    error!("missing object_id in objects: {:?}", other.object_id);
+                    Transform::default()
+                }, |o| *o.transform.borrow()
+            )
     }
     pub fn transform_mut(&self) -> RefMut<Transform> {
         self.object_tracker.get(self.this_id)
-            .map(|o| o.transform.borrow_mut())
-            .unwrap_or_else(|| {
-                error!("missing object_id in objects: this={:?}", self.this_id);
-                self.dummy_transform.borrow_mut()
-            })
+            .map_or_else(|| {
+                    error!("missing object_id in objects: this={:?}", self.this_id);
+                    self.dummy_transform.borrow_mut()
+                }, |o| o.transform.borrow_mut()
+            )
     }
     pub fn absolute_transform(&self) -> Transform {
         self.all_absolute_transforms.get(&self.this_id)
@@ -1114,27 +1120,16 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             })
     }
     pub fn rect(&self) -> Rect {
-        self.collider()
-            .unwrap_or_default()
-            .transformed(&self.absolute_transform())
-            .as_rect()
+        self.collider().unwrap_or_default().as_rect()
     }
     pub fn rect_of(&self, other: &SceneObjectWithId<ObjectType>) -> Rect {
-        self.collider_of(other)
-            .unwrap_or_default()
-            .transformed(&self.absolute_transform_of(other))
-            .as_rect()
+        self.collider_of(other).unwrap_or_default().as_rect()
     }
     pub fn extent(&self) -> Vec2 {
-        self.collider()
-            .unwrap_or_default()
-            .aa_extent()
+        self.collider().unwrap_or_default().aa_extent()
     }
     pub fn extent_of(&self, other: &SceneObjectWithId<ObjectType>) -> Vec2 {
-        // Should not be possible to get an invalid object_id here if called from public.
-        self.collider_of(other)
-            .unwrap_or_default()
-            .aa_extent()
+        self.collider_of(other).unwrap_or_default().aa_extent()
     }
     pub fn collider(&self) -> Option<GenericCollider> {
         gg_err::log_err_then(self.collider_of_inner(self.this_id))
@@ -1150,9 +1145,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                 .with_context(|| format!("missing object_id in children: {object_id:?}"))?
         };
         Ok(children.iter()
-            .find_map(|obj| {
-                obj.downcast::<GgInternalCollisionShape>()
-            })
+            .find_map(SceneObjectWithId::downcast::<GgInternalCollisionShape>)
             .map(|o| o.collider().clone()))
     }
 
@@ -1207,9 +1200,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.collider()
-            .and_then(|collider| {
-                self.test_collision_with(&collider, listening_tags)
-            })
+            .and_then(|collider| self.test_collision_with(&collider, listening_tags))
     }
     pub fn test_collision_along(&self,
                                 axis: Vec2,
@@ -1223,7 +1214,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .and_then(|vec| {
                 NonemptyVec::try_from_iter(vec
                     .into_iter()
-                    .filter(|coll| !coll.mtv.dot(axis).is_zero()))
+                    .filter(|coll| coll.mtv.dot(axis).abs() > EPSILON))
             })
     }
 
@@ -1253,7 +1244,7 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
     ) -> Result<Option<Collision<ObjectType>>> {
         let other = self.object_tracker.get(other_id)
             .with_context(|| format!("missing object_id in objects: {other_id:?}"))?;
-        if let Some(mtv) = collider.collides_with(&other.checked_downcast::<GgInternalCollisionShape>().collider()) {
+        if let Some(mtv) = collider.collides_with(other.checked_downcast::<GgInternalCollisionShape>().collider()) {
             let other = self.lookup_parent(other_id)
                 .with_context(|| format!("orphaned GgInternalCollisionShape: {other_id:?}"))?;
             Ok(Some(Collision { other, mtv }))

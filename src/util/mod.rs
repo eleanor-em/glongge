@@ -316,6 +316,7 @@ pub mod gg_err {
 
 pub mod gg_range {
     use std::ops::Range;
+    use crate::core::config::EPSILON;
 
     pub fn contains_f64(r1: &Range<f64>, r2: &Range<f64>) -> bool {
         r1.start <= r2.start && r1.end >= r2.end
@@ -331,8 +332,7 @@ pub mod gg_range {
 
         let start = r2.start;
         let end = f64::min(r1.end, r2.end);
-        #[allow(clippy::float_cmp)]
-        if start == end {
+        if (start - end).abs() < EPSILON {
             None
         } else {
             Some(start..end)
@@ -344,9 +344,9 @@ pub mod gg_range {
     }
 }
 
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash>(T, T);
-impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> UnorderedPair<T> {
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq>(T, T);
+impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq> UnorderedPair<T> {
     pub fn new(a: T, b: T) -> Self {
         if a < b { Self(a, b) } else { Self(b, a) }
     }
