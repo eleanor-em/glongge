@@ -64,6 +64,7 @@ use crate::{
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;
 use crate::shader::ensure_shaders_locked;
+use crate::util::UniqueShared;
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -90,8 +91,8 @@ impl WindowContext {
         (self.event_loop, self.window)
     }
 
-    pub fn create_default_viewport(&self) -> AdjustedViewport {
-        AdjustedViewport {
+    pub fn create_default_viewport(&self) -> UniqueShared<AdjustedViewport> {
+        UniqueShared::new(AdjustedViewport {
             inner: Viewport {
                 offset: [0., 0.],
                 extent: self.window.inner_size().into(),
@@ -100,7 +101,7 @@ impl WindowContext {
             scale_factor: self.window.scale_factor(),
             global_scale_factor: 1.,
             translation: Vec2::zero(),
-        }
+        })
     }
 }
 
@@ -497,7 +498,14 @@ fn macos_instance<T>(
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
     if env::consts::OS == "macos" {
-        assert_eq!(env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS")?, "1");
+        let var = match env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
+            Ok(var) => var,
+            Err(e) => {
+                panic!("on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
+                        do you have .cargo/config.toml set up correctly? got: {e:?}");
+            }
+        };
+        check_eq!(var, "1");
     }
     let required_extensions = compat::required_extensions_copied(&event_loop)?;
     let instance_create_info = InstanceCreateInfo {

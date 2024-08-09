@@ -5,6 +5,8 @@
 #![feature(unsize)]
 #![feature(coerce_unsized)]
 
+pub use bincode;
+
 pub mod core;
 pub mod resource;
 pub mod shader;

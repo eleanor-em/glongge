@@ -13,12 +13,25 @@ fn main() -> Result<()> {
     let sep = std::path::MAIN_SEPARATOR;
     let mut imports = Vec::new();
     let mut decls = Vec::new();
+    let builtin_imports = vec![
+        "use glongge::resource::sprite::GgInternalSprite;".to_string(),
+        "use glongge::util::collision::GgInternalCollisionShape;".to_string(),
+        "use glongge::util::canvas::GgInternalCanvas;".to_string(),
+        "use glongge::util::canvas::GgInternalCanvasItem;".to_string(),
+        "use glongge::core::builtin::GgInternalContainer;".to_string(),
+        "use glongge::core::builtin::GgInternalStaticSprite;".to_string(),
+        "use glongge::core::builtin::GgInternalCollidingSprite;".to_string(),
+        "use glongge::util::tileset::GgInternalTileset;".to_string(),
+    ];
     let builtins = vec![
         "GgInternalSprite,".to_string(),
         "GgInternalCollisionShape,".to_string(),
         "GgInternalCanvas,".to_string(),
         "GgInternalCanvasItem,".to_string(),
         "GgInternalContainer,".to_string(),
+        "GgInternalStaticSprite,".to_string(),
+        "GgInternalCollidingSprite,".to_string(),
+        "GgInternalTileset,".to_string(),
     ];
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {
@@ -86,6 +99,11 @@ fn main() -> Result<()> {
     let mut writer = LineWriter::new(File::create(dest_path)?);
     writer.write_all("pub mod object_type {\n".as_bytes())?;
     writer.write_all("use glongge_derive::register_object_type;\n".as_bytes())?;
+    for builtin_import in builtin_imports {
+        if !imports.contains(&builtin_import) {
+            imports.push(builtin_import);
+        }
+    }
     for import in imports.into_iter().map(|line| format!("{line}\n")) {
         writer.write_all(import.as_bytes())?;
     }

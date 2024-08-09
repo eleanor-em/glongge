@@ -41,7 +41,6 @@ enum PlayerState {
     Dying,
     EnteringPipe,
     ExitingPipe,
-
     RidingFlagpole,
 }
 

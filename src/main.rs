@@ -2,20 +2,10 @@
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
 use num_traits::{Float, One};
-use tracing_subscriber::fmt::time::OffsetTime;
 
-use glongge::core::{
-    input::InputHandler,
-    prelude::*,
-    render::RenderHandler,
-    scene::SceneHandler,
-    scene::Scene,
-    vk::{VulkanoContext, WindowContext, WindowEventHandler},
-    ObjectTypeEnum,
-};
-use glongge::util::UniqueShared;
-use glongge::gui::GuiContext;
-use glongge::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
+use glongge::core::prelude::*;
+use glongge::core::scene::Scene;
+use glongge::util::GgContextBuilder;
 
 use crate::object_type::ObjectType;
 
@@ -30,75 +20,25 @@ use crate::examples::{
 use crate::examples::concave::ConcaveScene;
 
 fn main() -> Result<()> {
-    let logfile = std::fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open("run.log")?;
-    let timer = OffsetTime::new(
-        time::UtcOffset::UTC,
-        time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]")
-    );
-    tracing_subscriber::fmt()
-        .event_format(
-            tracing_subscriber::fmt::format()
-                .with_target(false)
-                .with_file(true)
-                .with_line_number(true)
-                .with_timer(timer)
-        )
-        .with_writer(logfile)
-        .init();
     run_test_cases();
-
-    let window_ctx = WindowContext::new([1280, 800])?;
-    let gui_ctx = GuiContext::default();
-    let vk_ctx = VulkanoContext::new(&window_ctx)?;
-    let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
-    ObjectType::preload_all(&mut resource_handler)?;
-
-    let viewport = UniqueShared::new(window_ctx.create_default_viewport());
-    let shaders: Vec<UniqueShared<dyn Shader>> = vec![
-        SpriteShader::new(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-        WireframeShader::new(vk_ctx.clone(), viewport.clone())?,
-        BasicShader::new(vk_ctx.clone(), viewport.clone())?,
-    ];
-    let render_handler = RenderHandler::new(
-        &vk_ctx,
-        gui_ctx.clone(),
-        viewport.clone(),
-        shaders,
-    )?
-        // .with_global_scale_factor(1.);
-        .with_global_scale_factor(2.);
-    let input_handler = InputHandler::new();
-    {
-        let input_handler = input_handler.clone();
-        let resource_handler = resource_handler.clone();
-        let render_handler = render_handler.clone();
-        std::thread::spawn(move || {
-            let mut scene_handler = SceneHandler::new(
-                input_handler,
-                resource_handler,
-                render_handler
-            );
-            scene_handler.create_scene(TriangleScene);
-            scene_handler.create_scene(RectangleScene);
-            scene_handler.create_scene(ConcaveScene);
-            scene_handler.create_scene(MarioOverworldScene);
-            scene_handler.create_scene(MarioUndergroundScene);
-            // let name = TriangleScene.name();
-            // let name = RectangleScene.name();
-            // let name = ConcaveScene.name();
-            let name = MarioOverworldScene.name();
-            // let name = MarioUndergroundScene.name();
-            scene_handler.consume_with_scene(name, 0);
-        });
-    }
-
-    let (event_loop, window) = window_ctx.consume();
-    WindowEventHandler::new(window, vk_ctx, gui_ctx.clone(), render_handler, input_handler, resource_handler)
-        .consume(event_loop);
+    let ctx = GgContextBuilder::<ObjectType>::new([1280, 800])?
+        .with_global_scale_factor(2.)
+        .build()?;
+    let mut scene_handler = ctx.scene_handler();
+    std::thread::spawn(move || {
+        scene_handler.create_scene(TriangleScene);
+        scene_handler.create_scene(RectangleScene);
+        scene_handler.create_scene(ConcaveScene);
+        scene_handler.create_scene(MarioOverworldScene);
+        scene_handler.create_scene(MarioUndergroundScene);
+        // let name = TriangleScene.name();
+        // let name = RectangleScene.name();
+        // let name = ConcaveScene.name();
+        let name = MarioOverworldScene.name();
+        // let name = MarioUndergroundScene.name();
+        scene_handler.consume_with_scene(name, 0);
+    });
+    ctx.consume_run_window();
     Ok(())
 }
 

@@ -6,9 +6,17 @@ use std::{
     vec::IntoIter
 };
 use std::fmt::{Debug, Display, Formatter};
-use std::marker::Unsize;
+use std::marker::{PhantomData, Unsize};
 use std::ops::CoerceUnsized;
 use std::sync::{Arc, Mutex, MutexGuard};
+use tracing_subscriber::fmt::time::OffsetTime;
+use crate::core::input::InputHandler;
+use crate::core::ObjectTypeEnum;
+use crate::core::render::RenderHandler;
+use crate::core::scene::SceneHandler;
+use crate::core::vk::{AdjustedViewport, VulkanoContext, WindowContext, WindowEventHandler};
+use crate::gui::GuiContext;
+use crate::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
 
 pub mod linalg;
 pub mod colour;
@@ -558,3 +566,130 @@ impl<T: Display> Display for UniqueShared<T> {
 }
 
 impl<T: Unsize<U> + ?Sized, U: ?Sized> CoerceUnsized<UniqueShared<U>> for UniqueShared<T> {}
+
+fn setup_log() -> Result<()> {
+    let logfile = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open("run.log")?;
+    let timer = OffsetTime::new(
+        time::UtcOffset::UTC,
+        time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]")
+    );
+    tracing_subscriber::fmt()
+        .event_format(
+            tracing_subscriber::fmt::format()
+                .with_target(false)
+                .with_file(true)
+                .with_line_number(true)
+                .with_timer(timer)
+        )
+        .with_writer(logfile)
+        .init();
+    Ok(())
+}
+
+pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
+    window_ctx: WindowContext,
+    vk_ctx: VulkanoContext,
+    gui_ctx: GuiContext,
+    resource_handler: ResourceHandler,
+    viewport: UniqueShared<AdjustedViewport>,
+    shaders: Vec<UniqueShared<dyn Shader>>,
+    global_scale_factor: f64,
+    object_type: PhantomData<ObjectType>
+}
+
+impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
+    pub fn new(
+        window_size: impl Into<Vec2i>,
+    ) -> Result<Self> {
+        setup_log()?;
+        let window_ctx = WindowContext::new(window_size.into())?;
+        let gui_ctx = GuiContext::default();
+        let vk_ctx = VulkanoContext::new(&window_ctx)?;
+        let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
+        ObjectType::preload_all(&mut resource_handler)?;
+        let viewport = window_ctx.create_default_viewport();
+
+        let shaders: Vec<UniqueShared<dyn Shader>> = vec![
+            SpriteShader::new(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
+            WireframeShader::new(vk_ctx.clone(), viewport.clone())?,
+            BasicShader::new(vk_ctx.clone(), viewport.clone())?,
+        ];
+        Ok(Self {
+            window_ctx,
+            vk_ctx,
+            gui_ctx,
+            resource_handler,
+            viewport,
+            shaders,
+            global_scale_factor: 1.,
+            object_type: PhantomData
+        })
+    }
+
+    #[must_use]
+    pub fn with_extra_shaders(
+        mut self,
+        create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<dyn Shader>>
+    ) -> Self {
+        self.shaders.extend(create_shaders(&self));
+        self
+    }
+    #[must_use]
+    pub fn with_global_scale_factor(mut self, global_scale_factor: f64) -> Self {
+        self.global_scale_factor = global_scale_factor;
+        self
+    }
+
+    pub fn build(self) -> Result<GgContext<ObjectType>> {
+        let input_handler = InputHandler::new();
+        let render_handler = RenderHandler::new(
+            &self.vk_ctx,
+            self.gui_ctx.clone(),
+            self.viewport.clone(),
+            self.shaders,
+        )?
+            .with_global_scale_factor(self.global_scale_factor);
+        Ok(GgContext {
+            window_ctx: self.window_ctx,
+            vk_ctx: self.vk_ctx,
+            gui_ctx: self.gui_ctx,
+            resource_handler: self.resource_handler,
+            viewport: self.viewport,
+            input_handler,
+            render_handler,
+            object_type: self.object_type
+        })
+    }
+}
+
+#[allow(dead_code)]
+pub struct GgContext<ObjectType: ObjectTypeEnum> {
+    window_ctx: WindowContext,
+    vk_ctx: VulkanoContext,
+    gui_ctx: GuiContext,
+    resource_handler: ResourceHandler,
+    viewport: UniqueShared<AdjustedViewport>,
+    input_handler: Arc<Mutex<InputHandler>>,
+    render_handler: RenderHandler,
+    object_type: PhantomData<ObjectType>
+}
+
+impl<ObjectType: ObjectTypeEnum> GgContext<ObjectType> {
+    pub fn scene_handler(&self) -> SceneHandler<ObjectType> {
+        SceneHandler::new(
+            self.input_handler.clone(),
+            self.resource_handler.clone(),
+            self.render_handler.clone()
+        )
+    }
+
+    pub fn consume_run_window(self) {
+        let (event_loop, window) = self.window_ctx.consume();
+        WindowEventHandler::new(window, self.vk_ctx, self.gui_ctx, self.render_handler, self.input_handler, self.resource_handler)
+            .consume(event_loop);
+    }
+}
