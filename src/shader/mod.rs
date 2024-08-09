@@ -208,11 +208,11 @@ impl SpriteShader {
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler
-    ) -> Result<UniqueShared<Self>> {
+    ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
         let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
-        Ok(UniqueShared::new(Self {
+        Ok(UniqueShared::new(Box::new(Self {
             ctx,
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
@@ -220,7 +220,7 @@ impl SpriteShader {
             pipeline: None,
             vertex_buffer,
             resource_handler,
-        }))
+        }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -405,18 +405,18 @@ impl WireframeShader {
     pub fn new(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>
-    ) -> Result<UniqueShared<Self>> {
+    ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
         let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
-        Ok(UniqueShared::new(Self {
+        Ok(UniqueShared::new(Box::new(Self {
             ctx,
             vs: wireframe::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: wireframe::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
             vertex_buffer,
-        }))
+        }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
@@ -540,18 +540,18 @@ impl BasicShader {
     pub fn new(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>
-    ) -> Result<UniqueShared<Self>> {
+    ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
         let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
-        Ok(UniqueShared::new(Self {
+        Ok(UniqueShared::new(Box::new(Self {
             ctx,
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
             vertex_buffer,
-        }))
+        }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {

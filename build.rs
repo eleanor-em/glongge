@@ -1,6 +1,3 @@
-#![feature(iterator_try_collect)]
-#![feature(os_str_display)]
-
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, LineWriter, Write};
@@ -36,7 +33,7 @@ fn main() -> Result<()> {
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {
         let entry = entry?;
-        let filename = entry.file_name().display().to_string();
+        let filename = entry.file_name().to_str().unwrap().to_string();
         let is_rust_file = entry.path().extension()
             .map_or(false, |ext| ext.eq_ignore_ascii_case("rs"));
         if is_rust_file && filename != "build.rs" && filename != "object_type.rs" {
@@ -51,7 +48,7 @@ fn main() -> Result<()> {
                 }
 
                 let reader = BufReader::new(File::open(entry.path())?);
-                let lines = reader.lines().try_collect::<Vec<_>>()?;
+                let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
                 let lines_with_decls = lines.iter()
                     .enumerate()
                     .filter(|(_, line)| line.starts_with("#[partially_derive_scene_object]"))

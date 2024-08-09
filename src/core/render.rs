@@ -135,7 +135,7 @@ pub struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     viewport: UniqueShared<AdjustedViewport>,
-    shaders: Vec<UniqueShared<dyn Shader>>,
+    shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: UniqueShared<GuiRenderer>,
     command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
@@ -145,7 +145,7 @@ impl RenderHandler {
         vk_ctx: &VulkanoContext,
         gui_ctx: GuiContext,
         viewport: UniqueShared<AdjustedViewport>,
-        shaders: Vec<UniqueShared<dyn Shader>>,
+        shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     ) -> Result<Self> {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {

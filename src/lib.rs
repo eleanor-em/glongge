@@ -1,9 +1,6 @@
-#![feature(iterator_try_collect)]
-#![feature(arbitrary_self_types)]
-#![feature(duration_millis_float)]
+// due to be stabilised soon(tm)
+// https://github.com/rust-lang/rust/issues/65991
 #![feature(trait_upcasting)]
-#![feature(unsize)]
-#![feature(coerce_unsized)]
 
 pub use bincode;
 

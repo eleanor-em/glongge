@@ -214,50 +214,6 @@ impl<T: Clone> DataPerImage<T> {
             data: self.as_slice().iter().map(func).collect(),
         }
     }
-    pub fn try_map<U: Clone, F>(&self, func: F) -> Result<DataPerImage<U>>
-    where
-        F: FnMut(&T) -> Result<U>,
-    {
-        Ok(DataPerImage::<U> {
-            data: self.as_slice().iter().map(func).try_collect()?,
-        })
-    }
-    pub fn try_map_with<U: Clone, V: Clone, F>(
-        &self,
-        other: &DataPerImage<U>,
-        func: F,
-    ) -> Result<DataPerImage<V>>
-    where
-        F: FnMut((&T, &U)) -> Result<V>,
-    {
-        Ok(DataPerImage::<V> {
-            data: self
-                .as_slice()
-                .iter()
-                .zip(other.as_slice())
-                .map(func)
-                .try_collect()?,
-        })
-    }
-    pub fn try_map_with_3<U: Clone, V: Clone, W: Clone, F>(
-        &self,
-        other1: &DataPerImage<U>,
-        other2: &DataPerImage<V>,
-        func: F,
-    ) -> Result<DataPerImage<W>>
-    where
-        F: FnMut(((&T, &U), &V)) -> Result<W>,
-    {
-        Ok(DataPerImage::<W> {
-            data: self
-                .as_slice()
-                .iter()
-                .zip(other1.as_slice())
-                .zip(other2.as_slice())
-                .map(func)
-                .try_collect()?,
-        })
-    }
     pub fn count<P>(&self, predicate: P) -> usize
     where
         P: Fn(&T) -> bool,
@@ -339,7 +295,7 @@ impl VulkanoContext {
 
         info!(
             "created vulkano context in: {:.2} ms",
-            start.elapsed().as_millis_f64()
+            (start.elapsed().as_micros() as f64) / 1000.
         );
         Ok(Self {
             // Appears to not be necessary:
@@ -659,7 +615,7 @@ fn create_framebuffers(
                     },
                 )
             })
-            .try_collect().map_err(Validated::unwrap)?,
+            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?,
     })
 }
 
@@ -675,26 +631,6 @@ impl PerImageContext {
             last: 0,
             current: None,
         }))
-    }
-
-    pub fn replace_current_value<T: Clone>(self: &mut MutexGuard<Self>, target: &mut Option<DataPerImage<T>>, value: T) {
-        *self.current_value_as_mut(target) = value;
-    }
-    pub fn set_current_value<T: Clone>(self: &mut MutexGuard<Self>, target: &mut DataPerImage<T>, value: T) {
-        *target.current_value_mut(self) = value;
-    }
-    pub fn get_current_value<T: Copy + Clone>(self: &mut MutexGuard<Self>, target: &DataPerImage<T>) -> T {
-        *target.current_value(self)
-    }
-
-    pub fn current_value_cloned<T: Clone>(self: &MutexGuard<Self>, from: &DataPerImage<T>) -> T {
-        from.current_value(self).clone()
-    }
-    pub fn current_value_as_ref<'a, T: Clone>(self: &MutexGuard<Self>, from: &'a Option<DataPerImage<T>>) -> &'a T {
-        from.as_ref().expect("no current value?").current_value(self)
-    }
-    pub fn current_value_as_mut<'a, T: Clone>(self: &mut MutexGuard<Self>, from: &'a mut Option<DataPerImage<T>>) -> &'a mut T {
-        from.as_mut().expect("no current value?").current_value_mut(self)
     }
 }
 
@@ -989,7 +925,7 @@ impl RenderPerfStats {
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
-        let render_time = self.last_step.elapsed().as_millis_f64();
+        let render_time = (self.last_step.elapsed().as_micros() as f64) / 1000.;
         self.totals_ms.push(render_time);
 
         let late_in_row = self.totals_ms.iter()

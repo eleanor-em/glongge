@@ -6,8 +6,7 @@ use std::{
     vec::IntoIter
 };
 use std::fmt::{Debug, Display, Formatter};
-use std::marker::{PhantomData, Unsize};
-use std::ops::CoerceUnsized;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
 use tracing_subscriber::fmt::time::OffsetTime;
 use crate::core::input::InputHandler;
@@ -565,8 +564,6 @@ impl<T: Display> Display for UniqueShared<T> {
     }
 }
 
-impl<T: Unsize<U> + ?Sized, U: ?Sized> CoerceUnsized<UniqueShared<U>> for UniqueShared<T> {}
-
 fn setup_log() -> Result<()> {
     let logfile = std::fs::OpenOptions::new()
         .write(true)
@@ -596,7 +593,7 @@ pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
     gui_ctx: GuiContext,
     resource_handler: ResourceHandler,
     viewport: UniqueShared<AdjustedViewport>,
-    shaders: Vec<UniqueShared<dyn Shader>>,
+    shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     global_scale_factor: f64,
     object_type: PhantomData<ObjectType>
 }
@@ -613,7 +610,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         ObjectType::preload_all(&mut resource_handler)?;
         let viewport = window_ctx.create_default_viewport();
 
-        let shaders: Vec<UniqueShared<dyn Shader>> = vec![
+        let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::new(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
             WireframeShader::new(vk_ctx.clone(), viewport.clone())?,
             BasicShader::new(vk_ctx.clone(), viewport.clone())?,
@@ -633,7 +630,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
     #[must_use]
     pub fn with_extra_shaders(
         mut self,
-        create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<dyn Shader>>
+        create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<Box<dyn Shader>>>
     ) -> Self {
         self.shaders.extend(create_shaders(&self));
         self
