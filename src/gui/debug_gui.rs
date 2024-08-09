@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Align, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
+use egui::{Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use itertools::Itertools;
@@ -149,7 +149,7 @@ impl GuiObjectView {
                         .show(ui, |ui| {
                             ui.vertical_centered(|ui| {
                                 let mut layout_job = LayoutJob::default();
-                                layout_job.append(format!("{name} ({})", object_id.0).as_str(), 0., TextFormat {
+                                layout_job.append(format!("{name} [{}]", object_id.0).as_str(), 0., TextFormat {
                                     color: Color32::from_gray(255),
                                     ..Default::default()
                                 });
@@ -175,7 +175,6 @@ impl GuiObjectView {
                             ui.add(egui::Label::new(layout_job)
                                 .selectable(false));
                             relative_transform.build_gui(ui, relative_sender);
-                            ui.separator();
 
                             if let Some(gui_cmd) = gui_cmd {
                                 ui.separator();
@@ -279,6 +278,10 @@ impl GuiObjectTreeNode {
 
 pub(crate) struct GuiObjectTree {
     root: GuiObjectTreeNode,
+    show: bool,
+    show_tx: Sender<bool>,
+    show_rx: Receiver<bool>,
+
     selected_id: ObjectId,
     selected_tx: Sender<ObjectId>,
     selected_rx: Receiver<ObjectId>,
@@ -286,15 +289,22 @@ pub(crate) struct GuiObjectTree {
 
 impl GuiObjectTree {
     fn new() -> Self {
+        let (show_tx, show_rx) = mpsc::channel();
         let selected_id = ObjectId::root();
         let (selected_tx, selected_rx) = mpsc::channel();
         Self {
             root: GuiObjectTreeNode::new(),
+            show: true, show_tx, show_rx,
             selected_id, selected_tx, selected_rx,
         }
     }
 
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
+        if let Some(next) = self.show_rx.try_iter().last() {
+            self.show = next;
+        }
+        let show = self.show;
+        let show_tx = self.show_tx.clone();
         let mut selected_changed = false;
         if let Some(next) = self.selected_rx.try_iter().last() {
             self.selected_id = next;
@@ -308,6 +318,8 @@ impl GuiObjectTree {
         );
         Box::new(move |ctx| {
             egui::SidePanel::left(Id::new("object-tree"))
+                .resizable(true)
+                .min_width(0.)
                 .default_width(250.)
                 .frame(frame)
                 .show_animated(ctx, enabled, |ui| {
@@ -316,20 +328,27 @@ impl GuiObjectTree {
                         bar_width: 5.,
                         ..Default::default()
                     };
-                    egui::ScrollArea::vertical()
-                        .show(ui, |ui| {
-                            ui.vertical_centered(|ui| {
-                                let mut layout_job = LayoutJob::default();
-                                layout_job.append("Object Tree 🌳", 0., TextFormat {
-                                    color: Color32::from_gray(255),
-                                    ..Default::default()
+                    if show {
+                        ui.vertical_centered(|ui| {
+                            if ui.add(Button::new("🌳").selected(show)).clicked() {
+                                show_tx.send(!show).unwrap();
+                            }
+                            egui::ScrollArea::vertical()
+                                .show(ui, |ui| {
+                                    let mut layout_job = LayoutJob::default();
+                                    layout_job.append("Object Tree", 0., TextFormat {
+                                        color: Color32::from_gray(255),
+                                        ..Default::default()
+                                    });
+                                    ui.add(egui::Label::new(layout_job)
+                                        .selectable(false));
+                                    ui.separator();
+                                    root.build(ui);
                                 });
-                                ui.add(egui::Label::new(layout_job)
-                                    .selectable(false));
-                                ui.separator();
-                            });
-                            root.build(ui);
                         });
+                    } else if ui.add(Button::new("🌳").selected(show)).clicked() {
+                        show_tx.send(!show).unwrap();
+                    }
                 });
         })
     }
@@ -367,6 +386,9 @@ impl GuiObjectTree {
             if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id)) {
                 self.selected_tx.send(parent.object_id).unwrap();
             }
+        }
+        if input_handler.pressed(KeyCode::KeyO) {
+            self.show = !self.show;
         }
     }
 
@@ -754,7 +776,9 @@ impl DebugGui {
         object_handler: &mut ObjectHandler<O>,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
-        self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
+        if self.enabled {
+            self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
+        }
         if !self.object_tree.selected_id.is_root() {
             if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
                 gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
