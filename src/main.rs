@@ -51,7 +51,7 @@ fn main() -> Result<()> {
         .init();
     run_test_cases();
 
-    let window_ctx = WindowContext::new()?;
+    let window_ctx = WindowContext::new([1280, 800])?;
     let gui_ctx = GuiContext::default();
     let vk_ctx = VulkanoContext::new(&window_ctx)?;
     let mut resource_handler = ResourceHandler::new(&vk_ctx)?;

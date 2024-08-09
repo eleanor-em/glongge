@@ -71,11 +71,12 @@ pub struct WindowContext {
 }
 
 impl WindowContext {
-    pub fn new() -> Result<Self> {
+    pub fn new(size: impl Into<Vec2i>) -> Result<Self> {
+        let size = size.into();
         let event_loop = EventLoop::new()?;
         let window = Arc::new(
             WindowBuilder::new()
-                .with_inner_size(LogicalSize::new(1280, 800))
+                .with_inner_size(LogicalSize::new(size.x, size.y))
                 .build(&event_loop)?,
         );
         Ok(Self { event_loop, window })

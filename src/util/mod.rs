@@ -314,6 +314,42 @@ pub mod gg_err {
     }
 }
 
+pub mod gg_float {
+    use std::num::FpCategory;
+    use num_traits::Zero;
+    use crate::util::linalg::{Transform, Vec2};
+
+    pub trait GgFloat{
+        fn is_normal_or_zero(&self) -> bool;
+    }
+
+    impl GgFloat for f64 {
+        fn is_normal_or_zero(&self) -> bool {
+            self.is_normal() || self.is_zero()
+        }
+    }
+
+    impl GgFloat for Vec2 {
+        fn is_normal_or_zero(&self) -> bool {
+            self.x.is_normal_or_zero() && self.y.is_normal_or_zero()
+        }
+    }
+
+    impl GgFloat for Transform {
+        fn is_normal_or_zero(&self) -> bool {
+            self.centre.is_normal_or_zero() &&
+                self.rotation.is_normal_or_zero() &&
+                self.scale.is_normal_or_zero()
+        }
+    }
+    pub fn is_normal_or_zero(x: f64) -> bool {
+        match x.classify() {
+            FpCategory::Zero | FpCategory::Normal => true,
+            _ => false
+        }
+    }
+}
+
 pub mod gg_range {
     use std::ops::Range;
     use crate::core::config::EPSILON;

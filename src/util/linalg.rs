@@ -23,6 +23,7 @@ use std::sync::Arc;
 use itertools::Product;
 use num_traits::{float::Float, One, Zero};
 use serde::{Deserialize, Serialize};
+use crate::util::gg_float;
 
 #[derive(Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize)]
 pub struct Vec2i {
@@ -253,15 +254,18 @@ impl Ord for Vec2 {
                 });
         }
         match self.x.partial_cmp(&other.x) {
-            Some(Ordering::Less) => Ordering::Less,
-            Some(Ordering::Equal) => unreachable!(),
-            Some(Ordering::Greater) => Ordering::Greater,
+            Some(o) => o,
             None => {
                 warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
                 match self.x.total_cmp(&other.x) {
-                    Ordering::Less => Ordering::Less,
-                    Ordering::Equal => unreachable!(),
-                    Ordering::Greater => Ordering::Greater,
+                    Ordering::Equal => match self.y.partial_cmp(&other.y) {
+                        Some(o) => o,
+                        None => {
+                            warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
+                            self.y.total_cmp(&other.y)
+                        }
+                    }
+                    o => o
                 }
             }
         }
@@ -340,6 +344,10 @@ impl Vec2 {
     #[allow(clippy::cast_possible_truncation)]
     pub fn as_f32_lossy(&self) -> [f32; 2] {
         (*self).into()
+    }
+
+    pub fn is_normal_or_zero(&self) -> bool {
+        gg_float::is_normal_or_zero(self.x) || gg_float::is_normal_or_zero(self.y)
     }
 
     pub fn cmp_by_length(&self, other: &Vec2) -> Ordering {
