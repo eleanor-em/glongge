@@ -24,12 +24,13 @@ use vulkano::{pipeline::{
     WriteDescriptorSet,
     layout::DescriptorSetLayoutCreateFlags
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
+use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use crate::{
     core::{
         prelude::*,
         vk::{AdjustedViewport, VulkanoContext},
     },
-    shader::glsl::{basic, sprite, wireframe},
+    shader::glsl::{basic, sprite},
     util::UniqueShared
 };
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
@@ -398,7 +399,7 @@ pub struct WireframeShader {
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Option<Arc<GraphicsPipeline>>,
-    vertex_buffer: CachedVertexBuffer<wireframe::Vertex>,
+    vertex_buffer: CachedVertexBuffer<basic::Vertex>,
 }
 
 impl WireframeShader {
@@ -411,8 +412,8 @@ impl WireframeShader {
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
         Ok(UniqueShared::new(Box::new(Self {
             ctx,
-            vs: wireframe::vertex_shader::load(device.clone()).context("failed to create shader module")?,
-            fs: wireframe::fragment_shader::load(device).context("failed to create shader module")?,
+            vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
+            fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: None,
             vertex_buffer,
@@ -427,7 +428,7 @@ impl WireframeShader {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    wireframe::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -453,7 +454,10 @@ impl WireframeShader {
                             viewports: [self.viewport.get().inner()].into_iter().collect(),
                             ..Default::default()
                         }),
-                        rasterization_state: Some(RasterizationState::default()),
+                        rasterization_state: Some(RasterizationState {
+                            polygon_mode: PolygonMode::Line,
+                            ..RasterizationState::default()
+                        }),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
                             subpass.num_color_attachments(),
@@ -489,7 +493,7 @@ impl Shader for WireframeShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
-                vertices.push(wireframe::Vertex {
+                vertices.push(basic::Vertex {
                     position: render_frame.vertices[vertex_index as usize].xy,
                     translation: render_info.transform.centre,
                     rotation: render_info.transform.rotation,
@@ -509,7 +513,7 @@ impl Shader for WireframeShader {
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
-        let pc = wireframe::vertex_shader::WindowData {
+        let pc = basic::vertex_shader::WindowData {
             #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
             #[allow(clippy::cast_possible_truncation)]
@@ -644,7 +648,7 @@ impl Shader for BasicShader {
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
-        let pc = wireframe::vertex_shader::WindowData {
+        let pc = basic::vertex_shader::WindowData {
             #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
             #[allow(clippy::cast_possible_truncation)]

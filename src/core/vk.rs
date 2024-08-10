@@ -476,7 +476,7 @@ fn features() -> Features {
     Features {
         // Required for extra texture samplers on macOS:
         descriptor_indexing: true,
-        fragment_shader_barycentric: true,
+        fill_mode_non_solid: true,
         ..Default::default()
     }
 }

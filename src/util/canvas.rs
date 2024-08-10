@@ -12,26 +12,22 @@ pub struct GgInternalCanvas {
 
 impl GgInternalCanvas {
     pub fn line(&mut self, start: Vec2, end: Vec2, width: f64, col: Colour) {
-        if self.viewport.contains_point(start) || self.viewport.contains_point(end) {
-            self.render_items.push(vertex::line(start, end, width));
-            self.render_infos.push(RenderInfo {
-                col: col.into(),
-                shader_id: get_shader(BasicShader::name()),
-                ..Default::default()
-            });
-        }
+        self.render_items.push(vertex::line(start, end, width));
+        self.render_infos.push(RenderInfo {
+            col: col.into(),
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        });
     }
     pub fn rect(&mut self, top_left: Vec2, bottom_right: Vec2, col: Colour) {
-        if self.viewport.contains_point(top_left) || self.viewport.contains_point(bottom_right) {
-            let half_widths = (bottom_right - top_left) / 2;
-            let centre = top_left + half_widths;
-            self.render_items.push(vertex::rectangle_with_uv(centre, half_widths));
-            self.render_infos.push(RenderInfo {
-                col: col.into(),
-                shader_id: get_shader(BasicShader::name()),
-                ..Default::default()
-            });
-        }
+        let half_widths = (bottom_right - top_left) / 2;
+        let centre = top_left + half_widths;
+        self.render_items.push(vertex::rectangle_with_uv(centre, half_widths));
+        self.render_infos.push(RenderInfo {
+            col: col.into(),
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        });
     }
 }
 

@@ -777,6 +777,7 @@ impl GuiSceneControl {
                 .frame(frame.fill(Color32::from_black_alpha(0))
                     .outer_margin(12.)
                     .inner_margin(0.))
+                .show_separator_line(false)
                 .show_animated(ctx, enabled, |ui| {
                     ui.style_mut().override_text_style = Some(TextStyle::Monospace);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

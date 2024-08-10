@@ -251,6 +251,28 @@ pub trait Polygonal {
             Some(mtv)
         }
     }
+
+    fn draw_polygonal(
+        &self,
+        canvas: &mut Canvas,
+        col: Colour
+    ) {
+        let normals = self.normals();
+        let vertices = self.vertices();
+        for (start, end) in normals.into_iter().zip(vertices.iter().circular_tuple_windows())
+            .map(|(normal, (u, v))| {
+                let start = (*u + *v) / 2;
+                let end = start + normal.normed() * 8;
+                (start, end)
+            }) {
+            canvas.line(start, end, 1., col);
+            canvas.rect(self.polygon_centre() - Vec2::one(),
+                        self.polygon_centre() + Vec2::one(), col);
+        }
+        for (a, b) in vertices.into_iter().circular_tuple_windows() {
+            canvas.line(a, b, 1., col);
+        }
+    }
 }
 
 impl<T: Polygonal> Polygonal for &T {
@@ -1115,22 +1137,6 @@ impl GgInternalCollisionShape {
                 .collect()
         ).with_depth(VertexDepth::max_value())
     }
-    fn normals(&self) -> Vec<(Vec2, Vec2)> {
-        let (normals, vertices) = match &self.collider {
-            GenericCollider::Convex(c) => (c.normals(), c.vertices()),
-            GenericCollider::Compound(c) => (c.normals(), c.vertices()),
-            GenericCollider::Null => (Vec::new(), Vec::new()),
-            GenericCollider::Box(c) => (c.normals(), c.vertices()),
-            GenericCollider::OrientedBox(c) => (c.normals(), c.vertices()),
-        };
-        normals.into_iter().zip(vertices.into_iter().circular_tuple_windows())
-            .map(|(normal, (u, v))| {
-                let start = (u + v) / 2;
-                let end = start + normal.normed() * 8;
-                (start, end)
-            })
-            .collect_vec()
-    }
 
     pub fn show_wireframe(&mut self) { self.show_wireframe = true; }
     pub fn hide_wireframe(&mut self) { self.show_wireframe = false; }
@@ -1154,38 +1160,25 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.update_transform(ctx);
     }
+
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.update_transform(ctx);
         if self.show_wireframe {
             let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
-            if let GenericCollider::Compound(compound) = &self.collider {
-                let mut colours = [Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
-                colours.reverse();
-                for inner in &compound.inner {
-                    let col = *colours.last().unwrap();
-                    colours.rotate_right(1);
-                    let normals = inner.normals();
-                    let vertices = inner.vertices();
-                    for (start, end) in normals.into_iter().zip(vertices.iter().circular_tuple_windows())
-                        .map(|(normal, (u, v))| {
-                            let start = (*u + *v) / 2;
-                            let end = start + normal.normed() * 8;
-                            (start, end)
-                        }) {
-                        canvas.line(start, end, 1., col);
-                        canvas.rect(inner.centre() - Vec2::one(),
-                                    inner.centre() + Vec2::one(), col);
-                    }
-                    for (a, b) in vertices.into_iter().circular_tuple_windows() {
-                        canvas.line(a, b, 1., col);
+            match &self.collider {
+                GenericCollider::Compound(compound) => {
+                    let mut colours = [Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
+                    colours.reverse();
+                    for inner in &compound.inner {
+                        let col = *colours.last().unwrap();
+                        colours.rotate_right(1);
+                        inner.draw_polygonal(&mut canvas, col);
                     }
                 }
-            } else {
-                for (start, end) in self.normals() {
-                    canvas.line(start, end, 1., Colour::green());
-                    canvas.rect(self.collider.centre() - Vec2::one(),
-                                self.collider.centre() + Vec2::one(), Colour::red());
-                }
+                GenericCollider::OrientedBox(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Box(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Convex(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Null => {},
             }
         }
     }
@@ -1235,7 +1228,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     fn render_info(&self) -> RenderInfo {
         check!(self.show_wireframe);
         RenderInfo {
-            col: Colour::cyan().with_alpha(0.3).into(),
+            col: Colour::green().into(),
             shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
         }
