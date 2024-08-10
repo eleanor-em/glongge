@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, Ui};
+use egui::{Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, TextStyle, Ui};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use itertools::Itertools;
@@ -150,7 +150,7 @@ impl GuiObjectView {
                             ui.vertical_centered(|ui| {
                                 let mut layout_job = LayoutJob::default();
                                 layout_job.append(format!("{name} [{}]", object_id.0).as_str(), 0., TextFormat {
-                                    color: Color32::from_gray(255),
+                                    color: Color32::from_white_alpha(255),
                                     ..Default::default()
                                 });
                                 ui.add(egui::Label::new(layout_job)
@@ -160,7 +160,7 @@ impl GuiObjectView {
 
                             let mut layout_job = LayoutJob::default();
                             layout_job.append("Absolute transform:", 0., TextFormat {
-                                color: Color32::from_gray(255),
+                                color: Color32::from_white_alpha(255),
                                 ..Default::default()
                             });
                             ui.add(egui::Label::new(layout_job)
@@ -169,7 +169,7 @@ impl GuiObjectView {
                             ui.separator();
                             let mut layout_job = LayoutJob::default();
                             layout_job.append("Relative transform:", 0., TextFormat {
-                                color: Color32::from_gray(255),
+                                color: Color32::from_white_alpha(255),
                                 ..Default::default()
                             });
                             ui.add(egui::Label::new(layout_job)
@@ -337,7 +337,7 @@ impl GuiObjectTree {
                                 .show(ui, |ui| {
                                     let mut layout_job = LayoutJob::default();
                                     layout_job.append("Object Tree", 0., TextFormat {
-                                        color: Color32::from_gray(255),
+                                        color: Color32::from_white_alpha(255),
                                         ..Default::default()
                                     });
                                     ui.add(egui::Label::new(layout_job)
@@ -379,10 +379,12 @@ impl GuiObjectTree {
                 self.select_next_sibling(object_handler);
             }
         }
-        if input_handler.pressed(KeyCode::KeyS) {
+        if input_handler.pressed(KeyCode::KeyS) &&
+            !(input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
             self.select_next_sibling(object_handler);
         }
-        if input_handler.pressed(KeyCode::KeyP) {
+        if input_handler.pressed(KeyCode::KeyP) &&
+            !(input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
             if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id)) {
                 self.selected_tx.send(parent.object_id).unwrap();
             }
@@ -602,7 +604,7 @@ impl GuiConsoleLog {
                 ui.vertical_centered(|ui| {
                     let mut layout_job = LayoutJob::default();
                     layout_job.append("Update Performance", 0., TextFormat {
-                        color: Color32::from_gray(255),
+                        color: Color32::from_white_alpha(255),
                         ..Default::default()
                     });
                     ui.add(egui::Label::new(layout_job)
@@ -636,7 +638,7 @@ impl GuiConsoleLog {
                 ui.vertical_centered(|ui| {
                     let mut layout_job = LayoutJob::default();
                     layout_job.append("Render Performance", 0., TextFormat {
-                        color: Color32::from_gray(255),
+                        color: Color32::from_white_alpha(255),
                         ..Default::default()
                     });
                     ui.add(egui::Label::new(layout_job)
@@ -721,11 +723,102 @@ impl GuiConsoleLog {
     }
 }
 
+enum SceneControlCommand {
+    TogglePause,
+    Step,
+    BigStep
+}
+pub(crate) struct GuiSceneControl {
+    paused: bool,
+    should_step: usize,
+    cmd_tx: Sender<SceneControlCommand>,
+    cmd_rx: Receiver<SceneControlCommand>,
+}
+
+impl GuiSceneControl {
+    fn new() -> Self {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        Self {
+            paused: false,
+            should_step: 0,
+            cmd_tx, cmd_rx
+        }
+    }
+
+
+    fn on_input(&mut self, input_handler: &InputHandler) {
+        if input_handler.pressed(KeyCode::KeyP) &&
+            (input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
+            self.cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
+        }
+        if input_handler.pressed(KeyCode::KeyS) &&
+            (input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
+            if input_handler.down(KeyCode::ShiftLeft) || input_handler.down(KeyCode::ShiftLeft) {
+                self.cmd_tx.send(SceneControlCommand::BigStep).unwrap();
+            } else {
+                self.cmd_tx.send(SceneControlCommand::Step).unwrap();
+            }
+        }
+    }
+
+    fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
+        if let Some(next) = self.cmd_rx.try_iter().last() {
+            match next {
+                SceneControlCommand::TogglePause => self.paused = !self.paused,
+                SceneControlCommand::Step => self.should_step += 1,
+                SceneControlCommand::BigStep => self.should_step += 5,
+            }
+        }
+        let paused = self.paused;
+        let cmd_tx = self.cmd_tx.clone();
+
+        Box::new(move |ctx| {
+            egui::TopBottomPanel::bottom("scene-control")
+                .frame(frame.fill(Color32::from_black_alpha(0))
+                    .outer_margin(12.)
+                    .inner_margin(0.))
+                .show_animated(ctx, enabled, |ui| {
+                    ui.style_mut().override_text_style = Some(TextStyle::Monospace);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing = [2., 0.].into();
+                        let size = 24.;
+                        if ui.add(Button::new("⏸")
+                            .selected(paused)
+                            .min_size([size, size].into()))
+                            .clicked() {
+                            cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
+                        };
+                        if ui.add(Button::new("⟳")
+                            .min_size([size, size].into()))
+                            .clicked() {
+                            if ui.input(|i| i.modifiers.shift) {
+                                cmd_tx.send(SceneControlCommand::BigStep).unwrap();
+                            } else {
+                                cmd_tx.send(SceneControlCommand::Step).unwrap();
+                            }
+                        };
+                    });
+                });
+        })
+    }
+    pub fn is_paused(&self) -> bool { self.paused }
+    pub fn should_step(&mut self) -> bool {
+        let rv = self.paused && self.should_step > 0;
+        if rv {
+            self.should_step -= 1;
+        } else if self.paused {
+            self.should_step = 0;
+        }
+        rv
+    }
+}
+
 pub(crate) struct DebugGui {
     enabled: bool,
     pub(crate) object_tree: GuiObjectTree,
     object_view: GuiObjectView,
     pub(crate) console_log: GuiConsoleLog,
+    pub(crate) scene_control: GuiSceneControl,
     frame: Frame,
 
     wireframe_mouseovers: Vec<ObjectId>,
@@ -738,6 +831,7 @@ impl DebugGui {
             object_tree: GuiObjectTree::new(),
             object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
+            scene_control: GuiSceneControl::new(),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
                 .inner_margin(egui::Margin::same(6.)),
@@ -778,6 +872,7 @@ impl DebugGui {
     ) -> Box<GuiClosure> {
         if self.enabled {
             self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
+            self.scene_control.on_input(input_handler);
         }
         if !self.object_tree.selected_id.is_root() {
             if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
@@ -793,15 +888,17 @@ impl DebugGui {
             self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled)
         );
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
+        let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);
             if let Some(build_object_view) = build_object_view {
                 build_object_view(ctx);
             }
+            build_scene_control(ctx);
         })
     }
-
+    
     pub fn toggle<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         self.enabled = !self.enabled;
         if !self.enabled {

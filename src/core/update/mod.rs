@@ -561,6 +561,15 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         self.perf_stats.on_gui.start();
         self.update_gui(input_handler, &mut object_tracker);
         self.perf_stats.on_gui.stop();
+        self.object_handler.update_all_transforms();
+        if self.debug_gui.scene_control.is_paused() {
+            // TODO: cache pressed buttons until step.
+            if self.debug_gui.scene_control.should_step() {
+                fixed_updates = 1;
+            } else {
+                return object_tracker;
+            }
+        }
 
         self.perf_stats.on_update_begin.start();
         self.iter_with_other_map(input_handler, &mut object_tracker,
@@ -650,7 +659,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 })
                 .collect();
             self.gui_cmd = Some(self.debug_gui.build(input_handler, &mut self.object_handler, gui_cmds));
-            self.object_handler.update_all_transforms();
         }
     }
 
