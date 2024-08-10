@@ -324,7 +324,8 @@ impl Vec2 {
             None
         } else {
             let t = (p2 - p1).cross(ax2) / denom;
-            if t > 0. {
+            let u = (p2 - p1).cross(ax1) / denom;
+            if t >= 0. && t <= 1. && u >= 0. && u <= 1. {
                 Some(p1 + t * ax1)
             } else {
                 None
@@ -339,7 +340,7 @@ impl Vec2 {
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn as_vec2int_lossy(&self) -> Vec2i {
-        Vec2i { x: self.x as i32, y: self.y as i32 }
+        Vec2i { x: self.x.round() as i32, y: self.y.round() as i32 }
     }
     #[allow(clippy::cast_possible_truncation)]
     pub fn as_f32_lossy(&self) -> [f32; 2] {

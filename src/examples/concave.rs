@@ -25,6 +25,8 @@ impl Scene<ObjectType> for ConcaveScene {
             DecomposedU::create(),
             DecomposedBigU::create(),
             DecomposedCompound::create(),
+            PixelPerfect::create(),
+            PixelPerfectConvex::create(),
         ]
     }
 }
@@ -74,6 +76,48 @@ impl SceneObject<ObjectType> for Compound {
     }
 }
 
+#[register_scene_object]
+pub struct PixelPerfect {}
+
+#[partially_derive_scene_object]
+impl SceneObject<ObjectType> for PixelPerfect {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+        let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
+        let Some(tex_raw) = resource_handler.texture.wait_get_raw(tex.id())? else {
+            panic!("missing sprite")
+        };
+        object_ctx.add_child(
+            CollisionShape::from_object(
+                self,
+                CompoundCollider::pixel_perfect(tex_raw)
+            )
+        );
+        object_ctx.transform_mut().centre = [400., 200.].into();
+        object_ctx.transform_mut().scale = [8., 8.].into();
+        Ok(None)
+    }
+}
+#[register_scene_object]
+pub struct PixelPerfectConvex {}
+
+#[partially_derive_scene_object]
+impl SceneObject<ObjectType> for PixelPerfectConvex {
+    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+        let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
+        let Some(tex_raw) = resource_handler.texture.wait_get_raw(tex.id())? else {
+            panic!("missing sprite")
+        };
+        object_ctx.add_child(
+            CollisionShape::from_object(
+                self,
+                CompoundCollider::pixel_perfect_convex(tex_raw)?
+            )
+        );
+        object_ctx.transform_mut().centre = [400., 300.].into();
+        object_ctx.transform_mut().scale = [8., 8.].into();
+        Ok(None)
+    }
+}
 #[register_scene_object]
 pub struct TrivialDecomposed {}
 

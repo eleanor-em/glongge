@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::resource::texture::TextureId;
 use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -297,6 +298,10 @@ impl Sprite {
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
         self.inner.borrow_mut().set_depth(depth);
+    }
+
+    pub fn texture_id(&self) -> TextureId {
+        self.inner.borrow().texture.id()
     }
 }
 

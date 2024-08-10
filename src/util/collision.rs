@@ -57,7 +57,12 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
                     ColliderType::Box => other.collides_with_box(self.as_any().downcast_ref()?),
                     ColliderType::OrientedBox => other.collides_with_oriented_box(self.as_any().downcast_ref()?),
                     ColliderType::Convex => other.collides_with_convex(self.as_any().downcast_ref()?),
-                    ColliderType::Compound => unreachable!(),
+                    ColliderType::Compound => {
+                        let this = self.as_any().downcast_ref::<CompoundCollider>()?;
+                        this.inner_colliders().into_iter()
+                            .filter_map(|c| other.collides_with_convex(&c))
+                            .min_by(Vec2::cmp_by_length)
+                    }
                 }.map(|v| -v)
             },
         }
@@ -631,6 +636,21 @@ impl ConvexCollider {
         check_is_some!(upper.pop());
 
         let vertices = lower.into_iter().chain(upper).collect_vec();
+        let to_remove = vertices.iter().circular_tuple_windows()
+            .filter_map(|(&u, &v, &w)| {
+                let d1 = Vec2::from(v - u);
+                let d2 = Vec2::from(w - v);
+                if d1.cross(d2).is_zero() {
+                    gg_iter::index_of(&vertices, &v)
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeSet<_>>();
+        let vertices = vertices.into_iter().enumerate()
+            .filter(|(i, _)| !to_remove.contains(i))
+            .map(|(_, v)| v)
+            .collect_vec();
         Ok(Self::from_vertices_unchecked(vertices))
     }
 }
@@ -721,11 +741,12 @@ impl Collider for ConvexCollider {
 #[derive(Debug, Clone)]
 pub struct CompoundCollider {
     inner: Vec<ConvexCollider>,
+    override_normals: Vec<Vec2>,
 }
 
 impl CompoundCollider {
     pub fn new(inner: Vec<ConvexCollider>) -> Self {
-        Self { inner }
+        Self { inner, override_normals: Vec::new() }
     }
 
     fn get_new_vertex(edges: &[(Vec2, Vec2)], prev: Vec2, origin: Vec2, next: Vec2) -> Option<Vec2> {
@@ -735,13 +756,13 @@ impl CompoundCollider {
 
         let intersections_1 = filtered_edges.iter()
             .filter_map(|(a, b)| {
-                Vec2::intersect(origin, (origin - prev).normed(), *a, (*b - *a).normed())
+                Vec2::intersect(origin, (origin - prev) * ONE_OVER_EPSILON, *a, *b - *a)
             })
             .min_by(Vec2::cmp_by_length);
 
         let intersections_2 = filtered_edges.iter()
             .filter_map(|(a, b)| {
-                Vec2::intersect(origin, (origin - next).normed(), *a, (*b - *a).normed())
+                Vec2::intersect(origin, (origin - next) * ONE_OVER_EPSILON, *a, *b - *a)
             })
             .min_by(Vec2::cmp_by_length);
 
@@ -749,7 +770,7 @@ impl CompoundCollider {
             let centre: Vec2 = (start + end) / 2;
             filtered_edges.iter()
                 .filter_map(|(a, b)| {
-                    Vec2::intersect(origin, (centre - origin).normed(), *a, (*b - *a).normed())
+                    Vec2::intersect(origin, (centre - origin) * ONE_OVER_EPSILON, *a, *b - *a)
                 })
                 .min_by(|a, b| a.cmp_by_dist(b, origin))
         } else {
@@ -757,11 +778,21 @@ impl CompoundCollider {
         }
     }
     #[must_use]
-    pub fn decompose(vertices: Vec<Vec2>) -> Self {
-        // Sanity checks:
+    pub fn decompose(mut vertices: Vec<Vec2>) -> Self {
         check_ge!(vertices.len(), 3);
+        for _i in 0..vertices.len() {
+            if let Some(rv) = Self::decompose_inner(&vertices) {
+                return rv;
+            }
+            // Try a different starting point, maybe the algorithm finds a solution now.
+            vertices.rotate_right(1);
+        }
+        panic!("failed to find a convex decomposition");
+    }
+
+    fn decompose_inner(vertices: &Vec<Vec2>) -> Option<CompoundCollider> {
         if polygon::is_convex(&vertices) {
-            return Self::new(vec![ConvexCollider::convex_hull_of(vertices).unwrap()]);
+            return Some(Self::new(vec![ConvexCollider::convex_hull_of(vertices.clone()).ok()?]));
         }
 
         let cycled_vertices = vertices.iter().cycle().take(vertices.len() + 2).copied().collect_vec();
@@ -770,10 +801,8 @@ impl CompoundCollider {
         let (prev, origin, next) = angles.into_iter()
             .find(|(prev, origin, next)| {
                 (*origin - *prev).cross(*origin - *next) > 0.
-            })
-            .expect("no reflex vertex found");
-        let new_vertex = Self::get_new_vertex(&edges, prev, origin, next)
-            .expect("could not find new vertex");
+            })?;
+        let new_vertex = Self::get_new_vertex(&edges, prev, origin, next)?;
 
         let mut left_vertices = vec![origin, new_vertex];
         let mut changed = true;
@@ -786,7 +815,7 @@ impl CompoundCollider {
                         changed = true;
                     }
                 } else if left_vertices.contains(end) && !left_vertices.contains(start) &&
-                        (*start - origin).cross(new_vertex - origin) < 0. {
+                    (*start - origin).cross(new_vertex - origin) < 0. {
                     left_vertices.insert(gg_iter::index_of(&left_vertices, end).unwrap(), *start);
                     changed = true;
                 }
@@ -808,9 +837,127 @@ impl CompoundCollider {
             }
         }
 
-        let mut rv = Self::decompose(left_vertices);
-        rv.extend(Self::decompose(right_vertices));
-        rv
+        let mut rv = Self::decompose_inner(&left_vertices)?;
+        rv.extend(Self::decompose_inner(&right_vertices)?);
+        Some(rv)
+    }
+    #[must_use]
+    pub fn pixel_perfect_convex(data: Vec<Vec<Colour>>) -> Result<ConvexCollider> {
+        let (_, _, vertices) = Self::pixel_perfect_vertices(data);
+        ConvexCollider::convex_hull_of(vertices)
+    }
+
+    #[must_use]
+    pub fn pixel_perfect(data: Vec<Vec<Colour>>) -> GenericCollider {
+        let (w, h, vertices) = Self::pixel_perfect_vertices(data);
+        let mut collider = Self::decompose(vertices);
+        collider.override_normals = vec![Vec2::up(), Vec2::right(), Vec2::down(), Vec2::left()];
+        collider.translated(-Vec2::from([(w as f64) / 2. + 0.75, (h as f64) / 2. + 0.75]))
+    }
+
+    fn pixel_perfect_vertices(data: Vec<Vec<Colour>>) -> (i32, i32, Vec<Vec2>) {
+        check_false!(data.is_empty());
+        check_false!(data[0].is_empty());
+        let w = data[0].len() as i32;
+        let h = data.len() as i32;
+
+        let (mut vertex_set, edge_set) = Self::extract_pixel_outline(data, w, h);
+        let centre = vertex_set.iter().map(Vec2i::as_vec2).sum::<Vec2>() / vertex_set.len() as u32;
+        let mut vertices = Vec::new();
+        let mut current = vertex_set.pop_first().unwrap();
+        loop {
+            vertices.push(current.into());
+            let candidates = vec![
+                current + Vec2i::right(),
+                current + Vec2i::up(),
+                current + Vec2i::left(),
+                current + Vec2i::down(),
+            ].into_iter()
+                .filter(|next| vertex_set.contains(&next))
+                .filter(|next| edge_set.contains(&UnorderedPair::new(current, *next)))
+                .collect_vec();
+            let next = candidates.iter()
+                .max_by(|a, b| {
+                    (current.as_vec2() - centre).cross(a.as_vec2() - centre).partial_cmp(
+                        &(current.as_vec2() - centre).cross(b.as_vec2() - centre)
+                    ).unwrap()
+                })
+                .copied();
+            if let Some(next) = next {
+                vertex_set.remove(&next);
+                current = next;
+            } else if vertex_set.is_empty() {
+                break;
+            } else {
+                panic!("discontinuity:{}", vertex_set.into_iter()
+                    .map(|v| format!("\n\t{v}\t{}", (current.as_vec2() - centre).cross(v.as_vec2() - centre)))
+                    .fold(String::new(), |acc, e| acc + e.as_str()));
+            }
+        }
+        (w, h, vertices)
+    }
+
+    fn extract_pixel_outline(data: Vec<Vec<Colour>>, w: i32, h: i32) -> (BTreeSet<Vec2i>, BTreeSet<UnorderedPair<Vec2i>>) {
+        let mut vertex_set = BTreeSet::new();
+        let mut edge_set = BTreeSet::new();
+        // Outermost pixels.
+        let mut to_explore = (0..w).into_iter().map(|x| Vec2i::from([x, 0]))
+            .chain((0..h).into_iter().map(|y| Vec2i::from([0, y])))
+            .chain((0..w).into_iter().map(|x| Vec2i::from([x, h - 1])))
+            .chain((0..h).into_iter().map(|y| Vec2i::from([w - 1, y])))
+            .collect_vec();
+        // Outside frame of vertices in clockwise order.
+        let mut outside_edge_set = (0..=w).into_iter().map(|x| Vec2i::from([x, 0]))
+            .chain((0..=h).into_iter().map(|y| Vec2i::from([w, y])))
+            .chain((0..=w).into_iter().rev().map(|x| Vec2i::from([x, h])))
+            .chain((0..=h).into_iter().rev().map(|y| Vec2i::from([0, y])))
+            .collect_vec().into_iter()
+            .circular_tuple_windows()
+            .map(|(a, b)| UnorderedPair::new(a, b)).collect::<BTreeSet<UnorderedPair<Vec2i>>>();
+        // Search for pixels with nonzero alpha.
+        let mut visited = BTreeSet::new();
+        while let Some(next) = to_explore.pop() {
+            if !visited.insert(next) || next.x < 0 || next.y < 0 || next.y >= h || next.x >= w {
+                continue;
+            }
+            if !data[next.y as usize][next.x as usize].a.is_zero() {
+                vertex_set.insert(next);
+                edge_set.insert(UnorderedPair::new(next, next + Vec2i::right()));
+                edge_set.insert(UnorderedPair::new(next + Vec2i::right(), next + Vec2i::one()));
+                edge_set.insert(UnorderedPair::new(next + Vec2i::one(), next + Vec2i::down()));
+                edge_set.insert(UnorderedPair::new(next + Vec2i::down(), next));
+            } else {
+                outside_edge_set.insert(UnorderedPair::new(next, next + Vec2i::right()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::right(), next + Vec2i::one()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::one(), next + Vec2i::down()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::down(), next));
+            }
+            to_explore.extend([next + Vec2i::left(), next + Vec2i::right(), next + Vec2i::up(), next + Vec2i::down()]);
+        }
+        // Turn pixels into squares of vertices.
+        let to_add = vertex_set.iter().copied()
+            .flat_map(|vertex| {
+                vec![vertex + Vec2i::right(), vertex + Vec2i::one(), vertex + Vec2i::down()]
+            })
+            .collect::<BTreeSet<_>>();
+        vertex_set.extend(to_add);
+        // Remove vertices that are totally internal.
+        let to_remove = vertex_set.iter().copied().filter(|&vertex| {
+            edge_set.contains(&UnorderedPair::new(vertex + Vec2i::one(), vertex + Vec2i::down())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::down(), vertex + Vec2i::down() + Vec2i::left())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::down() + Vec2i::left(), vertex + Vec2i::left())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::left(), vertex + Vec2i::left() + Vec2i::up())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::left() + Vec2i::up(), vertex + Vec2i::up())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::up(), vertex + Vec2i::up() + Vec2i::right())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::up() + Vec2i::right(), vertex + Vec2i::right())) &&
+                edge_set.contains(&UnorderedPair::new(vertex + Vec2i::right(), vertex + Vec2i::one()))
+        }).collect_vec();
+        for vertex in to_remove {
+            vertex_set.remove(&vertex);
+        }
+        // Keep only external edges.
+        let edge_set = edge_set.intersection(&outside_edge_set).copied().collect::<BTreeSet<_>>();
+        (vertex_set, edge_set)
     }
 
     pub fn len(&self) -> usize { self.inner.len() }
@@ -826,6 +973,10 @@ impl CompoundCollider {
     }
 
     fn get_unique_normals(&self) -> Vec<Vec2> {
+        if !self.override_normals.is_empty() {
+            return self.override_normals.clone();
+        }
+
         let mut normals = BTreeMap::<Vec2, BTreeMap<UnorderedPair<Vec2>, i32>>::new();
         for (normal, edge) in self.inner.iter()
             .flat_map(|c| {
@@ -847,6 +998,17 @@ impl CompoundCollider {
         normals.iter()
             .filter(|(_, edges)| edges.values().all(|i| *i > 0))
             .map(|(normal, _)| *normal)
+            .collect()
+    }
+
+    fn inner_colliders(&self) -> Vec<ConvexCollider> {
+        let normals = self.get_unique_normals();
+        self.inner.iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c.normals_cached.clone_from(&normals);
+                c
+            })
             .collect()
     }
 }
@@ -890,45 +1052,20 @@ impl Collider for CompoundCollider {
     }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        let normals = self.get_unique_normals();
-        self.inner.iter()
-            .filter_map(|c| {
-                let mut c = c.clone();
-                c.normals_cached.clone_from(&normals);
-                c.collides_with_box(other)
-            })
+        self.inner_colliders().into_iter()
+            .filter_map(|c| c.collides_with_box(other))
             .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
-        let normals = self.get_unique_normals();
-        self.inner.iter()
-            .filter_map(|c| {
-                let mut c = c.clone();
-                c.normals_cached.clone_from(&normals);
-                c.collides_with_oriented_box(other)
-            })
+        self.inner_colliders().into_iter()
+            .filter_map(|c| c.collides_with_oriented_box(other))
             .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        let normals = self.get_unique_normals();
-        self.inner.iter()
-            .filter_map(|c| {
-                let mut c = c.clone();
-                c.normals_cached.clone_from(&normals);
-                c.collides_with_convex(other)
-            })
-            .min_by(Vec2::cmp_by_length)
-    }
-
-    fn collides_with(&self, other: &GenericCollider) -> Option<Vec2> {
-        let normals = self.get_unique_normals();
-        self.inner.iter().filter_map(|c| {
-            let mut c = c.clone();
-            c.normals_cached.clone_from(&normals);
-            c.collides_with(other)
-        })
+        self.inner_colliders().into_iter()
+            .filter_map(|c| c.collides_with_convex(other))
             .min_by(Vec2::cmp_by_length)
     }
 
@@ -943,7 +1080,10 @@ impl Collider for CompoundCollider {
         let new_inner = self.inner.clone().into_iter()
             .map(|c| if let GenericCollider::Convex(c) = c.translated(by) { c } else { unreachable!() })
             .collect_vec();
-        Self::new(new_inner).into_generic()
+        Self {
+            inner: new_inner,
+            override_normals: self.override_normals.clone()
+        }.into_generic()
     }
 
     fn scaled(&self, by: Vec2) -> GenericCollider {
@@ -958,11 +1098,14 @@ impl Collider for CompoundCollider {
                 c
             })
             .collect_vec();
-        Self::new(new_inner).into_generic()
+        Self {
+            inner: new_inner,
+            override_normals: self.override_normals.clone()
+        }.into_generic()
     }
 
     fn rotated(&self, _by: f64) -> GenericCollider {
-        warn!("not yet implemented: CompoundCollider::rotated()");
+        // TODO: implement
         self.as_generic()
     }
 

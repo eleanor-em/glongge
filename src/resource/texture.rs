@@ -41,7 +41,7 @@ use crate::core::{
     vk::VulkanoContext,
 };
 
-type TextureId = u16;
+pub type TextureId = u16;
 
 #[derive(Debug)]
 pub struct Texture {
@@ -51,7 +51,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub(crate) fn id(&self) -> TextureId { self.id }
+    pub fn id(&self) -> TextureId { self.id }
 }
 
 impl AxisAlignedExtent for Texture {
@@ -280,7 +280,8 @@ impl TextureHandler {
     }
 
     // TODO: implement spawn_load_file().
-    pub fn wait_load_file(&self, filename: String) -> Result<Texture> {
+    pub fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Texture> {
+        let filename = filename.as_ref().to_string();
         // Beware: do not lock `inner` longer than necessary.
         if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
             return Ok(texture.clone());
@@ -446,6 +447,26 @@ impl TextureHandler {
         } else {
             self.get(texture_id)
         }
+    }
+    pub fn wait_get_raw(&self, texture_id: TextureId) -> Result<Option<Vec<Vec<Colour>>>> {
+        let Some(tex) = self.inner.lock().unwrap().textures.get(&texture_id).cloned() else {
+            return Ok(None);
+        };
+        let w = tex.info.extent[0] as usize;
+        let h = tex.info.extent[1] as usize;
+        let mut rv = vec![vec![Colour::empty(); w]; h];
+        let mut x = 0;
+        let mut y = 0;
+        for bytes in tex.buf.read()?.chunks(4) {
+            let col = Colour::from_bytes(bytes[0], bytes[1], bytes[2], bytes[3]);
+            rv[y][x] = col;
+            x += 1;
+            if x == w {
+                x = 0;
+                y += 1;
+            }
+        }
+        Ok(Some(rv))
     }
 }
 
