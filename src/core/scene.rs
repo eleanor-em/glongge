@@ -249,7 +249,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
 pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     #[allow(unused_variables)]
     fn on_render(&mut self, render_ctx: &mut RenderContext) {}
-    fn render_info(&self) -> RenderInfo;
+    fn render_info(&self) -> Vec<RenderInfo>;
 }
 
 pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;

@@ -155,10 +155,10 @@ impl SceneObject<ObjectType> for SpinningTriangle {
 }
 
 impl RenderableObject<ObjectType> for SpinningTriangle {
-    fn render_info(&self) -> RenderInfo {
-        RenderInfo {
+    fn render_info(&self) -> Vec<RenderInfo> {
+        vec![RenderInfo {
             col: Colour::red().into(),
             ..Default::default()
-        }
+        }]
     }
 }

@@ -1225,13 +1225,17 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         }
         self.last_show_wireframe = self.show_wireframe;
     }
-    fn render_info(&self) -> RenderInfo {
+    fn render_info(&self) -> Vec<RenderInfo> {
         check!(self.show_wireframe);
-        RenderInfo {
+        vec![RenderInfo {
+            col: Colour::cyan().with_alpha(0.2).into(),
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        }, RenderInfo {
             col: Colour::green().into(),
             shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
-        }
+        }]
     }
 }
 
@@ -1249,4 +1253,4 @@ pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::{VertexDepth, VertexWithUV};
 use crate::core::update::RenderContext;
 use crate::util::canvas::Canvas;
-use crate::shader::{get_shader, Shader, WireframeShader};
+use crate::shader::{BasicShader, get_shader, Shader, WireframeShader};

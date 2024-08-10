@@ -332,30 +332,31 @@ impl Shader for SpriteShader {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
                 let vertex = render_frame.vertices[vertex_index as usize];
-
-                let mut blend_col = render_info.inner.col;
-                let mut uv = vertex.uv;
-                if let Some(tex) = self.resource_handler.texture.get_nonblank(render_info.inner.texture_id) {
-                    if let Some(tex) = tex.ready() {
-                        uv = render_info.inner.texture_sub_area.uv(&tex, uv.into()).into();
+                for ri in &render_info.inner {
+                    let mut blend_col = ri.col;
+                    let mut uv = vertex.uv;
+                    if let Some(tex) = self.resource_handler.texture.get_nonblank(ri.texture_id) {
+                        if let Some(tex) = tex.ready() {
+                            uv = ri.texture_sub_area.uv(&tex, uv.into()).into();
+                        } else {
+                            warn!("texture not ready: {}", ri.texture_id);
+                            blend_col = Colour::empty().into();
+                        }
                     } else {
-                        warn!("texture not ready: {}", render_info.inner.texture_id);
-                        blend_col = Colour::empty().into();
+                        error!("missing texture: {}", ri.texture_id);
+                        blend_col = Colour::magenta().into();
                     }
-                } else {
-                    error!("missing texture: {}", render_info.inner.texture_id);
-                    blend_col = Colour::magenta().into();
-                }
 
-                vertices.push(sprite::Vertex {
-                    position: vertex.xy,
-                    uv,
-                    texture_id: render_info.inner.texture_id,
-                    translation: render_info.transform.centre,
-                    rotation: render_info.transform.rotation,
-                    scale: render_info.transform.scale,
-                    blend_col,
-                });
+                    vertices.push(sprite::Vertex {
+                        position: vertex.xy,
+                        uv,
+                        texture_id: ri.texture_id,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col,
+                    });
+                }
             }
         }
         self.vertex_buffer.write(&vertices)?;
@@ -493,13 +494,15 @@ impl Shader for WireframeShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
-                vertices.push(basic::Vertex {
-                    position: render_frame.vertices[vertex_index as usize].xy,
-                    translation: render_info.transform.centre,
-                    rotation: render_info.transform.rotation,
-                    scale: render_info.transform.scale,
-                    blend_col: render_info.inner.col,
-                });
+                for ri in &render_info.inner {
+                    vertices.push(basic::Vertex {
+                        position: render_frame.vertices[vertex_index as usize].xy,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col: ri.col,
+                    });
+                }
             }
         }
         self.vertex_buffer.write(&vertices)?;
@@ -628,13 +631,15 @@ impl Shader for BasicShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
-                vertices.push(basic::Vertex {
-                    position: render_frame.vertices[vertex_index as usize].xy,
-                    translation: render_info.transform.centre,
-                    rotation: render_info.transform.rotation,
-                    scale: render_info.transform.scale,
-                    blend_col: render_info.inner.col,
-                });
+                for ri in &render_info.inner {
+                    vertices.push(basic::Vertex {
+                        position: render_frame.vertices[vertex_index as usize].xy,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col: ri.col,
+                    });
+                }
             }
         }
         self.vertex_buffer.write(&vertices)?;

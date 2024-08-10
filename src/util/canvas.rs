@@ -73,8 +73,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvasIte
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanvasItem {
-    fn render_info(&self) -> RenderInfo {
-        self.render_info.clone()
+    fn render_info(&self) -> Vec<RenderInfo> {
+        vec![self.render_info.clone()]
     }
 }
 

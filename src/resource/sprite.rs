@@ -172,14 +172,14 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
         }
         self.last_state = self.state;
     }
-    fn render_info(&self) -> RenderInfo {
+    fn render_info(&self) -> Vec<RenderInfo> {
         check_eq!(self.state, SpriteState::Show);
-        RenderInfo {
+        vec![RenderInfo {
             shader_id: get_shader(SpriteShader::name()),
             texture_id: self.texture.id(),
             texture_sub_area: self.current_frame(),
             ..Default::default()
-        }
+        }]
     }
 }
 

@@ -282,7 +282,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                         item.object_id, gg_err::log_unwrap_or("unknown", self.get_object_type_string(item.object_id)));
                 continue;
             };
-            Self::maybe_replace_invalid_shader_id(&mut render_info);
+            for render_info in &mut render_info {
+                Self::maybe_replace_invalid_shader_id(render_info);
+            }
             let transform = if let Some(t) = self.absolute_transforms.get(&item.object_id) {
                 t.translated(-viewport.translation)
             } else {

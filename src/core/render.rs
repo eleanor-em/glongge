@@ -58,7 +58,7 @@ impl Default for RenderInfo {
 
 #[derive(Clone, Debug)]
 pub struct RenderInfoFull {
-    pub inner: RenderInfo,
+    pub inner: Vec<RenderInfo>,
     pub transform: TransformF32,
     pub vertex_indices: Range<u32>,
     pub depth: VertexDepth,
@@ -114,9 +114,11 @@ pub struct RenderFrame {
 
 impl RenderFrame {
     fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame {
-        let render_infos = self.render_infos.iter()
-            .filter(move |ri| ri.inner.shader_id == id)
-            .cloned()
+        let render_infos = self.render_infos.clone().into_iter()
+            .map(move |mut ri| {
+                ri.inner = ri.inner.into_iter().filter(|ri| ri.shader_id == id).collect_vec();
+                ri
+            })
             .collect_vec();
         ShaderRenderFrame {
             vertices: &self.vertices,

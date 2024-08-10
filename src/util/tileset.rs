@@ -305,12 +305,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalTileset {
-    fn render_info(&self) -> RenderInfo {
-        RenderInfo {
+    fn render_info(&self) -> Vec<RenderInfo> {
+        vec![RenderInfo {
             shader_id: get_shader(SpriteShader::name()),
             texture_id: self.texture.id(),
             ..Default::default()
-        }
+        }]
     }
 }
 
