@@ -5,10 +5,12 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
+use std::time::Instant;
 use egui::{Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, TextStyle, Ui};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use itertools::Itertools;
+use num_traits::Zero;
 use tracing::warn;
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::core::input::InputHandler;
@@ -17,7 +19,7 @@ use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::util::{gg_err, gg_iter, NonemptyVec};
-use crate::core::vk::RenderPerfStats;
+use crate::core::vk::{AdjustedViewport, RenderPerfStats};
 use crate::gui::{GuiUi, TransformCell};
 
 #[derive(Clone, Eq, PartialEq)]
@@ -379,12 +381,10 @@ impl GuiObjectTree {
                 self.select_next_sibling(object_handler);
             }
         }
-        if input_handler.pressed(KeyCode::KeyS) &&
-            !(input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
+        if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyS) {
             self.select_next_sibling(object_handler);
         }
-        if input_handler.pressed(KeyCode::KeyP) &&
-            !(input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
+        if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
             if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id)) {
                 self.selected_tx.send(parent.object_id).unwrap();
             }
@@ -747,13 +747,11 @@ impl GuiSceneControl {
 
 
     fn on_input(&mut self, input_handler: &InputHandler) {
-        if input_handler.pressed(KeyCode::KeyP) &&
-            (input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
+        if input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
             self.cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
         }
-        if input_handler.pressed(KeyCode::KeyS) &&
-            (input_handler.down(KeyCode::SuperLeft) || input_handler.down(KeyCode::SuperRight)) {
-            if input_handler.down(KeyCode::ShiftLeft) || input_handler.down(KeyCode::ShiftLeft) {
+        if input_handler.mod_super() && input_handler.pressed(KeyCode::KeyS) {
+            if input_handler.mod_shift() {
                 self.cmd_tx.send(SceneControlCommand::BigStep).unwrap();
             } else {
                 self.cmd_tx.send(SceneControlCommand::Step).unwrap();
@@ -820,9 +818,11 @@ pub(crate) struct DebugGui {
     object_view: GuiObjectView,
     pub(crate) console_log: GuiConsoleLog,
     pub(crate) scene_control: GuiSceneControl,
+    last_viewport: AdjustedViewport,
     frame: Frame,
 
     wireframe_mouseovers: Vec<ObjectId>,
+    last_update: Instant,
 }
 
 impl DebugGui {
@@ -833,10 +833,12 @@ impl DebugGui {
             object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
             scene_control: GuiSceneControl::new(),
+            last_viewport: AdjustedViewport::default(),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
                 .inner_margin(egui::Margin::same(6.)),
             wireframe_mouseovers: Vec::new(),
+            last_update: Instant::now(),
         })
     }
 
@@ -869,11 +871,29 @@ impl DebugGui {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &mut ObjectHandler<O>,
+        viewport: &mut AdjustedViewport,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
         if self.enabled {
             self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
             self.scene_control.on_input(input_handler);
+            if input_handler.mod_super() {
+                let mut direction = Vec2::zero();
+                if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
+                if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
+                if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
+                if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
+                direction *= self.last_update.elapsed().as_micros() as f64 / 1_000_000. * 128.;
+                let dx = if input_handler.mod_shift() {
+                    direction * 5.
+                } else {
+                    direction
+                };
+                self.last_viewport.translation += dx;
+                *viewport = self.last_viewport.clone();
+            }
+        } else {
+            self.last_viewport = viewport.clone();
         }
         if !self.object_tree.selected_id.is_root() {
             if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
@@ -890,6 +910,7 @@ impl DebugGui {
         );
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
         let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
+        self.last_update = Instant::now();
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);
@@ -898,6 +919,32 @@ impl DebugGui {
             }
             build_scene_control(ctx);
         })
+    }
+
+    pub fn on_end_step(
+        &mut self,
+        input_handler: &InputHandler,
+        viewport: &mut AdjustedViewport
+    ) {
+        if self.enabled {
+            if input_handler.mod_super() {
+                let mut direction = Vec2::zero();
+                if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
+                if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
+                if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
+                if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
+                direction *= self.last_update.elapsed().as_micros() as f64 / 1_000_000. * 128.;
+                let dx = if input_handler.mod_shift() {
+                    direction * 5.
+                } else {
+                    direction
+                };
+                self.last_viewport.translation += dx;
+            }
+            *viewport = self.last_viewport.clone();
+        } else {
+            self.last_viewport = viewport.clone();
+        }
     }
     
     pub fn toggle<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {

@@ -33,8 +33,8 @@ fn main() -> Result<()> {
         scene_handler.create_scene(MarioUndergroundScene);
         // let name = TriangleScene.name();
         // let name = RectangleScene.name();
-        let name = ConcaveScene.name();
-        // let name = MarioOverworldScene.name();
+        // let name = ConcaveScene.name();
+        let name = MarioOverworldScene.name();
         // let name = MarioUndergroundScene.name();
         scene_handler.consume_with_scene(name, 0);
     });

@@ -22,6 +22,10 @@ pub struct InputHandler {
     queued_events: Vec<(KeyCode, ElementState)>,
     mouse_pos: Vec2,
     viewport: AdjustedViewport,
+    mod_shift: bool,
+    mod_alt: bool,
+    mod_ctrl: bool,
+    mod_super: bool,
 }
 
 impl InputHandler {
@@ -31,6 +35,10 @@ impl InputHandler {
             queued_events: Vec::new(),
             mouse_pos: Vec2::zero(),
             viewport: AdjustedViewport::default(),
+            mod_shift: false,
+            mod_alt: false,
+            mod_ctrl: false,
+            mod_super: false,
         }))
     }
 
@@ -53,11 +61,28 @@ impl InputHandler {
         self.released(key) || self.stayed_up(key)
     }
 
+    pub fn mod_shift(&self) -> bool { self.mod_shift }
+    pub fn mod_alt(&self) -> bool { self.mod_alt }
+    pub fn mod_ctrl(&self) -> bool { self.mod_ctrl }
+    pub fn mod_super(&self) -> bool { self.mod_super }
+
     pub(crate) fn set_mouse_pos(&mut self, pos: Vec2) { self.mouse_pos = pos; }
     pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) { self.viewport = viewport; }
     pub fn screen_mouse_pos(&self) -> Vec2 { self.mouse_pos / self.viewport.gui_scale_factor() }
 
     pub(crate) fn queue_event(&mut self, key: KeyCode, state: ElementState) {
+        if key == KeyCode::ShiftLeft || key == KeyCode::ShiftRight {
+            self.mod_shift = state == ElementState::Pressed;
+        }
+        if key == KeyCode::AltLeft || key == KeyCode::AltRight {
+            self.mod_alt = state == ElementState::Pressed;
+        }
+        if key == KeyCode::ControlLeft || key == KeyCode::ControlRight {
+            self.mod_ctrl = state == ElementState::Pressed;
+        }
+        if key == KeyCode::SuperLeft || key == KeyCode::SuperRight {
+            self.mod_super = state == ElementState::Pressed;
+        }
         self.queued_events.push((key, state));
     }
 

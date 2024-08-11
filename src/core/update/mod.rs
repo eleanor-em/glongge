@@ -414,6 +414,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 self.perf_stats.add_objects.start();
                 self.update_with_added_objects(&input_handler, pending_add_objects)?;
                 self.perf_stats.add_objects.stop();
+                self.debug_gui.on_end_step(&input_handler, &mut self.viewport);
                 self.update_and_send_render_infos();
                 self.input_handler.lock().unwrap().update_step();
 
@@ -660,7 +661,11 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     }
                 })
                 .collect();
-            self.gui_cmd = Some(self.debug_gui.build(input_handler, &mut self.object_handler, gui_cmds));
+            self.gui_cmd = Some(self.debug_gui.build(
+                input_handler,
+                &mut self.object_handler,
+                &mut self.viewport,
+                gui_cmds));
         }
     }
 
