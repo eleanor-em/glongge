@@ -256,7 +256,6 @@ pub struct VulkanoContext {
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
-        khr_fragment_shader_barycentric: true,
         ..DeviceExtensions::empty()
     }
 }
