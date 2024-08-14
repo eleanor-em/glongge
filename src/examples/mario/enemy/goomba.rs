@@ -43,7 +43,7 @@ impl Stompable for Goomba {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Goomba {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png")?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture.clone(),

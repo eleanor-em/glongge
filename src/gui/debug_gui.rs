@@ -18,7 +18,7 @@ use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
-use crate::util::{gg_err, gg_iter, NonemptyVec};
+use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
 use crate::gui::{GuiUi, TransformCell};
 
@@ -871,29 +871,15 @@ impl DebugGui {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &mut ObjectHandler<O>,
-        viewport: &mut AdjustedViewport,
         gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
     ) -> Box<GuiClosure> {
         if self.enabled {
+            if input_handler.pressed(KeyCode::Escape) {
+                self.object_tree.selected_id = ObjectId::root();
+                gg_err::log_err(self.object_view.update_selection(object_handler, ObjectId::root()));
+            }
             self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
             self.scene_control.on_input(input_handler);
-            if input_handler.mod_super() {
-                let mut direction = Vec2::zero();
-                if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
-                if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
-                if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
-                if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
-                direction *= self.last_update.elapsed().as_micros() as f64 / 1_000_000. * 128.;
-                let dx = if input_handler.mod_shift() {
-                    direction * 5.
-                } else {
-                    direction
-                };
-                self.last_viewport.translation += dx;
-                *viewport = self.last_viewport.clone();
-            }
-        } else {
-            self.last_viewport = viewport.clone();
         }
         if !self.object_tree.selected_id.is_root() {
             if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
@@ -933,7 +919,7 @@ impl DebugGui {
                 if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
                 if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
                 if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
-                direction *= self.last_update.elapsed().as_micros() as f64 / 1_000_000. * 128.;
+                direction *= gg_float::micros(self.last_update.elapsed()) * 128.;
                 let dx = if input_handler.mod_shift() {
                     direction * 5.
                 } else {
@@ -947,12 +933,13 @@ impl DebugGui {
         }
     }
     
-    pub fn toggle<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
-        self.enabled = !self.enabled;
-        if !self.enabled {
-            self.object_tree.selected_id = ObjectId::root();
-            gg_err::log_err(self.object_view.update_selection(object_handler, ObjectId::root()));
+    pub fn toggle(&mut self) { self.enabled = !self.enabled; }
+    pub fn enabled(&self) -> bool { self.enabled }
+    pub fn selected_object(&self) -> Option<ObjectId> {
+        if self.object_tree.selected_id.is_root() {
+            None
+        } else {
+            Some(self.object_tree.selected_id)
         }
     }
-    pub fn enabled(&self) -> bool { self.enabled }
 }

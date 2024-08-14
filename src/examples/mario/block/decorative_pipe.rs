@@ -24,7 +24,7 @@ impl DecorativePipe {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for DecorativePipe {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             texture,

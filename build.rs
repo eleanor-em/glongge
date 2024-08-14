@@ -8,8 +8,6 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let sep = std::path::MAIN_SEPARATOR;
-    let mut imports = Vec::new();
-    let mut decls = Vec::new();
     let builtin_imports = vec![
         "use glongge::resource::sprite::GgInternalSprite;".to_string(),
         "use glongge::util::collision::GgInternalCollisionShape;".to_string(),
@@ -19,6 +17,7 @@ fn main() -> Result<()> {
         "use glongge::core::builtin::GgInternalStaticSprite;".to_string(),
         "use glongge::core::builtin::GgInternalCollidingSprite;".to_string(),
         "use glongge::util::tileset::GgInternalTileset;".to_string(),
+        "use glongge::util::spline::GgInternalInteractiveSpline;".to_string(),
     ];
     let builtins = vec![
         "GgInternalSprite,".to_string(),
@@ -29,7 +28,44 @@ fn main() -> Result<()> {
         "GgInternalStaticSprite,".to_string(),
         "GgInternalCollidingSprite,".to_string(),
         "GgInternalTileset,".to_string(),
+        "GgInternalInteractiveSpline,".to_string(),
     ];
+
+    let (mut imports, mut decls) = build_imports_and_decls(sep)?;
+    let out_dir = env::var_os("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("object_type.rs");
+    let mut writer = LineWriter::new(File::create(dest_path)?);
+    writer.write_all("pub mod object_type {\n".as_bytes())?;
+    writer.write_all("use glongge_derive::register_object_type;\n".as_bytes())?;
+    for builtin_import in builtin_imports {
+        if !imports.contains(&builtin_import) {
+            imports.push(builtin_import);
+        }
+    }
+    for import in imports.into_iter().map(|line| format!("{line}\n")) {
+        writer.write_all(import.as_bytes())?;
+    }
+    writer.write_all("\n".as_bytes())?;
+    writer.write_all("#[register_object_type]\n".as_bytes())?;
+    writer.write_all("pub enum ObjectType {\n".as_bytes())?;
+    for builtin in builtins {
+        if !decls.contains(&builtin) {
+            decls.push(builtin);
+        }
+    }
+    for decl in decls.into_iter().map(|line| format!("{line}\n")) {
+        writer.write_all(decl.as_bytes())?;
+    }
+    writer.write_all("}\n".as_bytes())?;
+    writer.write_all("}\n".as_bytes())?;
+    println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=src{sep}");
+    Ok(())
+}
+
+fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
+    let mut imports = Vec::new();
+    let mut decls = Vec::new();
     let current_dir = env::current_dir()?;
     for entry in WalkDir::new(current_dir.clone()) {
         let entry = entry?;
@@ -90,34 +126,5 @@ fn main() -> Result<()> {
             }
         }
     }
-
-    let out_dir = env::var_os("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("object_type.rs");
-    let mut writer = LineWriter::new(File::create(dest_path)?);
-    writer.write_all("pub mod object_type {\n".as_bytes())?;
-    writer.write_all("use glongge_derive::register_object_type;\n".as_bytes())?;
-    for builtin_import in builtin_imports {
-        if !imports.contains(&builtin_import) {
-            imports.push(builtin_import);
-        }
-    }
-    for import in imports.into_iter().map(|line| format!("{line}\n")) {
-        writer.write_all(import.as_bytes())?;
-    }
-    writer.write_all("\n".as_bytes())?;
-    writer.write_all("#[register_object_type]\n".as_bytes())?;
-    writer.write_all("pub enum ObjectType {\n".as_bytes())?;
-    for builtin in builtins {
-        if !decls.contains(&builtin) {
-            decls.push(builtin);
-        }
-    }
-    for decl in decls.into_iter().map(|line| format!("{line}\n")) {
-        writer.write_all(decl.as_bytes())?;
-    }
-    writer.write_all("}\n".as_bytes())?;
-    writer.write_all("}\n".as_bytes())?;
-    println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=src{sep}");
-    Ok(())
+    Ok((imports, decls))
 }

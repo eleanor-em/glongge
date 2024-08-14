@@ -253,20 +253,16 @@ impl Ord for Vec2 {
                     self.y.total_cmp(&other.y)
                 });
         }
-        match self.x.partial_cmp(&other.x) {
-            Some(o) => o,
-            None => {
-                warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
-                match self.x.total_cmp(&other.x) {
-                    Ordering::Equal => match self.y.partial_cmp(&other.y) {
-                        Some(o) => o,
-                        None => {
-                            warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
-                            self.y.total_cmp(&other.y)
-                        }
-                    }
-                    o => o
+        if let Some(o) = self.x.partial_cmp(&other.x) { o } else {
+            warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
+            match self.x.total_cmp(&other.x) {
+                Ordering::Equal => if let Some(o) = self.y.partial_cmp(&other.y) {
+                    o
+                } else {
+                    warn!("Vec2: partial_cmp() failed for x: {} vs. {}", self, other);
+                    self.y.total_cmp(&other.y)
                 }
+                o => o
             }
         }
     }
@@ -318,6 +314,13 @@ impl Vec2 {
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
     pub fn dist(&self, other: Vec2) -> f64 { (other - *self).len() }
     pub fn dist_squared(&self, other: Vec2) -> f64 { (other - *self).len_squared() }
+    pub fn dist_to_line(&self, start: Vec2, end: Vec2) -> f64 {
+        let dx = end - start;
+        let l2 = dx.len_squared();
+        if l2.is_zero() { return self.dist(start); }
+        let t = ((*self - start).dot(dx) / l2).clamp(0., 1.);
+        self.dist(start + t * dx)
+    }
     pub fn intersect(p1: Vec2, ax1: Vec2, p2: Vec2, ax2: Vec2) -> Option<Vec2> {
         let denom = ax1.cross(ax2);
         if denom.is_zero() {
@@ -325,7 +328,8 @@ impl Vec2 {
         } else {
             let t = (p2 - p1).cross(ax2) / denom;
             let u = (p2 - p1).cross(ax1) / denom;
-            if t >= 0. && t <= 1. && u >= 0. && u <= 1. {
+            if (0. ..=1.).contains(&t) &&
+                (0. ..=1.).contains(&u) {
                 Some(p1 + t * ax1)
             } else {
                 None
@@ -333,6 +337,12 @@ impl Vec2 {
         }
     }
     pub fn orthog(&self) -> Vec2 { Vec2 { x: self.y, y: -self.x } }
+    pub fn lerp(&self, to: Vec2, t: f64) -> Vec2 {
+        Vec2 {
+            x: linalg::lerp(self.x, to.x, t),
+            y: linalg::lerp(self.y, to.y, t),
+        }
+    }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
         (*self - rhs).len() < f64::from(f32::epsilon())

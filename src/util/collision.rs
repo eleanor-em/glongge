@@ -638,9 +638,7 @@ impl ConvexCollider {
         let vertices = lower.into_iter().chain(upper).collect_vec();
         let to_remove = vertices.iter().circular_tuple_windows()
             .filter_map(|(&u, &v, &w)| {
-                let d1 = Vec2::from(v - u);
-                let d2 = Vec2::from(w - v);
-                if d1.cross(d2).is_zero() {
+                if (v - u).cross(w - v).is_zero() {
                     gg_iter::index_of(&vertices, &v)
                 } else {
                     None
@@ -790,9 +788,9 @@ impl CompoundCollider {
         panic!("failed to find a convex decomposition");
     }
 
-    fn decompose_inner(vertices: &Vec<Vec2>) -> Option<CompoundCollider> {
-        if polygon::is_convex(&vertices) {
-            return Some(Self::new(vec![ConvexCollider::convex_hull_of(vertices.clone()).ok()?]));
+    fn decompose_inner(vertices: &[Vec2]) -> Option<CompoundCollider> {
+        if polygon::is_convex(vertices) {
+            return Some(Self::new(vec![ConvexCollider::convex_hull_of(vertices.to_vec()).ok()?]));
         }
 
         let cycled_vertices = vertices.iter().cycle().take(vertices.len() + 2).copied().collect_vec();
@@ -841,25 +839,24 @@ impl CompoundCollider {
         rv.extend(Self::decompose_inner(&right_vertices)?);
         Some(rv)
     }
-    #[must_use]
-    pub fn pixel_perfect_convex(data: Vec<Vec<Colour>>) -> Result<ConvexCollider> {
-        let (_, _, vertices) = Self::pixel_perfect_vertices(data);
+
+    pub fn pixel_perfect_convex(data: &[Vec<Colour>]) -> Result<ConvexCollider> {
+        let (_, _, vertices) = Self::pixel_perfect_vertices(data)?;
         ConvexCollider::convex_hull_of(vertices)
     }
 
-    #[must_use]
-    pub fn pixel_perfect(data: Vec<Vec<Colour>>) -> GenericCollider {
-        let (w, h, vertices) = Self::pixel_perfect_vertices(data);
+    pub fn pixel_perfect(data: &[Vec<Colour>]) -> Result<GenericCollider> {
+        let (w, h, vertices) = Self::pixel_perfect_vertices(data)?;
         let mut collider = Self::decompose(vertices);
         collider.override_normals = vec![Vec2::up(), Vec2::right(), Vec2::down(), Vec2::left()];
-        collider.translated(-Vec2::from([(w as f64) / 2. + 0.75, (h as f64) / 2. + 0.75]))
+        Ok(collider.translated(-Vec2::from([f64::from(w) / 2. + 0.75, f64::from(h) / 2. + 0.75])))
     }
 
-    fn pixel_perfect_vertices(data: Vec<Vec<Colour>>) -> (i32, i32, Vec<Vec2>) {
+    fn pixel_perfect_vertices(data: &[Vec<Colour>]) -> Result<(i32, i32, Vec<Vec2>)> {
         check_false!(data.is_empty());
         check_false!(data[0].is_empty());
-        let w = data[0].len() as i32;
-        let h = data.len() as i32;
+        let w = i32::try_from(data[0].len())?;
+        let h = i32::try_from(data.len())?;
 
         let (mut vertex_set, edge_set) = Self::extract_pixel_outline(data, w, h);
         let centre = vertex_set.iter().map(Vec2i::as_vec2).sum::<Vec2>() / vertex_set.len() as u32;
@@ -873,7 +870,7 @@ impl CompoundCollider {
                 current + Vec2i::left(),
                 current + Vec2i::down(),
             ].into_iter()
-                .filter(|next| vertex_set.contains(&next))
+                .filter(|next| vertex_set.contains(next))
                 .filter(|next| edge_set.contains(&UnorderedPair::new(current, *next)))
                 .collect_vec();
             let next = candidates.iter()
@@ -894,43 +891,46 @@ impl CompoundCollider {
                     .fold(String::new(), |acc, e| acc + e.as_str()));
             }
         }
-        (w, h, vertices)
+        Ok((w, h, vertices))
     }
 
-    fn extract_pixel_outline(data: Vec<Vec<Colour>>, w: i32, h: i32) -> (BTreeSet<Vec2i>, BTreeSet<UnorderedPair<Vec2i>>) {
+    fn extract_pixel_outline(data: &[Vec<Colour>], w: i32, h: i32) -> (BTreeSet<Vec2i>, BTreeSet<UnorderedPair<Vec2i>>) {
         let mut vertex_set = BTreeSet::new();
         let mut edge_set = BTreeSet::new();
         // Outermost pixels.
-        let mut to_explore = (0..w).into_iter().map(|x| Vec2i::from([x, 0]))
-            .chain((0..h).into_iter().map(|y| Vec2i::from([0, y])))
-            .chain((0..w).into_iter().map(|x| Vec2i::from([x, h - 1])))
-            .chain((0..h).into_iter().map(|y| Vec2i::from([w - 1, y])))
+        let mut to_explore = (0..w).map(|x| Vec2i::from([x, 0]))
+            .chain((0..h).map(|y| Vec2i::from([0, y])))
+            .chain((0..w).map(|x| Vec2i::from([x, h - 1])))
+            .chain((0..h).map(|y| Vec2i::from([w - 1, y])))
             .collect_vec();
         // Outside frame of vertices in clockwise order.
-        let mut outside_edge_set = (0..=w).into_iter().map(|x| Vec2i::from([x, 0]))
-            .chain((0..=h).into_iter().map(|y| Vec2i::from([w, y])))
-            .chain((0..=w).into_iter().rev().map(|x| Vec2i::from([x, h])))
-            .chain((0..=h).into_iter().rev().map(|y| Vec2i::from([0, y])))
+        let mut outside_edge_set = (0..=w).map(|x| Vec2i::from([x, 0]))
+            .chain((0..=h).map(|y| Vec2i::from([w, y])))
+            .chain((0..=w).rev().map(|x| Vec2i::from([x, h])))
+            .chain((0..=h).rev().map(|y| Vec2i::from([0, y])))
             .collect_vec().into_iter()
             .circular_tuple_windows()
             .map(|(a, b)| UnorderedPair::new(a, b)).collect::<BTreeSet<UnorderedPair<Vec2i>>>();
         // Search for pixels with nonzero alpha.
         let mut visited = BTreeSet::new();
         while let Some(next) = to_explore.pop() {
-            if !visited.insert(next) || next.x < 0 || next.y < 0 || next.y >= h || next.x >= w {
+            if !visited.insert(next) || next.y >= h || next.x >= w {
                 continue;
             }
-            if !data[next.y as usize][next.x as usize].a.is_zero() {
+            let Ok(x) = usize::try_from(next.x) else { continue; };
+            let Ok(y) = usize::try_from(next.y) else { continue; };
+            // Guaranteed to be safe by above check.
+            if data[y][x].a.is_zero() {
+                outside_edge_set.insert(UnorderedPair::new(next, next + Vec2i::right()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::right(), next + Vec2i::one()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::one(), next + Vec2i::down()));
+                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::down(), next));
+            } else {
                 vertex_set.insert(next);
                 edge_set.insert(UnorderedPair::new(next, next + Vec2i::right()));
                 edge_set.insert(UnorderedPair::new(next + Vec2i::right(), next + Vec2i::one()));
                 edge_set.insert(UnorderedPair::new(next + Vec2i::one(), next + Vec2i::down()));
                 edge_set.insert(UnorderedPair::new(next + Vec2i::down(), next));
-            } else {
-                outside_edge_set.insert(UnorderedPair::new(next, next + Vec2i::right()));
-                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::right(), next + Vec2i::one()));
-                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::one(), next + Vec2i::down()));
-                outside_edge_set.insert(UnorderedPair::new(next + Vec2i::down(), next));
             }
             to_explore.extend([next + Vec2i::left(), next + Vec2i::right(), next + Vec2i::up(), next + Vec2i::down()]);
         }
@@ -1342,7 +1342,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
-    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> {
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject<ObjectType>> {
         if self.show_wireframe { Some(self) } else { None }
     }
 }
@@ -1383,7 +1383,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 }
 
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
-    fn on_gui(&self, _ctx: &UpdateContext<ObjectType>) -> Box<GuiInsideClosure> {
+    fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiInsideClosure> {
         let collider = self.collider().clone();
         Box::new(move |ui| {
             ui.label(collider.to_string());

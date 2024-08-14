@@ -64,7 +64,7 @@ use crate::{
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;
 use crate::shader::ensure_shaders_locked;
-use crate::util::UniqueShared;
+use crate::util::{gg_float, UniqueShared};
 
 pub struct WindowContext {
     event_loop: EventLoop<()>,
@@ -83,7 +83,7 @@ impl WindowContext {
         Ok(Self { event_loop, window })
     }
 
-    fn window(&self) -> Arc<Window> {
+    pub(crate) fn window(&self) -> Arc<Window> {
         self.window.clone()
     }
 
@@ -116,6 +116,9 @@ pub struct AdjustedViewport {
 impl AdjustedViewport {
     pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
         self.global_scale_factor = global_scale_factor;
+    }
+    pub(crate) fn get_global_scale_factor(&self) -> f64 {
+        self.global_scale_factor
     }
     pub fn update_from_window(&mut self, window: &Arc<Window>) {
         self.inner.extent = window.inner_size().into();
@@ -294,7 +297,7 @@ impl VulkanoContext {
 
         info!(
             "created vulkano context in: {:.2} ms",
-            (start.elapsed().as_micros() as f64) / 1000.
+            gg_float::micros(start.elapsed()) * 1000.
         );
         Ok(Self {
             // Appears to not be necessary:
@@ -704,7 +707,7 @@ impl WindowEventHandler {
         self.fences = DataPerImage::new_with_generator(&self.vk_ctx, || Rc::new(RefCell::new(None)));
         self.vk_ctx.recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;
-        self.render_handler.on_resize(&self.vk_ctx, &self.window);
+        self.render_handler.on_resize(self.window.clone());
         Ok(())
     }
 
@@ -809,7 +812,7 @@ impl WindowEventHandler {
             }, .. } => {
                 match event.physical_key {
                     PhysicalKey::Code(keycode) => {
-                        self.input_handler.lock().unwrap().queue_event(keycode, event.state);
+                        self.input_handler.lock().unwrap().queue_key_event(keycode, event.state);
                     }
                     PhysicalKey::Unidentified(_) => {}
                 }
@@ -846,11 +849,7 @@ impl WindowEventHandler {
                         let full_output = self.gui_ctx.run(raw_input, |ctx| {
                             let mut input = self.input_handler.lock().unwrap();
                             input.set_viewport(self.render_handler.viewport());
-                            input.set_mouse_pos(
-                                ctx.pointer_latest_pos()
-                                    .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) })
-                                    .unwrap_or_default()
-                            );
+                            input.update_mouse(ctx);
                             self.render_handler.on_gui(ctx, self.last_render_stats.clone());
                         });
                         self.render_stats.between_renders.stop();
@@ -924,7 +923,7 @@ impl RenderPerfStats {
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
-        let render_time = (self.last_step.elapsed().as_micros() as f64) / 1000.;
+        let render_time = gg_float::micros(self.last_step.elapsed()) * 1000.;
         self.totals_ms.push(render_time);
 
         let late_in_row = self.totals_ms.iter()

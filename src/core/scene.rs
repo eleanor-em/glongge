@@ -241,7 +241,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         None
     }
-    fn as_gui_object(&self) -> Option<&dyn GuiObject<ObjectType>> { None }
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject<ObjectType>> { None }
     fn emitting_tags(&self) -> Vec<&'static str> { [].into() }
     fn listening_tags(&self) -> Vec<&'static str> { [].into() }
 }
@@ -255,7 +255,7 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
 pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;
 pub type GuiInsideClosure = dyn FnOnce(&mut GuiUi) + Send;
 pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
-    fn on_gui(&self, ctx: &UpdateContext<ObjectType>) -> Box<GuiInsideClosure>;
+    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiInsideClosure>;
 }
 
 impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>

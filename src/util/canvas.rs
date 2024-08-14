@@ -1,3 +1,4 @@
+use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
@@ -29,6 +30,14 @@ impl GgInternalCanvas {
             ..Default::default()
         });
     }
+    pub fn circle(&mut self, centre: Vec2, radius: f64, steps: u32, col: Colour) {
+        self.render_items.push(vertex::circle(centre, radius, steps));
+        self.render_infos.push(RenderInfo {
+            col: col.into(),
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        });
+    }
 }
 
 #[partially_derive_scene_object]
@@ -38,6 +47,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
 
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object_mut().remove_children();
+        // XXX: if there is nothing but the canvas, the game won't even start, because it has to
+        // render something.
+        self.line(Vec2::zero(), Vec2::zero(), 0., Colour::empty());
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {

@@ -623,7 +623,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
     fn update_gui(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker<ObjectType>) {
         if input_handler.pressed(KeyCode::Backquote) {
-            self.debug_gui.toggle(&self.object_handler);
+            self.debug_gui.toggle();
         }
 
         if USE_DEBUG_GUI {
@@ -644,8 +644,9 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     self.debug_gui.on_mouseovers(&self.object_handler, collisions);
                 }
             }
+            let selected_object = self.debug_gui.selected_object();
             let gui_objects = self.object_handler.objects.iter()
-                .filter(|(_, obj)| obj.borrow().as_gui_object().is_some())
+                .filter(|(_, obj)| obj.borrow_mut().as_gui_object().is_some())
                 .map(|(id, obj)| (*id, obj.clone()))
                 .collect_vec();
             let gui_cmds = gui_objects.into_iter()
@@ -653,7 +654,11 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     match UpdateContext::new(
                         self, input_handler, id, object_tracker
                     ) {
-                        Ok(ctx) => Some((id, obj.borrow().as_gui_object().unwrap().on_gui(&ctx))),
+                        Ok(ctx) => {
+                            let cmd = obj.borrow_mut().as_gui_object().unwrap()
+                                .on_gui(&ctx, selected_object == Some(id));
+                            Some((id, cmd))
+                        },
                         Err(e) => {
                             error!("{}", e.root_cause());
                             None
@@ -664,7 +669,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             self.gui_cmd = Some(self.debug_gui.build(
                 input_handler,
                 &mut self.object_handler,
-                &mut self.viewport,
                 gui_cmds));
         }
     }
@@ -759,6 +763,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             render_data_channel.vertices = vertices;
         }
         render_data_channel.render_infos = render_infos;
+        render_data_channel.set_global_scale_factor(self.viewport.get_global_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
         self.viewport = render_data_channel.current_viewport()
             .translated(self.viewport.translation);
@@ -1322,6 +1327,10 @@ impl<'a> ViewportContext<'a> {
     }
     pub fn clear_col(&mut self) -> &mut Colour { self.clear_col }
     pub fn inner(&self) -> AdjustedViewport { self.viewport.clone() }
+    
+    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+        self.viewport.set_global_scale_factor(global_scale_factor);
+    }
 }
 
 impl AxisAlignedExtent for ViewportContext<'_> {

@@ -1,4 +1,4 @@
-use num_traits::Zero;
+use num_traits::{FloatConst, Zero};
 
 use crate::core::{
     prelude::*,
@@ -32,6 +32,22 @@ pub fn line(start: Vec2, end: Vec2, width: f64) -> RenderItem {
             bottom_left, bottom_right, top_left,
             bottom_right, top_left, top_right,
         ].into_iter().map(VertexWithUV::from_vertex).collect(),
+        ..Default::default()
+    }
+}
+
+pub fn circle(centre: Vec2, radius: f64, steps: u32) -> RenderItem {
+    let dt = 2. * f64::PI() / f64::from(steps);
+    RenderItem {
+        vertices: (0..steps).circular_tuple_windows()
+            .flat_map(|(i, j)| {
+                vec![
+                    centre,
+                    centre + Vec2 { x: radius * (f64::from(i) * dt).cos(), y: radius * (f64::from(i) * dt).sin() },
+                    centre + Vec2 { x: radius * (f64::from(j) * dt).cos(), y: radius * (f64::from(j) * dt).sin() },
+                ]
+            })
+            .map(VertexWithUV::from_vertex).collect(),
         ..Default::default()
     }
 }

@@ -18,6 +18,7 @@ use crate::examples::{
     mario::{MarioOverworldScene, MarioUndergroundScene},
 };
 use crate::examples::concave::ConcaveScene;
+use crate::examples::spline::SplineScene;
 
 fn main() -> Result<()> {
     run_test_cases();
@@ -29,12 +30,14 @@ fn main() -> Result<()> {
         scene_handler.create_scene(TriangleScene);
         scene_handler.create_scene(RectangleScene);
         scene_handler.create_scene(ConcaveScene);
+        scene_handler.create_scene(SplineScene);
         scene_handler.create_scene(MarioOverworldScene);
         scene_handler.create_scene(MarioUndergroundScene);
         // let name = TriangleScene.name();
         // let name = RectangleScene.name();
         // let name = ConcaveScene.name();
-        let name = MarioOverworldScene.name();
+        let name = SplineScene.name();
+        // let name = MarioOverworldScene.name();
         // let name = MarioUndergroundScene.name();
         scene_handler.consume_with_scene(name, 0);
     });

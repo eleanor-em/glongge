@@ -89,7 +89,7 @@ impl SceneObject<ObjectType> for PixelPerfect {
         object_ctx.add_child(
             CollisionShape::from_object(
                 self,
-                CompoundCollider::pixel_perfect(tex_raw)
+                CompoundCollider::pixel_perfect(&tex_raw)?
             )
         );
         object_ctx.transform_mut().centre = [400., 200.].into();
@@ -110,7 +110,7 @@ impl SceneObject<ObjectType> for PixelPerfectConvex {
         object_ctx.add_child(
             CollisionShape::from_object(
                 self,
-                CompoundCollider::pixel_perfect_convex(tex_raw)?
+                CompoundCollider::pixel_perfect_convex(&tex_raw)?
             )
         );
         object_ctx.transform_mut().centre = [400., 300.].into();

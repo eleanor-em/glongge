@@ -56,7 +56,7 @@ impl RectanglePlayer {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for RectanglePlayer {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/mario.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/mario.png")?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,
@@ -129,7 +129,7 @@ impl SpinningRectangle {
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
     fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/goomba.png".to_string())?;
+        let texture = resource_handler.texture.wait_load_file("res/goomba.png")?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
             texture,

@@ -15,7 +15,7 @@ use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
 use crate::core::vk::{AdjustedViewport, VulkanoContext, WindowContext, WindowEventHandler};
 use crate::gui::GuiContext;
-use crate::shader::{BasicShader, Shader, SpriteShader, WireframeShader};
+use crate::shader::{BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
 
 pub mod linalg;
 pub mod colour;
@@ -23,6 +23,7 @@ pub mod assert;
 pub mod collision;
 pub mod canvas;
 pub mod tileset;
+pub mod spline;
 
 #[allow(dead_code)]
 pub mod gg_time {
@@ -323,6 +324,7 @@ pub mod gg_err {
 
 pub mod gg_float {
     use std::num::FpCategory;
+    use std::time::Duration;
     use num_traits::Zero;
     use crate::util::linalg::{Transform, Vec2};
 
@@ -350,10 +352,12 @@ pub mod gg_float {
         }
     }
     pub fn is_normal_or_zero(x: f64) -> bool {
-        match x.classify() {
-            FpCategory::Zero | FpCategory::Normal => true,
-            _ => false
-        }
+        matches!(x.classify(), FpCategory::Zero | FpCategory::Normal)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn micros(duration: Duration) -> f64 {
+        duration.as_micros() as f64 / 1_000_000.
     }
 }
 
@@ -611,9 +615,10 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         let viewport = window_ctx.create_default_viewport();
 
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
-            SpriteShader::new(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-            WireframeShader::new(vk_ctx.clone(), viewport.clone())?,
-            BasicShader::new(vk_ctx.clone(), viewport.clone())?,
+            SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
+            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
+            BasicShader::create(vk_ctx.clone(), viewport.clone())?,
+            TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
         ];
         Ok(Self {
             window_ctx,
@@ -646,6 +651,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         let render_handler = RenderHandler::new(
             &self.vk_ctx,
             self.gui_ctx.clone(),
+            self.window_ctx.window(),
             self.viewport.clone(),
             self.shaders,
         )?

@@ -70,7 +70,9 @@ pub struct RenderDataChannel {
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     pub(crate) gui_enabled: bool,
     viewport: AdjustedViewport,
+    should_resize: bool,
     clear_col: Colour,
+
     pub(crate) last_render_stats: Option<RenderPerfStats>,
 }
 impl RenderDataChannel {
@@ -81,6 +83,7 @@ impl RenderDataChannel {
             gui_commands: Vec::new(),
             gui_enabled: false,
             viewport,
+            should_resize: false,
             clear_col: Colour::black(),
             last_render_stats: None,
         }))
@@ -102,7 +105,20 @@ impl RenderDataChannel {
         !self.vertices.is_empty() && !self.render_infos.is_empty()
     }
 
+    #[allow(clippy::float_cmp)]
+    pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+        if self.viewport.get_global_scale_factor() != global_scale_factor {
+            self.viewport.set_global_scale_factor(global_scale_factor);
+            self.should_resize = true;
+        }
+    }
     pub(crate) fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
+
+    pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f64> {
+        let rv = self.should_resize;
+        self.should_resize = false;
+        if rv { Some(self.viewport.get_global_scale_factor()) } else { None }
+    }
 }
 
 #[derive(Clone)]
@@ -136,6 +152,7 @@ pub struct ShaderRenderFrame<'a> {
 pub struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    window: Arc<Window>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: UniqueShared<GuiRenderer>,
@@ -146,6 +163,7 @@ impl RenderHandler {
     pub fn new(
         vk_ctx: &VulkanoContext,
         gui_ctx: GuiContext,
+        window: Arc<Window>,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     ) -> Result<Self> {
@@ -160,6 +178,7 @@ impl RenderHandler {
             gui_ctx,
             gui_shader,
             shaders,
+            window,
             viewport,
             command_buffer: None,
             render_data_channel,
@@ -169,6 +188,11 @@ impl RenderHandler {
     #[must_use]
     pub fn with_global_scale_factor(self, global_scale_factor: f64) -> Self {
         self.viewport.get().set_global_scale_factor(global_scale_factor);
+        {
+            let mut rc = self.render_data_channel.lock().unwrap();
+            rc.set_global_scale_factor(global_scale_factor);
+            let _ = rc.should_resize_with_scale_factor();
+        }
         self
     }
 
@@ -176,10 +200,10 @@ impl RenderHandler {
 
     pub(crate) fn on_resize(
         &mut self,
-        _ctx: &VulkanoContext,
-        window: &Arc<Window>,
+        window: Arc<Window>,
     ) {
-        self.viewport.get().update_from_window(window);
+        self.window = window;
+        self.viewport.get().update_from_window(&self.window);
         self.command_buffer = None;
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
     }
@@ -199,10 +223,15 @@ impl RenderHandler {
         framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
-        let (render_frame, gui_enabled) = {
-            let rx = self.render_data_channel.lock().unwrap();
-            (rx.next_frame(), rx.gui_enabled)
+        let (global_scale_factor, render_frame, gui_enabled) = {
+            let mut rx = self.render_data_channel.lock().unwrap();
+            let global_scale_factor = rx.should_resize_with_scale_factor();
+            (global_scale_factor, rx.next_frame(), rx.gui_enabled)
         };
+        if let Some(global_scale_factor) = global_scale_factor {
+            self.viewport.get().set_global_scale_factor(global_scale_factor);
+            self.on_resize(self.window.clone());
+        }
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
             let shader_id = shader.id();
             shader.on_render(render_frame.for_shader(shader_id))?;

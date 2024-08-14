@@ -38,6 +38,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn gg_static_sprite() -> Self;
     fn gg_colliding_sprite() -> Self;
     fn gg_tileset() -> Self;
+    fn gg_interactive_spline() -> Self;
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {

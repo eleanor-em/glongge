@@ -24,6 +24,7 @@ use vulkano::{pipeline::{
     WriteDescriptorSet,
     layout::DescriptorSetLayoutCreateFlags
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
+use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use crate::{
     core::{
@@ -205,7 +206,7 @@ pub struct SpriteShader {
 }
 
 impl SpriteShader {
-    pub fn new(
+    pub fn create(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler
@@ -404,7 +405,7 @@ pub struct WireframeShader {
 }
 
 impl WireframeShader {
-    pub fn new(
+    pub fn create(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
@@ -534,6 +535,143 @@ impl Shader for WireframeShader {
     }
 }
 #[derive(Clone)]
+pub struct TriangleFanShader {
+    ctx: VulkanoContext,
+    vs: Arc<ShaderModule>,
+    fs: Arc<ShaderModule>,
+    viewport: UniqueShared<AdjustedViewport>,
+    pipeline: Option<Arc<GraphicsPipeline>>,
+    vertex_buffer: CachedVertexBuffer<basic::Vertex>,
+}
+
+impl TriangleFanShader {
+    pub fn create(
+        ctx: VulkanoContext,
+        viewport: UniqueShared<AdjustedViewport>
+    ) -> Result<UniqueShared<Box<dyn Shader>>> {
+        register_shader::<Self>();
+        let device = ctx.device();
+        let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
+        Ok(UniqueShared::new(Box::new(Self {
+            ctx,
+            vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
+            fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
+            viewport,
+            pipeline: None,
+            vertex_buffer,
+        }) as Box<dyn Shader>))
+    }
+
+    fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
+        match self.pipeline.clone() {
+            None => {
+                let vs = self.vs.entry_point("main")
+                    .context("vertex shader: entry point missing")?;
+                let fs = self.fs.entry_point("main")
+                    .context("fragment shader: entry point missing")?;
+                let vertex_input_state =
+                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                let stages = [
+                    PipelineShaderStageCreateInfo::new(vs),
+                    PipelineShaderStageCreateInfo::new(fs),
+                ];
+                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+                for layout in &mut create_info.set_layouts {
+                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+                }
+                let layout = PipelineLayout::new(
+                    self.ctx.device(),
+                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+                ).map_err(Validated::unwrap)?;
+                let subpass = Subpass::from(self.ctx.render_pass(), 0).context("failed to create subpass")?;
+
+                let pipeline = GraphicsPipeline::new(
+                    self.ctx.device(),
+                    /* cache= */ None,
+                    GraphicsPipelineCreateInfo {
+                        stages: stages.into_iter().collect(),
+                        vertex_input_state: Some(vertex_input_state),
+                        input_assembly_state: Some(InputAssemblyState::default()),
+                        viewport_state: Some(ViewportState {
+                            viewports: [self.viewport.get().inner()].into_iter().collect(),
+                            ..Default::default()
+                        }),
+                        rasterization_state: Some(RasterizationState::default()),
+                        multisample_state: Some(MultisampleState::default()),
+                        color_blend_state: Some(ColorBlendState::with_attachment_states(
+                            subpass.num_color_attachments(),
+                            ColorBlendAttachmentState {
+                                blend: Some(AttachmentBlend::alpha()),
+                                ..Default::default()
+                            },
+                        )),
+                        subpass: Some(subpass.into()),
+                        ..GraphicsPipelineCreateInfo::layout(layout)
+                    })?;
+                self.pipeline = Some(pipeline.clone());
+                Ok(pipeline)
+            },
+            Some(pipeline) => Ok(pipeline)
+        }
+    }
+}
+
+impl Shader for TriangleFanShader {
+    fn name() -> ShaderName
+    where
+        Self: Sized
+    {
+        ShaderName::new("triangle_fan")
+    }
+    fn name_concrete(&self) -> ShaderName { Self::name() }
+
+    fn on_render(
+        &mut self,
+        render_frame: ShaderRenderFrame,
+    ) -> Result<()> {
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        for render_info in &render_frame.render_infos {
+            for vertex_index in render_info.vertex_indices.clone() {
+                for ri in &render_info.inner {
+                    vertices.push(basic::Vertex {
+                        position: render_frame.vertices[vertex_index as usize].xy,
+                        translation: render_info.transform.centre,
+                        rotation: render_info.transform.rotation,
+                        scale: render_info.transform.scale,
+                        blend_col: ri.col,
+                    });
+                }
+            }
+        }
+        self.vertex_buffer.write(&vertices)?;
+        Ok(())
+    }
+    fn build_render_pass(
+        &mut self,
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
+    ) -> Result<()> {
+        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
+        let pipeline = self.get_or_create_pipeline()?;
+        let layout = pipeline.layout().clone();
+        let viewport = self.viewport.get();
+        let pc = basic::vertex_shader::WindowData {
+            #[allow(clippy::cast_possible_truncation)]
+            window_width: viewport.physical_width() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            window_height: viewport.physical_height() as f32,
+            #[allow(clippy::cast_possible_truncation)]
+            scale_factor: viewport.scale_factor() as f32,
+        };
+        builder
+            .set_primitive_topology(PrimitiveTopology::TriangleFan)?
+            .bind_pipeline_graphics(pipeline.clone())?
+            .push_constants(layout, 0, pc)?;
+        self.vertex_buffer.draw(builder)?;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct BasicShader {
     ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
@@ -544,7 +682,7 @@ pub struct BasicShader {
 }
 
 impl BasicShader {
-    pub fn new(
+    pub fn create(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>
     ) -> Result<UniqueShared<Box<dyn Shader>>> {

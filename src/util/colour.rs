@@ -36,6 +36,16 @@ impl Colour {
     pub fn empty() -> Self { Self { r: 0., g: 0., b: 0., a: 0. } }
 
     #[must_use]
+    pub fn scaled(mut self, ratio: f64) -> Self {
+        self.r *= ratio;
+        self.g *= ratio;
+        self.b *= ratio;
+        self.r = self.r.clamp(0., 1.);
+        self.g = self.g.clamp(0., 1.);
+        self.b = self.b.clamp(0., 1.);
+        self
+    }
+    #[must_use]
     pub fn with_alpha(mut self, a: f64) -> Self {
         self.a = a;
         self
