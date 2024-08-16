@@ -912,6 +912,7 @@ impl DebugGui {
         input_handler: &InputHandler,
         viewport: &mut AdjustedViewport
     ) {
+        let mut viewport_moved = false;
         if self.enabled {
             if input_handler.mod_super() {
                 let mut direction = Vec2::zero();
@@ -926,7 +927,10 @@ impl DebugGui {
                     direction
                 };
                 self.last_viewport.translation += dx;
+                viewport_moved = true;
             }
+        }
+        if viewport_moved {
             *viewport = self.last_viewport.clone();
         } else {
             self.last_viewport = viewport.clone();
