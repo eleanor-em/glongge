@@ -258,6 +258,12 @@ struct RenderableTile {
     depth: VertexDepth,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CollidableTile {
+    pub pos: Vec2i,
+    pub emitting_tags: Vec<&'static str>,
+}
+
 #[register_scene_object]
 pub struct GgInternalTileset {
     tile_size: i32,
@@ -267,6 +273,17 @@ pub struct GgInternalTileset {
 
     collider: GenericCollider,
     emitting_tags: Vec<&'static str>,
+}
+
+impl GgInternalTileset {
+    pub fn tiles(&self) -> Vec<CollidableTile> {
+        self.tiles.iter().map(|t| {
+            CollidableTile {
+                pos: t.top_left / self.tile_size,
+                emitting_tags: self.emitting_tags.clone()
+            }
+        }).collect_vec()
+    }
 }
 
 #[partially_derive_scene_object]
