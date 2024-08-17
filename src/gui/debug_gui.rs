@@ -913,22 +913,20 @@ impl DebugGui {
         viewport: &mut AdjustedViewport
     ) {
         let mut viewport_moved = false;
-        if self.enabled {
-            if input_handler.mod_super() {
-                let mut direction = Vec2::zero();
-                if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
-                if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
-                if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
-                if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
-                direction *= gg_float::micros(self.last_update.elapsed()) * 128.;
-                let dx = if input_handler.mod_shift() {
-                    direction * 5.
-                } else {
-                    direction
-                };
-                self.last_viewport.translation += dx;
-                viewport_moved = true;
-            }
+        if self.enabled && input_handler.mod_super() {
+            let mut direction = Vec2::zero();
+            if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
+            if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
+            if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
+            if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
+            direction *= gg_float::micros(self.last_update.elapsed()) * 128.;
+            let dx = if input_handler.mod_shift() {
+                direction * 5.
+            } else {
+                direction
+            };
+            self.last_viewport.translation += dx;
+            viewport_moved = true;
         }
         if viewport_moved {
             *viewport = self.last_viewport.clone();

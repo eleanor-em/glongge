@@ -1,4 +1,5 @@
 use std::iter;
+use egui::{Align, Layout};
 use rand::Rng;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::{ObjectTypeEnum, prelude::*};
@@ -129,7 +130,20 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractiveSpline {
     fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiInsideClosure> {
         self.gui_selected = selected;
-        Box::new(|_| {})
+        let string_desc = self.spline.control_points.iter()
+            .map(|v| format!("\t{v:?},\n"))
+            .reduce(|acc: String, x: String| acc + &x)
+            .unwrap_or_default();
+        Box::new(move |ctx| {
+            ctx.with_layout(Layout::top_down(Align::Center), |ui| {
+                if ui.button("Copy as Vec")
+                    .clicked() {
+                    ui.output_mut(|o| {
+                        o.copied_text = format!("vec![\n{string_desc}]\n");
+                    })
+                }
+            });
+        })
     }
 }
 
