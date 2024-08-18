@@ -79,7 +79,7 @@ impl GgInternalSprite {
             })
             .collect_vec();
         let frame_time_ms = vec![1000; areas.len()];
-        let render_item = vertex::rectangle_with_uv(Vec2::zero(), (tile_size / 2).into());
+        let render_item = vertex::rectangle(Vec2::zero(), (tile_size / 2).into());
         let inner = Rc::new(RefCell::new(Self {
             texture, areas, frame_time_ms, render_item,
             paused: false,

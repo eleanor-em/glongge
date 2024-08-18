@@ -23,7 +23,23 @@ impl GgInternalCanvas {
     pub fn rect(&mut self, top_left: Vec2, bottom_right: Vec2, col: Colour) {
         let half_widths = (bottom_right - top_left) / 2;
         let centre = top_left + half_widths;
-        self.render_items.push(vertex::rectangle_with_uv(centre, half_widths));
+        self.render_items.push(vertex::rectangle(centre, half_widths));
+        self.render_infos.push(RenderInfo {
+            col: col.into(),
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        });
+    }
+    pub fn rect_transformed(&mut self, transform: Transform, top_left: Vec2, bottom_right: Vec2, col: Colour) {
+        let centre = (top_left + bottom_right) / 2;
+        let half_widths = transform.scale.component_wise(centre - top_left);
+
+        let top_left = transform.centre + centre + (-half_widths).rotated(transform.rotation);
+        let top_right = transform.centre + centre + Vec2 { x: half_widths.x, y: -half_widths.y }.rotated(transform.rotation);
+        let bottom_right = transform.centre + centre + half_widths.rotated(transform.rotation);
+        let bottom_left = transform.centre + centre + Vec2 { x: -half_widths.x, y: half_widths.y }.rotated(transform.rotation);
+
+        self.render_items.push(vertex::quadrilateral(top_left, top_right, bottom_left, bottom_right));
         self.render_infos.push(RenderInfo {
             col: col.into(),
             shader_id: get_shader(BasicShader::name()),
@@ -53,7 +69,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        for (render_item, render_info) in self.render_items.drain(..).zip(self.render_infos.drain(..)) {
+        for (render_item, render_info) in self.render_items.drain(..)
+            .zip(self.render_infos.drain(..))
+            .rev() // objects drawn later should appear on top
+        {
             ctx.object_mut().add_child(GgInternalCanvasItem::create(render_item, render_info));
         }
         self.viewport = ctx.viewport().inner();

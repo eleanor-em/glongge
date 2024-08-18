@@ -899,6 +899,9 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
     pub fn viewport(&self) -> &ViewportContext<'a> { &self.viewport }
     pub fn input(&self) -> &InputHandler { self.input }
+
+    pub fn transform(&self) -> Transform { self.object.transform() }
+    pub fn transform_mut(&self) -> RefMut<Transform> { self.object.transform_mut() }
 }
 
 impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
@@ -1187,6 +1190,13 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
         });
     }
     pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) {
+        self.object_tracker.pending_add.push(PendingAddObject {
+            inner: object,
+            parent_id: self.this_id,
+        });
+    }
+    pub fn add_child_at(&mut self, object: AnySceneObject<ObjectType>, transform: Transform) {
+        *object.transform.borrow_mut() = transform;
         self.object_tracker.pending_add.push(PendingAddObject {
             inner: object,
             parent_id: self.this_id,

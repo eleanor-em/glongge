@@ -298,7 +298,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
         let mut rv = RenderItem::default();
         for tile in &self.tiles {
             let area = TextureSubArea::from_rect(tile.tex_area);
-            let vertices = vertex::rectangle_with_uv(
+            let vertices = vertex::rectangle(
                 (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
                 (self.tile_size * Vec2i::one() / 2).into(),
             );

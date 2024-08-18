@@ -3,7 +3,6 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::prelude::*,
-    core::coroutine::prelude::*,
     resource::sprite::Sprite
 };
 use crate::examples::mario::{AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, enemy::Stompable, ENEMY_COLLISION_TAG};

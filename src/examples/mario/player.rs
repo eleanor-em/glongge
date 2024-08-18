@@ -3,7 +3,6 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use glongge::{
     core::{
-        coroutine::prelude::*,
         prelude::*,
         render::VertexDepth,
         scene::{Scene, SceneDestination},

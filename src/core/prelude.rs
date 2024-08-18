@@ -1,5 +1,7 @@
 #[allow(unused_imports)]
 pub use itertools::Itertools;
+#[allow(unused_imports)]
+pub use num_traits;
 
 #[allow(unused_imports)]
 pub use anyhow::{anyhow, bail, Context, Result};
@@ -10,12 +12,11 @@ pub use tracing::{info, warn, error};
 pub use crate::{
     core::{
         config::*,
+        coroutine::{CoroutineId, CoroutineResponse, CoroutineState},
         render::{RenderInfo, RenderItem},
         scene::{RenderableObject, SceneObject},
         input::KeyCode,
-        update::{
-            collision::CollisionResponse,
-            ObjectContext,
+        update::{collision::CollisionResponse, ObjectContext,
             UpdateContext,
         },
         AnySceneObject,
@@ -25,10 +26,7 @@ pub use crate::{
     resource::{Loader, ResourceHandler},
     util::{
         assert::*,
-        collision::{
-            Collider,
-            CollisionShape,
-            GenericCollider,
+        collision::{Collider, CollisionShape, GenericCollider,
         },
         colour::Colour,
         linalg,

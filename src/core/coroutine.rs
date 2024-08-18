@@ -8,10 +8,6 @@ use crate::core::{
     update::UpdateContext
 };
 
-pub mod prelude {
-    pub use crate::core::coroutine::{CoroutineId, CoroutineResponse, CoroutineState};
-}
-
 static NEXT_COROUTINE_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CoroutineId(usize);

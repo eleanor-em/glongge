@@ -979,6 +979,19 @@ impl Transform {
             scale: self.scale.reciprocal(),
         }
     }
+
+    pub fn left(&self) -> Vec2 {
+        Vec2::left().rotated(self.rotation)
+    }
+    pub fn up(&self) -> Vec2 {
+        Vec2::up().rotated(self.rotation)
+    }
+    pub fn right(&self) -> Vec2 {
+        Vec2::right().rotated(self.rotation)
+    }
+    pub fn down(&self) -> Vec2 {
+        Vec2::down().rotated(self.rotation)
+    }
 }
 
 impl Default for Transform {
