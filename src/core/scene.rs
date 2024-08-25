@@ -232,7 +232,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     #[allow(unused_variables)]
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         CollisionResponse::Done

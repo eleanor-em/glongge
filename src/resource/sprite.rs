@@ -129,7 +129,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         })
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext<ObjectType>) {
         if self.paused {
             return;
         }

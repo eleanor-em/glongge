@@ -595,10 +595,18 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
 
         self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            self.iter_with_other_map(input_handler, &mut object_tracker,
-                                     |mut obj, ctx| {
-                                         obj.on_fixed_update(ctx);
-                                     });
+            for (this_id, this) in self.object_handler.objects.clone() {
+                let this = SceneObjectWithId::new(this_id, this.clone());
+                match FixedUpdateContext::new(
+                    self,
+                    this_id,
+                    &mut object_tracker
+                ) {
+                    Ok(mut ctx) => this.inner.borrow_mut()
+                        .on_fixed_update(&mut ctx),
+                    Err(e) => error!("{}", e.root_cause()),
+                }
+            }
             self.object_handler.update_all_transforms();
             fixed_updates -= 1;
             // Detect collisions after each fixed update: important to prevent glitching through walls etc.
@@ -900,6 +908,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn viewport(&self) -> &ViewportContext<'a> { &self.viewport }
     pub fn input(&self) -> &InputHandler { self.input }
 
+    pub fn absolute_transform(&self) -> Transform { self.object.absolute_transform() }
     pub fn transform(&self) -> Transform { self.object.transform() }
     pub fn transform_mut(&self) -> RefMut<Transform> { self.object.transform_mut() }
 }
@@ -914,6 +923,57 @@ impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
     }
 }
 
+pub struct FixedUpdateContext<'a, ObjectType: ObjectTypeEnum> {
+    scene: SceneContext<'a, ObjectType>,
+    object: ObjectContext<'a, ObjectType>,
+    viewport: ViewportContext<'a>,
+}
+
+impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
+    fn new(
+        caller: &'a mut UpdateHandler<ObjectType>,
+        this_id: ObjectId,
+        object_tracker: &'a mut ObjectTracker<ObjectType>
+    ) -> Result<Self> {
+        let parent = caller.object_handler.get_parent(this_id)?;
+        let children = caller.object_handler.get_children_owned(this_id)?;
+        Ok(Self {
+            scene: SceneContext {
+                scene_instruction_tx: caller.scene_instruction_tx.clone(),
+                scene_name: caller.scene_name,
+                scene_data: caller.scene_data.clone(),
+                coroutines: caller.coroutines.entry(this_id).or_default(),
+                pending_removed_coroutines: BTreeSet::new(),
+            },
+            object: ObjectContext {
+                collision_handler: &caller.object_handler.collision_handler,
+                this_id,
+                parent,
+                children,
+                object_tracker,
+                all_absolute_transforms: &caller.object_handler.absolute_transforms,
+                all_parents: &caller.object_handler.parents,
+                all_children: &caller.object_handler.children,
+                dummy_transform: Rc::new(RefCell::new(Transform::default())),
+            },
+            viewport: ViewportContext {
+                viewport: &mut caller.viewport,
+                clear_col: &mut caller.clear_col,
+            },
+        })
+    }
+
+    pub fn object_mut(&mut self) -> &mut ObjectContext<'a, ObjectType> { &mut self.object }
+    pub fn object(&self) -> &ObjectContext<'a, ObjectType> { &self.object }
+    pub fn scene_mut(&mut self) -> &mut SceneContext<'a, ObjectType> { &mut self.scene }
+    pub fn scene(&self) -> &SceneContext<'a, ObjectType> { &self.scene }
+    pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> { &mut self.viewport }
+    pub fn viewport(&self) -> &ViewportContext<'a> { &self.viewport }
+
+    pub fn absolute_transform(&self) -> Transform { self.object.absolute_transform() }
+    pub fn transform(&self) -> Transform { self.object.transform() }
+    pub fn transform_mut(&self) -> RefMut<Transform> { self.object.transform_mut() }
+}
 
 pub struct SceneData<T>
 where

@@ -52,7 +52,7 @@ impl SceneObject<ObjectType> for UndergroundBrick {
             &self.listening_tags()
         ));
     }
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         let mut transform = ctx.object().transform_mut();
         self.v_speed += self.v_accel;
         transform.centre.y += self.v_speed;

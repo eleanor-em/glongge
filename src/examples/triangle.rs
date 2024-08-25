@@ -122,7 +122,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         }
     }
 
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         self.t += Self::ANGULAR_VELOCITY;
         let next_pos = self.pos + self.velocity;
         if !ctx.viewport().contains_point(Vec2 { x: next_pos.x, y: self.pos.y }) {

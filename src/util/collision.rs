@@ -1298,14 +1298,14 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_transform(ctx);
+        self.update_transform(ctx.absolute_transform());
     }
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_transform(ctx);
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+        self.update_transform(ctx.absolute_transform());
     }
 
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_transform(ctx);
+        self.update_transform(ctx.absolute_transform());
         if self.show_wireframe {
             let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
             match &self.collider {
@@ -1327,7 +1327,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.update_transform(ctx);
+        self.update_transform(ctx.absolute_transform());
     }
 
     fn get_type(&self) -> ObjectType { ObjectType::gg_collider() }
@@ -1348,8 +1348,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
 }
 
 impl GgInternalCollisionShape {
-    fn update_transform<ObjectType: ObjectTypeEnum>(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let next_transform = ctx.object().absolute_transform();
+    fn update_transform(&mut self, next_transform: Transform) {
         if self.last_transform != next_transform {
             self.collider = self.collider.transformed(&self.last_transform.inverse());
             self.collider = self.collider.transformed(&next_transform);

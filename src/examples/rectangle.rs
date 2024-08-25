@@ -80,7 +80,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.vel = Self::SPEED * direction.normed();
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext<ObjectType>) {
         self.pos += self.vel;
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -157,7 +157,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         let next_pos = self.pos + self.velocity;
         if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;

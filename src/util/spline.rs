@@ -134,8 +134,8 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractive
             .map(|v| format!("\t{v:?},\n"))
             .reduce(|acc: String, x: String| acc + &x)
             .unwrap_or_default();
-        Box::new(move |ctx| {
-            ctx.with_layout(Layout::top_down(Align::Center), |ui| {
+        Box::new(move |ui| {
+            ui.with_layout(Layout::top_down(Align::Center), |ui| {
                 if ui.button("Copy as Vec")
                     .clicked() {
                     ui.output_mut(|o| {

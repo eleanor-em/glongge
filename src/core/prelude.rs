@@ -17,7 +17,7 @@ pub use crate::{
         scene::{RenderableObject, SceneObject},
         input::KeyCode,
         update::{collision::CollisionResponse, ObjectContext,
-            UpdateContext,
+            UpdateContext, FixedUpdateContext
         },
         AnySceneObject,
         DowncastRef,

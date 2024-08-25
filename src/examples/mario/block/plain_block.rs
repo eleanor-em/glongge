@@ -45,7 +45,7 @@ impl SceneObject<ObjectType> for Block {
         ));
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext<ObjectType>) {
         self.v_speed += self.v_accel;
         self.top_left.y += self.v_speed;
         if self.top_left.y > self.initial_y {

@@ -955,6 +955,19 @@ pub struct Transform {
 
 impl Transform {
     #[must_use]
+    pub fn with_centre(centre: Vec2) -> Self {
+        Self { centre, ..Default::default() }
+    }
+    #[must_use]
+    pub fn with_rotation(rotation: f64) -> Self {
+        Self { rotation, ..Default::default() }
+    }
+    #[must_use]
+    pub fn with_scale(scale: Vec2) -> Self {
+        Self { scale, ..Default::default() }
+    }
+
+    #[must_use]
     pub fn translated(&self, by: Vec2) -> Self {
         Self {
             centre: self.centre + by,
@@ -1029,4 +1042,8 @@ pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
 }
 pub fn eerp(a: f64, b: f64, t: f64) -> f64 {
     a * (t * (b / a).ln()).exp()
+}
+pub fn smooth(t: f64) -> f64 { (6. * t*t*t*t*t - 15. * t*t*t*t + 10. * t*t*t).clamp(0., 1.) }
+pub fn sigmoid(t: f64, k: f64) -> f64 {
+    1. / (1. + (-(t - 0.5) / k).exp())
 }

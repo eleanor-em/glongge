@@ -68,6 +68,8 @@ pub struct Player {
     v_accel: f64,
 
     hold_jump: bool,
+    hold_down: bool,
+    hold_right: bool,
 
     speed_regime: SpeedRegime,
     state: PlayerState,
@@ -331,8 +333,8 @@ impl Player {
             }));
         }
     }
-    fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.input().down(KeyCode::ArrowDown) {
+    fn maybe_start_pipe(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+        if self.hold_down {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::down(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = &collisions.first().other;
@@ -342,7 +344,7 @@ impl Player {
                     }
                 }
             }
-        } else if ctx.input().down(KeyCode::ArrowRight) {
+        } else if self.hold_right {
             if let Some(collisions) = ctx.object()
                 .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG]) {
                 let pipe = &collisions.first().other;
@@ -356,7 +358,7 @@ impl Player {
         }
     }
     fn start_pipe(&mut self,
-                  ctx: &mut UpdateContext<ObjectType>,
+                  ctx: &mut FixedUpdateContext<ObjectType>,
                   direction: Vec2,
                   pipe_centre: Vec2,
                   pipe_instruction: SceneDestination) {
@@ -546,6 +548,8 @@ impl SceneObject<ObjectType> for Player {
         self.accel = 0.;
         self.v_accel = 0.;
         self.maybe_start_exit_pipe(ctx);
+        self.hold_down = ctx.input().down(KeyCode::ArrowDown);
+        self.hold_right = ctx.input().down(KeyCode::ArrowRight);
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.state == PlayerState::Dying {
@@ -580,7 +584,7 @@ impl SceneObject<ObjectType> for Player {
             self.last_nonzero_dir = self.dir;
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);

@@ -80,7 +80,7 @@ impl SceneObject<ObjectType> for Goomba {
             self.v_accel = BASE_GRAVITY;
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         let in_view = ctx.viewport().contains_point(self.top_left) ||
             ctx.viewport().contains_point(ctx.object().transform().centre + self.sprite.half_widths());
         if !self.dead && in_view {
