@@ -79,7 +79,7 @@ impl Clone for Texture {
         self.ref_count.fetch_add(1, Ordering::Relaxed);
         Self {
             id: self.id,
-            duration: self.duration.clone(),
+            duration: self.duration,
             extent: self.extent,
             ref_count: self.ref_count.clone(),
         }
@@ -391,7 +391,7 @@ impl TextureHandler {
     }
     fn load_file_inner_animated_aseprite(&self, filename: &str) -> Result<Vec<RawLoadedTexture>> {
         let ase = AsepriteFile::read_file(filename.as_ref())?;
-        (0..ase.num_frames()).into_iter()
+        (0..ase.num_frames())
             .map(|i| ase.frame(i))
             .map(|frame| {
                 let image = frame.image();

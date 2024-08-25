@@ -140,7 +140,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractive
                     .clicked() {
                     ui.output_mut(|o| {
                         o.copied_text = format!("vec![\n{string_desc}]\n");
-                    })
+                    });
                 }
             });
         })

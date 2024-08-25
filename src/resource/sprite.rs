@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use crate::resource::texture::TextureId;
-use num_traits::Zero;
+use num_traits::{ToPrimitive, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
     core::{
@@ -58,9 +58,9 @@ impl GgInternalSprite {
             })
         }).collect_vec();
         let render_item = vertex::rectangle(Vec2::zero(), textures[0].half_widths());
-        let extent = textures[0].aa_extent().into();
+        let extent = textures[0].aa_extent();
         let inner = Rc::new(RefCell::new(Self {
-            textures: textures,
+            textures,
             texture_indices: (0..areas.len()).collect_vec(),
             areas, frame_time_ms, render_item,
             paused: false,
@@ -321,7 +321,7 @@ impl Sprite {
             let mut inner = self.inner.borrow_mut();
             inner.frame_time_ms = inner.frame_time_ms.iter()
                 .map(|t| f64::from(*t) * factor)
-                .map(|t| t.round() as u32)
+                .map(|t| t.round().to_u32().unwrap_or(u32::MAX))
                 .collect_vec();
         }
         self
