@@ -15,6 +15,8 @@ use std::{
         atomic::{AtomicUsize, Ordering}
     },
 };
+use std::time::Duration;
+use asefile::AsepriteFile;
 use num_traits::Zero;
 
 use vulkano::{
@@ -41,17 +43,25 @@ use crate::core::{
     vk::VulkanoContext,
 };
 
+struct RawLoadedTexture {
+    buf: Subbuffer<[u8]>,
+    info: ImageCreateInfo,
+    duration: Option<Duration>,
+}
+
 pub type TextureId = u16;
 
 #[derive(Debug)]
 pub struct Texture {
     id: TextureId,
+    duration: Option<Duration>,
     extent: Vec2,
     ref_count: Arc<AtomicUsize>,
 }
 
 impl Texture {
     pub fn id(&self) -> TextureId { self.id }
+    pub fn duration(&self) -> Option<Duration> { self.duration }
 }
 
 impl AxisAlignedExtent for Texture {
@@ -69,6 +79,7 @@ impl Clone for Texture {
         self.ref_count.fetch_add(1, Ordering::Relaxed);
         Self {
             id: self.id,
+            duration: self.duration.clone(),
             extent: self.extent,
             ref_count: self.ref_count.clone(),
         }
@@ -79,6 +90,7 @@ impl Default for Texture {
     fn default() -> Self {
         Self {
             id: 0,
+            duration: None,
             extent: Vec2::one(),
             ref_count: Arc::new(AtomicUsize::new(0)),
         }
@@ -173,7 +185,7 @@ impl<R: Read> Read for WrappedPngReader<R> {
 }
 
 struct TextureHandlerInner {
-    loaded_files: BTreeMap<String, Texture>,
+    loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
 }
 
@@ -217,7 +229,7 @@ impl TextureHandlerInner {
         })
     }
 
-    fn create_texture(&mut self, buf: Subbuffer<[u8]>, info: ImageCreateInfo) -> Texture {
+    fn create_texture(&mut self, loaded: RawLoadedTexture) -> Texture {
         // Free up unused textures first.
         self.free_all_unused_textures();
 
@@ -230,8 +242,8 @@ impl TextureHandlerInner {
             .expect("empty textures? (blank texture missing)");
         let ref_count = Arc::new(AtomicUsize::new(1));
         let internal_texture = InternalTexture {
-            buf,
-            info,
+            buf: loaded.buf,
+            info: loaded.info,
             cached_image_view: None,
             ref_count: ref_count.clone(),
         };
@@ -240,7 +252,7 @@ impl TextureHandlerInner {
             panic!("tried to use texture id {id}, but ref_count={}",
                    existing.ref_count.load(Ordering::Relaxed));
         }
-        Texture { id, extent, ref_count }
+        Texture { id, duration: loaded.duration, extent, ref_count }
     }
 
     fn free_all_unused_textures(&mut self) {
@@ -255,7 +267,9 @@ impl TextureHandlerInner {
 
     fn free_unused_files(&mut self) {
         for filename in self.loaded_files.iter()
-            .filter(|(_, tex)| tex.ref_count.load(Ordering::Relaxed) <= 1)
+            .filter(|(_, textures)| textures.iter().all(|tex| {
+                tex.ref_count.load(Ordering::Relaxed) <= 1
+            }))
             .map(|(filename, _)| filename.clone())
             .collect_vec() {
             info!("freeing texture {filename}");
@@ -283,19 +297,20 @@ impl TextureHandler {
     pub fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Texture> {
         let filename = filename.as_ref().to_string();
         // Beware: do not lock `inner` longer than necessary.
-        if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
+        if let Some(texture) = self.inner.lock().unwrap()
+                .loaded_files.get(&filename)
+                .and_then(|v| v.first()) {
             return Ok(texture.clone());
         }
-        let (buf, info) = self.load_file_inner(&filename)?;
+        let loaded = self.load_file_inner(&filename)?;
         let mut inner = self.inner.lock().unwrap();
-        let texture = inner.create_texture(buf, info);
+        let texture = inner.create_texture(loaded);
         info!("loaded texture: {} = {:?}", filename, texture.id());
-        inner.loaded_files.insert(filename, texture.clone());
+        inner.loaded_files.insert(filename, vec![texture.clone()]);
         self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
-
-    fn load_file_inner(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
+    fn load_file_inner(&self, filename: &str) -> Result<RawLoadedTexture> {
         let path = Path::new(filename);
         let ext = path.extension()
             .with_context(|| format!("no file extension: {filename}"))?
@@ -303,11 +318,12 @@ impl TextureHandler {
             .with_context(|| format!("failed conversion from OsStr: {filename}"))?;
         match ext {
             "png" => self.load_file_inner_png(filename),
-            "aseprite" => todo!("use asefile crate"),
+            "aseprite" => Ok(self.load_file_inner_animated_aseprite(filename)?
+                .into_iter().next().context("loading aseprite file succeeded but no frames?")?),
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
-    fn load_file_inner_png(&self, filename: &str) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
+    fn load_file_inner_png(&self, filename: &str) -> Result<RawLoadedTexture> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
@@ -345,6 +361,52 @@ impl TextureHandler {
         self.load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
     }
 
+    pub fn wait_load_file_animated(&self, filename: impl AsRef<str>) -> Result<Vec<Texture>> {
+        let filename = filename.as_ref().to_string();
+        // Beware: do not lock `inner` longer than necessary.
+        if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
+            return Ok(texture.clone());
+        }
+        let results = self.load_file_inner_animated(&filename)?;
+        let mut inner = self.inner.lock().unwrap();
+        let textures = results.into_iter().map(|loaded| {
+            let texture = inner.create_texture(loaded);
+            self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
+            texture
+        }).collect_vec();
+        inner.loaded_files.insert(filename, textures.clone());
+        Ok(textures)
+    }
+    fn load_file_inner_animated(&self, filename: &str) -> Result<Vec<RawLoadedTexture>> {
+        let path = Path::new(filename);
+        let ext = path.extension()
+            .with_context(|| format!("no file extension: {filename}"))?
+            .to_str()
+            .with_context(|| format!("failed conversion from OsStr: {filename}"))?;
+        match ext {
+            "png" => todo!("png files with multiple frames not supported"),
+            "aseprite" => self.load_file_inner_animated_aseprite(filename),
+            ext => bail!("unknown file extension: {ext} (while loading {filename})"),
+        }
+    }
+    fn load_file_inner_animated_aseprite(&self, filename: &str) -> Result<Vec<RawLoadedTexture>> {
+        let ase = AsepriteFile::read_file(filename.as_ref())?;
+        (0..ase.num_frames()).into_iter()
+            .map(|i| ase.frame(i))
+            .map(|frame| {
+                let image = frame.image();
+                let mut loaded = self.load_reader_rgba_inner(
+                     &mut  image.to_vec().as_slice(),
+                     image.width(),
+                     image.height(),
+                     Format::R8G8B8A8_SRGB
+                )?;
+                loaded.duration = Some(Duration::from_millis(u64::from(frame.duration())));
+                Ok(loaded)
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
     pub(crate) fn wait_load_reader_rgba<R: Read>(
         &self,
         reader: &mut R,
@@ -352,10 +414,10 @@ impl TextureHandler {
         height: u32,
         format: Format
     ) -> Result<Texture> {
-        let (buf, info) = self.load_reader_rgba_inner(reader, width, height, format)?;
+        let loaded = self.load_reader_rgba_inner(reader, width, height, format)?;
 
         let mut inner = self.inner.lock().unwrap();
-        let texture = inner.create_texture(buf, info);
+        let texture = inner.create_texture(loaded);
         self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
@@ -365,7 +427,7 @@ impl TextureHandler {
         width: u32,
         height: u32,
         format: Format
-    ) -> Result<(Subbuffer<[u8]>, ImageCreateInfo)> {
+    ) -> Result<RawLoadedTexture> {
         if format != Format::R8G8B8A8_SRGB {
             check_eq!(format, Format::R8G8B8A8_UNORM);
         }
@@ -391,7 +453,11 @@ impl TextureHandler {
 
         reader.read_exact(&mut buf.write()?)?;
 
-        Ok((buf, image_create_info))
+        Ok(RawLoadedTexture {
+            buf,
+            info: image_create_info,
+            duration: None
+        })
     }
 
     pub fn wait_free_unused_files(&self) {

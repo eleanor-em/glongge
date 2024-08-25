@@ -5,3 +5,4 @@ pub const FIXED_UPDATE_TIMEOUT: u128 = 10 * FIXED_UPDATE_INTERVAL_US;
 pub const USE_DEBUG_GUI: bool = true;
 pub const EPSILON: f64 = 1e-5;
 pub const ONE_OVER_EPSILON: f64 = 1. / EPSILON;
+pub const DISABLE_SOUND: bool = true;

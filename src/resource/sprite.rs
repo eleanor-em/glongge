@@ -31,7 +31,8 @@ enum SpriteState {
 
 #[register_scene_object]
 pub struct GgInternalSprite {
-    texture: Texture,
+    textures: Vec<Texture>,
+    texture_indices: Vec<usize>,
     areas: Vec<TextureSubArea>,
     elapsed_us: u128,
     frame_time_ms: Vec<u32>,
@@ -45,23 +46,35 @@ pub struct GgInternalSprite {
     name: String,
 }
 
-pub struct Sprite {
-    inner: Rc<RefCell<GgInternalSprite>>,
-    extent: Vec2,
-    collider: BoxCollider,
-}
-
-impl Default for Sprite {
-    fn default() -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(GgInternalSprite::default())),
-            extent: Vec2::zero(),
-            collider: BoxCollider::default(),
-        }
-    }
-}
-
 impl GgInternalSprite {
+    fn from_textures<ObjectType: ObjectTypeEnum>(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        textures: Vec<Texture>
+    ) -> Sprite {
+        let areas = textures.iter().map(|_| TextureSubArea::default()).collect_vec();
+        let frame_time_ms = textures.iter().map(|tex| {
+            tex.duration().map_or(1000, |d| {
+                u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
+            })
+        }).collect_vec();
+        let render_item = vertex::rectangle(Vec2::zero(), textures[0].half_widths());
+        let extent = textures[0].aa_extent().into();
+        let inner = Rc::new(RefCell::new(Self {
+            textures: textures,
+            texture_indices: (0..areas.len()).collect_vec(),
+            areas, frame_time_ms, render_item,
+            paused: false,
+            elapsed_us: 0,
+            frame: 0,
+            state: SpriteState::Show,
+            last_state: SpriteState::Show,
+            name: "Sprite".to_string(),
+        }));
+        object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
+        let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
+        Sprite { inner, extent, collider }
+    }
+
     fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
@@ -81,7 +94,9 @@ impl GgInternalSprite {
         let frame_time_ms = vec![1000; areas.len()];
         let render_item = vertex::rectangle(Vec2::zero(), (tile_size / 2).into());
         let inner = Rc::new(RefCell::new(Self {
-            texture, areas, frame_time_ms, render_item,
+            textures: vec![texture],
+            texture_indices: vec![0; areas.len()],
+            areas, frame_time_ms, render_item,
             paused: false,
             elapsed_us: 0,
             frame: 0,
@@ -97,6 +112,12 @@ impl GgInternalSprite {
 
     fn current_frame(&self) -> TextureSubArea {
         self.areas[self.frame]
+    }
+
+    fn set_frame_orders(&mut self, frames: Vec<usize>) {
+        self.areas = frames.iter().map(|i| self.areas[*i]).collect();
+        // XXX: not tested properly.
+        self.texture_indices = frames.into_iter().map(|i| self.texture_indices[i]).collect();
     }
 
     fn set_depth(&mut self, depth: VertexDepth) {
@@ -175,16 +196,56 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
     }
     fn render_info(&self) -> Vec<RenderInfo> {
         check_eq!(self.state, SpriteState::Show);
+        check_lt!(self.frame, self.areas.len());
+        check_eq!(self.texture_indices.len(), self.areas.len());
+        let texture_index = self.texture_indices[self.frame];
+        let texture_id = self.textures[texture_index].id();
         vec![RenderInfo {
             shader_id: get_shader(SpriteShader::name()),
-            texture_id: self.texture.id(),
+            texture_id,
             texture_sub_area: self.current_frame(),
             ..Default::default()
         }]
     }
 }
 
+pub struct Sprite {
+    inner: Rc<RefCell<GgInternalSprite>>,
+    extent: Vec2,
+    collider: BoxCollider,
+}
+
+impl Default for Sprite {
+    fn default() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(GgInternalSprite::default())),
+            extent: Vec2::zero(),
+            collider: BoxCollider::default(),
+        }
+    }
+}
+
 impl Sprite {
+    pub fn from_file<ObjectType: ObjectTypeEnum>(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+        filename: impl AsRef<str>
+    ) -> Result<Sprite> {
+        Ok(GgInternalSprite::from_textures(
+            object_ctx,
+            vec![resource_handler.texture.wait_load_file(filename)?]
+        ))
+    }
+    pub fn from_file_animated<ObjectType: ObjectTypeEnum>(
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+        filename: impl AsRef<str>
+    ) -> Result<Sprite> {
+        Ok(GgInternalSprite::from_textures(
+            object_ctx,
+            resource_handler.texture.wait_load_file_animated(filename)?
+        ))
+    }
     pub fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture,
@@ -223,6 +284,7 @@ impl Sprite {
             bottom_right - top_left
         )
     }
+
     pub(crate) fn from_texture<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         texture: Texture
@@ -254,11 +316,20 @@ impl Sprite {
         self
     }
     #[must_use]
-    pub fn with_frame_orders(self, frames: Vec<usize>) -> Self {
+    pub fn with_frame_time_factor(self, factor: f64) -> Self {
         {
             let mut inner = self.inner.borrow_mut();
-            inner.areas = frames.into_iter().map(|i| inner.areas[i]).collect();
+            inner.frame_time_ms = inner.frame_time_ms.iter()
+                .map(|t| f64::from(*t) * factor)
+                .map(|t| t.round() as u32)
+                .collect_vec();
         }
+        self
+    }
+    #[must_use]
+    pub fn with_frame_orders(self, frames: Vec<usize>) -> Self {
+        self.inner.borrow_mut()
+            .set_frame_orders(frames);
         self
     }
     #[must_use]
@@ -301,7 +372,8 @@ impl Sprite {
     }
 
     pub fn texture_id(&self) -> TextureId {
-        self.inner.borrow().texture.id()
+        let inner = self.inner.borrow();
+        inner.textures[inner.frame].id()
     }
 }
 

@@ -33,6 +33,7 @@ pub struct Sound {
 
 impl Sound {
     pub fn play_shifted(&mut self, mag: f64) {
+        if DISABLE_SOUND { return; }
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
             let source = state.source_mut(inner.handle);
@@ -46,6 +47,7 @@ impl Sound {
         }
     }
     pub fn play(&mut self) {
+        if DISABLE_SOUND { return; }
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
             let source = state.source_mut(inner.handle);
@@ -59,6 +61,7 @@ impl Sound {
     }
 
     pub fn play_loop(&mut self) {
+        if DISABLE_SOUND { return; }
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
             let source = state.source_mut(inner.handle);
@@ -74,6 +77,7 @@ impl Sound {
     }
 
     pub fn stop(&mut self) {
+        if DISABLE_SOUND { return; }
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
             let source = state.source_mut(inner.handle);
@@ -86,6 +90,7 @@ impl Sound {
     }
 
     pub fn is_playing(&self) -> bool {
+        if DISABLE_SOUND { return false; }
         self.inner.as_ref()
             .is_some_and(|inner| {
                 let mut state = inner.ctx.state();
