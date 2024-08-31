@@ -340,6 +340,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         scene_data: Arc<Mutex<Vec<u8>>>
     ) -> Result<Self> {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
+        let clear_col = render_data_channel.lock().unwrap().get_clear_col();
         let mut rv = Self {
             input_handler,
             object_handler: ObjectHandler::new(),
@@ -347,7 +348,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             viewport: render_data_channel.clone().lock().unwrap().current_viewport(),
             resource_handler,
             render_data_channel,
-            clear_col: Colour::black(),
+            clear_col,
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
             scene_instruction_rx,

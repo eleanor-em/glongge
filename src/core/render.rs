@@ -113,6 +113,7 @@ impl RenderDataChannel {
         }
     }
     pub(crate) fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
+    pub(crate) fn get_clear_col(&mut self) -> Colour { self.clear_col }
 
     pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f64> {
         let rv = self.should_resize;
@@ -193,6 +194,12 @@ impl RenderHandler {
             rc.set_global_scale_factor(global_scale_factor);
             let _ = rc.should_resize_with_scale_factor();
         }
+        self
+    }
+
+    #[must_use]
+    pub fn with_clear_col(self, clear_col: Colour) -> Self {
+        self.render_data_channel.lock().unwrap().set_clear_col(clear_col);
         self
     }
 

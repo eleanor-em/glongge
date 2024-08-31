@@ -1,4 +1,3 @@
-#![feature(const_fn_floating_point_arithmetic)]
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
 use num_traits::{Float, One};

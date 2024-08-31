@@ -90,6 +90,23 @@ impl InputHandler {
         self.released(key) || self.stayed_up(key)
     }
 
+    pub fn arrows_as_joystick(&self) -> Vec2 {
+        let mut dir = Vec2::zero();
+        if self.down(KeyCode::ArrowRight) {
+            dir += Vec2::right();
+        }
+        if self.down(KeyCode::ArrowLeft) {
+            dir += Vec2::left();
+        }
+        if self.down(KeyCode::ArrowUp) {
+            dir += Vec2::up();
+        }
+        if self.down(KeyCode::ArrowDown) {
+            dir += Vec2::down();
+        }
+        dir
+    }
+
     pub fn mouse_pressed(&self, button: MouseButton) -> bool {
         match button {
             MouseButton::Primary => self.primary_mouse.inner == Some(InputState::Pressed),

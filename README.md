@@ -7,8 +7,7 @@ Rust game engine. Yeehaw.
 
 Should just work with `cargo run`. Tested on macOS (thoroughly), Windows, and Linux (less thoroughly).
 
-When run as a binary, it plays a demo game (see `src/mario`).
+When run as a binary, it plays a demo game (see `src/examples/mario`).
 
 ## Required nightly features
 - `#![feature(trait_upcasting)]`
-- `#![feature(const_fn_floating_point_arithmetic)]` (for the examples)

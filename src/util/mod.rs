@@ -599,6 +599,7 @@ pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     global_scale_factor: f64,
+    clear_col: Colour,
     object_type: PhantomData<ObjectType>
 }
 
@@ -628,6 +629,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
             viewport,
             shaders,
             global_scale_factor: 1.,
+            clear_col: Colour::black(),
             object_type: PhantomData
         })
     }
@@ -645,6 +647,11 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         self.global_scale_factor = global_scale_factor;
         self
     }
+    #[must_use]
+    pub fn with_clear_col(mut self, clear_col: Colour) -> Self {
+        self.clear_col = clear_col;
+        self
+    }
 
     pub fn build(self) -> Result<GgContext<ObjectType>> {
         let input_handler = InputHandler::new();
@@ -655,7 +662,8 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
             self.viewport.clone(),
             self.shaders,
         )?
-            .with_global_scale_factor(self.global_scale_factor);
+            .with_global_scale_factor(self.global_scale_factor)
+            .with_clear_col(self.clear_col);
         Ok(GgContext {
             window_ctx: self.window_ctx,
             vk_ctx: self.vk_ctx,
