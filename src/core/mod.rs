@@ -119,6 +119,7 @@ impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
     }
 }
 
+#[derive(Clone)]
 pub struct SceneObjectWithId<ObjectType> {
     pub(crate) object_id: ObjectId,
     pub(crate) inner: AnySceneObject<ObjectType>,
@@ -127,11 +128,6 @@ pub struct SceneObjectWithId<ObjectType> {
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     fn new(object_id: ObjectId, obj: AnySceneObject<ObjectType>) -> Self {
         Self { object_id, inner: obj }
-    }
-
-    // Do not allow public cloning.
-    fn clone(&self) -> SceneObjectWithId<ObjectType> {
-        Self::new(self.object_id, self.inner.clone())
     }
 
     pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }

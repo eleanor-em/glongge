@@ -27,6 +27,18 @@ impl GgInternalSpline {
         }
         *points.first().unwrap()
     }
+
+    pub fn keep_last_n(&mut self, n: usize) {
+        for _ in 0..(self.control_points.len().saturating_sub(n)) {
+            self.control_points.remove(0);
+        }
+    }
+    pub fn push(&mut self, point: Vec2) {
+        self.control_points.push(point);
+    }
+    pub fn push_front(&mut self, point: Vec2) {
+        self.control_points.insert(0, point);
+    }
 }
 
 #[register_scene_object]

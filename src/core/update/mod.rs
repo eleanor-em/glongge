@@ -1157,6 +1157,11 @@ impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
             .filter_map(|(_, obj)| obj.downcast_mut())
             .collect()
     }
+    pub fn first_other<T: SceneObject<ObjectType>>(&self) -> Option<SceneObjectWithId<ObjectType>> {
+        self.others_inner()
+            .find(|(_, obj)| obj.downcast::<T>().is_some())
+            .map(|(obj_id, obj)| SceneObjectWithId::new(obj_id, obj.clone()))
+    }
     pub fn first_other_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         self.others_inner()
             .find_map(|(_, obj)| obj.downcast_mut())
