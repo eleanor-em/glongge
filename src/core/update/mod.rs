@@ -1036,7 +1036,7 @@ pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     pending_removed_coroutines: BTreeSet<CoroutineId>,
 }
 
-impl<'a, ObjectType: ObjectTypeEnum> SceneContext<'a, ObjectType> {
+impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
     pub fn stop(&self) {
         self.scene_instruction_tx.send(SceneInstruction::Stop).unwrap();
     }
@@ -1129,7 +1129,7 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     dummy_transform: Rc<RefCell<Transform>>,
 }
 
-impl<'a, ObjectType: ObjectTypeEnum> ObjectContext<'a, ObjectType> {
+impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn parent(&self) -> Option<&SceneObjectWithId<ObjectType>> { self.parent.as_ref() }
     pub fn children(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.children.iter()
@@ -1368,7 +1368,7 @@ pub struct ViewportContext<'a> {
     clear_col: &'a mut Colour,
 }
 
-impl<'a> ViewportContext<'a> {
+impl ViewportContext<'_> {
     pub fn clamp_to_left(&mut self, min: Option<f64>, max: Option<f64>) {
         if let Some(min) = min {
             if self.viewport.left() < min {

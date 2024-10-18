@@ -513,7 +513,7 @@ impl<'a, T> Nonempty for NonemptyVecRefMut<'a, T> {
     }
 }
 
-impl<'a, T> Deref for NonemptyVecRefMut<'a, T> {
+impl<T> Deref for NonemptyVecRefMut<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target { self.inner }
