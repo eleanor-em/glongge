@@ -505,7 +505,7 @@ impl<'a, T> NonemptyVecRefMut<'a, T> {
     }
 }
 
-impl<'a, T> Nonempty for NonemptyVecRefMut<'a, T> {
+impl<T> Nonempty for NonemptyVecRefMut<'_, T> {
     type Inner = Vec<T>;
 
     fn iter(&self) -> impl Iterator<Item=&<Self::Inner as IntoIterator>::Item> {
