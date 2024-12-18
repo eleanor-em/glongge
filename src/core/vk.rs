@@ -727,14 +727,6 @@ impl WindowEventHandler {
             full_output
         )?;
         self.render_stats.on_render.stop();
-
-        // Drawing is complete, from winit docs:
-        // "You should call this event after your drawing operations, but before you submit
-        // the buffer to the display or commit your drawings. Doing so will help winit to properly
-        // schedule and make assumptions about its internal state. For example, it could properly
-        // throttle [`WindowEvent::RedrawRequested`]."
-        self.window.pre_present_notify();
-
         self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
