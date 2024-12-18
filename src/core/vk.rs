@@ -831,7 +831,7 @@ impl WindowEventHandler {
                 self.recreate_swapchain()
             }
             Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
-                if !self.poll_ready() { return Ok(()); }
+                while !self.poll_ready() {}
                 let per_image_ctx = self.vk_ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();
                 // XXX: "acquire_next_image" is somewhat misleading, since it does not block
