@@ -71,7 +71,7 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
         let entry = entry?;
         let filename = entry.file_name().to_str().unwrap().to_string();
         let is_rust_file = entry.path().extension()
-            .map_or(false, |ext| ext.eq_ignore_ascii_case("rs"));
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"));
         if is_rust_file && filename != "build.rs" && filename != "object_type.rs" {
             let path = entry.path().display().to_string();
             let path = path.replace(&format!("{}{sep}", current_dir.display()), "");
