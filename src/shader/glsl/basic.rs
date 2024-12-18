@@ -66,7 +66,7 @@ pub mod vertex_shader {
                     vec4(1, 0, 0, 0),
                     vec4(0, 1, 0, 0),
                     vec4(0, 0, 1, 0),
-                    vec4(translation, 0, 1));
+                    vec4(round(translation), 0, 1));
                 gl_Position = projection * translation_mat * rotation_mat * scale_mat * vec4(position, 0, 1);
                 f_blend_col = blend_col;
             }
