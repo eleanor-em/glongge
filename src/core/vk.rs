@@ -861,6 +861,12 @@ impl WindowEventHandler {
                         per_image_ctx.current.replace(image_idx as usize);
                         self.idle(&mut per_image_ctx, acquire_future, full_output)?;
                         let image_idx = per_image_ctx.current.expect("no current image?");
+                        if (per_image_ctx.last + 1) % self.vk_ctx.framebuffers.len() != image_idx {
+                            warn!("per_image_ctx: last={}, next={}, count={}",
+                                per_image_ctx.last,
+                                image_idx,
+                                self.vk_ctx.framebuffers.len());
+                        }
                         per_image_ctx.last = image_idx;
                         Ok(())
                     },
