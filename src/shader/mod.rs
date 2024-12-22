@@ -94,7 +94,7 @@ pub trait Shader: Send {
     fn name() -> ShaderName where Self: Sized;
     fn name_concrete(&self) -> ShaderName;
     fn id(&self) -> ShaderId { get_shader(self.name_concrete()) }
-    fn on_render(
+    fn do_render_shader(
         &mut self,
         render_frame: ShaderRenderFrame
     ) -> Result<()>;
@@ -142,13 +142,6 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn write(&mut self, data: &[T]) -> Result<()> {
         let mut buf_len = usize::try_from(self.inner.len())
             .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
-        self.begin += self.len();
-        if self.begin > buf_len {
-            bail!("self.begin accounting wrong? {} > {buf_len}", self.begin)
-        }
-        if self.begin == buf_len {
-            self.begin = 0;
-        }
         while self.begin + data.len() > buf_len {
             buf_len = usize::try_from(self.inner.len())
                 .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
@@ -156,6 +149,14 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
             self.begin = 0;
         }
         self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(data);
+
+        self.begin += self.len();
+        if self.begin > buf_len {
+            bail!("self.begin accounting wrong? {} > {buf_len}", self.begin)
+        }
+        if self.begin == buf_len {
+            self.begin = 0;
+        }
 
         self.vertex_count = data.len();
         Ok(())
@@ -321,7 +322,7 @@ impl Shader for SpriteShader {
     }
     fn name_concrete(&self) -> ShaderName { Self::name() }
 
-    fn on_render(
+    fn do_render_shader(
         &mut self,
         render_frame: ShaderRenderFrame
     ) -> Result<()> {
@@ -488,7 +489,7 @@ impl Shader for WireframeShader {
     }
     fn name_concrete(&self) -> ShaderName { Self::name() }
 
-    fn on_render(
+    fn do_render_shader(
         &mut self,
         render_frame: ShaderRenderFrame,
     ) -> Result<()> {
@@ -625,7 +626,7 @@ impl Shader for TriangleFanShader {
     }
     fn name_concrete(&self) -> ShaderName { Self::name() }
 
-    fn on_render(
+    fn do_render_shader(
         &mut self,
         render_frame: ShaderRenderFrame,
     ) -> Result<()> {
@@ -762,7 +763,7 @@ impl Shader for BasicShader {
     }
     fn name_concrete(&self) -> ShaderName { Self::name() }
 
-    fn on_render(
+    fn do_render_shader(
         &mut self,
         render_frame: ShaderRenderFrame,
     ) -> Result<()> {

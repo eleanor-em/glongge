@@ -215,7 +215,7 @@ impl RenderHandler {
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
     }
 
-    pub(crate) fn on_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
+    pub(crate) fn do_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
         let gui_commands = {
             let mut channel = self.render_data_channel.lock().unwrap();
             channel.last_render_stats = last_render_stats;
@@ -224,7 +224,7 @@ impl RenderHandler {
         gui_commands.into_iter().for_each(|cmd| cmd(ctx));
     }
 
-    pub(crate) fn on_render(
+    pub(crate) fn do_render(
         &mut self,
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
@@ -241,7 +241,7 @@ impl RenderHandler {
         }
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
             let shader_id = shader.id();
-            shader.on_render(render_frame.for_shader(shader_id))?;
+            shader.do_render_shader(render_frame.for_shader(shader_id))?;
         }
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),

@@ -342,6 +342,7 @@ impl VulkanoContext {
     }
 
     fn recreate_swapchain(&mut self, window: &Arc<Window>) -> Result<()> {
+        info!("recreate swapchain");
         let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
             ..self.swapchain.create_info()
@@ -723,13 +724,13 @@ impl WindowEventHandler {
         self.render_stats.synchronise.start();
         let ready_future = self.synchronise(per_image_ctx, acquire_future)?;
         self.render_stats.synchronise.stop();
-        self.render_stats.on_render.start();
-        let command_buffer = self.render_handler.on_render(
+        self.render_stats.do_render.start();
+        let command_buffer = self.render_handler.do_render(
             &self.vk_ctx,
             self.vk_ctx.framebuffers.current_value(per_image_ctx),
             full_output
         )?;
-        self.render_stats.on_render.stop();
+        self.render_stats.do_render.stop();
         self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
@@ -853,7 +854,7 @@ impl WindowEventHandler {
                             let mut input = self.input_handler.lock().unwrap();
                             input.set_viewport(self.render_handler.viewport());
                             input.update_mouse(ctx);
-                            self.render_handler.on_gui(ctx, self.last_render_stats.clone());
+                            self.render_handler.do_gui(ctx, self.last_render_stats.clone());
                         });
                         self.render_stats.between_renders.stop();
                         platform.handle_platform_output(&self.window, full_output.platform_output.clone());
@@ -883,7 +884,7 @@ impl WindowEventHandler {
 pub(crate) struct RenderPerfStats {
     handle_swapchain: TimeIt,
     synchronise: TimeIt,
-    on_render: TimeIt,
+    do_render: TimeIt,
     submit_command_buffers: TimeIt,
     end_step: TimeIt,
     between_renders: TimeIt,
@@ -903,7 +904,7 @@ impl RenderPerfStats {
         Self {
             handle_swapchain: TimeIt::new("handle swapchain"),
             synchronise: TimeIt::new("synchronise"),
-            on_render: TimeIt::new("on_render"),
+            do_render: TimeIt::new("do_render"),
             submit_command_buffers: TimeIt::new("submit cmdbufs"),
             end_step: TimeIt::new("end step"),
             between_renders: TimeIt::new("between renders"),
@@ -959,7 +960,7 @@ impl RenderPerfStats {
             self.last_perf_stats = Some(Box::new(Self {
                 handle_swapchain: self.handle_swapchain.report_take(),
                 synchronise: self.synchronise.report_take(),
-                on_render: self.on_render.report_take(),
+                do_render: self.do_render.report_take(),
                 submit_command_buffers: self.submit_command_buffers.report_take(),
                 end_step: self.end_step.report_take(),
                 between_renders: self.between_renders.report_take(),
@@ -985,7 +986,7 @@ impl RenderPerfStats {
             self.total.as_tuple_ms(),
             self.handle_swapchain.as_tuple_ms(),
             self.synchronise.as_tuple_ms(),
-            self.on_render.as_tuple_ms(),
+            self.do_render.as_tuple_ms(),
             self.submit_command_buffers.as_tuple_ms(),
             self.end_step.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
