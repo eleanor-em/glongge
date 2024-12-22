@@ -77,6 +77,8 @@ impl WindowContext {
         let event_loop = EventLoop::new()?;
         let window = Arc::new(
             WindowBuilder::new()
+                .with_title("glongge")
+                .with_resizable(false)
                 .with_inner_size(LogicalSize::new(size.x, size.y))
                 .build(&event_loop)?,
         );
