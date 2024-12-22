@@ -270,6 +270,7 @@ impl VulkanoContext {
         let instance = macos_instance(&window_ctx.event_loop, library)?;
         let surface = compat::surface_from_window(instance.clone(), &window_ctx.window)?;
         let physical_device = any_physical_device(&instance, &surface)?;
+        info!("physical device: {physical_device:?}");
         let (device, queue) = any_graphical_queue_family(physical_device.clone())?;
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
@@ -527,13 +528,14 @@ fn any_graphical_queue_family(
                 .queue_flags
                 .contains(QueueFlags::GRAPHICS)
         })
-        .context("vulkano: couldn't find a graphical queue family")?
-        as u32;
+        .context("vulkano: couldn't find a graphical queue family")?;
+    info!("queue family properties: {:?}",
+        physical_device.queue_family_properties()[queue_family_index]);
     let (device, mut queues) = Device::new(
         physical_device,
         DeviceCreateInfo {
             queue_create_infos: vec![QueueCreateInfo {
-                queue_family_index,
+                queue_family_index: queue_family_index as u32,
                 ..Default::default()
             }],
             enabled_extensions: device_extensions(),
@@ -566,6 +568,7 @@ fn create_swapchain(
     if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
         error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
     }
+    info!("surface capabilities: {caps:?}");
     Ok(Swapchain::new(
         device,
         surface,
