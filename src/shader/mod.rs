@@ -20,7 +20,7 @@ use vulkano::{pipeline::{
     PipelineShaderStageCreateInfo,
     layout::PipelineDescriptorSetLayoutCreateInfo
 }, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, image::sampler::{BorderColor, Filter, Sampler, SamplerAddressMode, SamplerCreateInfo}, descriptor_set::{
-    PersistentDescriptorSet,
+    DescriptorSet,
     WriteDescriptorSet,
     layout::DescriptorSetLayoutCreateFlags
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
@@ -189,8 +189,10 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
             bail!("too many vertices: {begin} + {vertex_count} = {} >= {buf_len}",
                        begin + vertex_count);
         }
-        builder.bind_vertex_buffers(0, self.inner.clone())?
-            .draw(vertex_count, 1, begin, 0)?;
+        unsafe {
+            builder.bind_vertex_buffers(0, self.inner.clone())?
+                .draw(vertex_count, 1, begin, 0)?;
+        }
         Ok(())
     }
 }
@@ -234,7 +236,7 @@ impl SpriteShader {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    sprite::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                    sprite::Vertex::per_vertex().definition(&vs)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -278,7 +280,7 @@ impl SpriteShader {
             Some(pipeline) => Ok(pipeline)
         }
     }
-    fn create_uniform_desc_set(&mut self) -> Result<Arc<PersistentDescriptorSet>> {
+    fn create_uniform_desc_set(&mut self) -> Result<Arc<DescriptorSet>> {
         let pipeline = self.get_or_create_pipeline()?;
         let sampler = Sampler::new(
             self.ctx.device(),
@@ -298,8 +300,8 @@ impl SpriteShader {
             .expect("textures.first() should always contain a blank texture")
             .clone();
         textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
-        Ok(PersistentDescriptorSet::new(
-            &self.ctx.descriptor_set_allocator(),
+        Ok(DescriptorSet::new(
+            self.ctx.descriptor_set_allocator(),
             pipeline.layout().set_layouts()[0].clone(),
             [
                 WriteDescriptorSet::image_view_sampler_array(
@@ -431,7 +433,7 @@ impl WireframeShader {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                    basic::Vertex::per_vertex().definition(&vs)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -571,7 +573,7 @@ impl TriangleFanShader {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                    basic::Vertex::per_vertex().definition(&vs)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -708,7 +710,7 @@ impl BasicShader {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs.info().input_interface)?;
+                    basic::Vertex::per_vertex().definition(&vs)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),

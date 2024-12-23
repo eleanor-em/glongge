@@ -13,9 +13,8 @@ use crate::core::input::InputHandler;
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
-use crate::core::vk::{AdjustedViewport, VulkanoContext, WindowContext, WindowEventHandler};
+use crate::core::vk::WindowEventHandler;
 use crate::gui::GuiContext;
-use crate::shader::{BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
 
 pub mod linalg;
 pub mod colour;
@@ -592,12 +591,8 @@ fn setup_log() -> Result<()> {
 }
 
 pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
-    window_ctx: WindowContext,
-    vk_ctx: VulkanoContext,
+    window_size: Vec2i,
     gui_ctx: GuiContext,
-    resource_handler: ResourceHandler,
-    viewport: UniqueShared<AdjustedViewport>,
-    shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     global_scale_factor: f64,
     clear_col: Colour,
     object_type: PhantomData<ObjectType>
@@ -608,40 +603,24 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         window_size: impl Into<Vec2i>,
     ) -> Result<Self> {
         setup_log()?;
-        let window_ctx = WindowContext::new(window_size.into())?;
         let gui_ctx = GuiContext::default();
-        let vk_ctx = VulkanoContext::new(&window_ctx)?;
-        let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
-        ObjectType::preload_all(&mut resource_handler)?;
-        let viewport = window_ctx.create_default_viewport();
-
-        let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
-            SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
-            BasicShader::create(vk_ctx.clone(), viewport.clone())?,
-            TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
-        ];
         Ok(Self {
-            window_ctx,
-            vk_ctx,
+            window_size: window_size.into(),
             gui_ctx,
-            resource_handler,
-            viewport,
-            shaders,
             global_scale_factor: 1.,
             clear_col: Colour::black(),
             object_type: PhantomData
         })
     }
 
-    #[must_use]
-    pub fn with_extra_shaders(
-        mut self,
-        create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<Box<dyn Shader>>>
-    ) -> Self {
-        self.shaders.extend(create_shaders(&self));
-        self
-    }
+    // #[must_use]
+    // pub fn with_extra_shaders(
+    //     mut self,
+    //     create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<Box<dyn Shader>>>
+    // ) -> Self {
+    //     self.shaders.extend(create_shaders(&self));
+    //     self
+    // }
     #[must_use]
     pub fn with_global_scale_factor(mut self, global_scale_factor: f64) -> Self {
         self.global_scale_factor = global_scale_factor;
@@ -653,54 +632,40 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
         self
     }
 
-    pub fn build(self) -> Result<GgContext<ObjectType>> {
-        let input_handler = InputHandler::new();
-        let render_handler = RenderHandler::new(
-            &self.vk_ctx,
-            self.gui_ctx.clone(),
-            self.window_ctx.window(),
-            self.viewport.clone(),
-            self.shaders,
-        )?
-            .with_global_scale_factor(self.global_scale_factor)
-            .with_clear_col(self.clear_col);
-        Ok(GgContext {
-            window_ctx: self.window_ctx,
-            vk_ctx: self.vk_ctx,
-            gui_ctx: self.gui_ctx,
-            resource_handler: self.resource_handler,
-            viewport: self.viewport,
-            input_handler,
-            render_handler,
-            object_type: self.object_type
-        })
-    }
-}
-
-#[allow(dead_code)]
-pub struct GgContext<ObjectType: ObjectTypeEnum> {
-    window_ctx: WindowContext,
-    vk_ctx: VulkanoContext,
-    gui_ctx: GuiContext,
-    resource_handler: ResourceHandler,
-    viewport: UniqueShared<AdjustedViewport>,
-    input_handler: Arc<Mutex<InputHandler>>,
-    render_handler: RenderHandler,
-    object_type: PhantomData<ObjectType>
-}
-
-impl<ObjectType: ObjectTypeEnum> GgContext<ObjectType> {
-    pub fn scene_handler(&self) -> SceneHandler<ObjectType> {
-        SceneHandler::new(
-            self.input_handler.clone(),
-            self.resource_handler.clone(),
-            self.render_handler.clone()
+    pub fn build_and_run_window<F>(self, create_and_start_scene_handler: F) -> Result<()>
+    where F: FnOnce(SceneHandlerBuilder<ObjectType>)
+    {
+        WindowEventHandler::create_and_run(
+            self.window_size,
+            self.global_scale_factor,
+            self.clear_col,
+            self.gui_ctx,
+            create_and_start_scene_handler
         )
     }
+}
 
-    pub fn consume_run_window(self) {
-        let (event_loop, window) = self.window_ctx.consume();
-        WindowEventHandler::new(window, self.vk_ctx, self.gui_ctx, self.render_handler, self.input_handler, self.resource_handler)
-            .consume(event_loop);
+pub struct SceneHandlerBuilder<ObjectType> {
+    input_handler: Arc<Mutex<InputHandler>>,
+    resource_handler: ResourceHandler,
+    render_handler: RenderHandler,
+    phantom_data: PhantomData<ObjectType>,
+}
+
+impl<ObjectType> SceneHandlerBuilder<ObjectType>
+where ObjectType: ObjectTypeEnum
+{
+    pub fn new(input_handler: Arc<Mutex<InputHandler>>,
+               resource_handler: ResourceHandler,
+               render_handler: RenderHandler) -> Self {
+        Self {
+            input_handler,
+            resource_handler,
+            render_handler,
+            phantom_data: PhantomData,
+        }
+    }
+    pub fn build(self) -> SceneHandler<ObjectType> {
+        SceneHandler::new(self.input_handler, self.resource_handler, self.render_handler)
     }
 }

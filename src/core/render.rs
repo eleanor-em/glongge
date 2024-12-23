@@ -14,7 +14,6 @@ use vulkano::{
     render_pass::Framebuffer,
     Validated,
 };
-use egui_winit::winit::window::Window;
 use num_traits::Zero;
 use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
@@ -32,7 +31,7 @@ use crate::{
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
 use crate::util::UniqueShared;
-use crate::core::vk::RenderPerfStats;
+use crate::core::vk::{GgWindow, RenderPerfStats};
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;
 use crate::shader::{Shader, ShaderId};
@@ -153,7 +152,7 @@ pub struct ShaderRenderFrame<'a> {
 pub struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    window: Arc<Window>,
+    window: GgWindow,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: UniqueShared<GuiRenderer>,
@@ -164,7 +163,7 @@ impl RenderHandler {
     pub fn new(
         vk_ctx: &VulkanoContext,
         gui_ctx: GuiContext,
-        window: Arc<Window>,
+        window: GgWindow,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     ) -> Result<Self> {
@@ -207,7 +206,7 @@ impl RenderHandler {
 
     pub(crate) fn on_resize(
         &mut self,
-        window: Arc<Window>,
+        window: GgWindow,
     ) {
         self.window = window;
         self.viewport.get().update_from_window(&self.window);

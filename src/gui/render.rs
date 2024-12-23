@@ -15,7 +15,7 @@ use vulkano::{
     command_buffer::AutoCommandBufferBuilder,
     command_buffer::PrimaryAutoCommandBuffer,
     descriptor_set::layout::DescriptorSetLayoutCreateFlags,
-    descriptor_set::PersistentDescriptorSet,
+    descriptor_set::DescriptorSet,
     descriptor_set::WriteDescriptorSet,
     image::sampler::SamplerCreateInfo,
     memory::allocator::AllocationCreateInfo,
@@ -161,7 +161,7 @@ pub struct GuiRenderer {
     pipeline: Option<Arc<GraphicsPipeline>>,
 
     font_sampler: Arc<Sampler>,
-    texture_desc_sets: BTreeMap<egui::TextureId, Arc<PersistentDescriptorSet>>,
+    texture_desc_sets: BTreeMap<egui::TextureId, Arc<DescriptorSet>>,
     texture_images: BTreeMap<egui::TextureId, Arc<ImageView>>,
     next_native_tex_id: u64,
 
@@ -202,7 +202,7 @@ impl GuiRenderer {
                 let fs = self.fs.entry_point("main")
                     .context("fragment shader: entry point missing")?;
                 let vertex_input_state =
-                    EguiVertex::per_vertex().definition(&vs.info().input_interface)?;
+                    EguiVertex::per_vertex().definition(&vs)?;
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -256,8 +256,8 @@ impl GuiRenderer {
         let layout = pipeline.layout().set_layouts().first()
             .context("pipeline layout missing descriptor set layout")?;
         let sampler = Sampler::new(self.vk_ctx.device(), sampler_create_info)?;
-        let desc_set = PersistentDescriptorSet::new(
-            &self.vk_ctx.descriptor_set_allocator(),
+        let desc_set = DescriptorSet::new(
+            self.vk_ctx.descriptor_set_allocator(),
             layout.clone(),
             [WriteDescriptorSet::image_view_sampler(0, image.clone(), sampler)],
             [],
@@ -346,8 +346,8 @@ impl GuiRenderer {
             let pipeline = self.get_or_create_pipeline()?;
             let layout = pipeline.layout().set_layouts().first()
                 .context("no descriptor sets in pipeline layout")?;
-            let desc_set = PersistentDescriptorSet::new(
-                &self.vk_ctx.descriptor_set_allocator(),
+            let desc_set = DescriptorSet::new(
+                self.vk_ctx.descriptor_set_allocator(),
                 layout.clone(),
                 [WriteDescriptorSet::image_view_sampler(0, view.clone(), self.font_sampler.clone())],
                 [],
@@ -478,13 +478,16 @@ impl GuiRenderer {
             ) {
                 error!("{}", e.root_cause());
             } else {
-                builder.draw_indexed(
-                    mesh.indices.len() as u32,
-                    1,
-                    index_cursor,
-                    vertex_cursor,
-                    0
-                )?;
+                // TODO: shouldn't require unsafe?
+                unsafe {
+                    builder.draw_indexed(
+                        mesh.indices.len() as u32,
+                        1,
+                        index_cursor,
+                        vertex_cursor,
+                        0
+                    )?;
+                }
             }
             index_cursor += mesh.indices.len() as u32;
             vertex_cursor += i32::try_from(mesh.vertices.len())

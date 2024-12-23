@@ -37,7 +37,7 @@ impl ObjectLabel {
         }
     }
 
-    fn id_source(&self) -> String {
+    fn id_salt(&self) -> String {
         match self {
             ObjectLabel::Root => "<root>".to_string(),
             ObjectLabel::Unique(name, _) => name.clone(),
@@ -477,7 +477,7 @@ impl GuiObjectTreeBuilder {
                 ui.add(egui::Label::new(layout_job).selectable(false));
 
                 let response = egui::CollapsingHeader::new(self.label.name())
-                    .id_source(self.label.id_source())
+                    .id_salt(self.label.id_salt())
                     .show_background(self.selected)
                     .open(Some(self.open))
                     .show(ui, |ui| {

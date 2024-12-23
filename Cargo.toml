@@ -25,11 +25,11 @@ time = { version = "0.3.36", features = ["formatting", "macros"] }
 tracing = { version = "0.1.40", features = [] }
 tracing-subscriber = { version = "0.3.18", features = ["time"] }
 # vulkan
-vulkano = "0.34.1"
-vulkano-shaders = "0.34.0"
+vulkano = { git = "https://github.com/vulkano-rs/vulkano/", rev = "ea30f65" }
+vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano/", rev = "ea30f65" }
 # windowing
-egui = "0.28.1"
-egui-winit = "0.28.1"
+egui = "0.30.0"
+egui-winit = "0.30.0"
 raw-window-handle = "0.5.2"
 # media
 ab_glyph = "0.2.28"

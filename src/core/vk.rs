@@ -1,6 +1,6 @@
 use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use std::marker::PhantomData;
 use egui::{FullOutput, ViewportId, ViewportInfo};
-use egui_winit::EventResponse;
 use num_traits::Zero;
 
 use vulkano::{
@@ -22,7 +22,7 @@ use vulkano::{
         Queue,
         QueueCreateInfo,
         QueueFlags,
-        Features
+        DeviceFeatures
     },
     image::{view::ImageView, Image, ImageUsage},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
@@ -48,9 +48,12 @@ use vulkano::{
     VulkanError,
     VulkanLibrary,
 };
-use egui_winit::winit::{dpi::LogicalSize, event::{Event, WindowEvent}, event_loop::EventLoop,  window::{Window, WindowBuilder}};
+use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
+use egui_winit::winit::application::ApplicationHandler;
+use egui_winit::winit::dpi::PhysicalSize;
+use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
-
+use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use crate::{
     core::{
         input::InputHandler,
@@ -61,50 +64,45 @@ use crate::{
         gg_time::TimeIt
     },
 };
+use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;
-use crate::shader::ensure_shaders_locked;
-use crate::util::{gg_float, UniqueShared};
+use crate::shader::{ensure_shaders_locked, BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
+use crate::util::{gg_float, SceneHandlerBuilder, UniqueShared};
 
-pub struct WindowContext {
-    event_loop: EventLoop<()>,
-    window: Arc<Window>,
+#[derive(Clone)]
+pub struct GgWindow {
+    inner: Arc<Window>,
 }
 
-impl WindowContext {
-    pub fn new(size: impl Into<Vec2i>) -> Result<Self> {
+impl GgWindow {
+    pub fn new(event_loop: &ActiveEventLoop, size: impl Into<Vec2i>) -> Result<Self> {
         let size = size.into();
-        let event_loop = EventLoop::new()?;
-        let window = Arc::new(
-            WindowBuilder::new()
-                .with_title("glongge")
-                .with_resizable(false)
-                .with_inner_size(LogicalSize::new(size.x, size.y))
-                .build(&event_loop)?,
+        let mut window_attrs = WindowAttributes::default();
+        window_attrs.title = "glongge".to_string();
+        window_attrs.resizable = false;
+        window_attrs.inner_size = Some(egui_winit::winit::dpi::Size::Logical(
+            LogicalSize::new(f64::from(size.x), f64::from(size.y)))
         );
-        Ok(Self { event_loop, window })
-    }
-
-    pub(crate) fn window(&self) -> Arc<Window> {
-        self.window.clone()
-    }
-
-    pub fn consume(self) -> (EventLoop<()>, Arc<Window>) {
-        (self.event_loop, self.window)
+        let window = Arc::new(event_loop.create_window( window_attrs)?);
+        Ok(Self { inner: window })
     }
 
     pub fn create_default_viewport(&self) -> UniqueShared<AdjustedViewport> {
         UniqueShared::new(AdjustedViewport {
             inner: Viewport {
                 offset: [0., 0.],
-                extent: self.window.inner_size().into(),
+                extent: self.inner_size().into(),
                 depth_range: 0.0..=1.,
             },
-            scale_factor: self.window.scale_factor(),
+            scale_factor: self.scale_factor(),
             global_scale_factor: 1.,
             translation: Vec2::zero(),
         })
     }
+
+    pub fn inner_size(&self) -> PhysicalSize<u32> { self.inner.inner_size() }
+    pub fn scale_factor(&self) -> f64 { self.inner.scale_factor() }
 }
 
 #[derive(Clone, Default)]
@@ -122,7 +120,7 @@ impl AdjustedViewport {
     pub(crate) fn get_global_scale_factor(&self) -> f64 {
         self.global_scale_factor
     }
-    pub fn update_from_window(&mut self, window: &Arc<Window>) {
+    pub fn update_from_window(&mut self, window: &GgWindow) {
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
     }
@@ -266,11 +264,11 @@ fn device_extensions() -> DeviceExtensions {
 }
 
 impl VulkanoContext {
-    pub fn new(window_ctx: &WindowContext) -> Result<Self> {
+    pub fn new(event_loop: &ActiveEventLoop, window: &GgWindow) -> Result<Self> {
         let start = Instant::now();
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
-        let instance = macos_instance(&window_ctx.event_loop, library)?;
-        let surface = compat::surface_from_window(instance.clone(), &window_ctx.window)?;
+        let instance = macos_instance(event_loop, library)?;
+        let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
         let physical_device = any_physical_device(&instance, &surface)?;
         info!("physical device: {physical_device:?}");
         let (device, queue) = any_graphical_queue_family(physical_device.clone())?;
@@ -287,7 +285,7 @@ impl VulkanoContext {
             }
         ));
         let (swapchain, images) = create_swapchain(
-            &window_ctx.window(),
+            window,
             surface.clone(),
             &physical_device,
             device.clone(),
@@ -327,8 +325,8 @@ impl VulkanoContext {
     pub fn memory_allocator(&self) -> Arc<StandardMemoryAllocator> {
         self.memory_allocator.clone()
     }
-    pub fn command_buffer_allocator(&self) -> &StandardCommandBufferAllocator {
-        &self.command_buffer_allocator
+    pub fn command_buffer_allocator(&self) -> Arc<StandardCommandBufferAllocator> {
+        self.command_buffer_allocator.clone()
     }
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
@@ -343,7 +341,7 @@ impl VulkanoContext {
         self.framebuffers.clone()
     }
 
-    fn recreate_swapchain(&mut self, window: &Arc<Window>) -> Result<()> {
+    fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
         info!("recreate swapchain");
         let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
@@ -356,107 +354,8 @@ impl VulkanoContext {
     }
 }
 
-mod compat {
-    use anyhow::Result;
-    use std::any::Any;
-    use std::ffi::c_void;
-    use std::sync::Arc;
-    #[allow(deprecated)]
-    use egui_winit::winit::raw_window_handle::{AppKitWindowHandle, HasDisplayHandle, HasRawDisplayHandle, HasRawWindowHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
-    use raw_window_handle::AppKitDisplayHandle;
-    use vulkano::instance::{Instance, InstanceExtensions};
-    use vulkano::swapchain::Surface;
-
-    struct MacosWrapper {
-        ns_view: *mut c_void,
-    }
-
-    impl From<AppKitWindowHandle> for MacosWrapper {
-        fn from(value: AppKitWindowHandle) -> Self {
-            Self {
-                ns_view: value.ns_view.as_ptr()
-            }
-        }
-    }
-
-    unsafe impl raw_window_handle::HasRawWindowHandle for MacosWrapper {
-        fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-            let mut handle = raw_window_handle::AppKitWindowHandle::empty();
-            handle.ns_view = self.ns_view;
-            raw_window_handle::RawWindowHandle::AppKit(handle)
-        }
-    }
-
-    unsafe impl raw_window_handle::HasRawDisplayHandle for MacosWrapper {
-        fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-            // Unused
-            raw_window_handle::RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
-        }
-    }
-
-    pub fn surface_from_window(
-        instance: Arc<Instance>,
-        window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>
-    ) -> Result<Arc<Surface>> {
-        unsafe { from_window_copied(instance, window) }
-    }
-
-    #[allow(deprecated)]
-    unsafe fn from_window_copied(
-        instance: Arc<Instance>,
-        window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>
-    ) -> Result<Arc<Surface>> {
-        match (window.window_handle()?.raw_window_handle()?, window.display_handle()?.raw_display_handle()?) {
-            #[cfg(target_os = "macos")]
-            (RawWindowHandle::AppKit(window), _) => {
-                Ok(Surface::from_window_ref(instance, &MacosWrapper::from(window))?)
-            }
-            (RawWindowHandle::Wayland(window), RawDisplayHandle::Wayland(display)) => {
-                Ok(Surface::from_wayland(instance, display.display.as_ptr(), window.surface.as_ptr(), None)?)
-            }
-            (RawWindowHandle::Win32(window), _) => {
-                Ok(Surface::from_win32(instance,
-                                       // These casts make no goddamn sense, but they work.
-                                       window.hinstance.unwrap().get() as *mut isize,
-                                       window.hwnd.get() as *const isize,
-                                       None)?)
-            }
-            (RawWindowHandle::Xcb(window), RawDisplayHandle::Xcb(display)) => {
-                Ok(Surface::from_xcb(instance, display.connection.unwrap().as_ptr(), window.window.into(), None)?)
-            }
-            (RawWindowHandle::Xlib(window), RawDisplayHandle::Xlib(display)) => {
-                Ok(Surface::from_xlib(instance, display.display.unwrap().as_ptr(), window.window, None)?)
-            }
-            _ => unimplemented!(
-                "the window was created with a windowing API that is not supported \
-                by Vulkan/Vulkano"
-            ),
-        }
-    }
-
-    #[allow(deprecated)]
-    pub fn required_extensions_copied(event_loop: &impl HasDisplayHandle) -> Result<InstanceExtensions> {
-        let mut extensions = InstanceExtensions {
-            khr_surface: true,
-            ..InstanceExtensions::empty()
-        };
-        match event_loop.display_handle()?.raw_display_handle()? {
-            RawDisplayHandle::Android(_) => extensions.khr_android_surface = true,
-            // FIXME: `mvk_macos_surface` and `mvk_ios_surface` are deprecated.
-            RawDisplayHandle::AppKit(_) => extensions.mvk_macos_surface = true,
-            RawDisplayHandle::UiKit(_) => extensions.mvk_ios_surface = true,
-            RawDisplayHandle::Windows(_) => extensions.khr_win32_surface = true,
-            RawDisplayHandle::Wayland(_) => extensions.khr_wayland_surface = true,
-            RawDisplayHandle::Xcb(_) => extensions.khr_xcb_surface = true,
-            RawDisplayHandle::Xlib(_) => extensions.khr_xlib_surface = true,
-            _ => unimplemented!(),
-        }
-
-        Ok(extensions)
-    }
-}
-fn macos_instance<T>(
-    event_loop: &EventLoop<T>,
+fn macos_instance(
+    event_loop: &ActiveEventLoop,
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
     if env::consts::OS == "macos" {
@@ -469,7 +368,7 @@ fn macos_instance<T>(
         };
         check_eq!(var, "1");
     }
-    let required_extensions = compat::required_extensions_copied(&event_loop)?;
+    let required_extensions = Surface::required_extensions(&event_loop)?;
     let instance_create_info = InstanceCreateInfo {
         flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
         enabled_extensions: required_extensions,
@@ -478,8 +377,8 @@ fn macos_instance<T>(
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
 }
 // TODO: more flexible approach here.
-fn features() -> Features {
-    Features {
+fn features() -> DeviceFeatures {
+    DeviceFeatures {
         // Required for extra texture samplers on macOS:
         descriptor_indexing: true,
         fill_mode_non_solid: true,
@@ -554,7 +453,7 @@ fn any_graphical_queue_family(
 }
 
 fn create_swapchain(
-    window: &Arc<Window>,
+    window: &GgWindow,
     surface: Arc<Surface>,
     physical_device: &Arc<PhysicalDevice>,
     device: Arc<Device>,
@@ -645,75 +544,82 @@ impl PerImageContext {
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;
 type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<SwapchainJoinFuture>>>;
 
-pub struct WindowEventHandler {
-    window: Arc<Window>,
+struct WindowEventHandlerInner {
+    window: GgWindow,
     scale_factor: f64,
     vk_ctx: VulkanoContext,
-    gui_ctx: GuiContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
-
+    platform: egui_winit::State,
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
+}
+
+pub struct WindowEventHandler<F, ObjectType>
+where
+    F: FnOnce(SceneHandlerBuilder<ObjectType>),
+    ObjectType: ObjectTypeEnum,
+{
+    inner: Option<WindowEventHandlerInner>,
+    gui_ctx: GuiContext,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
 
     is_ready: bool,
     last_ready_poll: Instant,
+
+    initial_window_size: Vec2i,
+    create_and_start_scene_handler: Option<F>,
+    global_scale_factor: f64,
+    clear_col: Colour,
+    phantom_data: PhantomData<ObjectType>,
 }
 
 #[allow(private_bounds)]
-impl WindowEventHandler {
-    pub fn new(
-        window: Arc<Window>,
-        vk_ctx: VulkanoContext,
+impl<F, ObjectType> WindowEventHandler<F, ObjectType>
+where
+    F: FnOnce(SceneHandlerBuilder<ObjectType>),
+    ObjectType: ObjectTypeEnum,
+{
+    pub fn create_and_run(
+        window_size: Vec2i,
+        global_scale_factor: f64,
+        clear_col: Colour,
         gui_ctx: GuiContext,
-        render_handler: RenderHandler,
-        input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: ResourceHandler,
-    ) -> Self {
-        let fences = DataPerImage::new_with_generator(&vk_ctx, || Rc::new(RefCell::new(None)));
-        let scale_factor = window.scale_factor();
-        Self {
-            window,
-            scale_factor,
-            vk_ctx,
+        create_and_start_scene_handler: F
+    ) -> Result<()> {
+        let mut this = Self {
+            inner: None,
             gui_ctx,
-            render_handler,
-            input_handler,
-            resource_handler,
-            fences,
             render_stats: RenderPerfStats::new(),
             last_render_stats: None,
             is_ready: false,
             last_ready_poll: Instant::now(),
-        }
+
+            initial_window_size: window_size,
+            global_scale_factor,
+            clear_col,
+            create_and_start_scene_handler: Some(create_and_start_scene_handler),
+
+            phantom_data: PhantomData,
+        };
+
+        let event_loop = EventLoop::new()?;
+        Ok(event_loop.run_app(&mut this)?)
     }
 
-    pub fn consume(mut self, event_loop: EventLoop<()>) {
-        let mut egui_window_state = egui_winit::State::new(
-            self.gui_ctx.clone(),
-            ViewportId::ROOT,
-            &event_loop,
-            Some(self.window.scale_factor() as f32),
-            None
-        );
-
-        ensure_shaders_locked();
-        event_loop.run(move |event, _| {
-            self.run_inner(&mut egui_window_state, &event)
-                .expect("error running event loop");
-        })
-            .expect("error running event loop");
+    fn expect_inner(&mut self) -> &mut WindowEventHandlerInner {
+        self.inner.as_mut().expect("missing WindowEventHandlerInner")
     }
 
     fn recreate_swapchain(
         &mut self
     ) -> Result<()> {
-        self.fences = DataPerImage::new_with_generator(&self.vk_ctx, || Rc::new(RefCell::new(None)));
-        self.vk_ctx.recreate_swapchain(&self.window)
+        self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || Rc::new(RefCell::new(None)));
+        let window = self.expect_inner().window.clone();
+        self.expect_inner().vk_ctx.recreate_swapchain(&window)
             .context("could not recreate swapchain")?;
-        self.render_handler.on_resize(self.window.clone());
+        self.expect_inner().render_handler.on_resize(window);
         Ok(())
     }
 
@@ -727,9 +633,10 @@ impl WindowEventHandler {
         let ready_future = self.synchronise(per_image_ctx, acquire_future)?;
         self.render_stats.synchronise.stop();
         self.render_stats.do_render.start();
-        let command_buffer = self.render_handler.do_render(
-            &self.vk_ctx,
-            self.vk_ctx.framebuffers.current_value(per_image_ctx),
+        let vk_ctx = self.expect_inner().vk_ctx.clone();
+        let command_buffer = self.expect_inner().render_handler.do_render(
+            &vk_ctx,
+            vk_ctx.framebuffers.current_value(per_image_ctx),
             full_output
         )?;
         self.render_stats.do_render.stop();
@@ -745,21 +652,23 @@ impl WindowEventHandler {
         per_image_ctx: &mut MutexGuard<PerImageContext>,
         acquire_future: SwapchainAcquireFuture,
     ) -> Result<SwapchainJoinFuture> {
-        if let Some(uploads) = self.resource_handler.texture.wait_build_command_buffer(&self.vk_ctx)? {
+        let vk_ctx = self.expect_inner().vk_ctx.clone();
+        if let Some(uploads) = self.expect_inner().resource_handler.texture
+                .wait_build_command_buffer(&vk_ctx)? {
             uploads.flush()?;
             info!("loaded textures");
         }
-        if let Some(fence) = self.fences.last_value(per_image_ctx).borrow().as_ref() {
+        if let Some(fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow().as_ref() {
             if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future
                 // XXX: macOS often just segfaults instead of giving an error here
                 error!("{}", e);
             }
         }
-        let last_fence = if let Some(fence) = self.fences.current_value(per_image_ctx).take() {
+        let last_fence = if let Some(fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
             fence.boxed()
         } else {
-            let mut now = vulkano::sync::now(self.vk_ctx.device());
+            let mut now = vulkano::sync::now(self.expect_inner().vk_ctx.device());
             now.cleanup_finished();
             now.boxed()
         };
@@ -772,20 +681,21 @@ impl WindowEventHandler {
         command_buffer: Arc<PrimaryAutoCommandBuffer>,
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
+        let vk_ctx = self.expect_inner().vk_ctx.clone();
         let image_idx = per_image_ctx.current.expect("no current image?");
-        self.fences
+        self.expect_inner().fences
             .current_value_mut(per_image_ctx)
             .borrow_mut()
             .replace(
                 ready_future
                     .then_execute(
-                        self.vk_ctx.queue(),
+                        vk_ctx.queue(),
                         command_buffer
                     )?
                     .then_swapchain_present(
-                        self.vk_ctx.queue(),
+                        vk_ctx.queue(),
                         SwapchainPresentInfo::swapchain_image_index(
-                            self.vk_ctx.swapchain(),
+                            vk_ctx.swapchain(),
                             u32::try_from(image_idx)
                                 .context("image_idx overflowed: {image_idx}")?
                         ),
@@ -797,93 +707,179 @@ impl WindowEventHandler {
 
     fn poll_ready(&mut self) -> bool {
         if !self.is_ready && self.last_ready_poll.elapsed().as_millis() >= 10 {
-            self.is_ready = self.render_handler.get_receiver().lock().unwrap().is_ready();
+            self.is_ready = self.expect_inner().render_handler.get_receiver().lock().unwrap().is_ready();
             self.last_ready_poll = Instant::now();
         }
         self.is_ready
     }
+    
+    fn create_inner(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
+        check_is_none!(self.inner);
 
-    fn run_inner(&mut self, platform: &mut egui_winit::State, event: &Event<()>) -> Result<()> {
-        let _response = match event {
-            Event::WindowEvent { event, .. } => platform.on_window_event(&self.window, event),
-            _ => EventResponse { consumed: false, repaint: false }
-        };
+        let window = GgWindow::new(event_loop, self.initial_window_size)?;
+        let scale_factor = window.scale_factor();
+        let viewport = window.create_default_viewport();
 
+        let vk_ctx = VulkanoContext::new(event_loop, &window)?;
+        let input_handler = InputHandler::new();
+        let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
+        ObjectType::preload_all(&mut resource_handler)?;
+
+        ensure_shaders_locked();
+        let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
+            SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
+            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
+            BasicShader::create(vk_ctx.clone(), viewport.clone())?,
+            TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
+        ];
+
+        let render_handler = RenderHandler::new(
+            &vk_ctx,
+            self.gui_ctx.clone(),
+            window.clone(),
+            viewport.clone(),
+            shaders,
+        )?
+            .with_global_scale_factor(self.global_scale_factor)
+            .with_clear_col(self.clear_col);
+        let platform = egui_winit::State::new(
+            self.gui_ctx.clone(),
+            ViewportId::ROOT,
+            &event_loop,
+            Some(window.scale_factor() as f32),
+            None, None
+        );
+
+        let fences = DataPerImage::new_with_generator(&vk_ctx, || Rc::new(RefCell::new(None)));
+
+        self.inner = Some(WindowEventHandlerInner {
+            window,
+            scale_factor,
+            vk_ctx,
+            render_handler,
+            input_handler,
+            resource_handler,
+            platform,
+            fences,
+        });
+        Ok(())
+    }
+}
+
+impl<F, ObjectType> ApplicationHandler for WindowEventHandler<F, ObjectType>
+where
+    F: FnOnce(SceneHandlerBuilder<ObjectType>),
+    ObjectType: ObjectTypeEnum,
+{
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(callback) = self.create_and_start_scene_handler.take() {
+            // First event. Note winit documentation:
+            // "This is a common indicator that you can create a window."
+            self.create_inner(event_loop).expect("error initialising");
+            callback(SceneHandlerBuilder::new(
+                self.expect_inner().input_handler.clone(),
+                self.expect_inner().resource_handler.clone(),
+                self.expect_inner().render_handler.clone()
+            ));
+        }
+        check_is_some!(self.inner);
+    }
+
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
         match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            WindowEvent::CloseRequested => {
                 std::process::exit(0);
             }
-            Event::WindowEvent { event: WindowEvent::KeyboardInput {
+            WindowEvent::KeyboardInput {
                 event, ..
-            }, .. } => {
+            } => {
                 match event.physical_key {
                     PhysicalKey::Code(keycode) => {
-                        self.input_handler.lock().unwrap().queue_key_event(keycode, event.state);
+                        self.expect_inner().input_handler.lock().unwrap().queue_key_event(keycode, event.state);
                     }
                     PhysicalKey::Unidentified(_) => {}
                 }
-                Ok(())
             }
-            Event::WindowEvent { event: WindowEvent::ScaleFactorChanged {
+            WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
-            }, .. } => {
-                self.scale_factor = *scale_factor;
-                self.recreate_swapchain()
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
             } => {
-                self.recreate_swapchain()
+                self.expect_inner().scale_factor = scale_factor;
+                self.recreate_swapchain().unwrap();
             }
-            Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+            WindowEvent::Resized(_) => {
+                self.recreate_swapchain().unwrap();
+            }
+            WindowEvent::RedrawRequested => {
                 while !self.poll_ready() {}
-                let per_image_ctx = self.vk_ctx.per_image_ctx.clone();
+                let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
                 let mut per_image_ctx = per_image_ctx.lock().unwrap();
                 // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                let acquired = swapchain::acquire_next_image(self.vk_ctx.swapchain(), None)
+                let acquired = swapchain::acquire_next_image(self.expect_inner().vk_ctx.swapchain(), None)
                     .map_err(Validated::unwrap);
-                let rv = match acquired {
-                    Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
-                        egui_winit::update_viewport_info(
-                            &mut ViewportInfo::default(),
-                            &self.gui_ctx,
-                            &self.window,
-                            false
-                        );
-                        let raw_input = platform.take_egui_input(&self.window);
-                        let full_output = self.gui_ctx.run(raw_input, |ctx| {
-                            let mut input = self.input_handler.lock().unwrap();
-                            input.set_viewport(self.render_handler.viewport());
-                            input.update_mouse(ctx);
-                            self.render_handler.do_gui(ctx, self.last_render_stats.clone());
-                        });
-                        self.render_stats.between_renders.stop();
-                        platform.handle_platform_output(&self.window, full_output.platform_output.clone());
-                        per_image_ctx.current.replace(image_idx as usize);
-                        self.idle(&mut per_image_ctx, acquire_future, full_output)?;
-                        let image_idx = per_image_ctx.current.expect("no current image?");
-                        if (per_image_ctx.last + 1) % self.vk_ctx.framebuffers.len() != image_idx {
-                            warn!("per_image_ctx: last={}, next={}, count={}",
+                let rv = self.handle_acquired_image(&mut per_image_ctx, acquired);
+                self.last_render_stats = self.render_stats.end();
+                self.expect_inner().window.inner.request_redraw();
+                rv.unwrap();
+            }
+            other_event => {
+                let window = self.expect_inner().window.clone();
+                let _response = self.expect_inner().platform.on_window_event(&window.inner, &other_event);
+            }
+        }
+    }
+}
+
+impl<F, ObjectType> WindowEventHandler<F, ObjectType>
+where
+    F: FnOnce(SceneHandlerBuilder<ObjectType>),
+    ObjectType: ObjectTypeEnum,
+{
+    fn handle_acquired_image(&mut self,
+                             per_image_ctx: &mut MutexGuard<PerImageContext>,
+                             acquired: Result<(u32, bool, SwapchainAcquireFuture), VulkanError>
+    ) -> Result<()> {
+        match acquired {
+            Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
+                let window = self.expect_inner().window.clone();
+                egui_winit::update_viewport_info(
+                    &mut ViewportInfo::default(),
+                    &self.gui_ctx,
+                    &window.inner,
+                    false
+                );
+                let raw_input = self.expect_inner().platform.take_egui_input(&window.inner);
+                let stats = self.last_render_stats.clone();
+                let mut render_handler = self.expect_inner().render_handler.clone();
+                let input = self.expect_inner().input_handler.clone();
+                let full_output = self.gui_ctx.run(raw_input, |ctx| {
+                    let mut input_lock = input.lock().unwrap();
+                    input_lock.set_viewport(render_handler.viewport());
+                    input_lock.update_mouse(ctx);
+                    render_handler.do_gui(ctx, stats.clone());
+                });
+                self.render_stats.between_renders.stop();
+                self.expect_inner().platform.handle_platform_output(
+                    &window.inner,
+                    full_output.platform_output.clone()
+                );
+                per_image_ctx.current.replace(image_idx as usize);
+                self.idle(per_image_ctx, acquire_future, full_output)?;
+                let image_idx = per_image_ctx.current.expect("no current image?");
+                if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.framebuffers.len() != image_idx {
+                    warn!("per_image_ctx: last={}, next={}, count={}",
                                 per_image_ctx.last,
                                 image_idx,
-                                self.vk_ctx.framebuffers.len());
-                        }
-                        per_image_ctx.last = image_idx;
-                        Ok(())
-                    },
-                    Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
-                        self.recreate_swapchain()?;
-                        self.render_stats.between_renders.stop();
-                        Ok(())
-                    },
-                    Err(e) => Err(e.into()),
-                };
-                self.last_render_stats = self.render_stats.end();
-                self.window.request_redraw();
-                rv
-            }
-            _ => Ok(()),
+                                self.expect_inner().vk_ctx.framebuffers.len());
+                }
+                per_image_ctx.last = image_idx;
+                Ok(())
+            },
+            Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
+                self.recreate_swapchain()?;
+                self.render_stats.between_renders.stop();
+                Ok(())
+            },
+            Err(e) => Err(e.into()),
         }
     }
 }

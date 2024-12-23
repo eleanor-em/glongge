@@ -21,27 +21,26 @@ use crate::examples::spline::SplineScene;
 
 fn main() -> Result<()> {
     run_test_cases();
-    let ctx = GgContextBuilder::<ObjectType>::new([1280, 800])?
+    GgContextBuilder::<ObjectType>::new([1280, 800])?
         .with_global_scale_factor(2.)
-        .build()?;
-    let mut scene_handler = ctx.scene_handler();
-    std::thread::spawn(move || {
-        scene_handler.create_scene(TriangleScene);
-        scene_handler.create_scene(RectangleScene);
-        scene_handler.create_scene(ConcaveScene);
-        scene_handler.create_scene(SplineScene);
-        scene_handler.create_scene(MarioOverworldScene);
-        scene_handler.create_scene(MarioUndergroundScene);
-        // let name = TriangleScene.name();
-        // let name = RectangleScene.name();
-        // let name = ConcaveScene.name();
-        // let name = SplineScene.name();
-        let name = MarioOverworldScene.name();
-        // let name = MarioUndergroundScene.name();
-        scene_handler.consume_with_scene(name, 0);
-    });
-    ctx.consume_run_window();
-    Ok(())
+        .build_and_run_window(|scene_handler| {
+            std::thread::spawn(move || {
+                let mut scene_handler = scene_handler.build();
+                scene_handler.create_scene(TriangleScene);
+                scene_handler.create_scene(RectangleScene);
+                scene_handler.create_scene(ConcaveScene);
+                scene_handler.create_scene(SplineScene);
+                scene_handler.create_scene(MarioOverworldScene);
+                scene_handler.create_scene(MarioUndergroundScene);
+                // let name = TriangleScene.name();
+                // let name = RectangleScene.name();
+                // let name = ConcaveScene.name();
+                // let name = SplineScene.name();
+                let name = MarioOverworldScene.name();
+                // let name = MarioUndergroundScene.name();
+                scene_handler.consume_with_scene(name, 0);
+            });
+        })
 }
 
 fn run_test_cases() {

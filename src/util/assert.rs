@@ -108,7 +108,7 @@ macro_rules! check_is_none {
     ($lhs:expr) => {{
         let value = $lhs.as_ref();
         $crate::util::assert::assert_type::<Option<_>>(&value);
-        if value.is_none() {
+        if value.is_some() {
             panic!(
                 "check failed: {}.is_none(): {}",
                 $crate::util::assert::current_location!(),
