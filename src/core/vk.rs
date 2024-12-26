@@ -659,22 +659,22 @@ where
             uploads.flush()?;
             info!("loaded textures");
         }
-        if let Some(fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
-            if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
+        if let Some(last_fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
+            if let Err(e) = last_fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future
                 // XXX: macOS often just segfaults instead of giving an error here
                 error!("{}", e);
             }
-            fence.cleanup_finished();
+            last_fence.cleanup_finished();
         }
-        let last_fence = if let Some(fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
+        let next_fence = if let Some(fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
             fence.boxed()
         } else {
             let mut now = vulkano::sync::now(self.expect_inner().vk_ctx.device());
             now.cleanup_finished();
             now.boxed()
         };
-        Ok(last_fence.join(acquire_future))
+        Ok(next_fence.join(acquire_future))
     }
 
     fn submit_command_buffer(
@@ -690,10 +690,7 @@ where
             .borrow_mut()
             .replace(
                 ready_future
-                    .then_execute(
-                        vk_ctx.queue(),
-                        command_buffer
-                    )?
+                    .then_execute(vk_ctx.queue(), command_buffer)?
                     .then_swapchain_present(
                         vk_ctx.queue(),
                         SwapchainPresentInfo::swapchain_image_index(
@@ -702,7 +699,7 @@ where
                                 .context("image_idx overflowed: {image_idx}")?
                         ),
                     )
-                    .then_signal_fence(),
+                    .then_signal_fence_and_flush()?,
             );
         Ok(())
     }
@@ -813,14 +810,19 @@ where
             }
             WindowEvent::RedrawRequested => {
                 while !self.poll_ready() {}
-                let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
-                let mut per_image_ctx = per_image_ctx.lock().unwrap();
-                // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                let acquired = swapchain::acquire_next_image(self.expect_inner().vk_ctx.swapchain(), None)
-                    .map_err(Validated::unwrap);
-                let rv = self.handle_acquired_image(&mut per_image_ctx, acquired);
-                self.last_render_stats = self.render_stats.end();
-                rv.unwrap();
+                // XXX: macOS seems to behave weirdly badly with then_signal_fence_and_flush()
+                //      if you send commands too fast.
+                // TODO: test effects of this on Windows/Linux.
+                if self.render_stats.last_step.elapsed().as_millis() >= 5 {
+                    let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
+                    let mut per_image_ctx = per_image_ctx.lock().unwrap();
+                    // XXX: "acquire_next_image" is somewhat misleading, since it does not block
+                    let acquired = swapchain::acquire_next_image(self.expect_inner().vk_ctx.swapchain(), None)
+                        .map_err(Validated::unwrap);
+                    let rv = self.handle_acquired_image(&mut per_image_ctx, acquired);
+                    self.last_render_stats = self.render_stats.end();
+                    rv.unwrap();
+                }
             }
             other_event => {
                 let window = self.expect_inner().window.clone();
