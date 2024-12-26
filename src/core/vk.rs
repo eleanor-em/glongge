@@ -640,6 +640,7 @@ where
             full_output
         )?;
         self.render_stats.do_render.stop();
+        self.expect_inner().window.inner.pre_present_notify();
         self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
@@ -819,7 +820,6 @@ where
                     .map_err(Validated::unwrap);
                 let rv = self.handle_acquired_image(&mut per_image_ctx, acquired);
                 self.last_render_stats = self.render_stats.end();
-                self.expect_inner().window.inner.request_redraw();
                 rv.unwrap();
             }
             other_event => {
@@ -827,6 +827,10 @@ where
                 let _response = self.expect_inner().platform.on_window_event(&window.inner, &other_event);
             }
         }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.expect_inner().window.inner.request_redraw();
     }
 }
 
