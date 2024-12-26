@@ -794,6 +794,7 @@ pub(crate) struct UpdatePerfStats {
     remove_objects: TimeIt,
     add_objects: TimeIt,
     render_infos: TimeIt,
+    extra_debug: TimeIt,
     last_perf_stats: Option<Box<UpdatePerfStats>>,
     last_report: Instant,
 }
@@ -813,6 +814,7 @@ impl UpdatePerfStats {
             remove_objects: TimeIt::new("remove objects"),
             add_objects: TimeIt::new("add objects"),
             render_infos: TimeIt::new("render_infos"),
+            extra_debug: TimeIt::new("extra_debug"),
             last_perf_stats: None,
             last_report: Instant::now(),
         }
@@ -833,6 +835,7 @@ impl UpdatePerfStats {
                 remove_objects: self.remove_objects.report_take(),
                 add_objects: self.add_objects.report_take(),
                 render_infos: self.render_infos.report_take(),
+                extra_debug: self.extra_debug.report_take(),
                 last_perf_stats: None,
                 last_report: Instant::now(),
             }));
@@ -842,7 +845,7 @@ impl UpdatePerfStats {
     }
 
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
-        vec![
+        let mut default = vec![
             self.total_stats.as_tuple_ms(),
             self.on_gui.as_tuple_ms(),
             self.on_update_begin.as_tuple_ms(),
@@ -854,7 +857,11 @@ impl UpdatePerfStats {
             self.remove_objects.as_tuple_ms(),
             self.add_objects.as_tuple_ms(),
             self.render_infos.as_tuple_ms(),
-        ]
+        ];
+        if self.extra_debug.last_ms() != 0. {
+            default.push(self.extra_debug.as_tuple_ms());
+        }
+        default
     }
 }
 
