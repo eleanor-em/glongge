@@ -555,24 +555,33 @@ struct WindowEventHandlerInner {
     fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
 }
 
+struct WindowEventHandlerCreateInfo<F, ObjectType>
+where
+    F: FnOnce(SceneHandlerBuilder<ObjectType>),
+    ObjectType: ObjectTypeEnum,
+{
+    window_size: Vec2i,
+    create_and_start_scene_handler: Option<F>,
+    global_scale_factor: f64,
+    clear_col: Colour,
+    phantom_data: PhantomData<ObjectType>,
+}
+
 pub struct WindowEventHandler<F, ObjectType>
 where
     F: FnOnce(SceneHandlerBuilder<ObjectType>),
     ObjectType: ObjectTypeEnum,
 {
+    create_info: WindowEventHandlerCreateInfo<F, ObjectType>,
     inner: Option<WindowEventHandlerInner>,
+
     gui_ctx: GuiContext,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
 
+    is_first_window_event: bool,
     is_ready: bool,
     last_ready_poll: Instant,
-
-    initial_window_size: Vec2i,
-    create_and_start_scene_handler: Option<F>,
-    global_scale_factor: f64,
-    clear_col: Colour,
-    phantom_data: PhantomData<ObjectType>,
 }
 
 #[allow(private_bounds)]
@@ -589,19 +598,23 @@ where
         create_and_start_scene_handler: F
     ) -> Result<()> {
         let mut this = Self {
+            create_info: WindowEventHandlerCreateInfo {
+                window_size: window_size,
+                global_scale_factor,
+                clear_col,
+                create_and_start_scene_handler: Some(create_and_start_scene_handler),
+                phantom_data: PhantomData,
+            },
             inner: None,
+
             gui_ctx,
             render_stats: RenderPerfStats::new(),
             last_render_stats: None,
+
+            is_first_window_event: false,
             is_ready: false,
             last_ready_poll: Instant::now(),
 
-            initial_window_size: window_size,
-            global_scale_factor,
-            clear_col,
-            create_and_start_scene_handler: Some(create_and_start_scene_handler),
-
-            phantom_data: PhantomData,
         };
 
         let event_loop = EventLoop::new()?;
@@ -625,26 +638,38 @@ where
 
     fn idle(
         &mut self,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
+        image_idx: usize,
         acquire_future: SwapchainAcquireFuture,
         full_output: FullOutput
     ) -> Result<()> {
+        let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
+        let mut per_image_ctx = per_image_ctx.lock().unwrap();
+        per_image_ctx.current.replace(image_idx);
+
         self.render_stats.synchronise.start();
-        let ready_future = self.synchronise(per_image_ctx, acquire_future)?;
+        let ready_future = self.synchronise(&mut per_image_ctx, acquire_future)?;
         self.render_stats.synchronise.stop();
         self.render_stats.do_render.start();
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         let command_buffer = self.expect_inner().render_handler.do_render(
             &vk_ctx,
-            vk_ctx.framebuffers.current_value(per_image_ctx),
+            vk_ctx.framebuffers.current_value(&per_image_ctx),
             full_output
         )?;
         self.render_stats.do_render.stop();
         self.expect_inner().window.inner.pre_present_notify();
         self.render_stats.submit_command_buffers.start();
-        self.submit_command_buffer(per_image_ctx, command_buffer, ready_future)?;
+        self.submit_command_buffer(&mut per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
         self.render_stats.end_step.start();
+
+        if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.framebuffers.len() != image_idx {
+            warn!("per_image_ctx: last={}, next={}, count={}",
+                                per_image_ctx.last,
+                                image_idx,
+                                self.expect_inner().vk_ctx.framebuffers.len());
+        }
+        per_image_ctx.last = image_idx;
         Ok(())
     }
 
@@ -715,7 +740,7 @@ where
     fn create_inner(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         check_is_none!(self.inner);
 
-        let window = GgWindow::new(event_loop, self.initial_window_size)?;
+        let window = GgWindow::new(event_loop, self.create_info.window_size)?;
         let scale_factor = window.scale_factor();
         let viewport = window.create_default_viewport();
 
@@ -724,7 +749,6 @@ where
         let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
         ObjectType::preload_all(&mut resource_handler)?;
 
-        ensure_shaders_locked();
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
             WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
@@ -739,8 +763,10 @@ where
             viewport.clone(),
             shaders,
         )?
-            .with_global_scale_factor(self.global_scale_factor)
-            .with_clear_col(self.clear_col);
+            .with_global_scale_factor(self.create_info.global_scale_factor)
+            .with_clear_col(self.create_info.clear_col);
+        ensure_shaders_locked();
+
         let platform = egui_winit::State::new(
             self.gui_ctx.clone(),
             ViewportId::ROOT,
@@ -771,7 +797,7 @@ where
     ObjectType: ObjectTypeEnum,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(callback) = self.create_and_start_scene_handler.take() {
+        if let Some(callback) = self.create_info.create_and_start_scene_handler.take() {
             // First event. Note winit documentation:
             // "This is a common indicator that you can create a window."
             self.create_inner(event_loop).expect("error initialising");
@@ -780,6 +806,7 @@ where
                 self.expect_inner().resource_handler.clone(),
                 self.expect_inner().render_handler.clone()
             ));
+            self.is_first_window_event = true;
         }
         check_is_some!(self.inner);
     }
@@ -787,6 +814,7 @@ where
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
+                info!("received WindowEvent::CloseRequested, calling exit(0)");
                 std::process::exit(0);
             }
             WindowEvent::KeyboardInput {
@@ -814,14 +842,11 @@ where
                 //      if you send commands too fast.
                 // TODO: test effects of this on Windows/Linux.
                 if self.render_stats.last_step.elapsed().as_millis() >= 5 {
-                    let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
-                    let mut per_image_ctx = per_image_ctx.lock().unwrap();
+                    let swapchain = self.expect_inner().vk_ctx.swapchain();
                     // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                    let acquired = swapchain::acquire_next_image(self.expect_inner().vk_ctx.swapchain(), None)
+                    let acquired = swapchain::acquire_next_image(swapchain, None)
                         .map_err(Validated::unwrap);
-                    let rv = self.handle_acquired_image(&mut per_image_ctx, acquired);
-                    self.last_render_stats = self.render_stats.end();
-                    rv.unwrap();
+                    self.handle_acquired_image(acquired).unwrap();
                 }
             }
             other_event => {
@@ -842,52 +867,51 @@ where
     ObjectType: ObjectTypeEnum,
 {
     fn handle_acquired_image(&mut self,
-                             per_image_ctx: &mut MutexGuard<PerImageContext>,
                              acquired: Result<(u32, bool, SwapchainAcquireFuture), VulkanError>
     ) -> Result<()> {
-        match acquired {
+        self.render_stats.start();
+
+        let rv = match acquired {
             Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
-                let window = self.expect_inner().window.clone();
-                egui_winit::update_viewport_info(
-                    &mut ViewportInfo::default(),
-                    &self.gui_ctx,
-                    &window.inner,
-                    false
-                );
-                let raw_input = self.expect_inner().platform.take_egui_input(&window.inner);
-                let stats = self.last_render_stats.clone();
-                let mut render_handler = self.expect_inner().render_handler.clone();
-                let input = self.expect_inner().input_handler.clone();
-                let full_output = self.gui_ctx.run(raw_input, |ctx| {
-                    let mut input_lock = input.lock().unwrap();
-                    input_lock.set_viewport(render_handler.viewport());
-                    input_lock.update_mouse(ctx);
-                    render_handler.do_gui(ctx, stats.clone());
-                });
-                self.render_stats.between_renders.stop();
-                self.expect_inner().platform.handle_platform_output(
-                    &window.inner,
-                    full_output.platform_output.clone()
-                );
-                per_image_ctx.current.replace(image_idx as usize);
-                self.idle(per_image_ctx, acquire_future, full_output)?;
-                let image_idx = per_image_ctx.current.expect("no current image?");
-                if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.framebuffers.len() != image_idx {
-                    warn!("per_image_ctx: last={}, next={}, count={}",
-                                per_image_ctx.last,
-                                image_idx,
-                                self.expect_inner().vk_ctx.framebuffers.len());
-                }
-                per_image_ctx.last = image_idx;
+                let full_output = self.handle_egui();
+                self.idle(image_idx as usize, acquire_future, full_output)?;
                 Ok(())
             },
             Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
                 self.recreate_swapchain()?;
-                self.render_stats.between_renders.stop();
                 Ok(())
             },
             Err(e) => Err(e.into()),
-        }
+        };
+
+        self.last_render_stats = self.render_stats.end();
+        rv
+    }
+
+    fn handle_egui(&mut self) -> FullOutput {
+        let window = self.expect_inner().window.clone();
+        egui_winit::update_viewport_info(
+            &mut ViewportInfo::default(),
+            &self.gui_ctx,
+            &window.inner,
+            self.is_first_window_event
+        );
+        self.is_first_window_event = false;
+        let raw_input = self.expect_inner().platform.take_egui_input(&window.inner);
+        let stats = self.last_render_stats.clone();
+        let mut render_handler = self.expect_inner().render_handler.clone();
+        let input = self.expect_inner().input_handler.clone();
+        let full_output = self.gui_ctx.run(raw_input, |ctx| {
+            let mut input = input.lock().unwrap();
+            input.set_viewport(render_handler.viewport());
+            input.update_mouse(ctx);
+            render_handler.do_gui(ctx, stats.clone());
+        });
+        self.expect_inner().platform.handle_platform_output(
+            &window.inner,
+            full_output.platform_output.clone()
+        );
+        full_output
     }
 }
 
@@ -929,6 +953,10 @@ impl RenderPerfStats {
             totals_ms: Vec::with_capacity(10),
             last_perf_stats: None,
         }
+    }
+
+    fn start(&mut self) {
+        self.between_renders.stop();
     }
 
     fn end(&mut self) -> Option<Self> {
