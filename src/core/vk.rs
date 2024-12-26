@@ -892,6 +892,7 @@ pub(crate) struct RenderPerfStats {
     submit_command_buffers: TimeIt,
     end_step: TimeIt,
     between_renders: TimeIt,
+    extra_debug: TimeIt,
 
     total: TimeIt,
     on_time: u64,
@@ -912,6 +913,7 @@ impl RenderPerfStats {
             submit_command_buffers: TimeIt::new("submit cmdbufs"),
             end_step: TimeIt::new("end step"),
             between_renders: TimeIt::new("between renders"),
+            extra_debug: TimeIt::new("extra_debug"),
             total: TimeIt::new("total"),
             on_time: 0,
             count: 0,
@@ -968,6 +970,7 @@ impl RenderPerfStats {
                 submit_command_buffers: self.submit_command_buffers.report_take(),
                 end_step: self.end_step.report_take(),
                 between_renders: self.between_renders.report_take(),
+                extra_debug: self.extra_debug.report_take(),
                 total: self.total.report_take(),
                 on_time: 0,
                 count: 0,
@@ -986,7 +989,7 @@ impl RenderPerfStats {
     }
 
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
-        vec![
+        let mut default = vec![
             self.total.as_tuple_ms(),
             self.handle_swapchain.as_tuple_ms(),
             self.synchronise.as_tuple_ms(),
@@ -994,6 +997,10 @@ impl RenderPerfStats {
             self.submit_command_buffers.as_tuple_ms(),
             self.end_step.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
-        ]
+        ];
+        if self.extra_debug.last_ms() != 0. {
+            default.push(self.extra_debug.as_tuple_ms());
+        }
+        default
     }
 }
