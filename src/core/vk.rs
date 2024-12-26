@@ -658,12 +658,13 @@ where
             uploads.flush()?;
             info!("loaded textures");
         }
-        if let Some(fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow().as_ref() {
+        if let Some(fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
             if let Err(e) = fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future
                 // XXX: macOS often just segfaults instead of giving an error here
                 error!("{}", e);
             }
+            fence.cleanup_finished();
         }
         let last_fence = if let Some(fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
             fence.boxed()
