@@ -54,6 +54,7 @@ use egui_winit::winit::dpi::PhysicalSize;
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
+use std::time::Duration;
 use crate::{
     core::{
         input::InputHandler,
@@ -250,7 +251,7 @@ pub struct VulkanoContext {
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     swapchain: Arc<Swapchain>,
-    per_image_ctx: Arc<Mutex<PerImageContext>>,
+    per_image_ctx: UniqueShared<PerImageContext>,
     images: DataPerImage<Arc<Image>>,
     render_pass: Arc<RenderPass>,
     framebuffers: DataPerImage<Arc<Framebuffer>>,
@@ -533,11 +534,11 @@ pub struct PerImageContext {
 }
 
 impl PerImageContext {
-    fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
+    fn new() -> UniqueShared<Self> {
+        UniqueShared::new(Self {
             last: 0,
             current: None,
-        }))
+        })
     }
 }
 
@@ -641,7 +642,7 @@ where
         full_output: FullOutput
     ) -> Result<()> {
         let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
-        let mut per_image_ctx = per_image_ctx.lock().unwrap();
+        let mut per_image_ctx = per_image_ctx.get();
         per_image_ctx.current.replace(image_idx);
 
         self.render_stats.synchronise.start();
@@ -689,7 +690,10 @@ where
             }
             last_fence.cleanup_finished();
         }
-        let next_fence = if let Some(fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
+        let next_fence = if let Some(mut fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
+            // Future should already be completed by the time we acquire the image.
+            fence.wait(Some(Duration::from_nanos(1))).unwrap();
+            fence.cleanup_finished();
             fence.boxed()
         } else {
             let mut now = vulkano::sync::now(self.expect_inner().vk_ctx.device());
@@ -707,21 +711,22 @@ where
     ) -> Result<()> {
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         let image_idx = per_image_ctx.current.expect("no current image?");
-        self.expect_inner().fences
+        let mut current_fence = self.expect_inner().fences
             .current_value_mut(per_image_ctx)
-            .borrow_mut()
-            .replace(
-                ready_future
-                    .then_execute(vk_ctx.queue(), command_buffer)?
-                    .then_swapchain_present(
-                        vk_ctx.queue(),
-                        SwapchainPresentInfo::swapchain_image_index(
-                            vk_ctx.swapchain(),
-                            u32::try_from(image_idx)
-                                .context("image_idx overflowed: {image_idx}")?
-                        ),
-                    )
-                    .then_signal_fence_and_flush()?,
+            .borrow_mut();
+        check_is_none!(current_fence);
+        current_fence.replace(
+            ready_future
+                .then_execute(vk_ctx.queue(), command_buffer)?
+                .then_swapchain_present(
+                    vk_ctx.queue(),
+                    SwapchainPresentInfo::swapchain_image_index(
+                        vk_ctx.swapchain(),
+                        u32::try_from(image_idx)
+                            .context("image_idx overflowed: {image_idx}")?
+                    ),
+                )
+                .then_signal_fence_and_flush()?
             );
         Ok(())
     }
@@ -840,7 +845,7 @@ where
                 // XXX: macOS seems to behave weirdly badly with then_signal_fence_and_flush()
                 //      if you send commands too fast.
                 // TODO: test effects of this on Windows/Linux.
-                if self.render_stats.penultimate_step.elapsed().as_millis() >= 12 {
+                if self.render_stats.penultimate_step.elapsed().as_millis() >= 15 {
                     let swapchain = self.expect_inner().vk_ctx.swapchain();
                     // XXX: "acquire_next_image" is somewhat misleading, since it does not block
                     let acquired = swapchain::acquire_next_image(swapchain, None)
