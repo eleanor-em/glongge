@@ -625,9 +625,7 @@ where
         self.inner.as_mut().expect("missing WindowEventHandlerInner")
     }
 
-    fn recreate_swapchain(
-        &mut self
-    ) -> Result<()> {
+    fn recreate_swapchain(&mut self) -> Result<()> {
         self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || Rc::new(RefCell::new(None)));
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
@@ -661,7 +659,6 @@ where
         self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(&mut per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
-        self.render_stats.end_step.start();
 
         if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.framebuffers.len() != image_idx {
             warn!("per_image_ctx: last={}, next={}, count={}",
@@ -812,6 +809,8 @@ where
     }
 
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        let window = self.expect_inner().window.clone();
+        let _response = self.expect_inner().platform.on_window_event(&window.inner, &event);
         match event {
             WindowEvent::CloseRequested => {
                 info!("received WindowEvent::CloseRequested, calling exit(0)");
@@ -841,7 +840,7 @@ where
                 // XXX: macOS seems to behave weirdly badly with then_signal_fence_and_flush()
                 //      if you send commands too fast.
                 // TODO: test effects of this on Windows/Linux.
-                if self.render_stats.last_step.elapsed().as_millis() >= 5 {
+                if self.render_stats.penultimate_step.elapsed().as_millis() >= 12 {
                     let swapchain = self.expect_inner().vk_ctx.swapchain();
                     // XXX: "acquire_next_image" is somewhat misleading, since it does not block
                     let acquired = swapchain::acquire_next_image(swapchain, None)
@@ -849,10 +848,7 @@ where
                     self.handle_acquired_image(acquired).unwrap();
                 }
             }
-            other_event => {
-                let window = self.expect_inner().window.clone();
-                let _response = self.expect_inner().platform.on_window_event(&window.inner, &other_event);
-            }
+            _other_event => {}
         }
     }
 
@@ -921,13 +917,13 @@ pub(crate) struct RenderPerfStats {
     synchronise: TimeIt,
     do_render: TimeIt,
     submit_command_buffers: TimeIt,
-    end_step: TimeIt,
     between_renders: TimeIt,
     extra_debug: TimeIt,
 
     total: TimeIt,
     on_time: u64,
     count: u64,
+    penultimate_step: Instant,
     last_step: Instant,
     last_report: Instant,
     totals_ms: Vec<f64>,
@@ -942,12 +938,12 @@ impl RenderPerfStats {
             synchronise: TimeIt::new("synchronise"),
             do_render: TimeIt::new("do_render"),
             submit_command_buffers: TimeIt::new("submit cmdbufs"),
-            end_step: TimeIt::new("end step"),
             between_renders: TimeIt::new("between renders"),
             extra_debug: TimeIt::new("extra_debug"),
             total: TimeIt::new("total"),
             on_time: 0,
             count: 0,
+            penultimate_step: Instant::now(),
             last_step: Instant::now(),
             last_report: Instant::now(),
             totals_ms: Vec::with_capacity(10),
@@ -962,7 +958,6 @@ impl RenderPerfStats {
     fn end(&mut self) -> Option<Self> {
         const DEADLINE_MS: f64 = 16.8;
 
-        self.end_step.stop();
         self.between_renders.start();
 
         if self.totals_ms.len() == self.totals_ms.capacity() {
@@ -990,6 +985,7 @@ impl RenderPerfStats {
 
         self.total.stop();
         self.total.start();
+        self.penultimate_step = self.last_step;
         self.last_step = Instant::now();
 
         if self.last_report.elapsed().as_secs() >= 2 {
@@ -1003,7 +999,6 @@ impl RenderPerfStats {
                 synchronise: self.synchronise.report_take(),
                 do_render: self.do_render.report_take(),
                 submit_command_buffers: self.submit_command_buffers.report_take(),
-                end_step: self.end_step.report_take(),
                 between_renders: self.between_renders.report_take(),
                 extra_debug: self.extra_debug.report_take(),
                 total: self.total.report_take(),
@@ -1011,6 +1006,7 @@ impl RenderPerfStats {
                 count: 0,
                 last_perf_stats: None,
                 last_report: Instant::now(),
+                penultimate_step: self.penultimate_step,
                 last_step: self.last_step,
                 totals_ms: vec![],
             }));
@@ -1030,7 +1026,6 @@ impl RenderPerfStats {
             self.synchronise.as_tuple_ms(),
             self.do_render.as_tuple_ms(),
             self.submit_command_buffers.as_tuple_ms(),
-            self.end_step.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
         ];
         if self.extra_debug.last_ms() != 0. {
