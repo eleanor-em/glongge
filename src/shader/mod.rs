@@ -204,7 +204,7 @@ pub struct SpriteShader {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
+    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
     vertex_buffer: CachedVertexBuffer<sprite::Vertex>,
     resource_handler: ResourceHandler,
 }
@@ -223,64 +223,62 @@ impl SpriteShader {
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: None,
+            pipeline: UniqueShared::new(None),
             vertex_buffer,
             resource_handler,
         }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        match self.pipeline.clone() {
-            None => {
-                let vs = self.vs.entry_point("main")
-                    .context("vertex shader: entry point missing")?;
-                let fs = self.fs.entry_point("main")
-                    .context("fragment shader: entry point missing")?;
-                let vertex_input_state =
-                    sprite::Vertex::per_vertex().definition(&vs)?;
-                let stages = [
-                    PipelineShaderStageCreateInfo::new(vs),
-                    PipelineShaderStageCreateInfo::new(fs),
-                ];
-                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in &mut create_info.set_layouts {
-                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-                }
-                let layout = PipelineLayout::new(
-                    self.ctx.device(),
-                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
-                ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.ctx.render_pass().get().clone(), 0)
-                    .context("failed to create subpass")?;
+        if self.pipeline.get().is_none() {
+            let vs = self.vs.entry_point("main")
+                .context("vertex shader: entry point missing")?;
+            let fs = self.fs.entry_point("main")
+                .context("fragment shader: entry point missing")?;
+            let vertex_input_state =
+                sprite::Vertex::per_vertex().definition(&vs)?;
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            for layout in &mut create_info.set_layouts {
+                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+            }
+            let layout = PipelineLayout::new(
+                self.ctx.device(),
+                create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+            ).map_err(Validated::unwrap)?;
 
-                let pipeline = GraphicsPipeline::new(
-                    self.ctx.device(),
-                    /* cache= */ None,
-                    GraphicsPipelineCreateInfo {
-                        stages: stages.into_iter().collect(),
-                        vertex_input_state: Some(vertex_input_state),
-                        input_assembly_state: Some(InputAssemblyState::default()),
-                        viewport_state: Some(ViewportState {
-                            viewports: [self.viewport.get().inner()].into_iter().collect(),
-                            ..Default::default()
-                        }),
-                        rasterization_state: Some(RasterizationState::default()),
-                        multisample_state: Some(MultisampleState::default()),
-                        color_blend_state: Some(ColorBlendState::with_attachment_states(
-                            subpass.num_color_attachments(),
-                            ColorBlendAttachmentState {
-                                blend: Some(AttachmentBlend::alpha()),
-                                ..Default::default()
-                            },
-                        )),
-                        subpass: Some(subpass.into()),
-                        ..GraphicsPipelineCreateInfo::layout(layout)
-                    })?;
-                self.pipeline = Some(pipeline.clone());
-                Ok(pipeline)
-            },
-            Some(pipeline) => Ok(pipeline)
+            let device = self.ctx.device();
+            self.pipeline = self.ctx.create_pipeline(|render_pass| {
+                let subpass = Subpass::from(render_pass, 0)
+                    .context("failed to create subpass")?;
+                Ok(GraphicsPipeline::new(device,
+                                         /* cache= */ None,
+                                         GraphicsPipelineCreateInfo {
+                                             stages: stages.into_iter().collect(),
+                                             vertex_input_state: Some(vertex_input_state),
+                                             input_assembly_state: Some(InputAssemblyState::default()),
+                                             viewport_state: Some(ViewportState {
+                                                 viewports: [self.viewport.get().inner()].into_iter().collect(),
+                                                 ..Default::default()
+                                             }),
+                                             rasterization_state: Some(RasterizationState::default()),
+                                             multisample_state: Some(MultisampleState::default()),
+                                             color_blend_state: Some(ColorBlendState::with_attachment_states(
+                                                 subpass.num_color_attachments(),
+                                                 ColorBlendAttachmentState {
+                                                     blend: Some(AttachmentBlend::alpha()),
+                                                     ..Default::default()
+                                                 },
+                                             )),
+                                             subpass: Some(subpass.into()),
+                                             ..GraphicsPipelineCreateInfo::layout(layout)
+                                         })?)
+            })?;
         }
+        Ok(self.pipeline.get().clone().unwrap())
     }
     fn create_uniform_desc_set(&mut self) -> Result<Arc<DescriptorSet>> {
         let pipeline = self.get_or_create_pipeline()?;
@@ -398,9 +396,7 @@ impl Shader for SpriteShader {
         Ok(())
     }
 
-    fn on_recreate_swapchain(&mut self) {
-        self.pipeline = None;
-    }
+    fn on_recreate_swapchain(&mut self) {}
 }
 
 #[derive(Clone)]
@@ -409,7 +405,7 @@ pub struct WireframeShader {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
+    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
     vertex_buffer: CachedVertexBuffer<basic::Vertex>,
 }
 
@@ -426,37 +422,37 @@ impl WireframeShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: None,
+            pipeline: UniqueShared::new(None),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        match self.pipeline.clone() {
-            None => {
-                let vs = self.vs.entry_point("main")
-                    .context("vertex shader: entry point missing")?;
-                let fs = self.fs.entry_point("main")
-                    .context("fragment shader: entry point missing")?;
-                let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs)?;
-                let stages = [
-                    PipelineShaderStageCreateInfo::new(vs),
-                    PipelineShaderStageCreateInfo::new(fs),
-                ];
-                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in &mut create_info.set_layouts {
-                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-                }
-                let layout = PipelineLayout::new(
-                    self.ctx.device(),
-                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
-                ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.ctx.render_pass().get().clone(), 0)
+        if self.pipeline.get().is_none() {
+            let vs = self.vs.entry_point("main")
+                .context("vertex shader: entry point missing")?;
+            let fs = self.fs.entry_point("main")
+                .context("fragment shader: entry point missing")?;
+            let vertex_input_state =
+                basic::Vertex::per_vertex().definition(&vs)?;
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            for layout in &mut create_info.set_layouts {
+                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+            }
+            let layout = PipelineLayout::new(
+                self.ctx.device(),
+                create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+            ).map_err(Validated::unwrap)?;
+            let device = self.ctx.device();
+            self.pipeline = self.ctx.create_pipeline(|render_pass| {
+                let subpass = Subpass::from(render_pass, 0)
                     .context("failed to create subpass")?;
-
-                let pipeline = GraphicsPipeline::new(
-                    self.ctx.device(),
+                Ok(GraphicsPipeline::new(
+                    device,
                     /* cache= */ None,
                     GraphicsPipelineCreateInfo {
                         stages: stages.into_iter().collect(),
@@ -480,12 +476,10 @@ impl WireframeShader {
                         )),
                         subpass: Some(subpass.into()),
                         ..GraphicsPipelineCreateInfo::layout(layout)
-                    })?;
-                self.pipeline = Some(pipeline.clone());
-                Ok(pipeline)
-            },
-            Some(pipeline) => Ok(pipeline)
+                    })?)
+            })?;
         }
+        Ok(self.pipeline.get().clone().unwrap())
     }
 }
 
@@ -544,9 +538,7 @@ impl Shader for WireframeShader {
         Ok(())
     }
 
-    fn on_recreate_swapchain(&mut self) {
-        self.pipeline = None;
-    }
+    fn on_recreate_swapchain(&mut self) {}
 }
 #[derive(Clone)]
 pub struct TriangleFanShader {
@@ -554,7 +546,7 @@ pub struct TriangleFanShader {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
+    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
     vertex_buffer: CachedVertexBuffer<basic::Vertex>,
 }
 
@@ -571,37 +563,37 @@ impl TriangleFanShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: None,
+            pipeline: UniqueShared::new(None),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        match self.pipeline.clone() {
-            None => {
-                let vs = self.vs.entry_point("main")
-                    .context("vertex shader: entry point missing")?;
-                let fs = self.fs.entry_point("main")
-                    .context("fragment shader: entry point missing")?;
-                let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs)?;
-                let stages = [
-                    PipelineShaderStageCreateInfo::new(vs),
-                    PipelineShaderStageCreateInfo::new(fs),
-                ];
-                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in &mut create_info.set_layouts {
-                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-                }
-                let layout = PipelineLayout::new(
-                    self.ctx.device(),
-                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
-                ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.ctx.render_pass().get().clone(), 0)
+        if self.pipeline.get().is_none() {
+            let vs = self.vs.entry_point("main")
+                .context("vertex shader: entry point missing")?;
+            let fs = self.fs.entry_point("main")
+                .context("fragment shader: entry point missing")?;
+            let vertex_input_state =
+                basic::Vertex::per_vertex().definition(&vs)?;
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            for layout in &mut create_info.set_layouts {
+                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+            }
+            let layout = PipelineLayout::new(
+                self.ctx.device(),
+                create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+            ).map_err(Validated::unwrap)?;
+            let device = self.ctx.device();
+            self.pipeline = self.ctx.create_pipeline(|render_pass| {
+                let subpass = Subpass::from(render_pass, 0)
                     .context("failed to create subpass")?;
-
-                let pipeline = GraphicsPipeline::new(
-                    self.ctx.device(),
+                Ok(GraphicsPipeline::new(
+                    device,
                     /* cache= */ None,
                     GraphicsPipelineCreateInfo {
                         stages: stages.into_iter().collect(),
@@ -622,12 +614,10 @@ impl TriangleFanShader {
                         )),
                         subpass: Some(subpass.into()),
                         ..GraphicsPipelineCreateInfo::layout(layout)
-                    })?;
-                self.pipeline = Some(pipeline.clone());
-                Ok(pipeline)
-            },
-            Some(pipeline) => Ok(pipeline)
+                    })?)
+            })?;
         }
+        Ok(self.pipeline.get().clone().unwrap())
     }
 }
 
@@ -685,9 +675,7 @@ impl Shader for TriangleFanShader {
         Ok(())
     }
 
-    fn on_recreate_swapchain(&mut self) {
-        self.pipeline = None;
-    }
+    fn on_recreate_swapchain(&mut self) {}
 }
 
 #[derive(Clone)]
@@ -696,7 +684,7 @@ pub struct BasicShader {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
+    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
     vertex_buffer: CachedVertexBuffer<basic::Vertex>,
 }
 
@@ -713,37 +701,37 @@ impl BasicShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: None,
+            pipeline: UniqueShared::new(None),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }
 
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        match self.pipeline.clone() {
-            None => {
-                let vs = self.vs.entry_point("main")
-                    .context("vertex shader: entry point missing")?;
-                let fs = self.fs.entry_point("main")
-                    .context("fragment shader: entry point missing")?;
-                let vertex_input_state =
-                    basic::Vertex::per_vertex().definition(&vs)?;
-                let stages = [
-                    PipelineShaderStageCreateInfo::new(vs),
-                    PipelineShaderStageCreateInfo::new(fs),
-                ];
-                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in &mut create_info.set_layouts {
-                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-                }
-                let layout = PipelineLayout::new(
-                    self.ctx.device(),
-                    create_info.into_pipeline_layout_create_info(self.ctx.device())?,
-                ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.ctx.render_pass().get().clone(), 0)
+        if self.pipeline.get().is_none() {
+            let vs = self.vs.entry_point("main")
+                .context("vertex shader: entry point missing")?;
+            let fs = self.fs.entry_point("main")
+                .context("fragment shader: entry point missing")?;
+            let vertex_input_state =
+                basic::Vertex::per_vertex().definition(&vs)?;
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            for layout in &mut create_info.set_layouts {
+                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+            }
+            let layout = PipelineLayout::new(
+                self.ctx.device(),
+                create_info.into_pipeline_layout_create_info(self.ctx.device())?,
+            ).map_err(Validated::unwrap)?;
+            let device = self.ctx.device();
+            self.pipeline = self.ctx.create_pipeline(|render_pass| {
+                let subpass = Subpass::from(render_pass, 0)
                     .context("failed to create subpass")?;
-
-                let pipeline = GraphicsPipeline::new(
-                    self.ctx.device(),
+                Ok(GraphicsPipeline::new(
+                    device,
                     /* cache= */ None,
                     GraphicsPipelineCreateInfo {
                         stages: stages.into_iter().collect(),
@@ -764,12 +752,10 @@ impl BasicShader {
                         )),
                         subpass: Some(subpass.into()),
                         ..GraphicsPipelineCreateInfo::layout(layout)
-                    })?;
-                self.pipeline = Some(pipeline.clone());
-                Ok(pipeline)
-            },
-            Some(pipeline) => Ok(pipeline)
+                    })?)
+            })?;
         }
+        Ok(self.pipeline.get().clone().unwrap())
     }
 }
 
@@ -826,7 +812,5 @@ impl Shader for BasicShader {
         Ok(())
     }
 
-    fn on_recreate_swapchain(&mut self) {
-        self.pipeline = None;
-    }
+    fn on_recreate_swapchain(&mut self) {}
 }

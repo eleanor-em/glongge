@@ -158,7 +158,7 @@ pub struct GuiRenderer {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
+    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
 
     font_sampler: Arc<Sampler>,
     texture_desc_sets: BTreeMap<egui::TextureId, Arc<DescriptorSet>>,
@@ -186,7 +186,7 @@ impl GuiRenderer {
             vs: vs::load(device.clone()).context("failed to create shader module")?,
             fs: fs::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: None,
+            pipeline: UniqueShared::new(None),
             font_sampler,
             texture_desc_sets: BTreeMap::new(),
             texture_images: BTreeMap::new(),
@@ -195,31 +195,31 @@ impl GuiRenderer {
         }))
     }
     fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        match self.pipeline.clone() {
-            None => {
-                let vs = self.vs.entry_point("main")
-                    .context("vertex shader: entry point missing")?;
-                let fs = self.fs.entry_point("main")
-                    .context("fragment shader: entry point missing")?;
-                let vertex_input_state =
-                    EguiVertex::per_vertex().definition(&vs)?;
-                let stages = [
-                    PipelineShaderStageCreateInfo::new(vs),
-                    PipelineShaderStageCreateInfo::new(fs),
-                ];
-                let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-                for layout in &mut create_info.set_layouts {
-                    layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-                }
-                let layout = PipelineLayout::new(
-                    self.vk_ctx.device(),
-                    create_info.into_pipeline_layout_create_info(self.vk_ctx.device())?,
-                ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.vk_ctx.render_pass().get().clone(), 0)
+        if self.pipeline.get().is_none() {
+            let vs = self.vs.entry_point("main")
+                .context("vertex shader: entry point missing")?;
+            let fs = self.fs.entry_point("main")
+                .context("fragment shader: entry point missing")?;
+            let vertex_input_state =
+                EguiVertex::per_vertex().definition(&vs)?;
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+            for layout in &mut create_info.set_layouts {
+                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+            }
+            let layout = PipelineLayout::new(
+                self.vk_ctx.device(),
+                create_info.into_pipeline_layout_create_info(self.vk_ctx.device())?,
+            ).map_err(Validated::unwrap)?;
+            let device = self.vk_ctx.device();
+            self.pipeline = self.vk_ctx.create_pipeline(|render_pass| {
+                let subpass = Subpass::from(render_pass, 0)
                     .context("failed to create subpass")?;
-
-                let pipeline = GraphicsPipeline::new(
-                    self.vk_ctx.device(),
+                Ok(GraphicsPipeline::new(
+                    device,
                     /* cache= */ None,
                     GraphicsPipelineCreateInfo {
                         stages: stages.into_iter().collect(),
@@ -240,12 +240,10 @@ impl GuiRenderer {
                         )),
                         subpass: Some(subpass.into()),
                         ..GraphicsPipelineCreateInfo::layout(layout)
-                    })?;
-                self.pipeline = Some(pipeline.clone());
-                Ok(pipeline)
-            },
-            Some(pipeline) => Ok(pipeline)
+                    })?)
+            })?;
         }
+        Ok(self.pipeline.get().clone().unwrap())
     }
 
     pub fn register_image(
@@ -526,7 +524,5 @@ impl GuiRenderer {
         Ok(())
     }
 
-    pub fn on_recreate_swapchain(&mut self) {
-        self.pipeline = None;
-    }
+    pub fn on_recreate_swapchain(&mut self) {}
 }

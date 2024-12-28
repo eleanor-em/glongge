@@ -55,6 +55,7 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use std::time::Duration;
+use vulkano::pipeline::GraphicsPipeline;
 use crate::{core::{
     input::InputHandler,
     prelude::*,
@@ -243,18 +244,21 @@ impl<T: Clone> DataPerImage<T> {
 
 #[derive(Clone)]
 pub struct VulkanoContext {
+    // Should only ever be created once:
     device: Arc<Device>,
     queue: Arc<Queue>,
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-
-    swapchain: UniqueShared<Arc<Swapchain>>,
     per_image_ctx: UniqueShared<PerImageContext>,
+
+    // May be recreated, e.g. due to window resizing:
+    swapchain: UniqueShared<Arc<Swapchain>>,
     images: UniqueShared<DataPerImage<Arc<Image>>>,
     render_pass: UniqueShared<Arc<RenderPass>>,
     framebuffers: UniqueShared<DataPerImage<Arc<Framebuffer>>>,
     image_count: UniqueShared<usize>,
+    pipelines: UniqueShared<Vec<UniqueShared<Option<Arc<GraphicsPipeline>>>>>,
 }
 
 fn device_extensions() -> DeviceExtensions {
@@ -304,19 +308,19 @@ impl VulkanoContext {
             gg_float::micros(start.elapsed()) * 1000.
         );
         Ok(Self {
-            // Appears to not be necessary:
-            // surface,
             device,
             queue,
             memory_allocator,
             command_buffer_allocator,
             descriptor_set_allocator,
+
             swapchain,
+            per_image_ctx: PerImageContext::new(),
             images,
             render_pass,
             framebuffers,
             image_count,
-            per_image_ctx: PerImageContext::new(),
+            pipelines: UniqueShared::new(Vec::new()),
         })
     }
 
@@ -335,12 +339,19 @@ impl VulkanoContext {
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
     }
+
     // Warning: this object may become invalid when recreate_swapchain() is called.
     fn swapchain_cloned(&self) -> Arc<Swapchain> {
         self.swapchain.get().clone()
     }
-    pub fn render_pass(&self) -> UniqueShared<Arc<RenderPass>> {
-        self.render_pass.clone()
+
+    // When the created pipeline is invalidated, it will be destroyed.
+    pub fn create_pipeline<F>(&mut self, f: F) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
+    where F: FnOnce(Arc<RenderPass>) -> Result<Arc<GraphicsPipeline>>
+    {
+        let pipeline = UniqueShared::new(Some(f(self.render_pass.get().clone())?));
+        self.pipelines.get().push(pipeline.clone());
+        Ok(pipeline)
     }
     pub fn image_count(&self) -> usize { *self.image_count.get() }
 
@@ -356,6 +367,9 @@ impl VulkanoContext {
         *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
         *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
         *self.image_count.get() = self.framebuffers.get().len();
+        for pipeline in self.pipelines.get().drain(..) {
+            *pipeline.get() = None;
+        }
         Ok(())
     }
 }
