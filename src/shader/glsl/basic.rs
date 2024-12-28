@@ -52,6 +52,9 @@ pub mod vertex_shader {
                     vec4(-1, -1, 0, 1));
                 const mat4 projection =  window_translation * window_pixel_scale;
 
+                // TODO: scale and rotation may require rounding too, it interacts poorly with
+                //       additional scaling factor (i.e. not just due to HiDPI) to round the entire
+                //       transformed vector.
                 const mat4 scale_mat = mat4(
                     vec4(scale.x, 0, 0, 0),
                     vec4(0, scale.y, 0, 0),
