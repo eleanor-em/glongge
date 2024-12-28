@@ -608,7 +608,7 @@ where
     ) -> Result<()> {
         let mut this = Self {
             create_info: WindowEventHandlerCreateInfo {
-                window_size: window_size,
+                window_size,
                 global_scale_factor,
                 clear_col,
                 create_and_start_scene_handler: Some(create_and_start_scene_handler),
