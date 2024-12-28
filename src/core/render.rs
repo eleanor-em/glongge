@@ -204,7 +204,7 @@ impl RenderHandler {
 
     pub(crate) fn viewport(&self) -> AdjustedViewport { self.viewport.get().clone() }
 
-    pub(crate) fn on_resize(
+    pub(crate) fn on_recreate_swapchain(
         &mut self,
         window: GgWindow,
     ) {
@@ -212,6 +212,10 @@ impl RenderHandler {
         self.viewport.get().update_from_window(&self.window);
         self.command_buffer = None;
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
+        self.gui_shader.get().on_recreate_swapchain();
+        for shader in &mut self.shaders {
+            shader.get().on_recreate_swapchain();
+        }
     }
 
     pub(crate) fn do_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
@@ -236,7 +240,7 @@ impl RenderHandler {
         };
         if let Some(global_scale_factor) = global_scale_factor {
             self.viewport.get().set_global_scale_factor(global_scale_factor);
-            self.on_resize(self.window.clone());
+            self.on_recreate_swapchain(self.window.clone());
         }
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
             let shader_id = shader.id();

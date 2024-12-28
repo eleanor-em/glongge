@@ -102,6 +102,7 @@ pub trait Shader: Send {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()>;
+    fn on_recreate_swapchain(&mut self);
 }
 
 #[derive(Clone)]
@@ -395,6 +396,10 @@ impl Shader for SpriteShader {
         self.vertex_buffer.draw(builder)?;
         Ok(())
     }
+
+    fn on_recreate_swapchain(&mut self) {
+        self.pipeline = None;
+    }
 }
 
 #[derive(Clone)]
@@ -536,6 +541,10 @@ impl Shader for WireframeShader {
         }
         Ok(())
     }
+
+    fn on_recreate_swapchain(&mut self) {
+        self.pipeline = None;
+    }
 }
 #[derive(Clone)]
 pub struct TriangleFanShader {
@@ -672,6 +681,10 @@ impl Shader for TriangleFanShader {
         self.vertex_buffer.draw(builder)?;
         Ok(())
     }
+
+    fn on_recreate_swapchain(&mut self) {
+        self.pipeline = None;
+    }
 }
 
 #[derive(Clone)]
@@ -807,5 +820,9 @@ impl Shader for BasicShader {
             .push_constants(layout, 0, pc)?;
         self.vertex_buffer.draw(builder)?;
         Ok(())
+    }
+
+    fn on_recreate_swapchain(&mut self) {
+        self.pipeline = None;
     }
 }

@@ -77,7 +77,7 @@ impl GgWindow {
         let size = size.into();
         let mut window_attrs = WindowAttributes::default();
         window_attrs.title = "glongge".to_string();
-        window_attrs.resizable = false;
+        window_attrs.resizable = true;
         window_attrs.inner_size = Some(egui_winit::winit::dpi::Size::Logical(
             LogicalSize::new(f64::from(size.x), f64::from(size.y)))
         );
@@ -344,7 +344,6 @@ impl VulkanoContext {
     pub fn image_count(&self) -> usize { *self.image_count.get() }
 
     fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
-        info!("recreate swapchain");
         let swapchain_create_info = SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
             ..self.swapchain.get().create_info()
@@ -639,7 +638,7 @@ where
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
             .context("could not recreate swapchain")?;
-        self.expect_inner().render_handler.on_resize(window);
+        self.expect_inner().render_handler.on_recreate_swapchain(window);
         Ok(())
     }
 
@@ -842,10 +841,16 @@ where
             WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
             } => {
-                self.expect_inner().scale_factor = scale_factor;
-                self.recreate_swapchain().unwrap();
+                if self.expect_inner().scale_factor != scale_factor {
+                    info!("WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
+                        self.expect_inner().scale_factor, scale_factor);
+                    self.expect_inner().scale_factor = scale_factor;
+                    self.recreate_swapchain().unwrap();
+                }
             }
-            WindowEvent::Resized(_) => {
+            WindowEvent::Resized(physical_size) => {
+                info!("WindowEvent::Resized: {:?}: recreating swapchain",
+                    physical_size);
                 self.recreate_swapchain().unwrap();
             }
             WindowEvent::RedrawRequested => {
@@ -888,7 +893,13 @@ where
                 self.idle(image_idx as usize, acquire_future, full_output)?;
                 Ok(())
             },
-            Ok((_, /* suboptimal= */ true, _)) | Err(VulkanError::OutOfDate) => {
+            Ok((_, /* suboptimal= */ true, _)) => {
+                info!("suboptimal: recreating swapchain");
+                self.recreate_swapchain()?;
+                Ok(())
+            }
+            Err(VulkanError::OutOfDate) => {
+                info!("VulkanError::OutOfDate: recreating swapchain");
                 self.recreate_swapchain()?;
                 Ok(())
             },

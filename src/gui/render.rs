@@ -524,4 +524,8 @@ impl GuiRenderer {
             .push_constants(layout, 0, push_constants)?;
         Ok(())
     }
+
+    pub fn on_recreate_swapchain(&mut self) {
+        self.pipeline = None;
+    }
 }
