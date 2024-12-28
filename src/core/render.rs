@@ -156,7 +156,6 @@ pub struct RenderHandler {
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: UniqueShared<GuiRenderer>,
-    command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
 }
 
 impl RenderHandler {
@@ -180,7 +179,6 @@ impl RenderHandler {
             shaders,
             window,
             viewport,
-            command_buffer: None,
             render_data_channel,
         })
     }
@@ -210,7 +208,6 @@ impl RenderHandler {
     ) {
         self.window = window;
         self.viewport.get().update_from_window(&self.window);
-        self.command_buffer = None;
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
         self.gui_shader.get().on_recreate_swapchain();
         for shader in &mut self.shaders {
