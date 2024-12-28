@@ -223,7 +223,7 @@ impl SpriteShader {
             vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: UniqueShared::new(None),
+            pipeline: UniqueShared::default(),
             vertex_buffer,
             resource_handler,
         }) as Box<dyn Shader>))
@@ -422,7 +422,7 @@ impl WireframeShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: UniqueShared::new(None),
+            pipeline: UniqueShared::default(),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }
@@ -563,7 +563,7 @@ impl TriangleFanShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: UniqueShared::new(None),
+            pipeline: UniqueShared::default(),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }
@@ -701,7 +701,7 @@ impl BasicShader {
             vs: basic::vertex_shader::load(device.clone()).context("failed to create shader module")?,
             fs: basic::fragment_shader::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: UniqueShared::new(None),
+            pipeline: UniqueShared::default(),
             vertex_buffer,
         }) as Box<dyn Shader>))
     }

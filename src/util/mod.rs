@@ -568,6 +568,12 @@ impl<T: Display> Display for UniqueShared<T> {
     }
 }
 
+impl<T: Default> Default for UniqueShared<T> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 fn setup_log() -> Result<()> {
     let logfile = std::fs::OpenOptions::new()
         .write(true)

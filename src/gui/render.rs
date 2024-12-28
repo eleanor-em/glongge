@@ -186,7 +186,7 @@ impl GuiRenderer {
             vs: vs::load(device.clone()).context("failed to create shader module")?,
             fs: fs::load(device).context("failed to create shader module")?,
             viewport,
-            pipeline: UniqueShared::new(None),
+            pipeline: UniqueShared::default(),
             font_sampler,
             texture_desc_sets: BTreeMap::new(),
             texture_images: BTreeMap::new(),
