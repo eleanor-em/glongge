@@ -335,11 +335,12 @@ impl VulkanoContext {
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
     }
-    fn swapchain(&self) -> Arc<Swapchain> {
+    // Warning: this object may become invalid when recreate_swapchain() is called.
+    fn swapchain_cloned(&self) -> Arc<Swapchain> {
         self.swapchain.get().clone()
     }
-    pub fn render_pass(&self) -> Arc<RenderPass> {
-        self.render_pass.get().clone()
+    pub fn render_pass(&self) -> UniqueShared<Arc<RenderPass>> {
+        self.render_pass.clone()
     }
     pub fn image_count(&self) -> usize { *self.image_count.get() }
 
@@ -728,7 +729,7 @@ where
                 .then_swapchain_present(
                     vk_ctx.queue(),
                     SwapchainPresentInfo::swapchain_image_index(
-                        vk_ctx.swapchain().clone(),
+                        vk_ctx.swapchain_cloned(),
                         u32::try_from(image_idx)
                             .context("image_idx overflowed: {image_idx}")?
                     ),
@@ -860,9 +861,9 @@ where
                 // TODO: test effects of this on Windows/Linux.
                 if self.render_stats.penultimate_step.elapsed().as_millis() >= 15 {
                     let acquired = {
-                        let swapchain = self.expect_inner().vk_ctx.swapchain();
+                        let swapchain = self.expect_inner().vk_ctx.swapchain_cloned();
                         // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                        swapchain::acquire_next_image(swapchain.clone(), None)
+                        swapchain::acquire_next_image(swapchain, None)
                             .map_err(Validated::unwrap)
                     };
                     self.handle_acquired_image(acquired).unwrap();

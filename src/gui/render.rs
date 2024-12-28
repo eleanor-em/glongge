@@ -215,7 +215,8 @@ impl GuiRenderer {
                     self.vk_ctx.device(),
                     create_info.into_pipeline_layout_create_info(self.vk_ctx.device())?,
                 ).map_err(Validated::unwrap)?;
-                let subpass = Subpass::from(self.vk_ctx.render_pass(), 0).context("failed to create subpass")?;
+                let subpass = Subpass::from(self.vk_ctx.render_pass().get().clone(), 0)
+                    .context("failed to create subpass")?;
 
                 let pipeline = GraphicsPipeline::new(
                     self.vk_ctx.device(),
