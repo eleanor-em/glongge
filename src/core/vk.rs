@@ -61,7 +61,7 @@ use crate::{core::{
     prelude::*,
 }, info_every_seconds, resource::ResourceHandler, util::{
     gg_time::TimeIt
-}};
+}, warn_every_seconds};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;
@@ -684,7 +684,7 @@ where
         self.render_stats.submit_command_buffers.stop();
 
         if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.image_count() != image_idx {
-            warn!("per_image_ctx: last={}, next={}, count={}",
+            warn_every_seconds!(1, "per_image_ctx: last={}, next={}, count={}",
                                 per_image_ctx.last,
                                 image_idx,
                                 self.expect_inner().vk_ctx.image_count());
@@ -857,14 +857,14 @@ where
                 scale_factor, ..
             } => {
                 if self.expect_inner().scale_factor != scale_factor {
-                    info!("WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
+                    info_every_seconds!(1, "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
                         self.expect_inner().scale_factor, scale_factor);
                     self.expect_inner().scale_factor = scale_factor;
                     self.recreate_swapchain().unwrap();
                 }
             }
             WindowEvent::Resized(physical_size) => {
-                info!("WindowEvent::Resized: {:?}: recreating swapchain",
+                info_every_seconds!(1, "WindowEvent::Resized: {:?}: recreating swapchain",
                     physical_size);
                 self.recreate_swapchain().unwrap();
             }
@@ -909,12 +909,12 @@ where
                 Ok(())
             },
             Ok((_, /* suboptimal= */ true, _)) => {
-                info!("suboptimal: recreating swapchain");
+                info_every_seconds!(1, "suboptimal: recreating swapchain");
                 self.recreate_swapchain()?;
                 Ok(())
             }
             Err(VulkanError::OutOfDate) => {
-                info!("VulkanError::OutOfDate: recreating swapchain");
+                info_every_seconds!(1, "VulkanError::OutOfDate: recreating swapchain");
                 self.recreate_swapchain()?;
                 Ok(())
             },

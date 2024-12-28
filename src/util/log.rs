@@ -9,10 +9,26 @@ pub static LAST_LOG: LazyLock<Mutex<HashMap<String, Instant>>> =
 macro_rules! info_every_seconds {
     ($seconds:expr, $($args:expr),+) => {
         let loc = $crate::util::assert::current_location!().to_string();
-        let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
-        if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
-            info!($($args),+);
-            last_log.insert(loc, std::time::Instant::now());
+        {
+            let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
+            if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
+                info!($($args),+);
+                last_log.insert(loc.clone(), std::time::Instant::now());
+            }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! warn_every_seconds {
+    ($seconds:expr, $($args:expr),+) => {
+        let loc = $crate::util::assert::current_location!().to_string();
+        {
+            let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
+            if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
+                warn!($($args),+);
+                last_log.insert(loc.clone(), std::time::Instant::now());
+            }
         }
     }
 }
