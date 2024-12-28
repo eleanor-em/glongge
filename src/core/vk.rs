@@ -85,8 +85,8 @@ impl GgWindow {
         Ok(Self { inner: window })
     }
 
-    pub fn create_default_viewport(&self) -> UniqueShared<AdjustedViewport> {
-        UniqueShared::new(AdjustedViewport {
+    pub fn create_default_viewport(&self) -> AdjustedViewport {
+        AdjustedViewport {
             inner: Viewport {
                 offset: [0., 0.],
                 extent: self.inner_size().into(),
@@ -95,7 +95,7 @@ impl GgWindow {
             scale_factor: self.scale_factor(),
             global_scale_factor: 1.,
             translation: Vec2::zero(),
-        })
+        }
     }
 
     pub fn inner_size(&self) -> PhysicalSize<u32> { self.inner.inner_size() }
@@ -158,7 +158,7 @@ pub struct DataPerImage<T: Clone> {
 
 impl <T: Clone + Copy> DataPerImage<T> {
     pub fn new_with_value(ctx: &VulkanoContext, initial_value: T) -> Self {
-        let data = vec![initial_value; ctx.images.len()];
+        let data = vec![initial_value; ctx.images.get().len()];
         Self { data }
     }
 
@@ -169,7 +169,7 @@ impl <T: Clone + Copy> DataPerImage<T> {
 
 impl<T: Clone> DataPerImage<T> {
     pub fn new_with_data(ctx: &VulkanoContext, data: Vec<T>) -> Self {
-        check_eq!(data.len(), ctx.images.len());
+        check_eq!(data.len(), ctx.images.get().len());
         Self { data }
     }
     pub fn try_new_with_generator<F: Fn() -> Result<T>>(
@@ -177,14 +177,14 @@ impl<T: Clone> DataPerImage<T> {
         generator: F,
     ) -> Result<Self> {
         let mut data = Vec::new();
-        for _ in 0..ctx.images.len() {
+        for _ in 0..ctx.images.get().len() {
             data.push(generator()?);
         }
         Ok(Self { data })
     }
     pub fn new_with_generator<F: Fn() -> T>(ctx: &VulkanoContext, generator: F) -> Self {
         let mut data = Vec::new();
-        for _ in 0..ctx.images.len() {
+        for _ in 0..ctx.images.get().len() {
             data.push(generator());
         }
         Self { data }
@@ -248,11 +248,13 @@ pub struct VulkanoContext {
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-    swapchain: Arc<Swapchain>,
+
+    swapchain: UniqueShared<Arc<Swapchain>>,
     per_image_ctx: UniqueShared<PerImageContext>,
-    images: DataPerImage<Arc<Image>>,
-    render_pass: Arc<RenderPass>,
-    framebuffers: DataPerImage<Arc<Framebuffer>>,
+    images: UniqueShared<DataPerImage<Arc<Image>>>,
+    render_pass: UniqueShared<Arc<RenderPass>>,
+    framebuffers: UniqueShared<DataPerImage<Arc<Framebuffer>>>,
+    image_count: UniqueShared<usize>,
 }
 
 fn device_extensions() -> DeviceExtensions {
@@ -289,11 +291,13 @@ impl VulkanoContext {
             &physical_device,
             device.clone(),
         )?;
-        let images = DataPerImage { data: images };
-        let render_pass = create_render_pass(device.clone(), &swapchain)?;
-        let framebuffers = create_framebuffers(images.as_slice(), &render_pass)?;
+        let swapchain = UniqueShared::new(swapchain);
+        let images = UniqueShared::new(DataPerImage { data: images });
+        let render_pass = UniqueShared::new(create_render_pass(device.clone(), &swapchain)?);
+        let framebuffers = UniqueShared::new(create_framebuffers(images.get().as_slice(), &render_pass.get())?);
+        let image_count = UniqueShared::new(framebuffers.get().len());
 
-        check_eq!(swapchain.image_count() as usize, images.len());
+        check_eq!(swapchain.get().image_count() as usize, images.get().len());
 
         info!(
             "created vulkano context in: {:.2} ms",
@@ -311,6 +315,7 @@ impl VulkanoContext {
             images,
             render_pass,
             framebuffers,
+            image_count,
             per_image_ctx: PerImageContext::new(),
         })
     }
@@ -331,24 +336,26 @@ impl VulkanoContext {
         self.descriptor_set_allocator.clone()
     }
     fn swapchain(&self) -> Arc<Swapchain> {
-        self.swapchain.clone()
+        self.swapchain.get().clone()
     }
     pub fn render_pass(&self) -> Arc<RenderPass> {
-        self.render_pass.clone()
+        self.render_pass.get().clone()
     }
-    pub fn framebuffers(&self) -> DataPerImage<Arc<Framebuffer>> {
-        self.framebuffers.clone()
-    }
+    pub fn image_count(&self) -> usize { *self.image_count.get() }
 
     fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
         info!("recreate swapchain");
-        let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
+        let swapchain_create_info = SwapchainCreateInfo {
             image_extent: window.inner_size().into(),
-            ..self.swapchain.create_info()
-        }).map_err(Validated::unwrap)?;
-        self.swapchain = new_swapchain;
-        self.images = DataPerImage { data: new_images };
-        self.framebuffers = create_framebuffers(self.images.as_slice(), &self.render_pass)?;
+            ..self.swapchain.get().create_info()
+        };
+        let (new_swapchain, new_images) = self.swapchain.get()
+            .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
+        *self.swapchain.get() = new_swapchain;
+        *self.images.get() = DataPerImage { data: new_images };
+        *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
+        *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
+        *self.image_count.get() = self.framebuffers.get().len();
         Ok(())
     }
 }
@@ -485,13 +492,16 @@ fn create_swapchain(
     )?)
 }
 
-fn create_render_pass(device: Arc<Device>, swapchain: &Arc<Swapchain>) -> Result<Arc<RenderPass>> {
+fn create_render_pass(
+    device: Arc<Device>,
+    swapchain: &UniqueShared<Arc<Swapchain>>
+) -> Result<Arc<RenderPass>> {
     Ok(vulkano::single_pass_renderpass!(
         device,
         attachments: {
             color: {
                 // Set the format the same as the swapchain.
-                format: swapchain.image_format(),
+                format: swapchain.get().image_format(),
                 samples: 1,
                 load_op: Clear,
                 store_op: Store,
@@ -650,7 +660,7 @@ where
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         let command_buffer = self.expect_inner().render_handler.do_render(
             &vk_ctx,
-            vk_ctx.framebuffers.current_value(&per_image_ctx),
+            vk_ctx.framebuffers.get().current_value(&per_image_ctx),
             full_output
         )?;
         self.render_stats.do_render.stop();
@@ -659,11 +669,11 @@ where
         self.submit_command_buffer(&mut per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
 
-        if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.framebuffers.len() != image_idx {
+        if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.image_count() != image_idx {
             warn!("per_image_ctx: last={}, next={}, count={}",
                                 per_image_ctx.last,
                                 image_idx,
-                                self.expect_inner().vk_ctx.framebuffers.len());
+                                self.expect_inner().vk_ctx.image_count());
         }
         per_image_ctx.last = image_idx;
         Ok(())
@@ -719,7 +729,7 @@ where
                 .then_swapchain_present(
                     vk_ctx.queue(),
                     SwapchainPresentInfo::swapchain_image_index(
-                        vk_ctx.swapchain(),
+                        vk_ctx.swapchain().clone(),
                         u32::try_from(image_idx)
                             .context("image_idx overflowed: {image_idx}")?
                     ),
@@ -742,7 +752,7 @@ where
 
         let window = GgWindow::new(event_loop, self.create_info.window_size)?;
         let scale_factor = window.scale_factor();
-        let viewport = window.create_default_viewport();
+        let viewport = UniqueShared::new(window.create_default_viewport());
 
         let vk_ctx = VulkanoContext::new(event_loop, &window)?;
         let input_handler = InputHandler::new();
@@ -844,10 +854,12 @@ where
                 //      if you send commands too fast.
                 // TODO: test effects of this on Windows/Linux.
                 if self.render_stats.penultimate_step.elapsed().as_millis() >= 15 {
-                    let swapchain = self.expect_inner().vk_ctx.swapchain();
-                    // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-                    let acquired = swapchain::acquire_next_image(swapchain, None)
-                        .map_err(Validated::unwrap);
+                    let acquired = {
+                        let swapchain = self.expect_inner().vk_ctx.swapchain();
+                        // XXX: "acquire_next_image" is somewhat misleading, since it does not block
+                        swapchain::acquire_next_image(swapchain.clone(), None)
+                            .map_err(Validated::unwrap)
+                    };
                     self.handle_acquired_image(acquired).unwrap();
                 }
             }

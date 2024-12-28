@@ -116,12 +116,12 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn new(ctx: VulkanoContext, size: usize) -> Result<Self> {
         let inner = Self::create_vertex_buffer(
             &ctx,
-            (size * ctx.framebuffers().len()) as DeviceSize
+            (size * ctx.image_count()) as DeviceSize
         )?;
         Ok(Self { ctx, inner, vertex_count: 0, begin: 0 })
     }
 
-    fn len(&self) -> usize { self.inner.len() as usize / self.ctx.framebuffers().len() }
+    fn len(&self) -> usize { self.inner.len() as usize / self.ctx.image_count() }
 
     fn realloc(&mut self) -> Result<()> {
         let size = self.inner.len() as usize * std::mem::size_of::<T>();
