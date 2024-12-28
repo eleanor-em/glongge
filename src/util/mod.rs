@@ -19,6 +19,7 @@ use crate::gui::GuiContext;
 pub mod linalg;
 pub mod colour;
 pub mod assert;
+pub mod log;
 pub mod collision;
 pub mod canvas;
 pub mod tileset;

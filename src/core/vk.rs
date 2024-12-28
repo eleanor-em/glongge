@@ -55,16 +55,12 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use std::time::Duration;
-use crate::{
-    core::{
-        input::InputHandler,
-        prelude::*,
-    },
-    resource::ResourceHandler,
-    util::{
-        gg_time::TimeIt
-    },
-};
+use crate::{core::{
+    input::InputHandler,
+    prelude::*,
+}, info_every_seconds, resource::ResourceHandler, util::{
+    gg_time::TimeIt
+}};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::gui::GuiContext;
@@ -124,6 +120,8 @@ impl AdjustedViewport {
     pub fn update_from_window(&mut self, window: &GgWindow) {
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
+        info_every_seconds!(1, "update_from_window(): extent={:?}, scale_factor={}",
+            self.inner.extent, self.scale_factor);
     }
 
     pub fn physical_width(&self) -> f64 { f64::from(self.inner.extent[0]) }
