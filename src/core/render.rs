@@ -175,11 +175,11 @@ impl RenderHandler {
         let gui_shader = GuiRenderer::new(vk_ctx.clone(), viewport.clone())?;
         Ok(Self {
             gui_ctx,
-            gui_shader,
-            shaders,
+            render_data_channel,
             window,
             viewport,
-            render_data_channel,
+            shaders,
+            gui_shader,
         })
     }
 

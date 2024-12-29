@@ -324,6 +324,24 @@ impl VulkanoContext {
         })
     }
 
+    fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
+        let swapchain_create_info = SwapchainCreateInfo {
+            image_extent: window.inner_size().into(),
+            ..self.swapchain.get().create_info()
+        };
+        let (new_swapchain, new_images) = self.swapchain.get()
+            .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
+        *self.swapchain.get() = new_swapchain;
+        *self.images.get() = DataPerImage { data: new_images };
+        *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
+        *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
+        *self.image_count.get() = self.framebuffers.get().len();
+        for pipeline in self.pipelines.get().drain(..) {
+            *pipeline.get() = None;
+        }
+        Ok(())
+    }
+
     pub fn device(&self) -> Arc<Device> {
         self.device.clone()
     }
@@ -354,24 +372,6 @@ impl VulkanoContext {
         Ok(pipeline)
     }
     pub fn image_count(&self) -> usize { *self.image_count.get() }
-
-    fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
-        let swapchain_create_info = SwapchainCreateInfo {
-            image_extent: window.inner_size().into(),
-            ..self.swapchain.get().create_info()
-        };
-        let (new_swapchain, new_images) = self.swapchain.get()
-            .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
-        *self.swapchain.get() = new_swapchain;
-        *self.images.get() = DataPerImage { data: new_images };
-        *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
-        *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
-        *self.image_count.get() = self.framebuffers.get().len();
-        for pipeline in self.pipelines.get().drain(..) {
-            *pipeline.get() = None;
-        }
-        Ok(())
-    }
 }
 
 fn macos_instance(
@@ -873,7 +873,7 @@ where
                 // XXX: macOS seems to behave weirdly badly with then_signal_fence_and_flush()
                 //      if you send commands too fast.
                 // TODO: test effects of this on Windows/Linux.
-                if self.render_stats.penultimate_step.elapsed().as_millis() >= 15 {
+                if env::consts::OS != "macos" || self.render_stats.penultimate_step.elapsed().as_millis() >= 15 {
                     let acquired = {
                         let swapchain = self.expect_inner().vk_ctx.swapchain_cloned();
                         // XXX: "acquire_next_image" is somewhat misleading, since it does not block
