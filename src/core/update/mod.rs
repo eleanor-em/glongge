@@ -186,6 +186,8 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             }) {
             error!("{}", e.root_cause());
         }
+        self.absolute_transforms.remove(&remove_id);
+        self.children.remove(&remove_id);
     }
     fn add_object(&mut self,
                   new_id: ObjectId,
