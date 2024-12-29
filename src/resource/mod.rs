@@ -3,15 +3,13 @@ use std::sync::{
     atomic::{AtomicBool, Ordering}
 };
 use crate::{
-    core::{
-        prelude::*,
-        vk::VulkanoContext
-    },
+    core::prelude::*,
     resource::{
         sound::SoundHandler,
         texture::TextureHandler,
     }
 };
+use crate::core::vk::vk_ctx::VulkanoContext;
 
 pub mod sprite;
 pub mod texture;

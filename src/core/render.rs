@@ -20,10 +20,7 @@ use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndI
 use crate::{
     core::{
         prelude::*,
-        vk::{
-            AdjustedViewport,
-            VulkanoContext,
-        },
+        vk::AdjustedViewport,
         ObjectId,
     },
     resource::texture::TextureSubArea,
@@ -32,6 +29,7 @@ use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
 use crate::util::UniqueShared;
 use crate::core::vk::{GgWindow, RenderPerfStats};
+use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;
 use crate::shader::{Shader, ShaderId};
@@ -227,7 +225,7 @@ impl RenderHandler {
     pub(crate) fn do_render(
         &mut self,
         ctx: &VulkanoContext,
-        framebuffer: &Arc<Framebuffer>,
+        framebuffer: Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let (global_scale_factor, render_frame, gui_enabled) = {

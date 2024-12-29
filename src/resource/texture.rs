@@ -38,10 +38,8 @@ use vulkano::{
 
 use png::ColorType;
 
-use crate::core::{
-    prelude::*,
-    vk::VulkanoContext,
-};
+use crate::core::prelude::*;
+use crate::core::vk::vk_ctx::VulkanoContext;
 
 struct RawLoadedTexture {
     buf: Subbuffer<[u8]>,
