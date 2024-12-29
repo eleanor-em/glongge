@@ -1,3 +1,5 @@
+// VulkanoContext is in a separate module because the details of handling Swapchain, and objects
+// derived from it, are rather complicated. Don't make stuff here public unless really necessary.
 use std::env;
 use std::sync::{Arc, MutexGuard};
 use std::time::Instant;
@@ -6,7 +8,7 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use tracing::info;
 use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
 use vulkano::descriptor_set::allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo};
-use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo, QueueFlags};
+use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags};
 use vulkano::image::{Image, ImageUsage};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::GraphicsPipeline;
@@ -20,7 +22,6 @@ use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
 use crate::check_eq;
 use crate::core::vk::{GgWindow, PerImageContext};
 use crate::core::prelude::*;
-use crate::core::vk;
 use crate::util::{gg_float, UniqueShared};
 
 #[derive(Clone)]
@@ -116,6 +117,7 @@ impl VulkanoContext {
         Ok(())
     }
 
+    // The below should never be re-created, so it's safe to store them.
     pub fn device(&self) -> Arc<Device> {
         self.device.clone()
     }
@@ -149,7 +151,7 @@ impl VulkanoContext {
         self.framebuffers.get().current_value(per_image_ctx).clone()
     }
 
-    // When the created pipeline is invalidated, it will be destroyed.
+    // When the created pipeline is invalidated, it will be destroyed => safe to store this.
     pub fn create_pipeline<F>(&mut self, f: F) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
     where F: FnOnce(Arc<RenderPass>) -> Result<Arc<GraphicsPipeline>>
     {
@@ -159,6 +161,22 @@ impl VulkanoContext {
     }
     // May change between frames, e.g. due to recreate_swapchain().
     pub fn image_count(&self) -> usize { *self.image_count.get() }
+}
+
+// TODO: more flexible approach here.
+fn device_extensions() -> DeviceExtensions {
+    DeviceExtensions {
+        khr_swapchain: true,
+        ..DeviceExtensions::empty()
+    }
+}
+fn features() -> DeviceFeatures {
+    DeviceFeatures {
+        // Required for extra texture samplers on macOS:
+        descriptor_indexing: true,
+        fill_mode_non_solid: true,
+        ..Default::default()
+    }
 }
 
 pub(crate) type AcquiredSwapchainFuture = (u32, bool, SwapchainAcquireFuture);
@@ -191,8 +209,8 @@ fn any_physical_device(
 ) -> Result<Arc<PhysicalDevice>> {
     Ok(instance
         .enumerate_physical_devices()?
-        .filter(|p| p.supported_extensions().contains(&vk::device_extensions()))
-        .filter(|p| p.supported_features().contains(&vk::features()))
+        .filter(|p| p.supported_extensions().contains(&device_extensions()))
+        .filter(|p| p.supported_features().contains(&features()))
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -240,8 +258,8 @@ fn any_graphical_queue_family(
                 queue_family_index: queue_family_index as u32,
                 ..Default::default()
             }],
-            enabled_extensions: vk::device_extensions(),
-            enabled_features: vk::features(),
+            enabled_extensions: device_extensions(),
+            enabled_features: features(),
             ..Default::default()
         },
     )?;

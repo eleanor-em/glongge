@@ -225,7 +225,7 @@ impl RenderHandler {
     pub(crate) fn do_render(
         &mut self,
         ctx: &VulkanoContext,
-        framebuffer: Arc<Framebuffer>,
+        framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
         let (global_scale_factor, render_frame, gui_enabled) = {

@@ -8,10 +8,6 @@ use vulkano::{
         CommandBufferExecFuture,
         PrimaryAutoCommandBuffer,
     },
-    device::{
-        DeviceExtensions,
-        DeviceFeatures
-    },
     pipeline::graphics::viewport::Viewport,
     swapchain::{
         PresentFuture,
@@ -127,22 +123,6 @@ impl AxisAlignedExtent for AdjustedViewport {
 
     fn centre(&self) -> Vec2 {
         self.translation + self.half_widths()
-    }
-}
-
-// TODO: more flexible approach here.
-pub(crate) fn device_extensions() -> DeviceExtensions {
-    DeviceExtensions {
-        khr_swapchain: true,
-        ..DeviceExtensions::empty()
-    }
-}
-pub(crate) fn features() -> DeviceFeatures {
-    DeviceFeatures {
-        // Required for extra texture samplers on macOS:
-        descriptor_indexing: true,
-        fill_mode_non_solid: true,
-        ..Default::default()
     }
 }
 
@@ -271,7 +251,7 @@ where
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         let command_buffer = self.expect_inner().render_handler.do_render(
             &vk_ctx,
-            vk_ctx.current_framebuffer(&per_image_ctx),
+            &vk_ctx.current_framebuffer(&per_image_ctx),
             full_output
         )?;
         self.render_stats.do_render.stop();
