@@ -332,6 +332,7 @@ pub mod gg_err {
 }
 
 pub mod gg_float {
+    use anyhow::{bail, Result};
     use std::num::FpCategory;
     use std::time::Duration;
     use num_traits::Zero;
@@ -367,6 +368,14 @@ pub mod gg_float {
     #[allow(clippy::cast_precision_loss)]
     pub fn micros(duration: Duration) -> f64 {
         duration.as_micros() as f64 / 1_000_000.
+    }
+
+    pub fn f32_to_u32(x: f32) -> Result<u32> {
+        if f64::from(x) > f64::from(u32::MAX) || x < 0. {
+            bail!("{x} does not fit in range of u32");
+        }
+        #[allow(clippy::cast_sign_loss)]
+        Ok(x as u32)
     }
 }
 

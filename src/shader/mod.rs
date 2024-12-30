@@ -29,7 +29,7 @@ use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use crate::{core::{
     prelude::*,
     vk::AdjustedViewport,
-}, shader::glsl::{basic, sprite}, util::UniqueShared, warn_every_seconds};
+}, shader::glsl::{basic, sprite}, util::UniqueShared};
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 use crate::core::render::ShaderRenderFrame;
 use crate::core::vk::vk_ctx::VulkanoContext;

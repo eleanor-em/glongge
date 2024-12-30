@@ -98,10 +98,6 @@ impl RenderDataChannel {
         self.viewport.clone()
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
-        !self.vertices.is_empty() && !self.render_infos.is_empty()
-    }
-
     #[allow(clippy::float_cmp)]
     pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
         if self.viewport.get_global_scale_factor() != global_scale_factor {

@@ -183,7 +183,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
     fn remove_object_from_parent(&mut self, remove_id: ObjectId) -> Result<()> {
         let parent_id = self.get_parent_id(remove_id)?;
-        if let Some(children) = self.get_children_mut(parent_id).ok() {
+        if let Ok(children) = self.get_children_mut(parent_id) {
             // If this object's parent has already been removed, `children` may not exist.
             // This is not an error.
             children.retain(|obj| obj.object_id != remove_id);
