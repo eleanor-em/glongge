@@ -26,14 +26,10 @@ use vulkano::{pipeline::{
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
 use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
-use crate::{
-    core::{
-        prelude::*,
-        vk::AdjustedViewport,
-    },
-    shader::glsl::{basic, sprite},
-    util::UniqueShared
-};
+use crate::{core::{
+    prelude::*,
+    vk::AdjustedViewport,
+}, shader::glsl::{basic, sprite}, util::UniqueShared, warn_every_seconds};
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
 use crate::core::render::ShaderRenderFrame;
 use crate::core::vk::vk_ctx::VulkanoContext;
@@ -154,7 +150,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     }
 
     fn write(&mut self, data: &[T]) -> Result<()> {
-        if data.len() == 0 { return Ok(()); }
+        if data.is_empty() { return Ok(()); }
         // Reallocate if needed:
         let mut buf_len = usize::try_from(self.inner.len())
             .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
