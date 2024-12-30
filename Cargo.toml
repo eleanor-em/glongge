@@ -30,7 +30,6 @@ vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano/", rev = "ea30f
 # windowing
 egui = "0.30.0"
 egui-winit = "0.30.0"
-raw-window-handle = "0.5.2"
 # media
 ab_glyph = "0.2.28"
 asefile = "0.3.8"
