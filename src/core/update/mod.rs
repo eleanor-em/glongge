@@ -123,9 +123,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Ok(*parent)
         } else {
             let object_type = self.objects.get(&id)
-                .with_context(|| format!("missing object_id from objects: {id:?}"))?
+                .with_context(|| format!("get_parent_id(): missing object_id from objects: {id:?}"))?
                 .borrow().get_type();
-            bail!("missing object_id from parents: {:?} [{:?}]", id, object_type)
+            bail!("get_parent_id(): missing object_id from parents: {:?} [{:?}]", id, object_type)
         }
     }
     pub(crate) fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
@@ -151,9 +151,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             Ok(child)
         } else {
             let object_type = self.objects.get(&id)
-                .with_context(|| format!("missing object_id from objects: {id:?}"))?
+                .with_context(|| format!("get_children_mut(): missing object_id from objects: {id:?}"))?
                 .borrow().get_type();
-            bail!("missing object_id from children: {:?} [{:?}]", id, object_type)
+            bail!("get_children_mut(): missing object_id from children: {:?} [{:?}]", id, object_type)
         }
     }
     pub(crate) fn get_sprite(&self, id: ObjectId) -> Result<Option<Ref<GgInternalSprite>>> {
@@ -176,19 +176,22 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
 
     fn remove_object(&mut self, remove_id: ObjectId) {
+        gg_err::log_err(self.remove_object_from_parent(remove_id));
         self.objects.remove(&remove_id);
-        if let Err(e) = self.get_parent_id(remove_id)
-            .and_then(|parent_id| {
-                self.get_children_mut(parent_id)?
-                    .retain(|obj| obj.object_id != remove_id);
-                self.parents.remove(&remove_id);
-                Ok(())
-            }) {
-            error!("{}", e.root_cause());
-        }
         self.absolute_transforms.remove(&remove_id);
         self.children.remove(&remove_id);
     }
+    fn remove_object_from_parent(&mut self, remove_id: ObjectId) -> Result<()> {
+        let parent_id = self.get_parent_id(remove_id)?;
+        if let Some(children) = self.get_children_mut(parent_id).ok() {
+            // If this object's parent has already been removed, `children` may not exist.
+            // This is not an error.
+            children.retain(|obj| obj.object_id != remove_id);
+        }
+        self.parents.remove(&remove_id);
+        Ok(())
+    }
+
     fn add_object(&mut self,
                   new_id: ObjectId,
                   new_obj: PendingAddObject<ObjectType>
