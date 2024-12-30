@@ -478,7 +478,6 @@ impl GuiRenderer {
             ) {
                 error!("{}", e.root_cause());
             } else {
-                // TODO: shouldn't require unsafe?
                 unsafe {
                     builder.draw_indexed(
                         mesh.indices.len() as u32,
