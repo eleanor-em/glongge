@@ -110,19 +110,28 @@ pub trait Shader: Send {
 struct CachedVertexBuffer<T: VkVertex + Copy> {
     ctx: VulkanoContext,
     inner: Subbuffer<[T]>,
-    vertex_count: usize,
-    begin: usize,
+    next_vertex_idx: usize,
+    vertex_count: Option<usize>,
+    next_free_idx: usize,
     num_vertex_sets: usize,
 }
 
 impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn new(ctx: VulkanoContext, size: usize) -> Result<Self> {
-        let num_vertex_sets = ctx.image_count();
+        // Allow some headroom:
+        let num_vertex_sets = ctx.image_count() + 1;
         let inner = Self::create_vertex_buffer(
             &ctx,
             (size * num_vertex_sets) as DeviceSize
         )?;
-        Ok(Self { ctx, inner, vertex_count: 0, begin: 0, num_vertex_sets })
+        Ok(Self {
+            ctx,
+            inner,
+            next_vertex_idx: 0,
+            vertex_count: None,
+            next_free_idx: 0,
+            num_vertex_sets
+        })
     }
 
     fn len(&self) -> usize { self.inner.len() as usize / self.num_vertex_sets }
@@ -136,6 +145,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
             warn!("reallocating vertex buffer: {} MiB -> {} MiB",
                 size / 1024 / 1024, size * 2 / 1024 / 1024);
         }
+        // Just double the size.
         self.inner = Self::create_vertex_buffer(
             &self.ctx,
             (self.inner.len() * 2) as DeviceSize
@@ -144,25 +154,33 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     }
 
     fn write(&mut self, data: &[T]) -> Result<()> {
+        if data.len() == 0 { return Ok(()); }
+        // Reallocate if needed:
         let mut buf_len = usize::try_from(self.inner.len())
             .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
-        while self.begin + data.len() > buf_len {
+        while self.next_free_idx + data.len() > buf_len {
             buf_len = usize::try_from(self.inner.len())
                 .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
             self.realloc()?;
-            self.begin = 0;
-        }
-        self.inner.write()?[self.begin..self.begin + data.len()].copy_from_slice(data);
-
-        self.begin += self.len();
-        if self.begin > buf_len {
-            bail!("self.begin accounting wrong? {} > {buf_len}", self.begin)
-        }
-        if self.begin == buf_len {
-            self.begin = 0;
+            self.next_free_idx = 0;
         }
 
-        self.vertex_count = data.len();
+        self.next_vertex_idx = self.next_free_idx;
+        check_is_none!(self.vertex_count);
+        self.vertex_count = Some(data.len());
+
+        // Perform write:
+        self.inner.write()?[self.next_free_idx..self.next_free_idx + data.len()].copy_from_slice(data);
+
+        // Wrap around the ring buffer if needed:
+        self.next_free_idx += self.len();
+        if self.next_free_idx > buf_len {
+            bail!("self.next_free_idx accounting wrong? {} > {buf_len}", self.next_free_idx)
+        }
+        if self.next_free_idx == buf_len {
+            self.next_free_idx = 0;
+        }
+
         Ok(())
     }
 
@@ -182,20 +200,22 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         ).map_err(Validated::unwrap)?)
     }
 
-    fn draw(&self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
-        let vertex_count = u32::try_from(self.vertex_count)
-            .with_context(|| format!("tried to draw too many vertices: {}", self.vertex_count))?;
-        let begin = u32::try_from(self.begin)
-            .with_context(|| format!("self.begin overflowed: {}", self.begin))?;
+    fn draw(&mut self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
+        let vertex_count = self.vertex_count.take()
+            .with_context(|| format!("tried to draw vertices but none prepared: {:?}", self.vertex_count))?;
+        let vertex_count = u32::try_from(vertex_count)
+            .with_context(|| format!("tried to draw too many vertices: {vertex_count}"))?;
+        let first_vertex_idx = u32::try_from(self.next_vertex_idx)
+            .with_context(|| format!("self.begin overflowed: {}", self.next_vertex_idx))?;
         let buf_len = u32::try_from(self.inner.len())
             .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
-        if begin + vertex_count >= buf_len {
-            bail!("too many vertices: {begin} + {vertex_count} = {} >= {buf_len}",
-                       begin + vertex_count);
+        if first_vertex_idx + vertex_count >= buf_len {
+            bail!("too many vertices: {first_vertex_idx} + {vertex_count} = {} >= {buf_len}",
+                       first_vertex_idx + vertex_count);
         }
         unsafe {
             builder.bind_vertex_buffers(0, self.inner.clone())?
-                .draw(vertex_count, 1, begin, 0)?;
+                .draw(vertex_count, 1, first_vertex_idx, 0)?;
         }
         Ok(())
     }
@@ -371,7 +391,7 @@ impl Shader for SpriteShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
+        if self.vertex_buffer.vertex_count.is_none() { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let uniform_desc_set = self.create_uniform_desc_set()?;
         let layout = pipeline.layout().clone();
@@ -515,7 +535,7 @@ impl Shader for WireframeShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
+        if self.vertex_buffer.vertex_count.is_none() { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
@@ -650,7 +670,7 @@ impl Shader for TriangleFanShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
+        if self.vertex_buffer.vertex_count.is_none() { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
@@ -788,7 +808,7 @@ impl Shader for BasicShader {
         &mut self,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        if self.vertex_buffer.vertex_count == 0 { return Ok(()); }
+        if self.vertex_buffer.vertex_count.is_none() { return Ok(()); }
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
