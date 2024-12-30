@@ -652,18 +652,20 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
             if self.debug_gui.enabled() {
-                let mouse_pos = self.viewport.top_left() + input_handler.screen_mouse_pos();
-                let maybe_collisions = match UpdateContext::new(
-                    self, input_handler, ObjectId::root(), object_tracker
-                ) {
-                    Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
-                    Err(e) => {
-                        error!("{}", e.root_cause());
-                        None
-                    },
-                };
-                if let Some(collisions) = maybe_collisions {
-                    self.debug_gui.on_mouseovers(&self.object_handler, collisions);
+                if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
+                    let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
+                    let maybe_collisions = match UpdateContext::new(
+                        self, input_handler, ObjectId::root(), object_tracker
+                    ) {
+                        Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
+                        Err(e) => {
+                            error!("{}", e.root_cause());
+                            None
+                        },
+                    };
+                    if let Some(collisions) = maybe_collisions {
+                        self.debug_gui.on_mouseovers(&self.object_handler, collisions);
+                    }
                 }
             }
             let selected_object = self.debug_gui.selected_object();

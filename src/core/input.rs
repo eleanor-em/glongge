@@ -46,7 +46,7 @@ pub struct InputHandler {
     secondary_mouse: MouseButtonState,
     middle_mouse: MouseButtonState,
     queued_events: Vec<InputEvent>,
-    mouse_pos: Vec2,
+    mouse_pos: Option<Vec2>,
     viewport: AdjustedViewport,
     mod_shift: bool,
     mod_alt: bool,
@@ -62,7 +62,7 @@ impl InputHandler {
             secondary_mouse: MouseButtonState::default(),
             middle_mouse: MouseButtonState::default(),
             queued_events: Vec::new(),
-            mouse_pos: Vec2::zero(),
+            mouse_pos: None,
             viewport: AdjustedViewport::default(),
             mod_shift: false,
             mod_alt: false,
@@ -143,8 +143,7 @@ impl InputHandler {
 
     pub(crate) fn update_mouse(&mut self, ctx: &GuiContext) {
         self.mouse_pos = ctx.pointer_latest_pos()
-            .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) })
-            .unwrap_or_default();
+            .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) });
         ctx.input(|input| {
             if input.pointer.primary_pressed() {
                 self.queued_events.push(InputEvent::Mouse(MouseButton::Primary, ElementState::Pressed));
@@ -175,7 +174,9 @@ impl InputHandler {
         });
     }
     pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) { self.viewport = viewport; }
-    pub fn screen_mouse_pos(&self) -> Vec2 { self.mouse_pos / self.viewport.gui_scale_factor() }
+    pub fn screen_mouse_pos(&self) -> Option<Vec2> {
+        self.mouse_pos.map(|p| p / self.viewport.gui_scale_factor())
+    }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {
         if key == KeyCode::ShiftLeft || key == KeyCode::ShiftRight {
