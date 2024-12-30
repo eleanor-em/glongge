@@ -270,11 +270,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                     .ok()
                     .map(|this| (this_id, this))
             }) {
-            let mut render_ctx = RenderContext::new(
-                *this_id,
-                &*this as &dyn SceneObject<ObjectType>,
-                vertex_map
-            );
+            let mut render_ctx = RenderContext::new(*this_id, vertex_map);
             this.on_render(&mut render_ctx);
         }
         let mut render_infos = Vec::with_capacity(vertex_map.len());
@@ -1480,21 +1476,12 @@ impl AxisAlignedExtent for ViewportContext<'_> {
 
 pub struct RenderContext<'a> {
     pub(crate) this_id: ObjectId,
-    this_type: String,
     vertex_map: &'a mut VertexMap,
 }
 
 impl<'a> RenderContext<'a> {
-    pub(crate) fn new<ObjectType: ObjectTypeEnum>(
-        this_id: ObjectId,
-        obj: &dyn SceneObject<ObjectType>,
-        vertex_map: &'a mut VertexMap
-    ) -> Self {
-        Self {
-            this_id,
-            this_type: format!("{:?}", obj.get_type()),
-            vertex_map,
-        }
+    pub(crate) fn new(this_id: ObjectId, vertex_map: &'a mut VertexMap) -> Self {
+        Self { this_id, vertex_map, }
     }
 
     pub fn update_render_item(&mut self, new_render_item: &RenderItem) {
@@ -1510,6 +1497,6 @@ impl<'a> RenderContext<'a> {
     }
     pub fn remove_render_item(&mut self) {
         check_is_some!(self.vertex_map.remove(self.this_id),
-                       format!("removed nonexistent vertices: {:?} [{}]", self.this_id, self.this_type));
+                       format!("removed nonexistent vertices: {:?}", self.this_id));
     }
 }

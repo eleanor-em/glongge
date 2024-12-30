@@ -2,12 +2,10 @@
 Rust game engine. Yeehaw.
 
 ## Requirements
-- Vulkan SDK (tested: 1.3.279, 1.3.283)
-- Rust (nightly, see "Required nightly features" for more details)
+- Rust (https://rustup.rs)
+- The Vulkan SDK (https://vulkan.lunarg.com)
+- Possibly some packages on Linux, e.g. `pkg-config` and `libalsa-dev`
 
 Should just work with `cargo run`. Tested on macOS (thoroughly), Windows, and Linux (less thoroughly).
 
 When run as a binary, it plays a demo game (see `src/examples/mario`).
-
-## Required nightly features
-- `#![feature(trait_upcasting)]`
