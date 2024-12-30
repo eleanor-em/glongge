@@ -454,7 +454,6 @@ where
                 self.recreate_swapchain().unwrap();
             }
             WindowEvent::RedrawRequested => {
-                while !self.poll_ready() {}
                 let acquired = self.expect_inner().vk_ctx.acquire_next_image();
                 self.handle_acquired_image(acquired).unwrap();
             }
