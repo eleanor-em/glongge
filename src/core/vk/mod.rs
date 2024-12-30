@@ -455,14 +455,8 @@ where
             }
             WindowEvent::RedrawRequested => {
                 while !self.poll_ready() {}
-                // XXX: macOS seems to behave weirdly badly with then_signal_fence_and_flush()
-                //      if you send commands too fast.
-                // TODO: test effects of this on Windows/Linux.
-                // TODO: No longer seems to be the case with corrected CachedVertexBuffer?
-                if env::consts::OS != "macos" || self.render_stats.penultimate_step.elapsed().as_millis() >= 0 {
-                    let acquired = self.expect_inner().vk_ctx.acquire_next_image();
-                    self.handle_acquired_image(acquired).unwrap();
-                }
+                let acquired = self.expect_inner().vk_ctx.acquire_next_image();
+                self.handle_acquired_image(acquired).unwrap();
             }
             _other_event => {}
         }
