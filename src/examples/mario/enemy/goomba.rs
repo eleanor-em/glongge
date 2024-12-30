@@ -90,8 +90,6 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
-            // Shouldn't really be required, something is slightly off with collision:
-            ctx.transform_mut().centre.x += self.vel.x;
         }
         if !mtv.dot(Vec2::up()).is_zero() {
             if self.vel.y.is_zero() && mtv.y < 0. && other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {

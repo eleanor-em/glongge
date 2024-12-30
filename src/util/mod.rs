@@ -286,6 +286,11 @@ pub mod gg_err {
         }
     }
 
+    pub fn log_err(result: Result<()>) {
+        if let Err(e) = result {
+            error!("{}", e.root_cause());
+        }
+    }
     pub fn log_err_then<T>(result: Result<Option<T>>) -> Option<T> {
         match result {
             Ok(o) => o,
@@ -294,6 +299,15 @@ pub mod gg_err {
                 None
             }
         }
+    }
+    pub fn log_err_then_invert<T>(val: Option<Result<T>>) -> Option<T> {
+        val.and_then(|result| match result {
+            Ok(o) => Some(o),
+            Err(e) => {
+                error!("{}", e.root_cause());
+                None
+            }
+        })
     }
 
     pub fn log_unwrap_or<T, U: Into<T>>(default: U, result: Result<T>) -> T {
@@ -313,11 +327,6 @@ pub mod gg_err {
                 error!("{}", e.root_cause());
                 None
             }
-        }
-    }
-    pub fn log_err(result: Result<()>) {
-        if let Err(e) = result {
-            error!("{}", e.root_cause());
         }
     }
 }

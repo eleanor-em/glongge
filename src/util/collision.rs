@@ -1361,7 +1361,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
 }
 
 impl GgInternalCollisionShape {
-    fn update_transform(&mut self, next_transform: Transform) {
+    pub(crate) fn update_transform(&mut self, next_transform: Transform) {
         if self.last_transform != next_transform {
             self.collider = self.collider.transformed(&self.last_transform.inverse());
             self.collider = self.collider.transformed(&next_transform);
