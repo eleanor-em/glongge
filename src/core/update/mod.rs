@@ -331,6 +331,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
     perf_stats: UpdatePerfStats,
     last_render_perf_stats: Option<RenderPerfStats>,
     frame_counter: usize,
+    fixed_frame_counter: usize,
 }
 
 impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
@@ -362,6 +363,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             perf_stats: UpdatePerfStats::new(),
             last_render_perf_stats: None,
             frame_counter: 0,
+            fixed_frame_counter: 0,
         };
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
@@ -622,6 +624,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             self.object_handler.update_all_transforms();
             self.perf_stats.on_collision.stop();
             self.perf_stats.fixed_update.unpause();
+            self.fixed_frame_counter += 1;
         }
         self.perf_stats.fixed_update.stop();
 
@@ -876,6 +879,7 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     object: ObjectContext<'a, ObjectType>,
     viewport: ViewportContext<'a>,
     frame_counter: usize,
+    fixed_frame_counter: usize,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
@@ -912,6 +916,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 clear_col: &mut caller.clear_col,
             },
             frame_counter: caller.frame_counter,
+            fixed_frame_counter: caller.fixed_frame_counter,
         })
     }
 
@@ -928,6 +933,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     pub fn transform_mut(&self) -> RefMut<Transform> { self.object.transform_mut() }
 
     pub fn frame_counter(&self) -> usize { self.frame_counter }
+    pub fn fixed_frame_counter(&self) -> usize { self.fixed_frame_counter }
 }
 
 impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
@@ -945,6 +951,7 @@ pub struct FixedUpdateContext<'a, ObjectType: ObjectTypeEnum> {
     object: ObjectContext<'a, ObjectType>,
     viewport: ViewportContext<'a>,
     frame_counter: usize,
+    fixed_frame_counter: usize,
 }
 
 impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
@@ -979,6 +986,7 @@ impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
                 clear_col: &mut caller.clear_col,
             },
             frame_counter: caller.frame_counter,
+            fixed_frame_counter: caller.fixed_frame_counter,
         })
     }
 
@@ -994,6 +1002,7 @@ impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
     pub fn transform_mut(&self) -> RefMut<Transform> { self.object.transform_mut() }
 
     pub fn frame_counter(&self) -> usize { self.frame_counter }
+    pub fn fixed_frame_counter(&self) -> usize { self.fixed_frame_counter }
 }
 
 pub struct SceneData<T>
