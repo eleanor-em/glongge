@@ -27,6 +27,7 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use std::time::Duration;
+use vulkano::pipeline::graphics::viewport::{Scissor, ViewportState};
 use crate::{core::{
     input::InputHandler,
     prelude::*,
@@ -105,6 +106,17 @@ impl AdjustedViewport {
     pub fn logical_height(&self) -> f64 { f64::from(self.inner.extent[1]) / self.scale_factor() }
     pub fn gui_scale_factor(&self) -> f64 { self.scale_factor / self.global_scale_factor }
     pub fn scale_factor(&self) -> f64 { self.scale_factor }
+
+    pub fn as_viewport_state(&self) -> ViewportState {
+        ViewportState {
+            viewports: [self.inner.clone()].into_iter().collect(),
+            scissors: [Scissor {
+                offset: [0, 0],
+                extent: [self.inner.extent[0].floor() as u32, self.inner.extent[1].floor() as u32],
+            }].into_iter().collect(),
+            ..ViewportState::default()
+        }
+    }
 
     pub fn inner(&self) -> Viewport { self.inner.clone() }
 

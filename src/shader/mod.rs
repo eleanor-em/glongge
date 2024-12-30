@@ -261,10 +261,7 @@ impl SpriteShader {
                          stages: stages.into_iter().collect(),
                          vertex_input_state: Some(vertex_input_state),
                          input_assembly_state: Some(InputAssemblyState::default()),
-                         viewport_state: Some(ViewportState {
-                             viewports: [self.viewport.get().inner()].into_iter().collect(),
-                             ..Default::default()
-                         }),
+                         viewport_state: Some(self.viewport.get().as_viewport_state()),
                          rasterization_state: Some(RasterizationState::default()),
                          multisample_state: Some(MultisampleState::default()),
                          color_blend_state: Some(ColorBlendState::with_attachment_states(
@@ -460,10 +457,7 @@ impl WireframeShader {
                         stages: stages.into_iter().collect(),
                         vertex_input_state: Some(vertex_input_state),
                         input_assembly_state: Some(InputAssemblyState::default()),
-                        viewport_state: Some(ViewportState {
-                            viewports: [self.viewport.get().inner()].into_iter().collect(),
-                            ..Default::default()
-                        }),
+                        viewport_state: Some(self.viewport.get().as_viewport_state()),
                         rasterization_state: Some(RasterizationState {
                             polygon_mode: PolygonMode::Line,
                             ..RasterizationState::default()
@@ -601,10 +595,7 @@ impl TriangleFanShader {
                         stages: stages.into_iter().collect(),
                         vertex_input_state: Some(vertex_input_state),
                         input_assembly_state: Some(InputAssemblyState::default()),
-                        viewport_state: Some(ViewportState {
-                            viewports: [self.viewport.get().inner()].into_iter().collect(),
-                            ..Default::default()
-                        }),
+                        viewport_state: Some(self.viewport.get().as_viewport_state()),
                         rasterization_state: Some(RasterizationState::default()),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
