@@ -1303,37 +1303,12 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
-    pub fn test_collision_point(&self,
-                                point: Vec2,
-                                listening_tags: Vec<&'static str>
-    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.test_collision_with(
-            &BoxCollider::from_top_left(point - Vec2::one() / 2, Vec2::one()).into_generic(),
-            listening_tags
-        )
-    }
     pub fn test_collision(&self,
                           listening_tags: Vec<&'static str>
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.collider()
             .and_then(|collider| self.test_collision_with(&collider, listening_tags))
     }
-    pub fn test_collision_along(&self,
-                                axis: Vec2,
-                                distance: f64,
-                                listening_tags: Vec<&'static str>,
-    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
-        self.collider()
-            .and_then(|collider| {
-                self.test_collision_with(&collider.translated(distance * axis), listening_tags)
-            })
-            .and_then(|vec| {
-                NonemptyVec::try_from_iter(vec
-                    .into_iter()
-                    .filter(|coll| coll.mtv.dot(axis).abs() > EPSILON))
-            })
-    }
-
     pub fn test_collision_with(
         &self,
         collider: &GenericCollider,
@@ -1352,6 +1327,39 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             }
         }
         NonemptyVec::try_from_vec(rv)
+    }
+    pub fn test_collision_point(&self,
+                                point: Vec2,
+                                listening_tags: Vec<&'static str>
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.test_collision_with(
+            &BoxCollider::from_top_left(point - Vec2::one() / 2, Vec2::one()).into_generic(),
+            listening_tags
+        )
+    }
+    pub fn test_collision_offset(&self,
+                                 offset: Vec2,
+                                 listening_tags: Vec<&'static str>
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.collider()
+            .and_then(|collider| {
+                self.test_collision_with(&collider.translated(offset), listening_tags)
+            })
+    }
+    pub fn test_collision_along(&self,
+                                axis: Vec2,
+                                distance: f64,
+                                listening_tags: Vec<&'static str>,
+    ) -> Option<NonemptyVec<Collision<ObjectType>>> {
+        self.collider()
+            .and_then(|collider| {
+                self.test_collision_with(&collider.translated(distance * axis), listening_tags.clone())
+            })
+            .and_then(|vec| {
+                NonemptyVec::try_from_iter(vec
+                    .into_iter()
+                    .filter(|coll| coll.mtv.dot(axis).abs() > EPSILON))
+            })
     }
 
     fn test_collision_inner(&self,

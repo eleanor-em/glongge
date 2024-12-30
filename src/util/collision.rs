@@ -61,6 +61,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
                         let this = self.as_any().downcast_ref::<CompoundCollider>()?;
                         this.inner_colliders().into_iter()
                             .filter_map(|c| other.collides_with_convex(&c))
+                            .filter(|mtv| !this.is_internal_mtv(other, mtv))
                             .min_by(Vec2::cmp_by_length)
                     }
                 }.map(|v| -v)
@@ -1011,6 +1012,14 @@ impl CompoundCollider {
             })
             .collect()
     }
+
+    fn is_internal_mtv<C: Collider>(&self, other: &C, mtv: &Vec2) -> bool {
+        // Note: translated() returns GenericCollider, so we have to do collides_with()
+        // with the opposite arguments, hence we use -mtv not mtv.
+        let translated = other.translated(-mtv);
+        self.inner_colliders().into_iter()
+            .any(|c| translated.collides_with_convex(&c).is_some())
+    }
 }
 
 impl Polygonal for CompoundCollider {
@@ -1054,18 +1063,21 @@ impl Collider for CompoundCollider {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
         self.inner_colliders().into_iter()
             .filter_map(|c| c.collides_with_box(other))
+            .filter(|mtv| !self.is_internal_mtv(other, mtv))
             .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
         self.inner_colliders().into_iter()
             .filter_map(|c| c.collides_with_oriented_box(other))
+            .filter(|mtv| !self.is_internal_mtv(other, mtv))
             .min_by(Vec2::cmp_by_length)
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
         self.inner_colliders().into_iter()
             .filter_map(|c| c.collides_with_convex(other))
+            .filter(|mtv| !self.is_internal_mtv(other, mtv))
             .min_by(Vec2::cmp_by_length)
     }
 
@@ -1106,6 +1118,7 @@ impl Collider for CompoundCollider {
 
     fn rotated(&self, _by: f64) -> GenericCollider {
         // TODO: implement
+        warn!("CompoundCollider::rotated(): not implemented");
         self.as_generic()
     }
 
