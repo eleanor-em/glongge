@@ -74,16 +74,15 @@ impl SceneObject<ObjectType> for Goomba {
             ));
         }
     }
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.v_accel = 0.;
-        if ctx.object().test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG]).is_none() {
-            self.v_accel = BASE_GRAVITY;
-        }
-    }
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
         let in_view = ctx.viewport().contains_point(self.top_left) ||
             ctx.viewport().contains_point(ctx.object().transform().centre + self.sprite.half_widths());
         if !self.dead && in_view {
+            if ctx.object().test_collision_offset(Vec2::down(), vec![BLOCK_COLLISION_TAG]).is_none() {
+                self.v_accel = BASE_GRAVITY;
+            } else {
+                self.v_accel = 0.;
+            }
             self.vel.y += self.v_accel;
             ctx.object().transform_mut().centre += self.vel;
         }
@@ -91,15 +90,19 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_collision(&mut self, ctx: &mut UpdateContext<ObjectType>, other: SceneObjectWithId<ObjectType>, mtv: Vec2) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
             self.vel.x = -self.vel.x;
+            // Shouldn't really be required, something is slightly off with collision:
+            ctx.transform_mut().centre.x += self.vel.x;
         }
         if !mtv.dot(Vec2::up()).is_zero() {
             if self.vel.y.is_zero() && mtv.y < 0. && other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
+                // Player pushed a block into the Goomba from below.
                 self.stomp();
+            } else {
+                self.vel.y = 0.;
             }
-            self.vel.y = 0.;
         }
         if other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {
-            ctx.object().transform_mut().centre += mtv;
+            ctx.transform_mut().centre += mtv;
         }
         CollisionResponse::Done
     }
