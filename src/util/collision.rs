@@ -1051,6 +1051,15 @@ impl AxisAlignedExtent for CompoundCollider {
     }
 }
 
+impl CompoundCollider {
+    fn filter_candidate_collisions<C: Collider>(&self, other: &C, candidates: Vec<Vec2>) -> Option<Vec2> {
+        candidates.iter()
+            .filter(|mtv| !self.is_internal_mtv(other, mtv)).copied()
+            .min_by(Vec2::cmp_by_length)
+            .or(candidates.into_iter().min_by(Vec2::cmp_by_length))
+    }
+}
+
 impl Collider for CompoundCollider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -1061,24 +1070,27 @@ impl Collider for CompoundCollider {
     }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.inner_colliders().into_iter()
-            .filter_map(|c| c.collides_with_box(other))
-            .filter(|mtv| !self.is_internal_mtv(other, mtv))
-            .min_by(Vec2::cmp_by_length)
+        self.filter_candidate_collisions(other,
+            self.inner_colliders().into_iter()
+                .filter_map(|c| c.collides_with_box(other))
+                .collect()
+        )
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
-        self.inner_colliders().into_iter()
-            .filter_map(|c| c.collides_with_oriented_box(other))
-            .filter(|mtv| !self.is_internal_mtv(other, mtv))
-            .min_by(Vec2::cmp_by_length)
+        self.filter_candidate_collisions(other,
+            self.inner_colliders().into_iter()
+                .filter_map(|c| c.collides_with_oriented_box(other))
+                .collect()
+        )
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.inner_colliders().into_iter()
-            .filter_map(|c| c.collides_with_convex(other))
-            .filter(|mtv| !self.is_internal_mtv(other, mtv))
-            .min_by(Vec2::cmp_by_length)
+        self.filter_candidate_collisions(other,
+            self.inner_colliders().into_iter()
+                .filter_map(|c| c.collides_with_convex(other))
+                .collect()
+        )
     }
 
     fn into_generic(self) -> GenericCollider
