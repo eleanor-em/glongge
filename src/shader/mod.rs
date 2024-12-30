@@ -256,27 +256,27 @@ impl SpriteShader {
                 let subpass = Subpass::from(render_pass, 0)
                     .context("failed to create subpass")?;
                 Ok(GraphicsPipeline::new(device,
-                                         /* cache= */ None,
-                                         GraphicsPipelineCreateInfo {
-                                             stages: stages.into_iter().collect(),
-                                             vertex_input_state: Some(vertex_input_state),
-                                             input_assembly_state: Some(InputAssemblyState::default()),
-                                             viewport_state: Some(ViewportState {
-                                                 viewports: [self.viewport.get().inner()].into_iter().collect(),
-                                                 ..Default::default()
-                                             }),
-                                             rasterization_state: Some(RasterizationState::default()),
-                                             multisample_state: Some(MultisampleState::default()),
-                                             color_blend_state: Some(ColorBlendState::with_attachment_states(
-                                                 subpass.num_color_attachments(),
-                                                 ColorBlendAttachmentState {
-                                                     blend: Some(AttachmentBlend::alpha()),
-                                                     ..Default::default()
-                                                 },
-                                             )),
-                                             subpass: Some(subpass.into()),
-                                             ..GraphicsPipelineCreateInfo::layout(layout)
-                                         })?)
+                     /* cache= */ None,
+                     GraphicsPipelineCreateInfo {
+                         stages: stages.into_iter().collect(),
+                         vertex_input_state: Some(vertex_input_state),
+                         input_assembly_state: Some(InputAssemblyState::default()),
+                         viewport_state: Some(ViewportState {
+                             viewports: [self.viewport.get().inner()].into_iter().collect(),
+                             ..Default::default()
+                         }),
+                         rasterization_state: Some(RasterizationState::default()),
+                         multisample_state: Some(MultisampleState::default()),
+                         color_blend_state: Some(ColorBlendState::with_attachment_states(
+                             subpass.num_color_attachments(),
+                             ColorBlendAttachmentState {
+                                 blend: Some(AttachmentBlend::alpha()),
+                                 ..Default::default()
+                             },
+                         )),
+                         subpass: Some(subpass.into()),
+                         ..GraphicsPipelineCreateInfo::layout(layout)
+                     })?)
             })?;
         }
         Ok(self.pipeline.get().clone().unwrap())
@@ -301,6 +301,7 @@ impl SpriteShader {
             .expect("textures.first() should always contain a blank texture")
             .clone();
         textures.extend(vec![blank; MAX_TEXTURE_COUNT - textures.len()]);
+        check_eq!(textures.len(), MAX_TEXTURE_COUNT);
         Ok(DescriptorSet::new(
             self.ctx.descriptor_set_allocator(),
             pipeline.layout().set_layouts()[0].clone(),
@@ -308,7 +309,7 @@ impl SpriteShader {
                 WriteDescriptorSet::image_view_sampler_array(
                     0,
                     0,
-                    textures.iter().cloned().zip(vec![sampler.clone(); textures.len()])
+                    textures.into_iter().zip(vec![sampler.clone(); MAX_TEXTURE_COUNT])
                 ),
             ],
             [],

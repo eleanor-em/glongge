@@ -37,7 +37,7 @@ use vulkano::{
 };
 
 use png::ColorType;
-
+use vulkano::memory::allocator::MemoryAllocatePreference;
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
 
@@ -133,7 +133,10 @@ impl InternalTexture {
                 let image = Image::new(
                     ctx.memory_allocator().clone(),
                     self.info.clone(),
-                    AllocationCreateInfo::default()
+                    AllocationCreateInfo {
+                        allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
+                        ..AllocationCreateInfo::default()
+                    }
                 ).map_err(Validated::unwrap)?;
                 builder.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
                     self.buf.clone(),

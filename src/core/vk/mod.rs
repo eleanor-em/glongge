@@ -234,7 +234,7 @@ where
         Ok(())
     }
 
-    fn idle(
+    fn do_full_render(
         &mut self,
         image_idx: usize,
         acquire_future: SwapchainAcquireFuture,
@@ -473,7 +473,7 @@ where
         let rv = match acquired {
             Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
                 let full_output = self.handle_egui();
-                self.idle(image_idx as usize, acquire_future, full_output)?;
+                self.do_full_render(image_idx as usize, acquire_future, full_output)?;
                 Ok(())
             },
             Ok((_, /* suboptimal= */ true, _)) => {
