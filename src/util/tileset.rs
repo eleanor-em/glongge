@@ -137,7 +137,7 @@ impl TilesetBuilder {
     pub fn create_tile_collision(&mut self, tex_top_left: impl Into<Vec2i>, emitting_tags: &Vec<&'static str>) -> Tile {
         check_false!(emitting_tags.is_empty());
         let id = self.all_tiles.len();
-        #[allow(clippy::map_unwrap_or)] // borrowing issues
+        #[allow(clippy::map_unwrap_or)] // borrowing issues with self.collision_sets
         let collision_id = self.collision_sets.iter().enumerate()
             .find(|(_, t)| *t == emitting_tags)
             .map(|(i, _)| i)

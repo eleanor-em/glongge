@@ -1,4 +1,4 @@
-use std::{cell::RefCell, env, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use std::{cell::RefCell, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
 use std::marker::PhantomData;
 use egui::{FullOutput, ViewportId, ViewportInfo};
 use num_traits::Zero;
@@ -111,8 +111,14 @@ impl AdjustedViewport {
         ViewportState {
             viewports: [self.inner.clone()].into_iter().collect(),
             scissors: [Scissor {
-                offset: [0, 0],
-                extent: [self.inner.extent[0].floor() as u32, self.inner.extent[1].floor() as u32],
+                offset: [
+                    gg_float::f32_to_u32(self.inner.offset[0].floor()).expect("very weird viewport extent"),
+                    gg_float::f32_to_u32(self.inner.offset[1].floor()).expect("very weird viewport extent"),
+                ],
+                extent: [
+                    gg_float::f32_to_u32(self.inner.extent[0].floor()).expect("very weird viewport extent"),
+                    gg_float::f32_to_u32(self.inner.extent[1].floor()).expect("very weird viewport extent"),
+                ],
             }].into_iter().collect(),
             ..ViewportState::default()
         }
@@ -192,8 +198,6 @@ where
     last_render_stats: Option<RenderPerfStats>,
 
     is_first_window_event: bool,
-    is_ready: bool,
-    last_ready_poll: Instant,
 }
 
 #[allow(private_bounds)]
@@ -224,9 +228,6 @@ where
             last_render_stats: None,
 
             is_first_window_event: false,
-            is_ready: false,
-            last_ready_poll: Instant::now(),
-
         };
 
         let event_loop = EventLoop::new()?;
@@ -337,14 +338,6 @@ where
             );
         Ok(())
     }
-
-    fn poll_ready(&mut self) -> bool {
-        if !self.is_ready && self.last_ready_poll.elapsed().as_millis() >= 10 {
-            self.is_ready = self.expect_inner().render_handler.get_receiver().lock().unwrap().is_ready();
-            self.last_ready_poll = Instant::now();
-        }
-        self.is_ready
-    }
     
     fn create_inner(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         check_is_none!(self.inner);
@@ -441,6 +434,8 @@ where
             WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
             } => {
+                // Since scale_factor is given by winit, we expect exact comparison to work.
+                #[allow(clippy::float_cmp)]
                 if self.expect_inner().scale_factor != scale_factor {
                     info_every_seconds!(1, "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
                         self.expect_inner().scale_factor, scale_factor);
