@@ -20,6 +20,7 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use std::time::Duration;
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::pipeline::graphics::viewport::{Scissor, ViewportState};
 use crate::{core::{
     input::InputHandler,
@@ -254,17 +255,27 @@ where
         }
 
         self.render_stats.synchronise.start();
-        let ready_future = self.synchronise(&mut per_image_ctx, acquire_future)?;
+        let ready_future = self.synchronise(&mut per_image_ctx, acquire_future);
         self.render_stats.synchronise.stop();
+
         self.render_stats.do_render.start();
         let vk_ctx = self.expect_inner().vk_ctx.clone();
+        let mut builder = AutoCommandBufferBuilder::primary(
+            vk_ctx.command_buffer_allocator(),
+            vk_ctx.queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        ).map_err(gg_err::CatchOutOfDate::from)?;
+        self.expect_inner().resource_handler.texture
+            .wait_maybe_upload_textures(&vk_ctx, &mut builder)?;
         let command_buffer = self.expect_inner().render_handler.do_render(
-            &vk_ctx,
+            builder,
             &vk_ctx.current_framebuffer(&per_image_ctx),
             full_output
         ).map_err(gg_err::CatchOutOfDate::from)?;
         self.render_stats.do_render.stop();
+
         self.expect_inner().window.inner.pre_present_notify();
+
         self.render_stats.submit_command_buffers.start();
         self.submit_command_buffer(&mut per_image_ctx, command_buffer, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
@@ -283,13 +294,7 @@ where
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
         acquire_future: SwapchainAcquireFuture,
-    ) -> Result<SwapchainJoinFuture, gg_err::CatchOutOfDate> {
-        let vk_ctx = self.expect_inner().vk_ctx.clone();
-        if let Some(uploads) = self.expect_inner().resource_handler.texture
-                .wait_build_command_buffer(&vk_ctx)? {
-            uploads.flush().map_err(gg_err::CatchOutOfDate::from)?;
-            info!("loaded textures");
-        }
+    ) -> SwapchainJoinFuture {
         if let Some(last_fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
             if let Err(e) = last_fence.wait(None).map_err(Validated::unwrap) {
                 // try to continue -- it might be an outdated future
@@ -308,7 +313,7 @@ where
             now.cleanup_finished();
             now.boxed()
         };
-        Ok(next_fence.join(acquire_future))
+        next_fence.join(acquire_future)
     }
 
     fn submit_command_buffer(
