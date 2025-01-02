@@ -45,13 +45,14 @@ pub struct VulkanoContext {
 
 impl VulkanoContext {
     pub(crate) fn new(event_loop: &ActiveEventLoop, window: &GgWindow) -> Result<Self> {
+        info!("operating system: {}", std::env::consts::OS);
         let start = Instant::now();
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
-        let instance = macos_instance(event_loop, library)?;
+        let instance = create_instance(event_loop, library)?;
         let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
-        let physical_device = any_physical_device(&instance, &surface)?;
+        let physical_device = create_any_physical_device(&instance, &surface)?;
         info!("physical device: {physical_device:?}");
-        let (device, queue) = any_graphical_queue_family(physical_device.clone())?;
+        let (device, queue) = create_any_graphical_queue_family(physical_device.clone())?;
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
             device.clone(),
@@ -182,7 +183,7 @@ fn features() -> DeviceFeatures {
 
 pub(crate) type AcquiredSwapchainFuture = (u32, bool, SwapchainAcquireFuture);
 
-fn macos_instance(
+fn create_instance(
     event_loop: &ActiveEventLoop,
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
@@ -204,7 +205,7 @@ fn macos_instance(
     };
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
 }
-fn any_physical_device(
+fn create_any_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
 ) -> Result<Arc<PhysicalDevice>> {
@@ -237,7 +238,7 @@ fn any_physical_device(
         .context("vulkano: no appropriate physical device available")?
         .0)
 }
-fn any_graphical_queue_family(
+fn create_any_graphical_queue_family(
     physical_device: Arc<PhysicalDevice>,
 ) -> Result<(Arc<Device>, Arc<Queue>)> {
     #[allow(clippy::cast_possible_truncation)]
