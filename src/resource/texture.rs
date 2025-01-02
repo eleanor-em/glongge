@@ -19,13 +19,13 @@ use std::time::Duration;
 use asefile::AsepriteFile;
 use num_traits::Zero;
 
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract}, format::Format, image::{
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{AutoCommandBufferBuilder, CopyBufferToImageInfo, PrimaryAutoCommandBuffer}, format::Format, image::{
     Image,
     ImageCreateInfo,
     ImageType,
     ImageUsage,
     view::ImageView
-}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, sync::GpuFuture, DeviceSize, Validated};
+}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, DeviceSize, Validated};
 
 use png::ColorType;
 use vulkano::memory::allocator::MemoryAllocatePreference;
@@ -458,31 +458,21 @@ impl TextureHandler {
         inner.free_unused_files();
     }
 
-    pub(crate) fn wait_build_command_buffer(&self, ctx: &VulkanoContext) -> Result<Option<Box<dyn GpuFuture>>, gg_err::CatchOutOfDate> {
+    pub(crate) fn wait_maybe_upload_textures(&self, ctx: &VulkanoContext, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<(), gg_err::CatchOutOfDate> {
         let mut inner = self.inner.lock().unwrap();
         let textures_to_upload = inner.textures.iter_mut()
             .filter(|(_, tex)| tex.cached_image_view.is_none())
             .collect_vec();
         if textures_to_upload.is_empty() {
-            return Ok(None);
+            return Ok(());
         }
-
-        let mut uploads = AutoCommandBufferBuilder::primary(
-            ctx.command_buffer_allocator(),
-            ctx.queue().queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        ).map_err(Validated::unwrap)?;
 
         for (id, tex) in textures_to_upload {
             info!("created image view for: {:?}", id);
-            tex.create_image_view(ctx, &mut uploads).map_err(gg_err::CatchOutOfDate::from)?;
+            tex.create_image_view(ctx, builder).map_err(gg_err::CatchOutOfDate::from)?;
             self.cached_textures.write().unwrap().insert(*id, CachedTexture::Ready(Arc::new(tex.clone())));
         }
-
-        Ok(Some(uploads
-            .build().map_err(Validated::unwrap).map_err(gg_err::CatchOutOfDate::from)?
-            .execute(ctx.queue()).map_err(gg_err::CatchOutOfDate::from)?
-            .boxed()))
+        Ok(())
     }
 
     // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().

@@ -8,7 +8,7 @@ use std::{
 use egui::FullOutput;
 
 use vulkano::{command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
 }, render_pass::Framebuffer, Validated};
 use num_traits::Zero;
 use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
@@ -216,7 +216,7 @@ impl RenderHandler {
 
     pub(crate) fn do_render(
         &mut self,
-        ctx: &VulkanoContext,
+        mut builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
@@ -229,16 +229,11 @@ impl RenderHandler {
             self.viewport.get().set_global_scale_factor(global_scale_factor);
             self.on_recreate_swapchain(self.window.clone());
         }
-        for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
+        for mut shader in self.shaders.iter_mut().map(|s| s.get()) {
             let shader_id = shader.id();
             shader.do_render_shader(render_frame.for_shader(shader_id))
                 .map_err(gg_err::CatchOutOfDate::from)?;
         }
-        let mut builder = AutoCommandBufferBuilder::primary(
-            ctx.command_buffer_allocator(),
-            ctx.queue().queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        ).map_err(gg_err::CatchOutOfDate::from)?;
 
         self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
         builder.begin_render_pass(
