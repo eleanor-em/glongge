@@ -1,7 +1,7 @@
 // VulkanoContext is in a separate module because the details of handling Swapchain, and objects
 // derived from it, are rather complicated. Don't make stuff here public unless really necessary.
 use std::env;
-use std::sync::{Arc, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Instant;
 use anyhow::{Context, Result};
 use egui_winit::winit::event_loop::ActiveEventLoop;
@@ -24,6 +24,8 @@ use crate::core::vk::{GgWindow, PerImageContext};
 use crate::core::prelude::*;
 use crate::util::{gg_err, gg_float, UniqueShared};
 
+static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+
 #[derive(Clone)]
 pub struct VulkanoContext {
     // Should only ever be created once:
@@ -45,6 +47,11 @@ pub struct VulkanoContext {
 
 impl VulkanoContext {
     pub(crate) fn new(event_loop: &ActiveEventLoop, window: &GgWindow) -> Result<Self> {
+        {
+            let mut vulkano_context_created = VULKANO_CONTEXT_CREATED.lock().unwrap();
+            check_false!(*vulkano_context_created);
+            *vulkano_context_created = true;
+        }
         info!("operating system: {}", std::env::consts::OS);
         let start = Instant::now();
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
