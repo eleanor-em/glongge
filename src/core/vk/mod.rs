@@ -251,7 +251,9 @@ where
         let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
         let mut per_image_ctx = per_image_ctx.get();
         if let Some(last_image_idx) = per_image_ctx.current.replace(image_idx) {
-            check_ne!(last_image_idx, image_idx);
+            if last_image_idx == image_idx {
+                warn!("last_image_idx == image_idx == {}", image_idx);
+            }
         }
 
         self.render_stats.synchronise.start();
