@@ -233,6 +233,7 @@ where
 
     fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
         self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || Rc::new(RefCell::new(None)));
+        self.expect_inner().vk_ctx.per_image_ctx.get().current.take();
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
             .context("could not recreate swapchain")?;
@@ -248,7 +249,9 @@ where
     ) -> Result<(), gg_err::CatchOutOfDate> {
         let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
         let mut per_image_ctx = per_image_ctx.get();
-        per_image_ctx.current.replace(image_idx);
+        if let Some(last_image_idx) = per_image_ctx.current.replace(image_idx) {
+            check_ne!(last_image_idx, image_idx);
+        }
 
         self.render_stats.synchronise.start();
         let ready_future = self.synchronise(&mut per_image_ctx, acquire_future)?;
