@@ -3,23 +3,16 @@ use std::marker::PhantomData;
 use egui::{FullOutput, ViewportId, ViewportInfo};
 use num_traits::Zero;
 
-use vulkano::{
-    command_buffer::{
-        CommandBufferExecFuture,
-        PrimaryAutoCommandBuffer,
-    },
-    pipeline::graphics::viewport::Viewport,
-    swapchain::{
-        PresentFuture,
-        SwapchainAcquireFuture,
-    },
-    sync::{
-        future::{FenceSignalFuture, JoinFuture},
-        GpuFuture,
-    },
-    Validated,
-    VulkanError,
-};
+use vulkano::{command_buffer::{
+    CommandBufferExecFuture,
+    PrimaryAutoCommandBuffer,
+}, pipeline::graphics::viewport::Viewport, swapchain::{
+    PresentFuture,
+    SwapchainAcquireFuture,
+}, sync::{
+    future::{FenceSignalFuture, JoinFuture},
+    GpuFuture,
+}, Validated};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
 use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::dpi::PhysicalSize;
@@ -36,10 +29,10 @@ use crate::{core::{
 }, warn_every_seconds};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
-use crate::core::vk::vk_ctx::{AcquiredSwapchainFuture, DataPerImage, VulkanoContext};
+use crate::core::vk::vk_ctx::{DataPerImage, VulkanoContext};
 use crate::gui::GuiContext;
 use crate::shader::{ensure_shaders_locked, BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
-use crate::util::{gg_float, SceneHandlerBuilder, UniqueShared};
+use crate::util::{gg_err, gg_float, SceneHandlerBuilder, UniqueShared};
 
 pub mod vk_ctx;
 
@@ -238,7 +231,7 @@ where
         self.inner.as_mut().expect("missing WindowEventHandlerInner")
     }
 
-    fn recreate_swapchain(&mut self) -> Result<()> {
+    fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
         self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || Rc::new(RefCell::new(None)));
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
@@ -252,7 +245,7 @@ where
         image_idx: usize,
         acquire_future: SwapchainAcquireFuture,
         full_output: FullOutput
-    ) -> Result<()> {
+    ) -> Result<(), gg_err::CatchOutOfDate> {
         let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
         let mut per_image_ctx = per_image_ctx.get();
         per_image_ctx.current.replace(image_idx);
@@ -266,7 +259,7 @@ where
             &vk_ctx,
             &vk_ctx.current_framebuffer(&per_image_ctx),
             full_output
-        )?;
+        ).map_err(gg_err::CatchOutOfDate::from)?;
         self.render_stats.do_render.stop();
         self.expect_inner().window.inner.pre_present_notify();
         self.render_stats.submit_command_buffers.start();
@@ -287,11 +280,11 @@ where
         &mut self,
         per_image_ctx: &mut MutexGuard<PerImageContext>,
         acquire_future: SwapchainAcquireFuture,
-    ) -> Result<SwapchainJoinFuture> {
+    ) -> Result<SwapchainJoinFuture, gg_err::CatchOutOfDate> {
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         if let Some(uploads) = self.expect_inner().resource_handler.texture
                 .wait_build_command_buffer(&vk_ctx)? {
-            uploads.flush()?;
+            uploads.flush().map_err(gg_err::CatchOutOfDate::from)?;
             info!("loaded textures");
         }
         if let Some(last_fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
@@ -449,8 +442,13 @@ where
                 self.recreate_swapchain().unwrap();
             }
             WindowEvent::RedrawRequested => {
-                let acquired = self.expect_inner().vk_ctx.acquire_next_image();
-                self.handle_acquired_image(acquired).unwrap();
+                match self.acquire_and_handle_image() {
+                    Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
+                        info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
+                        self.recreate_swapchain().unwrap();
+                    }
+                    rv => rv.unwrap(),
+                }
             }
             _other_event => {}
         }
@@ -466,30 +464,17 @@ where
     F: FnOnce(SceneHandlerBuilder<ObjectType>),
     ObjectType: ObjectTypeEnum,
 {
-    fn handle_acquired_image(&mut self,
-                             acquired: Result<AcquiredSwapchainFuture, VulkanError>
-    ) -> Result<()> {
+    fn acquire_and_handle_image(&mut self, ) -> Result<(), gg_err::CatchOutOfDate> {
+        let acquired = self.expect_inner().vk_ctx.acquire_next_image()?;
+
         self.render_stats.start();
-
-        let rv = match acquired {
-            Ok((image_idx, /* suboptimal= */ false, acquire_future)) => {
-                let full_output = self.handle_egui();
-                self.do_full_render(image_idx as usize, acquire_future, full_output)?;
-                Ok(())
-            },
-            Ok((_, /* suboptimal= */ true, _)) => {
-                info_every_seconds!(1, "suboptimal: recreating swapchain");
-                self.recreate_swapchain()?;
-                Ok(())
-            }
-            Err(VulkanError::OutOfDate) => {
-                info_every_seconds!(1, "VulkanError::OutOfDate: recreating swapchain");
-                self.recreate_swapchain()?;
-                Ok(())
-            },
-            Err(e) => Err(e.into()),
+        let rv = if let (image_idx, /* suboptimal= */ false, acquire_future) = acquired {
+            let full_output = self.handle_egui();
+            self.do_full_render(image_idx as usize, acquire_future, full_output)
+        } else {
+            info_every_seconds!(1, "suboptimal: recreating swapchain");
+            self.recreate_swapchain()
         };
-
         self.last_render_stats = self.render_stats.end();
         rv
     }

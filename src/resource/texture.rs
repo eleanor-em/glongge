@@ -19,27 +19,19 @@ use std::time::Duration;
 use asefile::AsepriteFile;
 use num_traits::Zero;
 
-use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract},
-    format::Format,
-    image::{
-        Image,
-        ImageCreateInfo,
-        ImageType,
-        ImageUsage,
-        view::ImageView
-    },
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    sync::GpuFuture,
-    DeviceSize,
-    Validated,
-};
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract}, format::Format, image::{
+    Image,
+    ImageCreateInfo,
+    ImageType,
+    ImageUsage,
+    view::ImageView
+}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, sync::GpuFuture, DeviceSize, Validated};
 
 use png::ColorType;
 use vulkano::memory::allocator::MemoryAllocatePreference;
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
+use crate::util::gg_err;
 
 struct RawLoadedTexture {
     buf: Subbuffer<[u8]>,
@@ -466,7 +458,7 @@ impl TextureHandler {
         inner.free_unused_files();
     }
 
-    pub(crate) fn wait_build_command_buffer(&self, ctx: &VulkanoContext) -> Result<Option<Box<dyn GpuFuture>>> {
+    pub(crate) fn wait_build_command_buffer(&self, ctx: &VulkanoContext) -> Result<Option<Box<dyn GpuFuture>>, gg_err::CatchOutOfDate> {
         let mut inner = self.inner.lock().unwrap();
         let textures_to_upload = inner.textures.iter_mut()
             .filter(|(_, tex)| tex.cached_image_view.is_none())
@@ -483,13 +475,13 @@ impl TextureHandler {
 
         for (id, tex) in textures_to_upload {
             info!("created image view for: {:?}", id);
-            tex.create_image_view(ctx, &mut uploads)?;
+            tex.create_image_view(ctx, &mut uploads).map_err(gg_err::CatchOutOfDate::from)?;
             self.cached_textures.write().unwrap().insert(*id, CachedTexture::Ready(Arc::new(tex.clone())));
         }
 
         Ok(Some(uploads
-            .build().map_err(Validated::unwrap)?
-            .execute(ctx.queue())?
+            .build().map_err(Validated::unwrap).map_err(gg_err::CatchOutOfDate::from)?
+            .execute(ctx.queue()).map_err(gg_err::CatchOutOfDate::from)?
             .boxed()))
     }
 
