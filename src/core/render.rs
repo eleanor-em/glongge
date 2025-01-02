@@ -7,13 +7,9 @@ use std::{
 };
 use egui::FullOutput;
 
-use vulkano::{
-    command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-    },
-    render_pass::Framebuffer,
-    Validated,
-};
+use vulkano::{command_buffer::{
+    AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+}, render_pass::Framebuffer, Validated};
 use num_traits::Zero;
 use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
@@ -27,7 +23,7 @@ use crate::{
 };
 use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
-use crate::util::UniqueShared;
+use crate::util::{gg_err, UniqueShared};
 use crate::core::vk::{GgWindow, RenderPerfStats};
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
@@ -223,7 +219,7 @@ impl RenderHandler {
         ctx: &VulkanoContext,
         framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
-    ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
+    ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
         let (global_scale_factor, render_frame, gui_enabled) = {
             let mut rx = self.render_data_channel.lock().unwrap();
             let global_scale_factor = rx.should_resize_with_scale_factor();
@@ -235,13 +231,14 @@ impl RenderHandler {
         }
         for mut shader in self.shaders.iter_mut().map(|s| UniqueShared::get(s)) {
             let shader_id = shader.id();
-            shader.do_render_shader(render_frame.for_shader(shader_id))?;
+            shader.do_render_shader(render_frame.for_shader(shader_id))
+                .map_err(gg_err::CatchOutOfDate::from)?;
         }
         let mut builder = AutoCommandBufferBuilder::primary(
             ctx.command_buffer_allocator(),
             ctx.queue().queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
-        )?;
+        ).map_err(gg_err::CatchOutOfDate::from)?;
 
         self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
         builder.begin_render_pass(
@@ -250,7 +247,7 @@ impl RenderHandler {
                 ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
             },
             SubpassBeginInfo::default(),
-        )?;
+        ).map_err(gg_err::CatchOutOfDate::from)?;
         for shader in &mut self.shaders {
             shader.get().build_render_pass(&mut builder)?;
         }

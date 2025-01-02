@@ -14,7 +14,7 @@ use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{ColorSpace, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
-use vulkano::{swapchain, Validated, VulkanError, VulkanLibrary};
+use vulkano::{swapchain, Validated, VulkanLibrary};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
@@ -22,7 +22,7 @@ use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
 use crate::check_eq;
 use crate::core::vk::{GgWindow, PerImageContext};
 use crate::core::prelude::*;
-use crate::util::{gg_float, UniqueShared};
+use crate::util::{gg_err, gg_float, UniqueShared};
 
 #[derive(Clone)]
 pub struct VulkanoContext {
@@ -135,10 +135,11 @@ impl VulkanoContext {
     }
 
     // The return values of the below pub(crate) functions should not be stored between frames.
-    pub(crate) fn acquire_next_image(&self) -> Result<AcquiredSwapchainFuture, VulkanError> {
+    pub(crate) fn acquire_next_image(&self) -> Result<AcquiredSwapchainFuture, gg_err::CatchOutOfDate> {
         // XXX: "acquire_next_image" is somewhat misleading, since it does not block
         swapchain::acquire_next_image(self.swapchain.get().clone(), None)
             .map_err(Validated::unwrap)
+            .map_err(gg_err::CatchOutOfDate::from)
     }
     pub(crate) fn swapchain_present_info(&self, image_idx: usize) -> Result<SwapchainPresentInfo> {
         Ok(SwapchainPresentInfo::swapchain_image_index(

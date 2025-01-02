@@ -209,6 +209,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
             bail!("too many vertices: {first_vertex_idx} + {vertex_count} = {} >= {buf_len}",
                        first_vertex_idx + vertex_count);
         }
+        check_ne!(self.next_free_idx, self.next_vertex_idx);
         unsafe {
             builder.bind_vertex_buffers(0, self.inner.clone())?
                 .draw(vertex_count, 1, first_vertex_idx, 0)?;
