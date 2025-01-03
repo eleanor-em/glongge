@@ -1,7 +1,7 @@
 // VulkanoContext is in a separate module because the details of handling Swapchain, and objects
 // derived from it, are rather complicated. Don't make stuff here public unless really necessary.
 use std::env;
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Instant;
 use anyhow::{Context, Result};
 use egui_winit::winit::event_loop::ActiveEventLoop;
@@ -20,7 +20,7 @@ use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
 use crate::check_eq;
-use crate::core::vk::{GgWindow, PerImageContext};
+use crate::core::vk::GgWindow;
 use crate::core::prelude::*;
 use crate::util::{gg_err, gg_float, UniqueShared};
 
@@ -34,13 +34,12 @@ pub struct VulkanoContext {
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-    pub(crate) per_image_ctx: UniqueShared<PerImageContext>,
 
     // May be recreated, e.g. due to window resizing:
     swapchain: UniqueShared<Arc<Swapchain>>,
-    images: UniqueShared<DataPerImage<Arc<Image>>>,
+    images: UniqueShared<Vec<Arc<Image>>>,
     render_pass: UniqueShared<Arc<RenderPass>>,
-    framebuffers: UniqueShared<DataPerImage<Arc<Framebuffer>>>,
+    framebuffers: UniqueShared<Vec<Arc<Framebuffer>>>,
     image_count: UniqueShared<usize>,
     pipelines: UniqueShared<Vec<UniqueShared<Option<Arc<GraphicsPipeline>>>>>,
 }
@@ -79,7 +78,7 @@ impl VulkanoContext {
             device.clone(),
         )?;
         let swapchain = UniqueShared::new(swapchain);
-        let images = UniqueShared::new(DataPerImage { data: images });
+        let images = UniqueShared::new(images);
         let render_pass = UniqueShared::new(create_render_pass(device.clone(), &swapchain)?);
         let framebuffers = UniqueShared::new(create_framebuffers(images.get().as_slice(), &render_pass.get())?);
         let image_count = UniqueShared::new(framebuffers.get().len());
@@ -98,7 +97,6 @@ impl VulkanoContext {
             descriptor_set_allocator,
 
             swapchain,
-            per_image_ctx: PerImageContext::new(),
             images,
             render_pass,
             framebuffers,
@@ -115,7 +113,7 @@ impl VulkanoContext {
         let (new_swapchain, new_images) = self.swapchain.get()
             .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
         *self.swapchain.get() = new_swapchain;
-        *self.images.get() = DataPerImage { data: new_images };
+        *self.images.get() = new_images;
         *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
         *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
         *self.image_count.get() = self.framebuffers.get().len();
@@ -156,8 +154,8 @@ impl VulkanoContext {
                 .context("image_idx overflowed: {image_idx}")?
         ))
     }
-    pub(crate) fn current_framebuffer(&self, per_image_ctx: &MutexGuard<PerImageContext>) -> Arc<Framebuffer> {
-        self.framebuffers.get().current_value(per_image_ctx).clone()
+    pub(crate) fn current_framebuffer(&self, image_idx: usize) -> Arc<Framebuffer> {
+        self.framebuffers.get()[image_idx].clone()
     }
 
     // When the created pipeline is invalidated, it will be destroyed => safe to store this.
@@ -338,10 +336,8 @@ fn create_render_pass(
 fn create_framebuffers(
     images: &[Arc<Image>],
     render_pass: &Arc<RenderPass>,
-) -> Result<DataPerImage<Arc<Framebuffer>>> {
-    Ok(DataPerImage {
-        data: images
-            .iter()
+) -> Result<Vec<Arc<Framebuffer>>> {
+    Ok(images.iter()
             .map(|image| {
                 let view = ImageView::new_default(image.clone())?;
                 Framebuffer::new(
@@ -352,88 +348,5 @@ fn create_framebuffers(
                     },
                 )
             })
-            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?,
-    })
-}
-
-pub(crate) struct DataPerImage<T> {
-    data: Vec<T>,
-}
-
-impl <T: Clone + Copy> DataPerImage<T> {
-    // Not thoroughly tested:
-    // pub fn new_with_value(ctx: &VulkanoContext, initial_value: T) -> Self {
-    //     let data = vec![initial_value; ctx.images.get().len()];
-    //     Self { data }
-    // }
-    //
-    // pub fn clone_from_value(&mut self, new_value: T) {
-    //     self.data = vec![new_value; self.data.len()];
-    // }
-}
-
-impl<T> DataPerImage<T> {
-    // Not thoroughly tested:
-    // pub fn new_with_data(ctx: &VulkanoContext, data: Vec<T>) -> Self {
-    //     check_eq!(data.len(), ctx.images.get().len());
-    //     Self { data }
-    // }
-    // pub fn try_new_with_generator<F: Fn() -> Result<T>>(
-    //     ctx: &VulkanoContext,
-    //     generator: F,
-    // ) -> Result<Self> {
-    //     let mut data = Vec::new();
-    //     for _ in 0..ctx.images.get().len() {
-    //         data.push(generator()?);
-    //     }
-    //     Ok(Self { data })
-    // }
-    pub fn new_with_generator<F: Fn() -> T>(ctx: &VulkanoContext, generator: F) -> Self {
-        let mut data = Vec::new();
-        for _ in 0..ctx.images.get().len() {
-            data.push(generator());
-        }
-        Self { data }
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn current_value(&self, per_image_ctx: &MutexGuard<PerImageContext>) -> &T {
-        &self.data[per_image_ctx.current.expect("no current value?")]
-    }
-
-    // Not thoroughly tested:
-    // pub fn map<U: Clone, F>(&self, func: F) -> DataPerImage<U>
-    // where
-    //     F: FnMut(&T) -> U,
-    // {
-    //     DataPerImage::<U> {
-    //         data: self.as_slice().iter().map(func).collect(),
-    //     }
-    // }
-    // pub fn count<P>(&self, predicate: P) -> usize
-    // where
-    //     P: Fn(&T) -> bool,
-    // {
-    //     let mut rv = 0;
-    //     for value in self.as_slice() {
-    //         rv += usize::from(predicate(value));
-    //     }
-    //     rv
-    // }
-    // pub fn try_count<P>(&self, predicate: P) -> Result<usize>
-    // where
-    //     P: Fn(&T) -> Result<bool>,
-    // {
-    //     let mut rv = 0;
-    //     for value in self.as_slice() {
-    //         rv += usize::from(predicate(value)?);
-    //     }
-    //     Ok(rv)
-    // }
-    fn as_slice(&self) -> &[T] {
-        self.data.as_slice()
-    }
+            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?)
 }

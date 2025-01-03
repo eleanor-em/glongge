@@ -9,7 +9,7 @@ use egui::FullOutput;
 
 use vulkano::{command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
-}, render_pass::Framebuffer, Validated};
+}, Validated};
 use num_traits::Zero;
 use vulkano::command_buffer::{CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
@@ -218,7 +218,6 @@ impl RenderHandler {
         &mut self,
         vk_ctx: &VulkanoContext,
         image_idx: usize,
-        framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
         let (global_scale_factor, render_frame, gui_enabled) = {
@@ -246,7 +245,7 @@ impl RenderHandler {
         builder.begin_render_pass(
             RenderPassBeginInfo {
                 clear_values: vec![Some(render_frame.clear_col.as_f32().into())],
-                ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                ..RenderPassBeginInfo::framebuffer(vk_ctx.current_framebuffer(image_idx))
             },
             SubpassBeginInfo::default(),
         ).map_err(gg_err::CatchOutOfDate::from)?;

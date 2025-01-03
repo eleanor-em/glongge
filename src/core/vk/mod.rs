@@ -28,7 +28,7 @@ use crate::{core::{
 }};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
-use crate::core::vk::vk_ctx::{DataPerImage, VulkanoContext};
+use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
 use crate::shader::{ensure_shaders_locked, BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
 use crate::util::{gg_err, gg_float, SceneHandlerBuilder, UniqueShared};
@@ -136,21 +136,6 @@ impl AxisAlignedExtent for AdjustedViewport {
     }
 }
 
-#[derive(Clone)]
-pub struct PerImageContext {
-    last: usize,
-    current: Option<usize>,
-}
-
-impl PerImageContext {
-    fn new() -> UniqueShared<Self> {
-        UniqueShared::new(Self {
-            last: 0,
-            current: None,
-        })
-    }
-}
-
 type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;
 type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<SwapchainJoinFuture>>>;
 
@@ -162,7 +147,7 @@ struct WindowEventHandlerInner {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     platform: egui_winit::State,
-    fences: DataPerImage<Option<Arc<FenceFuture>>>,
+    fences: Vec<Option<Arc<FenceFuture>>>,
 }
 
 struct WindowEventHandlerCreateInfo<F, ObjectType>
@@ -233,8 +218,8 @@ where
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || None);
-        self.expect_inner().vk_ctx.per_image_ctx.get().current.take();
+        let image_count = self.expect_inner().vk_ctx.image_count();
+        self.expect_inner().fences = vec![None; image_count];
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
             .context("could not recreate swapchain")?;
@@ -248,17 +233,6 @@ where
         acquire_future: SwapchainAcquireFuture,
         full_output: FullOutput
     ) -> Result<(), gg_err::CatchOutOfDate> {
-        let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
-        let mut per_image_ctx = per_image_ctx.get();
-        let is_first_render = if let Some(last_image_idx) = per_image_ctx.current.replace(image_idx) {
-            if last_image_idx == image_idx {
-                warn!("last_image_idx == image_idx == {}", image_idx);
-            }
-            false
-        } else {
-            true
-        };
-
         self.render_stats.synchronise.start();
         let ready_future = self.synchronise(acquire_future);
         self.render_stats.synchronise.stop();
@@ -268,7 +242,6 @@ where
         let command_buffer = self.expect_inner().render_handler.do_render(
             &vk_ctx,
             image_idx,
-            &vk_ctx.current_framebuffer(&per_image_ctx),
             full_output
         ).map_err(gg_err::CatchOutOfDate::from)?;
         self.render_stats.do_render.stop();
@@ -279,10 +252,6 @@ where
         self.submit_command_buffer(command_buffer, image_idx, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
 
-        if is_first_render {
-            self.last_frame_future.as_mut().unwrap().wait(None)?;
-        }
-        per_image_ctx.last = image_idx;
         Ok(())
     }
 
@@ -305,16 +274,13 @@ where
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
         let vk_ctx = self.expect_inner().vk_ctx.clone();
-        self.last_frame_future.replace(
-            ready_future
+        self.last_frame_future.replace(ready_future
                 .then_execute(vk_ctx.queue(), command_buffer)?
                 .then_swapchain_present(
                     vk_ctx.queue(),
                     vk_ctx.swapchain_present_info(image_idx)?
                 )
-                .then_signal_fence_and_flush()?
-                .into()
-            );
+                .then_signal_fence_and_flush()?);
         Ok(())
     }
     
@@ -356,7 +322,7 @@ where
             None, None
         );
 
-        let fences = DataPerImage::new_with_generator(&vk_ctx, || None);
+        let fences = vec![None; vk_ctx.image_count()];
 
         self.inner = Some(WindowEventHandlerInner {
             window,
