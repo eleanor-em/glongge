@@ -13,12 +13,12 @@ use vulkano::image::{Image, ImageUsage};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain::{ColorSpace, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
+use vulkano::swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
 use vulkano::{swapchain, Validated, VulkanLibrary};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
+use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
 use crate::check_eq;
 use crate::core::vk::GgWindow;
 use crate::core::prelude::*;
@@ -57,7 +57,6 @@ impl VulkanoContext {
         let instance = create_instance(event_loop, library)?;
         let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
         let physical_device = create_any_physical_device(&instance, &surface)?;
-        info!("physical device: {physical_device:?}");
         let (device, queue) = create_any_graphical_queue_family(physical_device.clone())?;
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
@@ -171,6 +170,11 @@ impl VulkanoContext {
 }
 
 // TODO: more flexible approach here.
+fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtensions> {
+    let mut extensions = Surface::required_extensions(&event_loop)?;
+    extensions.ext_surface_maintenance1 = true;
+    Ok(extensions)
+}
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
@@ -202,10 +206,10 @@ fn create_instance(
         };
         check_eq!(var, "1");
     }
-    let required_extensions = Surface::required_extensions(&event_loop)?;
+    let enabled_extensions = instance_extensions(event_loop)?;
     let instance_create_info = InstanceCreateInfo {
         flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
-        enabled_extensions: required_extensions,
+        enabled_extensions,
         ..Default::default()
     };
     Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
@@ -282,6 +286,10 @@ fn create_swapchain(
     physical_device: &Arc<PhysicalDevice>,
     device: Arc<Device>,
 ) -> Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
+    let has_mailbox = physical_device.surface_capabilities(&surface, SurfaceInfo {
+        present_mode: Some(PresentMode::Mailbox),
+        ..SurfaceInfo::default()
+    }).is_ok();
     let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
     let dimensions = window.inner_size();
     let composite_alpha = caps
@@ -295,17 +303,25 @@ fn create_swapchain(
         error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
     }
     info!("surface capabilities: {caps:?}");
+    let (min_image_count, present_mode) = if has_mailbox {
+        (caps.max_image_count.unwrap_or(3.max(caps.min_image_count + 1)),
+         PresentMode::Mailbox)
+    } else {
+        (3.max(caps.min_image_count),
+         PresentMode::Fifo)
+    };
+    info!("swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}");
     Ok(Swapchain::new(
         device,
         surface,
-        // TODO: use PresentMode::Mailbox where possible.
         SwapchainCreateInfo {
-            min_image_count: 3.max(caps.min_image_count),
+            min_image_count,
             image_format: Format::B8G8R8A8_SRGB,
             image_color_space: ColorSpace::SrgbNonLinear,
             image_extent: dimensions.into(),
             image_usage: ImageUsage::COLOR_ATTACHMENT,
             composite_alpha,
+            present_mode,
             ..Default::default()
         },
     )?)
