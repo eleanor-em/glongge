@@ -11,8 +11,9 @@ use vulkano::{command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
 }, Validated};
 use num_traits::Zero;
-use vulkano::command_buffer::{CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
-
+use vulkano::command_buffer::{CommandBufferUsage, RenderingAttachmentInfo, RenderingInfo};
+use vulkano::render_pass::AttachmentLoadOp::Clear;
+use vulkano::render_pass::AttachmentStoreOp::Store;
 use crate::{
     core::{
         prelude::*,
@@ -242,12 +243,17 @@ impl RenderHandler {
         }
 
         self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
-        builder.begin_render_pass(
-            RenderPassBeginInfo {
-                clear_values: vec![Some(render_frame.clear_col.as_f32().into())],
-                ..RenderPassBeginInfo::framebuffer(vk_ctx.current_framebuffer(image_idx))
+        builder.begin_rendering(
+            RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    // Set the format the same as the swapchain.
+                    clear_value: Some(render_frame.clear_col.as_f32().into()),
+                    load_op: Clear,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(vk_ctx.current_image_view(image_idx))
+                })],
+                ..Default::default()
             },
-            SubpassBeginInfo::default(),
         ).map_err(gg_err::CatchOutOfDate::from)?;
         for shader in &mut self.shaders {
             shader.get().build_render_pass(&mut builder)?;
@@ -256,7 +262,7 @@ impl RenderHandler {
         let primitives = self.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
         self.gui_shader.get().build_render_pass(&mut builder, gui_enabled, &primitives)?;
 
-        builder.end_render_pass(SubpassEndInfo::default())?;
+        builder.end_rendering()?;
         Ok(builder.build().map_err(Validated::unwrap)?)
     }
 

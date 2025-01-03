@@ -23,10 +23,11 @@ use vulkano::{pipeline::{
     DescriptorSet,
     WriteDescriptorSet,
     layout::DescriptorSetLayoutCreateFlags
-}, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, render_pass::Subpass, Validated, DeviceSize};
+}, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, Validated, DeviceSize};
 use vulkano::command_buffer::CopyBufferInfo;
 use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
+use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
 use crate::{core::{
     prelude::*,
     vk::AdjustedViewport,
@@ -267,9 +268,11 @@ impl SpriteShader {
             ).map_err(Validated::unwrap)?;
 
             let device = self.ctx.device();
-            self.pipeline = self.ctx.create_pipeline(|render_pass| {
-                let subpass = Subpass::from(render_pass, 0)
-                    .context("failed to create subpass")?;
+            self.pipeline = self.ctx.create_pipeline(|swapchain| {
+                let subpass = PipelineRenderingCreateInfo {
+                    color_attachment_formats: vec![Some(swapchain.image_format())],
+                    ..Default::default()
+                };
                 Ok(GraphicsPipeline::new(device,
                      /* cache= */ None,
                      GraphicsPipelineCreateInfo {
@@ -280,7 +283,7 @@ impl SpriteShader {
                          rasterization_state: Some(RasterizationState::default()),
                          multisample_state: Some(MultisampleState::default()),
                          color_blend_state: Some(ColorBlendState::with_attachment_states(
-                             subpass.num_color_attachments(),
+                             subpass.color_attachment_formats.len() as u32,
                              ColorBlendAttachmentState {
                                  blend: Some(AttachmentBlend::alpha()),
                                  ..Default::default()
@@ -464,9 +467,11 @@ impl WireframeShader {
                 create_info.into_pipeline_layout_create_info(self.ctx.device())?,
             ).map_err(Validated::unwrap)?;
             let device = self.ctx.device();
-            self.pipeline = self.ctx.create_pipeline(|render_pass| {
-                let subpass = Subpass::from(render_pass, 0)
-                    .context("failed to create subpass")?;
+            self.pipeline = self.ctx.create_pipeline(|swapchain| {
+                let subpass = PipelineRenderingCreateInfo {
+                    color_attachment_formats: vec![Some(swapchain.image_format())],
+                    ..Default::default()
+                };
                 Ok(GraphicsPipeline::new(
                     device,
                     /* cache= */ None,
@@ -481,7 +486,7 @@ impl WireframeShader {
                         }),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
-                            subpass.num_color_attachments(),
+                            subpass.color_attachment_formats.len() as u32,
                             ColorBlendAttachmentState {
                                 blend: Some(AttachmentBlend::alpha()),
                                 ..Default::default()
@@ -604,9 +609,11 @@ impl TriangleFanShader {
                 create_info.into_pipeline_layout_create_info(self.ctx.device())?,
             ).map_err(Validated::unwrap)?;
             let device = self.ctx.device();
-            self.pipeline = self.ctx.create_pipeline(|render_pass| {
-                let subpass = Subpass::from(render_pass, 0)
-                    .context("failed to create subpass")?;
+            self.pipeline = self.ctx.create_pipeline(|swapchain| {
+                let subpass = PipelineRenderingCreateInfo {
+                    color_attachment_formats: vec![Some(swapchain.image_format())],
+                    ..Default::default()
+                };
                 Ok(GraphicsPipeline::new(
                     device,
                     /* cache= */ None,
@@ -618,7 +625,7 @@ impl TriangleFanShader {
                         rasterization_state: Some(RasterizationState::default()),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
-                            subpass.num_color_attachments(),
+                            subpass.color_attachment_formats.len() as u32,
                             ColorBlendAttachmentState {
                                 blend: Some(AttachmentBlend::alpha()),
                                 ..Default::default()
@@ -741,9 +748,11 @@ impl BasicShader {
                 create_info.into_pipeline_layout_create_info(self.ctx.device())?,
             ).map_err(Validated::unwrap)?;
             let device = self.ctx.device();
-            self.pipeline = self.ctx.create_pipeline(|render_pass| {
-                let subpass = Subpass::from(render_pass, 0)
-                    .context("failed to create subpass")?;
+            self.pipeline = self.ctx.create_pipeline(|swapchain| {
+                let subpass = PipelineRenderingCreateInfo {
+                    color_attachment_formats: vec![Some(swapchain.image_format())],
+                    ..Default::default()
+                };
                 Ok(GraphicsPipeline::new(
                     device,
                     /* cache= */ None,
@@ -758,7 +767,7 @@ impl BasicShader {
                         rasterization_state: Some(RasterizationState::default()),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
-                            subpass.num_color_attachments(),
+                            subpass.color_attachment_formats.len() as u32,
                             ColorBlendAttachmentState {
                                 blend: Some(AttachmentBlend::alpha()),
                                 ..Default::default()

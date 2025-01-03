@@ -35,7 +35,6 @@ use vulkano::{
     pipeline::PipelineLayout,
     pipeline::PipelineShaderStageCreateInfo,
     pipeline::layout::PipelineDescriptorSetLayoutCreateInfo,
-    render_pass::Subpass,
     shader::ShaderModule,
     Validated,
     image::sampler::Sampler,
@@ -48,6 +47,7 @@ use vulkano::image::sampler::{Filter, SamplerAddressMode, SamplerMipmapMode};
 use vulkano::image::view::ImageViewCreateInfo;
 use vulkano::memory::allocator::DeviceLayout;
 use vulkano::memory::DeviceAlignment;
+use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
 use vulkano::sync::GpuFuture;
 use crate::{
     core::{
@@ -216,9 +216,11 @@ impl GuiRenderer {
                 create_info.into_pipeline_layout_create_info(self.vk_ctx.device())?,
             ).map_err(Validated::unwrap)?;
             let device = self.vk_ctx.device();
-            self.pipeline = self.vk_ctx.create_pipeline(|render_pass| {
-                let subpass = Subpass::from(render_pass, 0)
-                    .context("failed to create subpass")?;
+            self.pipeline = self.vk_ctx.create_pipeline(|swapchain| {
+                let subpass = PipelineRenderingCreateInfo {
+                    color_attachment_formats: vec![Some(swapchain.image_format())],
+                    ..Default::default()
+                };
                 Ok(GraphicsPipeline::new(
                     device,
                     /* cache= */ None,
@@ -233,7 +235,7 @@ impl GuiRenderer {
                         rasterization_state: Some(RasterizationState::default()),
                         multisample_state: Some(MultisampleState::default()),
                         color_blend_state: Some(ColorBlendState::with_attachment_states(
-                            subpass.num_color_attachments(),
+                            subpass.color_attachment_formats.len() as u32,
                             ColorBlendAttachmentState {
                                 blend: Some(AttachmentBlend::alpha()),
                                 ..Default::default()

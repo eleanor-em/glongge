@@ -12,9 +12,8 @@ use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures
 use vulkano::image::{Image, ImageUsage};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::GraphicsPipeline;
-use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
-use vulkano::{swapchain, Validated, VulkanLibrary};
+use vulkano::{swapchain, Validated, Version, VulkanLibrary};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
@@ -38,8 +37,7 @@ pub struct VulkanoContext {
     // May be recreated, e.g. due to window resizing:
     swapchain: UniqueShared<Arc<Swapchain>>,
     images: UniqueShared<Vec<Arc<Image>>>,
-    render_pass: UniqueShared<Arc<RenderPass>>,
-    framebuffers: UniqueShared<Vec<Arc<Framebuffer>>>,
+    image_views: UniqueShared<Vec<Arc<ImageView>>>,
     image_count: UniqueShared<usize>,
     pipelines: UniqueShared<Vec<UniqueShared<Option<Arc<GraphicsPipeline>>>>>,
 }
@@ -78,9 +76,8 @@ impl VulkanoContext {
         )?;
         let swapchain = UniqueShared::new(swapchain);
         let images = UniqueShared::new(images);
-        let render_pass = UniqueShared::new(create_render_pass(device.clone(), &swapchain)?);
-        let framebuffers = UniqueShared::new(create_framebuffers(images.get().as_slice(), &render_pass.get())?);
-        let image_count = UniqueShared::new(framebuffers.get().len());
+        let image_views = UniqueShared::new(create_image_views(images.get().as_slice())?);
+        let image_count = UniqueShared::new(image_views.get().len());
 
         check_eq!(swapchain.get().image_count() as usize, images.get().len());
 
@@ -97,8 +94,7 @@ impl VulkanoContext {
 
             swapchain,
             images,
-            render_pass,
-            framebuffers,
+            image_views,
             image_count,
             pipelines: UniqueShared::new(Vec::new()),
         })
@@ -113,9 +109,8 @@ impl VulkanoContext {
             .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
         *self.swapchain.get() = new_swapchain;
         *self.images.get() = new_images;
-        *self.render_pass.get() = create_render_pass(self.device.clone(), &self.swapchain)?;
-        *self.framebuffers.get() = create_framebuffers(self.images.get().as_slice(), &self.render_pass.get())?;
-        *self.image_count.get() = self.framebuffers.get().len();
+        *self.image_views.get() = create_image_views(self.images.get().as_slice())?;
+        *self.image_count.get() = self.image_views.get().len();
         for pipeline in self.pipelines.get().drain(..) {
             *pipeline.get() = None;
         }
@@ -153,15 +148,15 @@ impl VulkanoContext {
                 .context("image_idx overflowed: {image_idx}")?
         ))
     }
-    pub(crate) fn current_framebuffer(&self, image_idx: usize) -> Arc<Framebuffer> {
-        self.framebuffers.get()[image_idx].clone()
+    pub(crate) fn current_image_view(&self, image_idx: usize) -> Arc<ImageView> {
+        self.image_views.get()[image_idx].clone()
     }
 
     // When the created pipeline is invalidated, it will be destroyed => safe to store this.
     pub fn create_pipeline<F>(&mut self, f: F) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
-    where F: FnOnce(Arc<RenderPass>) -> Result<Arc<GraphicsPipeline>>
+    where F: FnOnce(Arc<Swapchain>) -> Result<Arc<GraphicsPipeline>>
     {
-        let pipeline = UniqueShared::new(Some(f(self.render_pass.get().clone())?));
+        let pipeline = UniqueShared::new(Some(f(self.swapchain.get().clone())?));
         self.pipelines.get().push(pipeline.clone());
         Ok(pipeline)
     }
@@ -222,6 +217,8 @@ fn create_any_physical_device(
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
         .filter(|p| p.supported_features().contains(&features()))
+        // Dynamic rendering support:
+        .filter(|p| p.api_version() >= Version::V1_3 || p.supported_extensions().khr_dynamic_rendering)
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -262,6 +259,12 @@ fn create_any_graphical_queue_family(
         .context("vulkano: couldn't find a graphical queue family")?;
     info!("queue family properties: {:?}",
         physical_device.queue_family_properties()[queue_family_index]);
+
+    let mut enabled_extensions = device_extensions();
+    let mut enabled_features = features();
+    // Also enable dynamic rendering, guaranteed to be available by filtering:
+    enabled_extensions.khr_dynamic_rendering = true;
+    enabled_features.dynamic_rendering = true;
     let (device, mut queues) = Device::new(
         physical_device,
         DeviceCreateInfo {
@@ -269,8 +272,8 @@ fn create_any_graphical_queue_family(
                 queue_family_index: queue_family_index as u32,
                 ..Default::default()
             }],
-            enabled_extensions: device_extensions(),
-            enabled_features: features(),
+            enabled_extensions,
+            enabled_features,
             ..Default::default()
         },
     )?;
@@ -310,6 +313,9 @@ fn create_swapchain(
         (3.max(caps.min_image_count),
          PresentMode::Fifo)
     };
+    if let Some(max_image_count) = caps.max_image_count {
+        check_le!(min_image_count, max_image_count);
+    }
     info!("swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}");
     Ok(Swapchain::new(
         device,
@@ -327,42 +333,8 @@ fn create_swapchain(
     )?)
 }
 
-fn create_render_pass(
-    device: Arc<Device>,
-    swapchain: &UniqueShared<Arc<Swapchain>>
-) -> Result<Arc<RenderPass>> {
-    Ok(vulkano::single_pass_renderpass!(
-        device,
-        attachments: {
-            color: {
-                // Set the format the same as the swapchain.
-                format: swapchain.get().image_format(),
-                samples: 1,
-                load_op: Clear,
-                store_op: Store,
-            },
-        },
-        pass: {
-            color: [color],
-            depth_stencil: {},
-        },
-    )?)
-}
-
-fn create_framebuffers(
-    images: &[Arc<Image>],
-    render_pass: &Arc<RenderPass>,
-) -> Result<Vec<Arc<Framebuffer>>> {
+fn create_image_views(images: &[Arc<Image>]) -> Result<Vec<Arc<ImageView>>> {
     Ok(images.iter()
-            .map(|image| {
-                let view = ImageView::new_default(image.clone())?;
-                Framebuffer::new(
-                    render_pass.clone(),
-                    FramebufferCreateInfo {
-                        attachments: vec![view],
-                        ..Default::default()
-                    },
-                )
-            })
+            .map(|image| ImageView::new_default(image.clone()))
             .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?)
 }
