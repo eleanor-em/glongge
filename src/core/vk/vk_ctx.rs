@@ -300,8 +300,9 @@ fn create_swapchain(
     Ok(Swapchain::new(
         device,
         surface,
+        // TODO: use PresentMode::Mailbox where possible.
         SwapchainCreateInfo {
-            min_image_count: caps.min_image_count + 1,
+            min_image_count: 3.max(caps.min_image_count),
             image_format: Format::B8G8R8A8_SRGB,
             image_color_space: ColorSpace::SrgbNonLinear,
             image_extent: dimensions.into(),
@@ -355,8 +356,7 @@ fn create_framebuffers(
     })
 }
 
-#[derive(Clone)]
-pub(crate) struct DataPerImage<T: Clone> {
+pub(crate) struct DataPerImage<T> {
     data: Vec<T>,
 }
 
@@ -372,7 +372,7 @@ impl <T: Clone + Copy> DataPerImage<T> {
     // }
 }
 
-impl<T: Clone> DataPerImage<T> {
+impl<T> DataPerImage<T> {
     // Not thoroughly tested:
     // pub fn new_with_data(ctx: &VulkanoContext, data: Vec<T>) -> Self {
     //     check_eq!(data.len(), ctx.images.get().len());
@@ -400,17 +400,8 @@ impl<T: Clone> DataPerImage<T> {
         self.data.len()
     }
 
-    pub fn last_value(&self, per_image_ctx: &MutexGuard<PerImageContext>) -> &T {
-        &self.data[per_image_ctx.last]
-    }
     pub fn current_value(&self, per_image_ctx: &MutexGuard<PerImageContext>) -> &T {
         &self.data[per_image_ctx.current.expect("no current value?")]
-    }
-    // pub fn last_value_mut(&mut self, per_image_ctx: &mut MutexGuard<PerImageContext>) -> &mut T {
-    //     &mut self.data[per_image_ctx.last]
-    // }
-    pub fn current_value_mut(&mut self, per_image_ctx: &mut MutexGuard<PerImageContext>) -> &mut T {
-        &mut self.data[per_image_ctx.current.expect("no current value?")]
     }
 
     // Not thoroughly tested:

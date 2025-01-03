@@ -28,7 +28,9 @@ use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, comman
 }, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, DeviceSize, Validated};
 
 use png::ColorType;
+use vulkano::command_buffer::{CommandBufferUsage, PrimaryCommandBufferAbstract};
 use vulkano::memory::allocator::MemoryAllocatePreference;
+use vulkano::sync::GpuFuture;
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::util::gg_err;
@@ -458,7 +460,7 @@ impl TextureHandler {
         inner.free_unused_files();
     }
 
-    pub(crate) fn wait_maybe_upload_textures(&self, ctx: &VulkanoContext, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<(), gg_err::CatchOutOfDate> {
+    pub(crate) fn wait_maybe_upload_textures(&self, ctx: &VulkanoContext) -> Result<(), gg_err::CatchOutOfDate> {
         let mut inner = self.inner.lock().unwrap();
         let textures_to_upload = inner.textures.iter_mut()
             .filter(|(_, tex)| tex.cached_image_view.is_none())
@@ -467,11 +469,20 @@ impl TextureHandler {
             return Ok(());
         }
 
+        let mut builder = AutoCommandBufferBuilder::primary(
+            ctx.command_buffer_allocator(),
+            ctx.queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        ).map_err(gg_err::CatchOutOfDate::from)?;
         for (id, tex) in textures_to_upload {
             info!("created image view for: {:?}", id);
-            tex.create_image_view(ctx, builder).map_err(gg_err::CatchOutOfDate::from)?;
+            tex.create_image_view(ctx, &mut builder).map_err(gg_err::CatchOutOfDate::from)?;
             self.cached_textures.write().unwrap().insert(*id, CachedTexture::Ready(Arc::new(tex.clone())));
         }
+        builder.build()?
+            .execute(ctx.queue())?
+            .then_signal_fence_and_flush()?
+            .wait(None)?;
         Ok(())
     }
 

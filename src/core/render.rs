@@ -11,7 +11,7 @@ use vulkano::{command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
 }, render_pass::Framebuffer, Validated};
 use num_traits::Zero;
-use vulkano::command_buffer::{RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
+use vulkano::command_buffer::{CommandBufferUsage, RenderPassBeginInfo, SubpassBeginInfo, SubpassEndInfo};
 
 use crate::{
     core::{
@@ -216,7 +216,8 @@ impl RenderHandler {
 
     pub(crate) fn do_render(
         &mut self,
-        mut builder: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        vk_ctx: &VulkanoContext,
+        image_idx: usize,
         framebuffer: &Arc<Framebuffer>,
         full_output: FullOutput
     ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
@@ -229,9 +230,15 @@ impl RenderHandler {
             self.viewport.get().set_global_scale_factor(global_scale_factor);
             self.on_recreate_swapchain(self.window.clone());
         }
+
+        let mut builder = AutoCommandBufferBuilder::primary(
+            vk_ctx.command_buffer_allocator(),
+            vk_ctx.queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        ).map_err(gg_err::CatchOutOfDate::from)?;
         for mut shader in self.shaders.iter_mut().map(|s| s.get()) {
             let shader_id = shader.id();
-            shader.do_render_shader(render_frame.for_shader(shader_id))
+            shader.do_render_shader(image_idx, render_frame.for_shader(shader_id), &mut builder)
                 .map_err(gg_err::CatchOutOfDate::from)?;
         }
 

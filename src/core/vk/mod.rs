@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::{Arc, Mutex, MutexGuard}, time::Instant};
+use std::{sync::{Arc, Mutex}, time::Instant};
 use std::marker::PhantomData;
 use egui::{FullOutput, ViewportId, ViewportInfo};
 use num_traits::Zero;
@@ -12,22 +12,20 @@ use vulkano::{command_buffer::{
 }, sync::{
     future::{FenceSignalFuture, JoinFuture},
     GpuFuture,
-}, Validated};
+}};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
 use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::dpi::PhysicalSize;
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
-use std::time::Duration;
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage};
 use vulkano::pipeline::graphics::viewport::{Scissor, ViewportState};
 use crate::{core::{
     input::InputHandler,
     prelude::*,
 }, info_every_seconds, resource::ResourceHandler, util::{
     gg_time::TimeIt
-}, warn_every_seconds};
+}};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::{DataPerImage, VulkanoContext};
@@ -164,7 +162,7 @@ struct WindowEventHandlerInner {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     platform: egui_winit::State,
-    fences: DataPerImage<Rc<RefCell<Option<FenceFuture>>>>,
+    fences: DataPerImage<Option<Arc<FenceFuture>>>,
 }
 
 struct WindowEventHandlerCreateInfo<F, ObjectType>
@@ -190,6 +188,7 @@ where
     gui_ctx: GuiContext,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
+    last_frame_future: Option<FenceFuture>,
 
     is_first_window_event: bool,
 }
@@ -220,6 +219,7 @@ where
             gui_ctx,
             render_stats: RenderPerfStats::new(),
             last_render_stats: None,
+            last_frame_future: None,
 
             is_first_window_event: false,
         };
@@ -233,7 +233,7 @@ where
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || Rc::new(RefCell::new(None)));
+        self.expect_inner().fences = DataPerImage::new_with_generator(&self.expect_inner().vk_ctx, || None);
         self.expect_inner().vk_ctx.per_image_ctx.get().current.take();
         let window = self.expect_inner().window.clone();
         self.expect_inner().vk_ctx.recreate_swapchain(&window)
@@ -250,27 +250,24 @@ where
     ) -> Result<(), gg_err::CatchOutOfDate> {
         let per_image_ctx = self.expect_inner().vk_ctx.per_image_ctx.clone();
         let mut per_image_ctx = per_image_ctx.get();
-        if let Some(last_image_idx) = per_image_ctx.current.replace(image_idx) {
+        let is_first_render = if let Some(last_image_idx) = per_image_ctx.current.replace(image_idx) {
             if last_image_idx == image_idx {
                 warn!("last_image_idx == image_idx == {}", image_idx);
             }
-        }
+            false
+        } else {
+            true
+        };
 
         self.render_stats.synchronise.start();
-        let ready_future = self.synchronise(&mut per_image_ctx, acquire_future);
+        let ready_future = self.synchronise(acquire_future);
         self.render_stats.synchronise.stop();
 
         self.render_stats.do_render.start();
         let vk_ctx = self.expect_inner().vk_ctx.clone();
-        let mut builder = AutoCommandBufferBuilder::primary(
-            vk_ctx.command_buffer_allocator(),
-            vk_ctx.queue().queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        ).map_err(gg_err::CatchOutOfDate::from)?;
-        self.expect_inner().resource_handler.texture
-            .wait_maybe_upload_textures(&vk_ctx, &mut builder)?;
         let command_buffer = self.expect_inner().render_handler.do_render(
-            builder,
+            &vk_ctx,
+            image_idx,
             &vk_ctx.current_framebuffer(&per_image_ctx),
             full_output
         ).map_err(gg_err::CatchOutOfDate::from)?;
@@ -279,35 +276,18 @@ where
         self.expect_inner().window.inner.pre_present_notify();
 
         self.render_stats.submit_command_buffers.start();
-        self.submit_command_buffer(&mut per_image_ctx, command_buffer, ready_future)?;
+        self.submit_command_buffer(command_buffer, image_idx, ready_future)?;
         self.render_stats.submit_command_buffers.stop();
 
-        if (per_image_ctx.last + 1) % self.expect_inner().vk_ctx.image_count() != image_idx {
-            warn_every_seconds!(1, "per_image_ctx: last={}, next={}, count={}",
-                                per_image_ctx.last,
-                                image_idx,
-                                self.expect_inner().vk_ctx.image_count());
+        if is_first_render {
+            self.last_frame_future.as_mut().unwrap().wait(None)?;
         }
         per_image_ctx.last = image_idx;
         Ok(())
     }
 
-    fn synchronise(
-        &mut self,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
-        acquire_future: SwapchainAcquireFuture,
-    ) -> SwapchainJoinFuture {
-        if let Some(last_fence) = self.expect_inner().fences.last_value(per_image_ctx).borrow_mut().as_mut() {
-            if let Err(e) = last_fence.wait(None).map_err(Validated::unwrap) {
-                // try to continue -- it might be an outdated future
-                // XXX: macOS often just segfaults instead of giving an error here
-                error!("{}", e);
-            }
-            last_fence.cleanup_finished();
-        }
-        let next_fence = if let Some(mut fence) = self.expect_inner().fences.current_value(per_image_ctx).take() {
-            // Future should already be completed by the time we acquire the image.
-            fence.wait(Some(Duration::from_nanos(1))).unwrap();
+    fn synchronise(&mut self, acquire_future: SwapchainAcquireFuture) -> SwapchainJoinFuture {
+        let last_future = if let Some(mut fence) = self.last_frame_future.take() {
             fence.cleanup_finished();
             fence.boxed()
         } else {
@@ -315,22 +295,17 @@ where
             now.cleanup_finished();
             now.boxed()
         };
-        next_fence.join(acquire_future)
+        last_future.join(acquire_future)
     }
 
     fn submit_command_buffer(
         &mut self,
-        per_image_ctx: &mut MutexGuard<PerImageContext>,
         command_buffer: Arc<PrimaryAutoCommandBuffer>,
+        image_idx: usize,
         ready_future: SwapchainJoinFuture,
     ) -> Result<()> {
         let vk_ctx = self.expect_inner().vk_ctx.clone();
-        let image_idx = per_image_ctx.current.expect("no current image?");
-        let mut current_fence = self.expect_inner().fences
-            .current_value_mut(per_image_ctx)
-            .borrow_mut();
-        check_is_none!(current_fence);
-        current_fence.replace(
+        self.last_frame_future.replace(
             ready_future
                 .then_execute(vk_ctx.queue(), command_buffer)?
                 .then_swapchain_present(
@@ -338,6 +313,7 @@ where
                     vk_ctx.swapchain_present_info(image_idx)?
                 )
                 .then_signal_fence_and_flush()?
+                .into()
             );
         Ok(())
     }
@@ -380,7 +356,7 @@ where
             None, None
         );
 
-        let fences = DataPerImage::new_with_generator(&vk_ctx, || Rc::new(RefCell::new(None)));
+        let fences = DataPerImage::new_with_generator(&vk_ctx, || None);
 
         self.inner = Some(WindowEventHandlerInner {
             window,
@@ -452,6 +428,10 @@ where
                 self.recreate_swapchain().unwrap();
             }
             WindowEvent::RedrawRequested => {
+                let vk_ctx = self.expect_inner().vk_ctx.clone();
+                self.expect_inner().resource_handler.texture
+                    .wait_maybe_upload_textures(&vk_ctx)
+                    .unwrap();
                 match self.acquire_and_handle_image() {
                     Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
                         info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
