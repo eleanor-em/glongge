@@ -24,7 +24,6 @@ use vulkano::{pipeline::{
     WriteDescriptorSet,
     layout::DescriptorSetLayoutCreateFlags
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, Validated, DeviceSize};
-use vulkano::command_buffer::CopyBufferInfo;
 use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
@@ -117,25 +116,27 @@ struct CachedVertexBuffer<T: VkVertex + Copy> {
 
 impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn new(ctx: VulkanoContext, size: usize) -> Result<Self> {
-        // Allow some headroom:
         let num_vertex_sets = ctx.image_count();
         let inner = Self::create_vertex_buffer(
             &ctx,
             (size * num_vertex_sets) as DeviceSize
         )?;
-        Ok(Self {
+        let rv = Self {
             ctx,
             inner,
             next_vertex_idx: 0,
             vertex_count: None,
             num_vertex_sets,
-        })
+        };
+        info!("created vertex buffer: {} KiB", rv.size_in_bytes() / 1024);
+        Ok(rv)
     }
 
     fn len(&self) -> usize { self.inner.len() as usize / self.num_vertex_sets }
+    fn size_in_bytes(&self) -> usize { self.inner.len() as usize * std::mem::size_of::<T>() }
 
     fn realloc(&mut self) -> Result<()> {
-        let size = self.inner.len() as usize * std::mem::size_of::<T>();
+        let size = self.size_in_bytes();
         if size / 1024 / 1024 == 0 {
             warn!("reallocating vertex buffer: {} KiB -> {} KiB",
                 size / 1024 , size * 2 / 1024);
@@ -170,9 +171,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         let first_vertex_idx = u64::try_from(self.next_vertex_idx)
             .with_context(|| format!("self.begin overflowed: {}", self.next_vertex_idx))?;
         let subbuffer = self.inner.clone().slice(first_vertex_idx..first_vertex_idx + vertices.len() as u64);
-        let src = Self::create_vertex_buffer(&self.ctx, vertices.len() as DeviceSize)?;
-        src.write()?.clone_from_slice(vertices.as_slice());
-        builder.copy_buffer(CopyBufferInfo::buffers(src, subbuffer))?;
+        subbuffer.write()?.clone_from_slice(vertices.as_slice());
 
         Ok(())
     }
