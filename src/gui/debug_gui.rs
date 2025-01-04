@@ -525,6 +525,8 @@ pub(crate) struct GuiConsoleLog {
     render_perf_stats: Option<RenderPerfStats>,
 }
 impl GuiConsoleLog {
+    const MAX_LOG_LINES: usize = 40;
+
     fn new() -> Result<Self> {
         let log_file = BufReader::new(std::fs::OpenOptions::new()
             .read(true)
@@ -551,6 +553,9 @@ impl GuiConsoleLog {
         let mut line = String::new();
         if self.log_file.read_line(&mut line).unwrap() > 0 {
             self.log_output.push(line);
+            if self.log_output.len() > Self::MAX_LOG_LINES {
+                self.log_output.remove(0);
+            }
         }
         let log_output = self.log_output.clone();
         if let Some(next) = self.view_perf_rx.try_iter().last() {
