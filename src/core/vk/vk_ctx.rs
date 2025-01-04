@@ -213,7 +213,7 @@ fn create_any_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
 ) -> Result<Arc<PhysicalDevice>> {
-    Ok(instance
+    let device = instance
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
         .filter(|p| p.supported_features().contains(&features()))
@@ -242,7 +242,10 @@ fn create_any_physical_device(
             _ => 4,
         })
         .context("vulkano: no appropriate physical device available")?
-        .0)
+        .0;
+    info!("device: {} [{:?}]", device.properties().device_name, device.properties().device_type);
+    info!("vulkan version: {}", device.api_version());
+    Ok(device)
 }
 fn create_any_graphical_queue_family(
     physical_device: Arc<PhysicalDevice>,
