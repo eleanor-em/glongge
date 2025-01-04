@@ -49,6 +49,7 @@ impl VulkanoContext {
             check_false!(*vulkano_context_created);
             *vulkano_context_created = true;
         }
+        check_eq!(size_of::<u64>(), size_of::<usize>()); // assumption made in many places
         info!("operating system: {}", std::env::consts::OS);
         let start = Instant::now();
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;

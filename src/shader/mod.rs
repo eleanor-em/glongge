@@ -132,7 +132,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         Ok(rv)
     }
 
-    fn len(&self) -> usize { self.inner.len() as usize / self.num_vertex_sets }
+    fn single_len(&self) -> usize { self.inner.len() as usize / self.num_vertex_sets }
     fn size_in_bytes(&self) -> usize { self.inner.len() as usize * std::mem::size_of::<T>() }
 
     fn realloc(&mut self) -> Result<()> {
@@ -152,26 +152,23 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         Ok(())
     }
 
-    fn write(&mut self, image_idx: usize, vertices: Vec<T>, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
+    fn write(&mut self, image_idx: usize, vertices: &[T], _builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
         if vertices.is_empty() { return Ok(()); }
-        let write_start = image_idx * self.len();
+        let write_start = image_idx * self.single_len();
         // Reallocate if needed:
-        let mut buf_len = usize::try_from(self.inner.len())
-            .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+        let mut buf_len = self.inner.len() as usize;
         while write_start + vertices.len() > buf_len {
             self.realloc()?;
-            buf_len = usize::try_from(self.inner.len())
-                .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
+            buf_len = self.inner.len() as usize;
         }
 
         self.next_vertex_idx = write_start;
         check_is_none!(self.vertex_count);
         self.vertex_count = Some(vertices.len());
 
-        let first_vertex_idx = u64::try_from(self.next_vertex_idx)
-            .with_context(|| format!("self.begin overflowed: {}", self.next_vertex_idx))?;
+        let first_vertex_idx = self.next_vertex_idx as u64;
         let subbuffer = self.inner.clone().slice(first_vertex_idx..first_vertex_idx + vertices.len() as u64);
-        subbuffer.write()?.clone_from_slice(vertices.as_slice());
+        subbuffer.write()?.copy_from_slice(vertices);
 
         Ok(())
     }
@@ -180,7 +177,7 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
         Ok(Buffer::new_unsized(
             ctx.memory_allocator(),
             BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
+                usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
@@ -195,17 +192,16 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
     fn draw(&mut self, builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) -> Result<()> {
         let vertex_count = self.vertex_count.take()
             .with_context(|| format!("tried to draw vertices but none prepared: {:?}", self.vertex_count))?;
+        if self.next_vertex_idx + vertex_count >= self.inner.len() as usize {
+            bail!("too many vertices: {} + {vertex_count} = {} >= {}",
+                    self.next_vertex_idx, self.inner.len(),
+                    self.next_vertex_idx + vertex_count);
+        }
         let vertex_count = u32::try_from(vertex_count)
             .with_context(|| format!("tried to draw too many vertices: {vertex_count}"))?;
-        let first_vertex_idx = u64::try_from(self.next_vertex_idx)
-            .with_context(|| format!("self.begin overflowed: {}", self.next_vertex_idx))?;
-        let buf_len = u64::try_from(self.inner.len())
-            .with_context(|| format!("self.inner.len() overflowed: {}", self.inner.len()))?;
-        if first_vertex_idx + u64::from(vertex_count) >= buf_len {
-            bail!("too many vertices: {first_vertex_idx} + {vertex_count} = {} >= {buf_len}",
-                       first_vertex_idx + u64::from(vertex_count));
-        }
-        let subbuffer = self.inner.clone().slice(first_vertex_idx..first_vertex_idx + u64::from(vertex_count));
+        let next_vertex_idx = self.next_vertex_idx as u64;
+        let subbuffer = self.inner.clone()
+            .slice(next_vertex_idx..next_vertex_idx + u64::from(vertex_count));
         builder.bind_vertex_buffers(0, subbuffer)?;
         unsafe {
             builder.draw(vertex_count, 1, 0, 0)?;
@@ -349,7 +345,7 @@ impl Shader for SpriteShader {
         let render_infos = render_frame.render_infos
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 // Calculate transformed UVs.
@@ -381,7 +377,7 @@ impl Shader for SpriteShader {
                 }
             }
         }
-        self.vertex_buffer.write(image_idx, vertices, builder)?;
+        self.vertex_buffer.write(image_idx, &vertices, builder)?;
         Ok(())
     }
     fn build_render_pass(
@@ -515,7 +511,7 @@ impl Shader for WireframeShader {
         render_frame: ShaderRenderFrame,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.single_len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 for ri in &render_info.inner {
@@ -529,7 +525,7 @@ impl Shader for WireframeShader {
                 }
             }
         }
-        self.vertex_buffer.write(image_idx, vertices, builder)?;
+        self.vertex_buffer.write(image_idx, &vertices, builder)?;
         Ok(())
     }
     fn build_render_pass(
@@ -654,7 +650,7 @@ impl Shader for TriangleFanShader {
         render_frame: ShaderRenderFrame,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.single_len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 for ri in &render_info.inner {
@@ -668,7 +664,7 @@ impl Shader for TriangleFanShader {
                 }
             }
         }
-        self.vertex_buffer.write(image_idx, vertices, builder)?;
+        self.vertex_buffer.write(image_idx, &vertices, builder)?;
         Ok(())
     }
     fn build_render_pass(
@@ -796,7 +792,7 @@ impl Shader for BasicShader {
         render_frame: ShaderRenderFrame,
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.single_len());
         for render_info in &render_frame.render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 for ri in &render_info.inner {
@@ -810,7 +806,7 @@ impl Shader for BasicShader {
                 }
             }
         }
-        self.vertex_buffer.write(image_idx, vertices, builder)?;
+        self.vertex_buffer.write(image_idx, &vertices, builder)?;
         Ok(())
     }
     fn build_render_pass(
