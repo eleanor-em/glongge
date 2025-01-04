@@ -97,7 +97,7 @@ impl RenderDataChannel {
 
     #[allow(clippy::float_cmp)]
     pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
-        if self.viewport.get_global_scale_factor() != global_scale_factor {
+        if self.viewport.global_scale_factor() != global_scale_factor {
             self.viewport.set_global_scale_factor(global_scale_factor);
             self.should_resize = true;
         }
@@ -108,7 +108,7 @@ impl RenderDataChannel {
     pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f64> {
         let rv = self.should_resize;
         self.should_resize = false;
-        if rv { Some(self.viewport.get_global_scale_factor()) } else { None }
+        if rv { Some(self.viewport.global_scale_factor()) } else { None }
     }
 }
 

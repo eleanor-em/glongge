@@ -175,7 +175,7 @@ impl InputHandler {
     }
     pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) { self.viewport = viewport; }
     pub fn screen_mouse_pos(&self) -> Option<Vec2> {
-        self.mouse_pos.map(|p| p / self.viewport.gui_scale_factor())
+        self.mouse_pos.map(|p| p / self.viewport.global_scale_factor())
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {

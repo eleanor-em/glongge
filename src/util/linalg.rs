@@ -379,6 +379,10 @@ impl Vec2 {
                 self_len.total_cmp(&other_len)
             })
     }
+
+    pub fn round(&self) -> Vec2i {
+        Vec2i { x: self.x.round() as i32, y: self.y.round() as i32 }
+    }
 }
 
 impl Zero for Vec2 {

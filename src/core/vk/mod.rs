@@ -79,12 +79,7 @@ pub struct AdjustedViewport {
 }
 
 impl AdjustedViewport {
-    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
-        self.global_scale_factor = global_scale_factor;
-    }
-    pub(crate) fn get_global_scale_factor(&self) -> f64 {
-        self.global_scale_factor
-    }
+
     pub fn update_from_window(&mut self, window: &GgWindow) {
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
@@ -96,8 +91,14 @@ impl AdjustedViewport {
     pub fn physical_height(&self) -> f64 { f64::from(self.inner.extent[1]) }
     pub fn logical_width(&self) -> f64 { f64::from(self.inner.extent[0]) / self.scale_factor() }
     pub fn logical_height(&self) -> f64 { f64::from(self.inner.extent[1]) / self.scale_factor() }
-    pub fn gui_scale_factor(&self) -> f64 { self.scale_factor / self.global_scale_factor }
     pub fn scale_factor(&self) -> f64 { self.scale_factor }
+    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+        self.global_scale_factor = global_scale_factor;
+    }
+    pub(crate) fn global_scale_factor(&self) -> f64 {
+        self.global_scale_factor
+    }
+    pub(crate) fn gui_scale_factor(&self) -> f64 { self.scale_factor / self.global_scale_factor }
 
     pub fn as_viewport_state(&self) -> ViewportState {
         ViewportState {

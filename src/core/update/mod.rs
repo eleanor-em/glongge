@@ -786,7 +786,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             render_data_channel.vertices = vertices;
         }
         render_data_channel.render_infos = render_infos;
-        render_data_channel.set_global_scale_factor(self.viewport.get_global_scale_factor());
+        render_data_channel.set_global_scale_factor(self.viewport.global_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
         self.viewport = render_data_channel.current_viewport()
             .translated(self.viewport.translation);
