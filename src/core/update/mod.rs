@@ -262,7 +262,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         }
     }
 
-    fn create_render_infos(&mut self, vertex_map: &mut VertexMap, viewport: &AdjustedViewport) -> Vec<RenderInfoFull> {
+    fn create_render_infos(&mut self, vertex_map: &mut VertexMap) -> Vec<RenderInfoFull> {
         self.update_all_transforms();
         for (this_id, mut this) in self.objects.iter()
             .filter_map(|(this_id, this)| {
@@ -291,13 +291,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             for render_info in &mut render_info {
                 Self::maybe_replace_invalid_shader_id(render_info);
             }
-            let transform = if let Some(t) = self.absolute_transforms.get(&item.object_id) {
-                t.translated(-viewport.translation)
-            } else {
-                error!("missing object_id in transforms: {:?} [{:?}]",
+            let transform = match self.absolute_transforms.get(&item.object_id) {
+                None => {
+                    error!("missing object_id in transforms: {:?} [{:?}]",
                          item.object_id,
                          gg_err::log_unwrap_or("unknown", self.get_object_type_string(item.object_id)));
-                continue;
+                    continue;
+                }
+                Some(t) => t
             };
 
             let end = start + item.len() as u32;
@@ -763,8 +764,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
     fn update_and_send_render_infos(&mut self) {
         self.perf_stats.render_infos.start();
-        let render_infos = self.object_handler.create_render_infos(
-            &mut self.vertex_map, &self.viewport);
+        let render_infos = self.object_handler.create_render_infos(&mut self.vertex_map);
         self.send_render_infos(render_infos);
         self.perf_stats.render_infos.stop();
     }
@@ -788,8 +788,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         render_data_channel.render_infos = render_infos;
         render_data_channel.set_global_scale_factor(self.viewport.global_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
-        self.viewport = render_data_channel.current_viewport()
-            .translated(self.viewport.translation);
+        render_data_channel.set_translation(self.viewport.translation);
+        self.viewport = render_data_channel.current_viewport();
     }
 
 }

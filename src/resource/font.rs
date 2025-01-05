@@ -21,7 +21,6 @@ mod internal {
     use itertools::Itertools;
     use crate::resource::font::SAMPLE_RATIO;
 
-    #[allow(clippy::cast_possible_truncation)]
     pub fn font_from_slice(slice: &[u8], size: f64) -> Result<PxScaleFont<FontVec>> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
         let scale = PxScale::from((size * SAMPLE_RATIO) as f32);
@@ -47,7 +46,6 @@ impl Font {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn layout_wrap_anywhere(&self, text: &str, max_width: f64) -> Vec<Glyph> {
         let mut rv = Vec::new();
         let v_advance = self.height() + f64::from(self.inner.line_gap());

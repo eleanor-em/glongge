@@ -35,6 +35,8 @@ pub mod vertex_shader {
                 float window_width;
                 float window_height;
                 float scale_factor;
+                float view_translate_x;
+                float view_translate_y;
             };
 
             void main() {
@@ -65,11 +67,12 @@ pub mod vertex_shader {
                     vec4(-sin(rotation), cos(rotation), 0, 0),
                     vec4(0, 0, 1, 0),
                     vec4(0, 0, 0, 1));
+                const vec2 view_translation = vec2(view_translate_x, view_translate_y);
                 const mat4 translation_mat = mat4(
                     vec4(1, 0, 0, 0),
                     vec4(0, 1, 0, 0),
                     vec4(0, 0, 1, 0),
-                    vec4(round(translation), 0, 1));
+                    vec4(round(translation - view_translation), 0, 1));
                 gl_Position = projection * translation_mat * rotation_mat * scale_mat * vec4(position, 0, 1);
                 f_blend_col = blend_col;
             }

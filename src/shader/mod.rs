@@ -390,12 +390,11 @@ impl Shader for SpriteShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = sprite::vertex_shader::WindowData {
-            #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             window_height: viewport.physical_height() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             scale_factor: viewport.scale_factor() as f32,
+            view_translate_x: viewport.translation.x as f32,
+            view_translate_y: viewport.translation.y as f32,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -537,12 +536,11 @@ impl Shader for WireframeShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             window_height: viewport.physical_height() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             scale_factor: viewport.scale_factor() as f32,
+            view_translate_x: viewport.translation.x as f32,
+            view_translate_y: viewport.translation.y as f32,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -676,12 +674,11 @@ impl Shader for TriangleFanShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             window_height: viewport.physical_height() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             scale_factor: viewport.scale_factor() as f32,
+            view_translate_x: viewport.translation.x as f32,
+            view_translate_y: viewport.translation.y as f32,
         };
         builder
             .set_primitive_topology(PrimitiveTopology::TriangleFan)?
@@ -818,12 +815,11 @@ impl Shader for BasicShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            #[allow(clippy::cast_possible_truncation)]
             window_width: viewport.physical_width() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             window_height: viewport.physical_height() as f32,
-            #[allow(clippy::cast_possible_truncation)]
             scale_factor: viewport.scale_factor() as f32,
+            view_translate_x: viewport.translation.x as f32,
+            view_translate_y: viewport.translation.y as f32,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?

@@ -110,6 +110,10 @@ impl RenderDataChannel {
         self.should_resize = false;
         if rv { Some(self.viewport.global_scale_factor()) } else { None }
     }
+
+    pub fn set_translation(&mut self, translation: Vec2) {
+        self.viewport.translation = translation;
+    }
 }
 
 #[derive(Clone)]
@@ -223,6 +227,7 @@ impl RenderHandler {
     ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
         let (global_scale_factor, render_frame, gui_enabled) = {
             let mut rx = self.render_data_channel.lock().unwrap();
+            self.viewport.get().translation = rx.viewport.translation;
             let global_scale_factor = rx.should_resize_with_scale_factor();
             (global_scale_factor, rx.next_frame(), rx.gui_enabled)
         };
@@ -316,7 +321,7 @@ impl Ord for VertexDepth {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialOrd, PartialEq)]
 pub struct VertexWithUV {
     pub xy: [f32; 2],
     pub uv: [f32; 2],

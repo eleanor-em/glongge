@@ -348,11 +348,9 @@ impl Vec2 {
         (*self - rhs).len() < f64::from(f32::epsilon())
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     pub fn as_vec2int_lossy(&self) -> Vec2i {
         Vec2i { x: self.x.round() as i32, y: self.y.round() as i32 }
     }
-    #[allow(clippy::cast_possible_truncation)]
     pub fn as_f32_lossy(&self) -> [f32; 2] {
         (*self).into()
     }
@@ -378,10 +376,6 @@ impl Vec2 {
                 warn!("cmp_by_dist() to {}: partial_cmp() failed: {} vs. {}", origin, self, other);
                 self_len.total_cmp(&other_len)
             })
-    }
-
-    pub fn round(&self) -> Vec2i {
-        Vec2i { x: self.x.round() as i32, y: self.y.round() as i32 }
     }
 }
 
@@ -425,7 +419,6 @@ impl From<Vec2> for [f64; 2] {
         [value.x, value.y]
     }
 }
-#[allow(clippy::cast_possible_truncation)]
 impl From<Vec2> for [f32; 2] {
     fn from(value: Vec2) -> Self {
         [value.x as f32, value.y as f32]
@@ -881,7 +874,6 @@ impl Mul<Mat3x3> for Mat3x3 {
 }
 
 impl From<Mat3x3> for [[f32; 4]; 4] {
-    #[allow(clippy::cast_possible_truncation)]
     fn from(value: Mat3x3) -> Self {
         [
             [value.xx as f32, value.xy as f32, 0., value.xw as f32],

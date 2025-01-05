@@ -65,7 +65,6 @@ impl Default for Colour {
 }
 
 impl From<Colour> for [f32; 4] {
-    #[allow(clippy::cast_possible_truncation)]
     fn from(value: Colour) -> Self {
         [value.r as f32, value.g as f32, value.b as f32, value.a as f32]
     }

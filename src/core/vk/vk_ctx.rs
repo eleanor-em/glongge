@@ -225,13 +225,11 @@ fn create_any_physical_device(
                 .iter()
                 .enumerate()
                 .position(|(i, q)| {
-                    #[allow(clippy::cast_possible_truncation)]
                     let i = i as u32;
                     q.queue_flags.contains(QueueFlags::GRAPHICS)
                         && p.surface_support(i, surface).unwrap_or(false)
                 })
                 .map(|q| {
-                    #[allow(clippy::cast_possible_truncation)]
                     (p, q as u32)
                 })
         })
@@ -251,7 +249,6 @@ fn create_any_physical_device(
 fn create_any_graphical_queue_family(
     physical_device: Arc<PhysicalDevice>,
 ) -> Result<(Arc<Device>, Arc<Queue>)> {
-    #[allow(clippy::cast_possible_truncation)]
     let queue_family_index = physical_device
         .queue_family_properties()
         .iter()
