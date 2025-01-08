@@ -18,19 +18,19 @@ impl Scene<ObjectType> for TriangleScene {
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         const N: usize = 1;
         let mut rng = rand::thread_rng();
-        let xs: Vec<f64> = Uniform::new(0., 1024.)
+        let xs: Vec<f32> = Uniform::new(0., 1024.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let ys: Vec<f64> = Uniform::new(0., 768.)
+        let ys: Vec<f32> = Uniform::new(0., 768.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vxs: Vec<f64> = Uniform::new(-1., 1.)
+        let vxs: Vec<f32> = Uniform::new(-1., 1.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vys: Vec<f64> = Uniform::new(-1., 1.)
+        let vys: Vec<f32> = Uniform::new(-1., 1.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
@@ -54,7 +54,7 @@ pub struct TriangleSpawner {}
 pub struct SpinningTriangle {
     pos: Vec2,
     velocity: Vec2,
-    t: f64,
+    t: f32,
     alive_since: Instant,
 }
 
@@ -65,9 +65,9 @@ impl Default for SpinningTriangle {
 }
 
 impl SpinningTriangle {
-    const TRI_WIDTH: f64 = 20.;
-    const VELOCITY: f64 = 20.;
-    const ANGULAR_VELOCITY: f64 = 0.1;
+    const TRI_WIDTH: f32 = 20.;
+    const VELOCITY: f32 = 20.;
+    const ANGULAR_VELOCITY: f32 = 0.1;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         Self {
@@ -78,12 +78,12 @@ impl SpinningTriangle {
         }
     }
 
-    fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
+    fn rotation(&self) -> f32 { Self::ANGULAR_VELOCITY * f32::PI() * self.t }
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningTriangle {
     fn on_load(&mut self, _object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f64.sqrt();
+        let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f32.sqrt();
         let centre_correction = -tri_height / 6.;
         let vertex1 = Vec2 {
             x: -Self::TRI_WIDTH,
@@ -135,7 +135,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if self.alive_since.elapsed().as_secs_f64() > 0.1 &&
+        if self.alive_since.elapsed().as_secs_f32() > 0.1 &&
             ctx.viewport().contains_point(self.pos) {
             for other in ctx.object().others() {
                 let dist = ctx.object().absolute_transform_of(&other).centre - ctx.object().absolute_transform().centre;

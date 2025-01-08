@@ -22,7 +22,6 @@ use serde::{
     de::DeserializeOwned,
     Serialize
 };
-use num_traits::FromPrimitive;
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use crate::{
     util::collision::BoxCollider,
@@ -60,6 +59,7 @@ use crate::{
     resource::sprite::GgInternalSprite,
     shader::{BasicShader, get_shader, Shader}
 };
+use crate::util::gg_float;
 
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
@@ -305,7 +305,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             render_infos.push(RenderInfoFull {
                 vertex_indices: start..end,
                 inner: render_info,
-                transform: transform.as_f32_lossy(),
+                transform: *transform,
                 depth: item.render_item.depth,
             });
             start = end;
@@ -404,13 +404,13 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
                     if fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
                         warn!("fixed update behind by {:.1} ms",
-                            f64::from_u128(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                .unwrap_or(f64::INFINITY) / 1000.);
+                            gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                                / 1000.);
                     }
                     if fixed_update_us >= FIXED_UPDATE_TIMEOUT {
                         warn!("fixed update behind by {:.1} ms, giving up",
-                            f64::from_u128(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                .unwrap_or(f64::INFINITY) / 1000.);
+                            gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                                / 1000.);
                         fixed_update_us = 0;
                     }
                 }
@@ -858,7 +858,7 @@ impl UpdatePerfStats {
         self.last_perf_stats.clone().map(|s| *s)
     }
 
-    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
         let mut default = vec![
             self.total_stats.as_tuple_ms(),
             self.on_gui.as_tuple_ms(),
@@ -1390,7 +1390,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     }
     pub fn test_collision_along(&self,
                                 axis: Vec2,
-                                distance: f64,
+                                distance: f32,
                                 listening_tags: Vec<&'static str>,
     ) -> Option<NonemptyVec<Collision<ObjectType>>> {
         self.collider()
@@ -1424,7 +1424,7 @@ pub struct ViewportContext<'a> {
 }
 
 impl ViewportContext<'_> {
-    pub fn clamp_to_left(&mut self, min: Option<f64>, max: Option<f64>) {
+    pub fn clamp_to_left(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min {
             if self.viewport.left() < min {
                 self.translate((min - self.viewport.left()) * Vec2::right());
@@ -1436,7 +1436,7 @@ impl ViewportContext<'_> {
             }
         }
     }
-    pub fn clamp_to_right(&mut self, min: Option<f64>, max: Option<f64>) {
+    pub fn clamp_to_right(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min {
             if self.viewport.right() < min {
                 self.translate((min - self.viewport.right()) * Vec2::right());
@@ -1459,7 +1459,7 @@ impl ViewportContext<'_> {
     pub fn clear_col(&mut self) -> &mut Colour { self.clear_col }
     pub fn inner(&self) -> AdjustedViewport { self.viewport.clone() }
     
-    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+    pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         self.viewport.set_global_scale_factor(global_scale_factor);
     }
 }

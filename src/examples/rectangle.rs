@@ -49,8 +49,8 @@ pub struct RectanglePlayer {
 }
 
 impl RectanglePlayer {
-    // const SIZE: f64 = 100.;
-    const SPEED: f64 = 300.;
+    // const SIZE: f32 = 100.;
+    const SPEED: f32 = 300.;
 }
 
 #[partially_derive_scene_object]
@@ -95,15 +95,15 @@ impl SceneObject<ObjectType> for RectanglePlayer {
 pub struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
-    t: f64,
+    t: f32,
     col: Colour,
     sprite: Sprite,
     alive_since: Instant,
 }
 
 impl SpinningRectangle {
-    const VELOCITY: f64 = 2.;
-    const ANGULAR_VELOCITY: f64 = 2.;
+    const VELOCITY: f32 = 2.;
+    const ANGULAR_VELOCITY: f32 = 2.;
 
     pub fn create(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
         let mut rng = rand::thread_rng();
@@ -124,7 +124,7 @@ impl SpinningRectangle {
         })
     }
 
-    fn rotation(&self) -> f64 { Self::ANGULAR_VELOCITY * f64::PI() * self.t }
+    fn rotation(&self) -> f32 { Self::ANGULAR_VELOCITY * f32::PI() * self.t }
 }
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for SpinningRectangle {
@@ -149,7 +149,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
-            let angle = rng.gen_range(0.0..(2. * f64::PI()));
+            let angle = rng.gen_range(0.0..(2. * f32::PI()));
             ctx.object_mut().add_sibling(SpinningRectangle::create(
                 self.pos,
                 Vec2::one().rotated(angle)
@@ -172,7 +172,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         self.pos += mtv;
 
         if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {
-            if self.alive_since.elapsed().as_secs_f64() > 0.5 && rect.alive_since.elapsed().as_secs_f64() > 0.5 {
+            if self.alive_since.elapsed().as_secs_f32() > 0.5 && rect.alive_since.elapsed().as_secs_f32() > 0.5 {
                 self.velocity = self.velocity.reflect(mtv.normed());
                 rect.col = self.col;
             }

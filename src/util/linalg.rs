@@ -38,7 +38,7 @@ impl Vec2i {
     pub fn down() -> Vec2i { Vec2i { x: 0, y: 1 } }
     pub fn one() -> Vec2i { Vec2i { x: 1, y: 1 } }
 
-    pub fn len(&self) -> f64 { f64::from(self.dot(*self)).sqrt() }
+    pub fn len(&self) -> f32 { (self.dot(*self) as f32).sqrt() }
     pub fn dot(&self, other: Vec2i) -> i32 { self.x * other.x + self.y * other.y }
 
     pub fn as_vec2(&self) -> Vec2 { Into::<Vec2>::into(*self) }
@@ -62,7 +62,7 @@ impl Vec2i {
 
 impl From<Vec2i> for Vec2 {
     fn from(value: Vec2i) -> Self {
-        Self { x: f64::from(value.x), y: f64::from(value.y) }
+        Self { x: value.x as f32, y: value.y as f32 }
     }
 }
 
@@ -225,8 +225,8 @@ impl Neg for &Vec2i {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Vec2 {
-    pub x: f64,
-    pub y: f64,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl PartialEq for Vec2 {
@@ -277,8 +277,8 @@ impl Vec2 {
     pub fn down() -> Vec2 { Vec2 { x: 0., y: 1. } }
     pub fn one() -> Vec2 { Vec2 { x: 1., y: 1. } }
 
-    pub fn len_squared(&self) -> f64 { self.dot(*self) }
-    pub fn len(&self) -> f64 { self.len_squared().sqrt() }
+    pub fn len_squared(&self) -> f32 { self.dot(*self) }
+    pub fn len(&self) -> f32 { self.len_squared().sqrt() }
     pub fn normed(&self) -> Vec2 {
         let mut rv = match self.len() {
             0. => Vec2::zero(),
@@ -296,15 +296,15 @@ impl Vec2 {
         }
     }
 
-    pub fn dot(&self, other: Vec2) -> f64 { self.x * other.x + self.y * other.y }
-    pub fn cross(&self, other: Vec2) -> f64 {
+    pub fn dot(&self, other: Vec2) -> f32 { self.x * other.x + self.y * other.y }
+    pub fn cross(&self, other: Vec2) -> f32 {
         self.x * other.y - self.y * other.x
     }
-    pub fn angle_radians(&self, other: Vec2) -> f64 { self.normed().dot(other.normed()).acos() }
-    pub fn longest_component(&self) -> f64 { self.x.abs().max(self.y.abs()) }
+    pub fn angle_radians(&self, other: Vec2) -> f32 { self.normed().dot(other.normed()).acos() }
+    pub fn longest_component(&self) -> f32 { self.x.abs().max(self.y.abs()) }
 
     pub fn abs(&self) -> Vec2 { Vec2 { x: self.x.abs(), y: self.y.abs() }}
-    pub fn rotated(&self, radians: f64) -> Vec2 {
+    pub fn rotated(&self, radians: f32) -> Vec2 {
         Mat3x3::rotation(radians) * *self
     }
     pub fn reflect(&self, normal: Vec2) -> Vec2 {
@@ -312,9 +312,9 @@ impl Vec2 {
     }
     pub fn reciprocal(&self) -> Vec2 { Vec2 { x: 1. / self.x, y: 1. / self.y } }
     pub fn project(&self, axis: Vec2) -> Vec2 { self.dot(axis.normed()) * axis.normed() }
-    pub fn dist(&self, other: Vec2) -> f64 { (other - *self).len() }
-    pub fn dist_squared(&self, other: Vec2) -> f64 { (other - *self).len_squared() }
-    pub fn dist_to_line(&self, start: Vec2, end: Vec2) -> f64 {
+    pub fn dist(&self, other: Vec2) -> f32 { (other - *self).len() }
+    pub fn dist_squared(&self, other: Vec2) -> f32 { (other - *self).len_squared() }
+    pub fn dist_to_line(&self, start: Vec2, end: Vec2) -> f32 {
         let dx = end - start;
         let l2 = dx.len_squared();
         if l2.is_zero() { return self.dist(start); }
@@ -337,7 +337,7 @@ impl Vec2 {
         }
     }
     pub fn orthog(&self) -> Vec2 { Vec2 { x: self.y, y: -self.x } }
-    pub fn lerp(&self, to: Vec2, t: f64) -> Vec2 {
+    pub fn lerp(&self, to: Vec2, t: f32) -> Vec2 {
         Vec2 {
             x: linalg::lerp(self.x, to.x, t),
             y: linalg::lerp(self.y, to.y, t),
@@ -345,7 +345,7 @@ impl Vec2 {
     }
 
     pub fn almost_eq(&self, rhs: Vec2) -> bool {
-        (*self - rhs).len() < f64::from(f32::epsilon())
+        (*self - rhs).len() < EPSILON
     }
 
     pub fn as_vec2int_lossy(&self) -> Vec2i {
@@ -389,39 +389,26 @@ impl Zero for Vec2 {
     }
 }
 
-impl From<[f64; 2]> for Vec2 {
-    fn from(value: [f64; 2]) -> Self {
+impl From<[f32; 2]> for Vec2 {
+    fn from(value: [f32; 2]) -> Self {
         Vec2 {
             x: value[0],
             y: value[1],
         }
     }
 }
-impl From<[f32; 2]> for Vec2 {
-    fn from(value: [f32; 2]) -> Self {
-        Vec2 {
-            x: f64::from(value[0]),
-            y: f64::from(value[1]),
-        }
-    }
-}
 impl From<[i32; 2]> for Vec2 {
     fn from(value: [i32; 2]) -> Self {
         Vec2 {
-            x: f64::from(value[0]),
-            y: f64::from(value[1]),
+            x: value[0] as f32,
+            y: value[1] as f32,
         }
     }
 }
 
-impl From<Vec2> for [f64; 2] {
-    fn from(value: Vec2) -> Self {
-        [value.x, value.y]
-    }
-}
 impl From<Vec2> for [f32; 2] {
     fn from(value: Vec2) -> Self {
-        [value.x as f32, value.y as f32]
+        [value.x, value.y]
     }
 }
 
@@ -471,14 +458,14 @@ impl Sum<Vec2> for Vec2 {
     }
 }
 
-impl Mul<f64> for Vec2 {
+impl Mul<f32> for Vec2 {
     type Output = Vec2;
 
-    fn mul(self, rhs: f64) -> Self::Output {
+    fn mul(self, rhs: f32) -> Self::Output {
         rhs * self
     }
 }
-impl Mul<Vec2> for f64 {
+impl Mul<Vec2> for f32 {
     type Output = Vec2;
 
     fn mul(self, rhs: Vec2) -> Self::Output {
@@ -488,7 +475,7 @@ impl Mul<Vec2> for f64 {
         }
     }
 }
-impl Mul<&Vec2> for f64 {
+impl Mul<&Vec2> for f32 {
     type Output = Vec2;
 
     fn mul(self, rhs: &Vec2) -> Self::Output {
@@ -498,8 +485,8 @@ impl Mul<&Vec2> for f64 {
         }
     }
 }
-impl MulAssign<f64> for Vec2 {
-    fn mul_assign(&mut self, rhs: f64) {
+impl MulAssign<f32> for Vec2 {
+    fn mul_assign(&mut self, rhs: f32) {
         self.x *= rhs;
         self.y *= rhs;
     }
@@ -508,7 +495,7 @@ impl Mul<i32> for Vec2 {
     type Output = Vec2;
 
     fn mul(self, rhs: i32) -> Self::Output {
-        f64::from(rhs) * self
+        (rhs as f32) * self
     }
 }
 impl Mul<Vec2> for i32 {
@@ -516,8 +503,8 @@ impl Mul<Vec2> for i32 {
 
     fn mul(self, rhs: Vec2) -> Self::Output {
         Vec2 {
-            x: f64::from(self) * rhs.x,
-            y: f64::from(self) * rhs.y,
+            x: self as f32 * rhs.x,
+            y: self as f32 * rhs.y,
         }
     }
 }
@@ -526,22 +513,22 @@ impl Mul<&Vec2> for i32 {
 
     fn mul(self, rhs: &Vec2) -> Self::Output {
         Vec2 {
-            x: f64::from(self) * rhs.x,
-            y: f64::from(self) * rhs.y,
+            x: self as f32 * rhs.x,
+            y: self as f32 * rhs.y,
         }
     }
 }
 impl MulAssign<i32> for Vec2 {
     fn mul_assign(&mut self, rhs: i32) {
-        self.x *= f64::from(rhs);
-        self.y *= f64::from(rhs);
+        self.x *= rhs as f32;
+        self.y *= rhs as f32;
     }
 }
 impl Mul<u32> for Vec2 {
     type Output = Vec2;
 
     fn mul(self, rhs: u32) -> Self::Output {
-        f64::from(rhs) * self
+        rhs as f32 * self
     }
 }
 impl Mul<Vec2> for u32 {
@@ -549,8 +536,8 @@ impl Mul<Vec2> for u32 {
 
     fn mul(self, rhs: Vec2) -> Self::Output {
         Vec2 {
-            x: f64::from(self) * rhs.x,
-            y: f64::from(self) * rhs.y,
+            x: self as f32 * rhs.x,
+            y: self as f32 * rhs.y,
         }
     }
 }
@@ -559,30 +546,30 @@ impl Mul<&Vec2> for u32 {
 
     fn mul(self, rhs: &Vec2) -> Self::Output {
         Vec2 {
-            x: f64::from(self) * rhs.x,
-            y: f64::from(self) * rhs.y,
+            x: self as f32 * rhs.x,
+            y: self as f32 * rhs.y,
         }
     }
 }
 impl MulAssign<u32> for Vec2 {
     fn mul_assign(&mut self, rhs: u32) {
-        self.x *= f64::from(rhs);
-        self.y *= f64::from(rhs);
+        self.x *= rhs as f32;
+        self.y *= rhs as f32;
     }
 }
 
-impl Div<f64> for Vec2 {
+impl Div<f32> for Vec2 {
     type Output = Vec2;
 
-    fn div(self, rhs: f64) -> Self::Output {
+    fn div(self, rhs: f32) -> Self::Output {
         Vec2 {
             x: self.x / rhs,
             y: self.y / rhs,
         }
     }
 }
-impl DivAssign<f64> for Vec2 {
-    fn div_assign(&mut self, rhs: f64) {
+impl DivAssign<f32> for Vec2 {
+    fn div_assign(&mut self, rhs: f32) {
         self.x /= rhs;
         self.y /= rhs;
     }
@@ -592,15 +579,15 @@ impl Div<i32> for Vec2 {
 
     fn div(self, rhs: i32) -> Self::Output {
         Vec2 {
-            x: self.x / f64::from(rhs),
-            y: self.y / f64::from(rhs),
+            x: self.x / rhs as f32,
+            y: self.y / rhs as f32,
         }
     }
 }
 impl DivAssign<i32> for Vec2 {
     fn div_assign(&mut self, rhs: i32) {
-        self.x /= f64::from(rhs);
-        self.y /= f64::from(rhs);
+        self.x /= rhs as f32;
+        self.y /= rhs as f32;
     }
 }
 impl Div<u32> for Vec2 {
@@ -608,15 +595,15 @@ impl Div<u32> for Vec2 {
 
     fn div(self, rhs: u32) -> Self::Output {
         Vec2 {
-            x: self.x / f64::from(rhs),
-            y: self.y / f64::from(rhs),
+            x: self.x / rhs as f32,
+            y: self.y / rhs as f32,
         }
     }
 }
 impl DivAssign<u32> for Vec2 {
     fn div_assign(&mut self, rhs: u32) {
-        self.x /= f64::from(rhs);
-        self.y /= f64::from(rhs);
+        self.x /= rhs as f32;
+        self.y /= rhs as f32;
     }
 }
 
@@ -650,19 +637,19 @@ pub struct Vec2Small {
 #[derive(Copy, Clone, PartialEq)]
 #[must_use]
 pub struct Mat3x3 {
-    pub xx: f64,
-    pub xy: f64,
-    pub xw: f64,
-    pub yx: f64,
-    pub yy: f64,
-    pub yw: f64,
-    pub wx: f64,
-    pub wy: f64,
-    pub ww: f64,
+    pub xx: f32,
+    pub xy: f32,
+    pub xw: f32,
+    pub yx: f32,
+    pub yy: f32,
+    pub yw: f32,
+    pub wx: f32,
+    pub wy: f32,
+    pub ww: f32,
 }
 
 impl Mat3x3 {
-    pub fn translation(dx: f64, dy: f64) -> Mat3x3 {
+    pub fn translation(dx: f32, dy: f32) -> Mat3x3 {
         Mat3x3 {
             xx: 1.,
             xy: 0.,
@@ -678,20 +665,20 @@ impl Mat3x3 {
     pub fn translation_vec2(vec2: Vec2) -> Mat3x3 {
         Self::translation(vec2.x, vec2.y)
     }
-    pub fn rotation(radians: f64) -> Mat3x3 {
+    pub fn rotation(radians: f32) -> Mat3x3 {
         Mat3x3 {
-            xx: f64::cos(radians),
-            xy: -f64::sin(radians),
+            xx: f32::cos(radians),
+            xy: -f32::sin(radians),
             xw: 0.,
-            yx: f64::sin(radians),
-            yy: f64::cos(radians),
+            yx: f32::sin(radians),
+            yy: f32::cos(radians),
             yw: 0.,
             wx: 0.,
             wy: 0.,
             ww: 1.,
         }
     }
-    pub fn det(&self) -> f64 {
+    pub fn det(&self) -> f32 {
         self.xx * (self.yy * self.ww - self.yw * self.wy)
             + self.xy * (self.yx * self.ww - self.yw * self.wx)
             + self.xw * (self.yx * self.wy - self.yy * self.wx)
@@ -711,15 +698,15 @@ impl Mat3x3 {
     }
 
     pub fn almost_eq(&self, rhs: Mat3x3) -> bool {
-        f64::abs(self.xx - rhs.xx) < f64::epsilon()
-            && f64::abs(self.xy - rhs.xy) < f64::epsilon()
-            && f64::abs(self.xw - rhs.xw) < f64::epsilon()
-            && f64::abs(self.yx - rhs.yx) < f64::epsilon()
-            && f64::abs(self.yy - rhs.yy) < f64::epsilon()
-            && f64::abs(self.yw - rhs.yw) < f64::epsilon()
-            && f64::abs(self.wx - rhs.wx) < f64::epsilon()
-            && f64::abs(self.wy - rhs.wy) < f64::epsilon()
-            && f64::abs(self.ww - rhs.ww) < f64::epsilon()
+        f32::abs(self.xx - rhs.xx) < f32::epsilon()
+            && f32::abs(self.xy - rhs.xy) < f32::epsilon()
+            && f32::abs(self.xw - rhs.xw) < f32::epsilon()
+            && f32::abs(self.yx - rhs.yx) < f32::epsilon()
+            && f32::abs(self.yy - rhs.yy) < f32::epsilon()
+            && f32::abs(self.yw - rhs.yw) < f32::epsilon()
+            && f32::abs(self.wx - rhs.wx) < f32::epsilon()
+            && f32::abs(self.wy - rhs.wy) < f32::epsilon()
+            && f32::abs(self.ww - rhs.ww) < f32::epsilon()
     }
 }
 
@@ -757,10 +744,10 @@ impl Add<Mat3x3> for Mat3x3 {
     }
 }
 
-impl Mul<f64> for Mat3x3 {
+impl Mul<f32> for Mat3x3 {
     type Output = Mat3x3;
 
-    fn mul(self, rhs: f64) -> Self::Output {
+    fn mul(self, rhs: f32) -> Self::Output {
         Mat3x3 {
             xx: rhs * self.xx,
             xy: rhs * self.xy,
@@ -774,7 +761,7 @@ impl Mul<f64> for Mat3x3 {
         }
     }
 }
-impl Mul<Mat3x3> for f64 {
+impl Mul<Mat3x3> for f32 {
     type Output = Mat3x3;
 
     fn mul(self, rhs: Mat3x3) -> Self::Output {
@@ -791,8 +778,8 @@ impl Mul<Mat3x3> for f64 {
         }
     }
 }
-impl MulAssign<f64> for Mat3x3 {
-    fn mul_assign(&mut self, rhs: f64) {
+impl MulAssign<f32> for Mat3x3 {
+    fn mul_assign(&mut self, rhs: f32) {
         self.xx *= rhs;
         self.xy *= rhs;
         self.xw *= rhs;
@@ -805,10 +792,10 @@ impl MulAssign<f64> for Mat3x3 {
     }
 }
 
-impl Div<f64> for Mat3x3 {
+impl Div<f32> for Mat3x3 {
     type Output = Mat3x3;
 
-    fn div(self, rhs: f64) -> Self::Output {
+    fn div(self, rhs: f32) -> Self::Output {
         Mat3x3 {
             xx: self.xx / rhs,
             xy: self.xy / rhs,
@@ -822,8 +809,8 @@ impl Div<f64> for Mat3x3 {
         }
     }
 }
-impl DivAssign<f64> for Mat3x3 {
-    fn div_assign(&mut self, rhs: f64) {
+impl DivAssign<f32> for Mat3x3 {
+    fn div_assign(&mut self, rhs: f32) {
         self.xx /= rhs;
         self.xy /= rhs;
         self.xw /= rhs;
@@ -876,10 +863,10 @@ impl Mul<Mat3x3> for Mat3x3 {
 impl From<Mat3x3> for [[f32; 4]; 4] {
     fn from(value: Mat3x3) -> Self {
         [
-            [value.xx as f32, value.xy as f32, 0., value.xw as f32],
-            [value.yx as f32, value.yy as f32, 0., value.yw as f32],
-            [0., 0., 1., value.ww as f32],
-            [value.wx as f32, value.wy as f32, 0., 1.],
+            [value.xx, value.xy, 0., value.xw],
+            [value.yx, value.yy, 0., value.yw],
+            [0., 0., 1., value.ww],
+            [value.wx, value.wy, 0., 1.],
         ]
     }
 }
@@ -895,10 +882,10 @@ pub trait AxisAlignedExtent {
     fn bottom_left(&self) -> Vec2 { self.top_left() + self.aa_extent().y * Vec2::down() }
     fn bottom_right(&self) -> Vec2 { self.top_left() + self.aa_extent() }
 
-    fn left(&self) -> f64 { self.top_left().x }
-    fn right(&self) -> f64 { self.top_right().x }
-    fn top(&self) -> f64 { self.top_left().y }
-    fn bottom(&self) -> f64 { self.bottom_left().y }
+    fn left(&self) -> f32 { self.top_left().x }
+    fn right(&self) -> f32 { self.top_right().x }
+    fn top(&self) -> f32 { self.top_left().y }
+    fn bottom(&self) -> f32 { self.bottom_left().y }
 
     fn as_rect(&self) -> Rect {
         Rect::new(self.centre(), self.half_widths())
@@ -945,7 +932,7 @@ impl AxisAlignedExtent for Rect {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Transform {
     pub centre: Vec2,
-    pub rotation: f64,
+    pub rotation: f32,
     pub scale: Vec2,
 }
 
@@ -955,7 +942,7 @@ impl Transform {
         Self { centre, ..Default::default() }
     }
     #[must_use]
-    pub fn with_rotation(rotation: f64) -> Self {
+    pub fn with_rotation(rotation: f32) -> Self {
         Self { rotation, ..Default::default() }
     }
     #[must_use]
@@ -969,14 +956,6 @@ impl Transform {
             centre: self.centre + by,
             rotation: self.rotation,
             scale: self.scale,
-        }
-    }
-
-    pub fn as_f32_lossy(&self) -> TransformF32 {
-        TransformF32 {
-            centre: self.centre.into(),
-            rotation: self.rotation as f32,
-            scale: self.scale.into(),
         }
     }
 
@@ -1026,20 +1005,13 @@ impl MulAssign<Transform> for Transform {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct TransformF32 {
-    pub centre: [f32; 2],
-    pub rotation: f32,
-    pub scale: [f32; 2],
-}
-
-pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + t * (b - a)
 }
-pub fn eerp(a: f64, b: f64, t: f64) -> f64 {
+pub fn eerp(a: f32, b: f32, t: f32) -> f32 {
     a * (t * (b / a).ln()).exp()
 }
-pub fn smooth(t: f64) -> f64 { (6. * t*t*t*t*t - 15. * t*t*t*t + 10. * t*t*t).clamp(0., 1.) }
-pub fn sigmoid(t: f64, k: f64) -> f64 {
+pub fn smooth(t: f32) -> f32 { (6. * t*t*t*t*t - 15. * t*t*t*t + 10. * t*t*t).clamp(0., 1.) }
+pub fn sigmoid(t: f32, k: f32) -> f32 {
     1. / (1. + (-(t - 0.5) / k).exp())
 }

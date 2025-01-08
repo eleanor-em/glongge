@@ -22,7 +22,6 @@ use crate::{
     },
     resource::texture::TextureSubArea,
 };
-use crate::core::prelude::linalg::TransformF32;
 use crate::core::scene::GuiClosure;
 use crate::util::{gg_err, UniqueShared};
 use crate::core::vk::{GgWindow, RenderPerfStats};
@@ -53,7 +52,7 @@ impl Default for RenderInfo {
 #[derive(Clone, Debug)]
 pub struct RenderInfoFull {
     pub inner: Vec<RenderInfo>,
-    pub transform: TransformF32,
+    pub transform: Transform,
     pub vertex_indices: Range<u32>,
     pub depth: VertexDepth,
 }
@@ -96,7 +95,7 @@ impl RenderDataChannel {
     }
 
     #[allow(clippy::float_cmp)]
-    pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+    pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         if self.viewport.global_scale_factor() != global_scale_factor {
             self.viewport.set_global_scale_factor(global_scale_factor);
             self.should_resize = true;
@@ -105,7 +104,7 @@ impl RenderDataChannel {
     pub(crate) fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
     pub(crate) fn get_clear_col(&mut self) -> Colour { self.clear_col }
 
-    pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f64> {
+    pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f32> {
         let rv = self.should_resize;
         self.should_resize = false;
         if rv { Some(self.viewport.global_scale_factor()) } else { None }
@@ -179,7 +178,7 @@ impl RenderHandler {
     }
 
     #[must_use]
-    pub fn with_global_scale_factor(self, global_scale_factor: f64) -> Self {
+    pub fn with_global_scale_factor(self, global_scale_factor: f32) -> Self {
         self.viewport.get().set_global_scale_factor(global_scale_factor);
         {
             let mut rc = self.render_data_channel.lock().unwrap();

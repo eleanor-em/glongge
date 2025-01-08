@@ -61,7 +61,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
                         let this = self.as_any().downcast_ref::<CompoundCollider>()?;
                         this.inner_colliders().into_iter()
                             .filter_map(|c| other.collides_with_convex(&c))
-                            .filter(|mtv| !this.is_internal_mtv(other, mtv))
+                            .filter(|&mtv| !this.is_internal_mtv(other, mtv))
                             .min_by(Vec2::cmp_by_length)
                     }
                 }.map(|v| -v)
@@ -74,7 +74,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
 
     fn translated(&self, by: Vec2) -> GenericCollider;
     fn scaled(&self, by: Vec2) -> GenericCollider;
-    fn rotated(&self, by: f64) -> GenericCollider;
+    fn rotated(&self, by: f32) -> GenericCollider;
     fn transformed(&self, by: &Transform) -> GenericCollider {
         self.translated(by.centre)
             .scaled(by.scale)
@@ -109,7 +109,7 @@ impl Collider for NullCollider {
 
     fn translated(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
     fn scaled(&self, _by: Vec2) -> GenericCollider { Self.into_generic() }
-    fn rotated(&self, _by: f64) -> GenericCollider { Self.into_generic() }
+    fn rotated(&self, _by: f32) -> GenericCollider { Self.into_generic() }
 
     // By convention, clockwise edges starting from the top-leftmost vertex.
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -143,12 +143,12 @@ mod polygon {
         }
         hull
     }
-    pub fn adjust_for_containment(self_proj: &Range<f64>, other_proj: &Range<f64>) -> f64 {
-        if gg_range::contains_f64(self_proj, other_proj) ||
-            gg_range::contains_f64(other_proj, self_proj) {
+    pub fn adjust_for_containment(self_proj: &Range<f32>, other_proj: &Range<f32>) -> f32 {
+        if gg_range::contains_f32(self_proj, other_proj) ||
+            gg_range::contains_f32(other_proj, self_proj) {
             let starts = (self_proj.start - other_proj.start).abs();
             let ends = (self_proj.end - other_proj.end).abs();
-            f64::min(starts, ends)
+            f32::min(starts, ends)
         } else {
             0.
         }
@@ -185,10 +185,10 @@ mod polygon {
         }
     }
     pub fn extent_of(vertices: Vec<Vec2>) -> Vec2 {
-        let mut min_x = f64::MAX;
-        let mut min_y = f64::MAX;
-        let mut max_x = f64::MIN;
-        let mut max_y = f64::MIN;
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
         for vertex in vertices {
             min_x = vertex.x.min(min_x);
             min_y = vertex.y.min(min_y);
@@ -213,9 +213,9 @@ pub trait Polygonal {
     fn normals(&self) -> Vec<Vec2>;
     fn polygon_centre(&self) -> Vec2;
 
-    fn project(&self, axis: Vec2) -> Range<f64> {
-        let mut start = f64::max_value();
-        let mut end = f64::min_value();
+    fn project(&self, axis: Vec2) -> Range<f32> {
+        let mut start = f32::max_value();
+        let mut end = f32::min_value();
         for vertex in self.vertices() {
             let projection = axis.dot(vertex);
             start = start.min(projection);
@@ -226,7 +226,7 @@ pub trait Polygonal {
 
     fn polygon_collision<P: Polygonal>(&self, other: P) -> Option<Vec2> {
         let mut min_axis = Vec2::zero();
-        let mut min_dist = f64::max_value();
+        let mut min_dist = f32::max_value();
 
         let mut all_normals= BTreeSet::new();
         all_normals.extend(self.normals());
@@ -234,7 +234,7 @@ pub trait Polygonal {
         for axis in all_normals.iter().copied() {
             let self_proj = self.project(axis);
             let other_proj = other.project(axis);
-            match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+            match gg_range::overlap_len_f32(&self_proj, &other_proj) {
                 None => return None,
                 Some(mut dist) => {
                     if dist.abs() < EPSILON {
@@ -298,7 +298,7 @@ impl<T: Polygonal> Polygonal for &T {
 #[derive(Debug, Clone)]
 pub struct OrientedBoxCollider {
     centre: Vec2,
-    rotation: f64,
+    rotation: f32,
     axis_aligned_half_widths: Vec2,
     extent: Vec2,
 }
@@ -333,7 +333,7 @@ impl OrientedBoxCollider {
         rv.extent = polygon::extent_of(rv.vertices());
         rv
     }
-    pub fn square(transform: Transform, width: f64) -> Self {
+    pub fn square(transform: Transform, width: f32) -> Self {
         Self::from_transform(transform, width.abs() * Vec2::one())
     }
 
@@ -410,7 +410,7 @@ impl Collider for OrientedBoxCollider {
         rv.into_generic()
     }
 
-    fn rotated(&self, by: f64) -> GenericCollider {
+    fn rotated(&self, by: f32) -> GenericCollider {
         let mut rv = self.clone();
         rv.rotation += by;
         rv.into_generic()
@@ -457,7 +457,7 @@ impl BoxCollider {
     }
 
     #[must_use]
-    pub fn square(transform: Transform, width: f64) -> Self {
+    pub fn square(transform: Transform, width: f32) -> Self {
         Self::from_transform(transform, width.abs() * Vec2::one())
     }
     #[must_use]
@@ -505,7 +505,7 @@ impl Collider for BoxCollider {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
         let self_proj = self.left()..self.right();
         let other_proj = other.left()..other.right();
-        let right_dist = match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+        let right_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
             None | Some(0.) => return None,
             Some(dist) => {
                 dist + polygon::adjust_for_containment(&self_proj, &other_proj)
@@ -514,7 +514,7 @@ impl Collider for BoxCollider {
 
         let self_proj = self.top()..self.bottom();
         let other_proj = other.top()..other.bottom();
-        match gg_range::overlap_len_f64(&self_proj, &other_proj) {
+        match gg_range::overlap_len_f32(&self_proj, &other_proj) {
             None | Some(0.) => None,
             Some(mut dist) => {
                 dist += polygon::adjust_for_containment(&self_proj, &other_proj);
@@ -566,7 +566,7 @@ impl Collider for BoxCollider {
         rv.into_generic()
     }
 
-    fn rotated(&self, by: f64) -> GenericCollider {
+    fn rotated(&self, by: f32) -> GenericCollider {
         if by.is_zero() {
             self.as_generic()
         } else {
@@ -714,7 +714,7 @@ impl Collider for ConvexCollider {
         rv.extent_cached = polygon::extent_of(rv.vertices.clone());
         rv.into_generic()
     }
-    fn rotated(&self, by: f64) -> GenericCollider {
+    fn rotated(&self, by: f32) -> GenericCollider {
         let mut rv = self.clone();
         for vertex in &mut rv.vertices {
             *vertex = vertex.rotated(by);
@@ -850,7 +850,7 @@ impl CompoundCollider {
         let (w, h, vertices) = Self::pixel_perfect_vertices(data)?;
         let mut collider = Self::decompose(vertices);
         collider.override_normals = vec![Vec2::up(), Vec2::right(), Vec2::down(), Vec2::left()];
-        Ok(collider.translated(-Vec2::from([f64::from(w) / 2. + 0.75, f64::from(h) / 2. + 0.75])))
+        Ok(collider.translated(-Vec2::from([w as f32 / 2. + 0.75, h as f32 / 2. + 0.75])))
     }
 
     fn pixel_perfect_vertices(data: &[Vec<Colour>]) -> Result<(i32, i32, Vec<Vec2>)> {
@@ -1013,7 +1013,7 @@ impl CompoundCollider {
             .collect()
     }
 
-    fn is_internal_mtv<C: Collider>(&self, other: &C, mtv: &Vec2) -> bool {
+    fn is_internal_mtv<C: Collider>(&self, other: &C, mtv: Vec2) -> bool {
         // Note: translated() returns GenericCollider, so we have to do collides_with()
         // with the opposite arguments, hence we use -mtv not mtv.
         let translated = other.translated(-mtv);
@@ -1054,7 +1054,7 @@ impl AxisAlignedExtent for CompoundCollider {
 impl CompoundCollider {
     fn filter_candidate_collisions<C: Collider>(&self, other: &C, candidates: Vec<Vec2>) -> Option<Vec2> {
         candidates.iter()
-            .filter(|mtv| !self.is_internal_mtv(other, mtv)).copied()
+            .filter(|&&mtv| !self.is_internal_mtv(other, mtv)).copied()
             .min_by(Vec2::cmp_by_length)
             .or(candidates.into_iter().min_by(Vec2::cmp_by_length))
     }
@@ -1128,7 +1128,7 @@ impl Collider for CompoundCollider {
         }.into_generic()
     }
 
-    fn rotated(&self, _by: f64) -> GenericCollider {
+    fn rotated(&self, _by: f32) -> GenericCollider {
         // TODO: implement
         warn!("CompoundCollider::rotated(): not implemented");
         self.as_generic()
@@ -1217,7 +1217,7 @@ impl Collider for GenericCollider {
         self.deref().scaled(by)
     }
 
-    fn rotated(&self, by: f64) -> GenericCollider {
+    fn rotated(&self, by: f32) -> GenericCollider {
         self.deref().rotated(by)
     }
 

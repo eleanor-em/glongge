@@ -32,7 +32,7 @@ pub struct Sound {
 }
 
 impl Sound {
-    pub fn play_shifted(&mut self, mag: f64) {
+    pub fn play_shifted(&mut self, mag: f32) {
         if DISABLE_SOUND { return; }
         if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.ctx.state();
@@ -40,7 +40,7 @@ impl Sound {
             source.stop()
                 .expect("should only be fallible for streaming buffers (see source)");
             let mut rng = thread_rng();
-            source.set_pitch(linalg::eerp(1. - mag, 1. + mag, rng.gen_range(0.0..1.0)));
+            source.set_pitch(linalg::eerp(1. - mag, 1. + mag, rng.gen_range(0.0..1.0)).into());
             source.play();
         } else {
             warn!("tried to play non-loaded sound");

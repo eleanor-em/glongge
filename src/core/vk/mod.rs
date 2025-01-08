@@ -67,14 +67,14 @@ impl GgWindow {
     }
 
     pub fn inner_size(&self) -> PhysicalSize<u32> { self.inner.inner_size() }
-    pub fn scale_factor(&self) -> f64 { self.inner.scale_factor() }
+    pub fn scale_factor(&self) -> f32 { self.inner.scale_factor() as f32 }
 }
 
 #[derive(Clone, Default)]
 pub struct AdjustedViewport {
     inner: Viewport,
-    scale_factor: f64,
-    global_scale_factor: f64,
+    scale_factor: f32,
+    global_scale_factor: f32,
     pub(crate) translation: Vec2,
 }
 
@@ -87,18 +87,18 @@ impl AdjustedViewport {
             self.inner.extent, self.scale_factor);
     }
 
-    pub fn physical_width(&self) -> f64 { f64::from(self.inner.extent[0]) }
-    pub fn physical_height(&self) -> f64 { f64::from(self.inner.extent[1]) }
-    pub fn logical_width(&self) -> f64 { f64::from(self.inner.extent[0]) / self.scale_factor() }
-    pub fn logical_height(&self) -> f64 { f64::from(self.inner.extent[1]) / self.scale_factor() }
-    pub fn scale_factor(&self) -> f64 { self.scale_factor }
-    pub fn set_global_scale_factor(&mut self, global_scale_factor: f64) {
+    pub fn physical_width(&self) -> f32 { self.inner.extent[0] }
+    pub fn physical_height(&self) -> f32 { self.inner.extent[1] }
+    pub fn logical_width(&self) -> f32 { self.inner.extent[0] / self.scale_factor() }
+    pub fn logical_height(&self) -> f32 { self.inner.extent[1] / self.scale_factor() }
+    pub fn scale_factor(&self) -> f32 { self.scale_factor }
+    pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         self.global_scale_factor = global_scale_factor;
     }
-    pub(crate) fn global_scale_factor(&self) -> f64 {
+    pub(crate) fn global_scale_factor(&self) -> f32 {
         self.global_scale_factor
     }
-    pub(crate) fn gui_scale_factor(&self) -> f64 { self.scale_factor / self.global_scale_factor }
+    pub(crate) fn gui_scale_factor(&self) -> f32 { self.scale_factor / self.global_scale_factor }
 
     pub fn as_viewport_state(&self) -> ViewportState {
         ViewportState {
@@ -142,7 +142,7 @@ type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<Swapc
 
 struct WindowEventHandlerInner {
     window: GgWindow,
-    scale_factor: f64,
+    scale_factor: f32,
     vk_ctx: VulkanoContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
@@ -158,7 +158,7 @@ where
 {
     window_size: Vec2i,
     create_and_start_scene_handler: Option<F>,
-    global_scale_factor: f64,
+    global_scale_factor: f32,
     clear_col: Colour,
     phantom_data: PhantomData<ObjectType>,
 }
@@ -187,7 +187,7 @@ where
 {
     pub fn create_and_run(
         window_size: Vec2i,
-        global_scale_factor: f64,
+        global_scale_factor: f32,
         clear_col: Colour,
         gui_ctx: GuiContext,
         create_and_start_scene_handler: F
@@ -319,7 +319,7 @@ where
             self.gui_ctx.clone(),
             ViewportId::ROOT,
             &event_loop,
-            Some(window.scale_factor() as f32),
+            Some(window.scale_factor()),
             None, None
         );
 
@@ -380,6 +380,7 @@ where
             WindowEvent::ScaleFactorChanged {
                 scale_factor, ..
             } => {
+                let scale_factor = scale_factor as f32;
                 // Since scale_factor is given by winit, we expect exact comparison to work.
                 #[allow(clippy::float_cmp)]
                 if self.expect_inner().scale_factor != scale_factor {
@@ -478,7 +479,7 @@ pub(crate) struct RenderPerfStats {
     penultimate_step: Instant,
     last_step: Instant,
     last_report: Instant,
-    totals_ms: Vec<f64>,
+    totals_ms: Vec<f32>,
 
     last_perf_stats: Option<Box<RenderPerfStats>>,
 }
@@ -508,7 +509,7 @@ impl RenderPerfStats {
     }
 
     fn end(&mut self) -> Option<Self> {
-        const DEADLINE_MS: f64 = 16.8;
+        const DEADLINE_MS: f32 = 16.8;
 
         self.between_renders.start();
 
@@ -542,7 +543,7 @@ impl RenderPerfStats {
 
         if self.last_report.elapsed().as_secs() >= 2 {
             #[allow(clippy::cast_precision_loss)]
-            let on_time_rate = self.on_time as f64 / self.count as f64 * 100.;
+            let on_time_rate = self.on_time as f32 / self.count as f32 * 100.;
             if on_time_rate.round() < 100. {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
@@ -571,7 +572,7 @@ impl RenderPerfStats {
         self.last_perf_stats.clone().map(|s| *s)
     }
 
-    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f64, f64)> {
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
             self.handle_swapchain.as_tuple_ms(),

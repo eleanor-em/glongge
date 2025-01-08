@@ -316,11 +316,11 @@ impl Sprite {
         self
     }
     #[must_use]
-    pub fn with_frame_time_factor(self, factor: f64) -> Self {
+    pub fn with_frame_time_factor(self, factor: f32) -> Self {
         {
             let mut inner = self.inner.borrow_mut();
             inner.frame_time_ms = inner.frame_time_ms.iter()
-                .map(|t| f64::from(*t) * factor)
+                .map(|t| (*t as f32) * factor)
                 .map(|t| t.round().to_u32().unwrap_or(u32::MAX))
                 .collect_vec();
         }

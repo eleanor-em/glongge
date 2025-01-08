@@ -15,7 +15,7 @@ pub struct Goomba {
     started_death: bool,
     top_left: Vec2,
     vel: Vec2,
-    v_accel: f64,
+    v_accel: f32,
     sprite: Sprite,
     die_sprite: Sprite,
 }

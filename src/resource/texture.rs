@@ -147,7 +147,7 @@ impl InternalTexture {
 
 impl AxisAlignedExtent for InternalTexture {
     fn aa_extent(&self) -> Vec2 {
-        Vec2 { x: f64::from(self.info.extent[0]), y: f64::from(self.info.extent[1]) }
+        Vec2 { x: self.info.extent[0] as f32, y: self.info.extent[1] as f32 }
     }
 
     fn centre(&self) -> Vec2 {

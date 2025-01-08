@@ -48,29 +48,29 @@ fn run_test_cases() {
     let a = Vec2 { x: 1., y: 1. };
     check!(a * 2. == Vec2 { x: 2., y: 2. });
     check!(2. * a == Vec2 { x: 2., y: 2. });
-    check_lt!(f64::abs((a * 2. - a).x - 1.), f64::epsilon());
-    check_lt!(f64::abs((a * 2. - a).y - 1.), f64::epsilon());
+    check_lt!(f32::abs((a * 2. - a).x - 1.), f32::epsilon());
+    check_lt!(f32::abs((a * 2. - a).y - 1.), f32::epsilon());
     check!(
         (Mat3x3::rotation(-1.) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
             .almost_eq(Mat3x3::one())
     );
 
-    check_almost_eq!(Vec2::right().rotated(45_f64.to_radians()), Vec2 { x: 1., y: 1. }.normed());
-    check_almost_eq!(Vec2::right().rotated(90_f64.to_radians()), Vec2::down());
-    check_almost_eq!(Vec2::right().rotated(135_f64.to_radians()), Vec2 { x: -1., y: 1. }.normed());
-    check_almost_eq!(Vec2::right().rotated(180_f64.to_radians()), Vec2::left());
-    check_almost_eq!(Vec2::right().rotated(225_f64.to_radians()), Vec2 { x: -1., y: -1. }.normed());
-    check_almost_eq!(Vec2::right().rotated(270_f64.to_radians()), Vec2::up());
-    check_almost_eq!(Vec2::right().rotated(315_f64.to_radians()), Vec2 { x: 1., y: -1. }.normed());
-    check_almost_eq!(Vec2::right().rotated(360_f64.to_radians()), Vec2::right());
+    check_almost_eq!(Vec2::right().rotated(45_f32.to_radians()), Vec2 { x: 1., y: 1. }.normed());
+    check_almost_eq!(Vec2::right().rotated(90_f32.to_radians()), Vec2::down());
+    check_almost_eq!(Vec2::right().rotated(135_f32.to_radians()), Vec2 { x: -1., y: 1. }.normed());
+    check_almost_eq!(Vec2::right().rotated(180_f32.to_radians()), Vec2::left());
+    check_almost_eq!(Vec2::right().rotated(225_f32.to_radians()), Vec2 { x: -1., y: -1. }.normed());
+    check_almost_eq!(Vec2::right().rotated(270_f32.to_radians()), Vec2::up());
+    check_almost_eq!(Vec2::right().rotated(315_f32.to_radians()), Vec2 { x: 1., y: -1. }.normed());
+    check_almost_eq!(Vec2::right().rotated(360_f32.to_radians()), Vec2::right());
 
     for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
-        check_almost_eq!(vec.rotated(45_f64.to_radians()), vec.rotated((-315_f64).to_radians()));
-        check_almost_eq!(vec.rotated(90_f64.to_radians()), vec.rotated((-270_f64).to_radians()));
-        check_almost_eq!(vec.rotated(135_f64.to_radians()), vec.rotated((-225_f64).to_radians()));
-        check_almost_eq!(vec.rotated(180_f64.to_radians()), vec.rotated((-180_f64).to_radians()));
-        check_almost_eq!(vec.rotated(225_f64.to_radians()), vec.rotated((-135_f64).to_radians()));
-        check_almost_eq!(vec.rotated(270_f64.to_radians()), vec.rotated((-90_f64).to_radians()));
-        check_almost_eq!(vec.rotated(315_f64.to_radians()), vec.rotated((-45_f64).to_radians()));
+        check_almost_eq!(vec.rotated(45_f32.to_radians()), vec.rotated((-315_f32).to_radians()));
+        check_almost_eq!(vec.rotated(90_f32.to_radians()), vec.rotated((-270_f32).to_radians()));
+        check_almost_eq!(vec.rotated(135_f32.to_radians()), vec.rotated((-225_f32).to_radians()));
+        check_almost_eq!(vec.rotated(180_f32.to_radians()), vec.rotated((-180_f32).to_radians()));
+        check_almost_eq!(vec.rotated(225_f32.to_radians()), vec.rotated((-135_f32).to_radians()));
+        check_almost_eq!(vec.rotated(270_f32.to_radians()), vec.rotated((-90_f32).to_radians()));
+        check_almost_eq!(vec.rotated(315_f32.to_radians()), vec.rotated((-45_f32).to_radians()));
     }
 }

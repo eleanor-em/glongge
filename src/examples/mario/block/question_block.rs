@@ -20,9 +20,9 @@ pub struct QuestionBlock {
     empty_sprite: Sprite,
     is_empty: bool,
 
-    initial_y: f64,
-    v_speed: f64,
-    v_accel: f64,
+    initial_y: f32,
+    v_speed: f32,
+    v_accel: f32,
 }
 
 impl QuestionBlock {
@@ -30,7 +30,7 @@ impl QuestionBlock {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
             is_empty: false,
-            initial_y: top_left.y as f64,
+            initial_y: top_left.y as f32,
             ..Default::default()
         })
     }

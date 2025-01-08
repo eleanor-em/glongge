@@ -13,7 +13,7 @@ use crate::{
     resource::sprite::Sprite
 };
 
-const SAMPLE_RATIO: f64 = 8.;
+const SAMPLE_RATIO: f32 = 8.;
 
 mod internal {
     use anyhow::Result;
@@ -21,9 +21,9 @@ mod internal {
     use itertools::Itertools;
     use crate::resource::font::SAMPLE_RATIO;
 
-    pub fn font_from_slice(slice: &[u8], size: f64) -> Result<PxScaleFont<FontVec>> {
+    pub fn font_from_slice(slice: &[u8], size: f32) -> Result<PxScaleFont<FontVec>> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
-        let scale = PxScale::from((size * SAMPLE_RATIO) as f32);
+        let scale = PxScale::from(size * SAMPLE_RATIO);
         Ok(font.into_scaled(scale))
     }
 }
@@ -33,29 +33,29 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn from_slice(slice: &[u8], size: f64) -> Result<Self> {
+    pub fn from_slice(slice: &[u8], size: f32) -> Result<Self> {
         Ok(Self { inner: internal::font_from_slice(slice, size)? })
     }
 
-    pub fn sample_ratio(&self) -> f64 { SAMPLE_RATIO }
-    pub fn height(&self) -> f64 { f64::from(self.inner.height()) }
+    pub fn sample_ratio(&self) -> f32 { SAMPLE_RATIO }
+    pub fn height(&self) -> f32 { self.inner.height() }
 
-    fn layout(&self, text: &str, max_width: f64, text_wrap_mode: TextWrapMode) -> Vec<Glyph> {
+    fn layout(&self, text: &str, max_width: f32, text_wrap_mode: TextWrapMode) -> Vec<Glyph> {
         match text_wrap_mode {
             TextWrapMode::WrapAnywhere => self.layout_wrap_anywhere(text, max_width),
         }
     }
 
-    fn layout_wrap_anywhere(&self, text: &str, max_width: f64) -> Vec<Glyph> {
+    fn layout_wrap_anywhere(&self, text: &str, max_width: f32) -> Vec<Glyph> {
         let mut rv = Vec::new();
-        let v_advance = self.height() + f64::from(self.inner.line_gap());
+        let v_advance = self.height() + self.inner.line_gap();
         let mut caret = point(0.0, self.inner.ascent());
         let mut last_glyph: Option<Glyph> = None;
         for c in text.chars() {
             if c.is_control() {
                 if c == '\n' {
                     caret.x = 0.;
-                    caret.y += v_advance as f32;
+                    caret.y += v_advance;
                     last_glyph = None;
                 }
                 continue;
@@ -66,10 +66,10 @@ impl Font {
                 caret.x += self.inner.h_advance(previous.id);
                 caret.x += self.inner.kern(previous.id, glyph.id);
             }
-            let next_x = f64::from(caret.x + self.inner.h_advance(glyph.id));
+            let next_x = caret.x + self.inner.h_advance(glyph.id);
             if !c.is_whitespace() && next_x > max_width {
                 caret.x = 0.;
-                caret.y += v_advance as f32;
+                caret.y += v_advance;
             }
             glyph.position = caret;
             last_glyph = Some(glyph.clone());
@@ -83,7 +83,7 @@ impl Font {
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         text: &str,
-        max_width: f64,
+        max_width: f32,
         text_wrap_mode: TextWrapMode
     ) -> Result<Sprite> {
         let glyphs = self.layout(text, max_width * SAMPLE_RATIO, text_wrap_mode);

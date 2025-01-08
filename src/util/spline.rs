@@ -17,7 +17,7 @@ impl GgInternalSpline {
         Self { control_points }
     }
 
-    pub fn point(&self, t: f64) -> Vec2 {
+    pub fn point(&self, t: f32) -> Vec2 {
         let mut points = self.control_points.clone();
         while points.len() > 1 {
             points = points.into_iter()
@@ -50,7 +50,7 @@ pub struct GgInternalInteractiveSpline {
 }
 
 impl GgInternalInteractiveSpline {
-    const RADIUS: f64 = 3.;
+    const RADIUS: f32 = 3.;
 
     pub fn spline(&self) -> &GgInternalSpline { &self.spline }
     pub fn spline_mut(&mut self) -> &mut GgInternalSpline { &mut self.spline }
@@ -58,12 +58,12 @@ impl GgInternalInteractiveSpline {
         const N: u32 = 1000;
         self.line_points = vec![self.spline.control_points[0]];
         for i in 1..=N {
-            let next = self.spline.point(f64::from(i) / f64::from(N));
+            let next = self.spline.point(i as f32 / N as f32);
             self.line_points.push(next);
         }
     }
 
-    pub fn draw_to_canvas(&self, canvas: &mut Canvas, width: f64, colour: Colour) {
+    pub fn draw_to_canvas(&self, canvas: &mut Canvas, width: f32, colour: Colour) {
         for (&u, &v) in self.line_points.iter().tuple_windows() {
             canvas.line(u, v, width, colour);
         }

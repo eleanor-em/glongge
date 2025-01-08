@@ -62,10 +62,10 @@ impl Default for SpeedRegime {
 pub struct Player {
     centre: Vec2,
     dir: Vec2,
-    speed: f64,
-    accel: f64,
-    v_speed: f64,
-    v_accel: f64,
+    speed: f32,
+    accel: f32,
+    v_speed: f32,
+    v_accel: f32,
 
     hold_jump: bool,
     hold_down: bool,
@@ -104,15 +104,15 @@ pub struct Player {
 // For a guide to Super Mario Bros. (NES) physics, see:
 // https://web.archive.org/web/20130807122227/http://i276.photobucket.com/albums/kk21/jdaster64/smb_playerphysics.png
 impl Player {
-    const MIN_WALK_SPEED: f64 = from_nes(0, 1, 3, 0);
-    const MAX_WALK_SPEED: f64 = from_nes(1, 9, 0, 0);
-    const MAX_RUN_SPEED: f64 = from_nes(2, 9, 0, 0);
-    const WALK_ACCEL: f64 = from_nes_accel(0, 0, 9, 8);
-    const RUN_ACCEL: f64 = from_nes_accel(0, 0, 15, 4);
-    const RELEASE_DECEL: f64 = -from_nes_accel(0, 0, 14, 0);
-    const SKID_DECEL: f64 = -from_nes_accel(0, 1, 10, 0);
-    const SKID_TURNAROUND: f64 = from_nes(0, 9, 0, 0);
-    const MAX_VSPEED: f64 = from_nes(4, 8, 0, 0);
+    const MIN_WALK_SPEED: f32 = from_nes(0, 1, 3, 0);
+    const MAX_WALK_SPEED: f32 = from_nes(1, 9, 0, 0);
+    const MAX_RUN_SPEED: f32 = from_nes(2, 9, 0, 0);
+    const WALK_ACCEL: f32 = from_nes_accel(0, 0, 9, 8);
+    const RUN_ACCEL: f32 = from_nes_accel(0, 0, 15, 4);
+    const RELEASE_DECEL: f32 = -from_nes_accel(0, 0, 14, 0);
+    const SKID_DECEL: f32 = -from_nes_accel(0, 1, 10, 0);
+    const SKID_TURNAROUND: f32 = from_nes(0, 9, 0, 0);
+    const MAX_VSPEED: f32 = from_nes(4, 8, 0, 0);
 
     pub fn create(centre: Vec2i, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
@@ -124,14 +124,14 @@ impl Player {
         })
     }
 
-    fn initial_vspeed(&self) -> f64 {
+    fn initial_vspeed(&self) -> f32 {
         match self.speed_regime {
             SpeedRegime::Slow => -from_nes(4, 1, 0, 0),
             SpeedRegime::Medium => -from_nes(4, 1, 0, 0),
             SpeedRegime::Fast => -from_nes(5, 0, 0, 0),
         }
     }
-    fn gravity(&self) -> f64 {
+    fn gravity(&self) -> f32 {
         match self.speed_regime {
             SpeedRegime::Slow => BASE_GRAVITY,
             SpeedRegime::Medium => from_nes_accel(0, 6, 0, 0),
@@ -165,7 +165,7 @@ impl Player {
         }
     }
 
-    fn hold_gravity(&self) -> f64 {
+    fn hold_gravity(&self) -> f32 {
         match self.speed_regime {
             SpeedRegime::Slow => from_nes_accel(0, 2, 0, 0),
             SpeedRegime::Medium => from_nes_accel(0, 1, 14, 0),

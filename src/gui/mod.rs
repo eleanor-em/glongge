@@ -111,8 +111,8 @@ impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
     }
 }
 
-impl EditCellSender<f64> {
-    fn get_zoom(response: &Response, ui: &mut GuiUi) -> Option<f64> {
+impl EditCellSender<f32> {
+    fn get_zoom(response: &Response, ui: &mut GuiUi) -> Option<f32> {
         let mut delta = response.drag_delta().y;
         if delta.is_zero() && response.hovered() {
             ui.input(|i| { delta = i.raw_scroll_delta.y; });
@@ -120,16 +120,16 @@ impl EditCellSender<f64> {
         if delta.is_zero() {
             None
         } else {
-            Some(f64::from(delta))
+            Some(delta)
         }
     }
 
-    pub fn singleline_with_drag(&mut self, ui: &mut GuiUi, drag_speed: f64, label: impl Into<WidgetText>) {
+    pub fn singleline_with_drag(&mut self, ui: &mut GuiUi, drag_speed: f32, label: impl Into<WidgetText>) {
         let response = self.singleline(ui, label);
         self.dragging.store(response.dragged(), Ordering::Relaxed);
         if let Some(dy) = Self::get_zoom(&response, ui) {
             let mut text = self.text.lock().unwrap();
-            if let Ok(mut value) = text.parse::<f64>() {
+            if let Ok(mut value) = text.parse::<f32>() {
                 value += dy * drag_speed;
                 *text = format!("{value:.1}");
                 if self.tx.send(text.clone()).is_err() {
@@ -141,7 +141,7 @@ impl EditCellSender<f64> {
 }
 
 impl Vec2 {
-    pub fn build_gui(&self, ui: &mut GuiUi, drag_speed: f64, mut x: EditCellSender<f64>, mut y: EditCellSender<f64>) {
+    pub fn build_gui(&self, ui: &mut GuiUi, drag_speed: f32, mut x: EditCellSender<f32>, mut y: EditCellSender<f32>) {
         egui::Grid::new(ui.next_auto_id())
             .num_columns(2)
             .show(ui, |ui| {
@@ -153,11 +153,11 @@ impl Vec2 {
 }
 
 pub struct TransformCell {
-    centre_x: EditCellReceiver<f64>,
-    centre_y: EditCellReceiver<f64>,
-    rotation: EditCellReceiver<f64>,
-    scale_x: EditCellReceiver<f64>,
-    scale_y: EditCellReceiver<f64>,
+    centre_x: EditCellReceiver<f32>,
+    centre_y: EditCellReceiver<f32>,
+    rotation: EditCellReceiver<f32>,
+    scale_x: EditCellReceiver<f32>,
+    scale_y: EditCellReceiver<f32>,
 }
 
 impl TransformCell {
@@ -211,11 +211,11 @@ impl Default for TransformCell {
 }
 
 pub struct TransformCellSender {
-    centre_x: EditCellSender<f64>,
-    centre_y: EditCellSender<f64>,
-    rotation: EditCellSender<f64>,
-    scale_x: EditCellSender<f64>,
-    scale_y: EditCellSender<f64>,
+    centre_x: EditCellSender<f32>,
+    centre_y: EditCellSender<f32>,
+    rotation: EditCellSender<f32>,
+    scale_x: EditCellSender<f32>,
+    scale_y: EditCellSender<f32>,
 }
 
 impl Transform {

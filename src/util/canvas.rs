@@ -12,7 +12,7 @@ pub struct GgInternalCanvas {
 }
 
 impl GgInternalCanvas {
-    pub fn line(&mut self, start: Vec2, end: Vec2, width: f64, col: Colour) {
+    pub fn line(&mut self, start: Vec2, end: Vec2, width: f32, col: Colour) {
         self.render_items.push(vertex::line(start, end, width));
         self.render_infos.push(RenderInfo {
             col: col.into(),
@@ -46,7 +46,7 @@ impl GgInternalCanvas {
             ..Default::default()
         });
     }
-    pub fn circle(&mut self, centre: Vec2, radius: f64, steps: u32, col: Colour) {
+    pub fn circle(&mut self, centre: Vec2, radius: f32, steps: u32, col: Colour) {
         self.render_items.push(vertex::circle(centre, radius, steps));
         self.render_infos.push(RenderInfo {
             col: col.into(),

@@ -369,9 +369,9 @@ impl Shader for SpriteShader {
                         position: vertex.xy,
                         uv,
                         texture_id: ri.texture_id,
-                        translation: render_info.transform.centre,
+                        translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
+                        scale: render_info.transform.scale.into(),
                         blend_col,
                     });
                 }
@@ -390,11 +390,11 @@ impl Shader for SpriteShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = sprite::vertex_shader::WindowData {
-            window_width: viewport.physical_width() as f32,
-            window_height: viewport.physical_height() as f32,
-            scale_factor: viewport.scale_factor() as f32,
-            view_translate_x: viewport.translation.x as f32,
-            view_translate_y: viewport.translation.y as f32,
+            window_width: viewport.physical_width(),
+            window_height: viewport.physical_height(),
+            scale_factor: viewport.scale_factor(),
+            view_translate_x: viewport.translation.x,
+            view_translate_y: viewport.translation.y,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -516,9 +516,9 @@ impl Shader for WireframeShader {
                 for ri in &render_info.inner {
                     vertices.push(basic::Vertex {
                         position: render_frame.vertices[vertex_index as usize].xy,
-                        translation: render_info.transform.centre,
+                        translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
+                        scale: render_info.transform.scale.into(),
                         blend_col: ri.col,
                     });
                 }
@@ -536,11 +536,11 @@ impl Shader for WireframeShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            window_width: viewport.physical_width() as f32,
-            window_height: viewport.physical_height() as f32,
-            scale_factor: viewport.scale_factor() as f32,
-            view_translate_x: viewport.translation.x as f32,
-            view_translate_y: viewport.translation.y as f32,
+            window_width: viewport.physical_width(),
+            window_height: viewport.physical_height(),
+            scale_factor: viewport.scale_factor(),
+            view_translate_x: viewport.translation.x,
+            view_translate_y: viewport.translation.y,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?
@@ -654,9 +654,9 @@ impl Shader for TriangleFanShader {
                 for ri in &render_info.inner {
                     vertices.push(basic::Vertex {
                         position: render_frame.vertices[vertex_index as usize].xy,
-                        translation: render_info.transform.centre,
+                        translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
+                        scale: render_info.transform.scale.into(),
                         blend_col: ri.col,
                     });
                 }
@@ -674,11 +674,11 @@ impl Shader for TriangleFanShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            window_width: viewport.physical_width() as f32,
-            window_height: viewport.physical_height() as f32,
-            scale_factor: viewport.scale_factor() as f32,
-            view_translate_x: viewport.translation.x as f32,
-            view_translate_y: viewport.translation.y as f32,
+            window_width: viewport.physical_width(),
+            window_height: viewport.physical_height(),
+            scale_factor: viewport.scale_factor(),
+            view_translate_x: viewport.translation.x,
+            view_translate_y: viewport.translation.y,
         };
         builder
             .set_primitive_topology(PrimitiveTopology::TriangleFan)?
@@ -795,9 +795,9 @@ impl Shader for BasicShader {
                 for ri in &render_info.inner {
                     vertices.push(basic::Vertex {
                         position: render_frame.vertices[vertex_index as usize].xy,
-                        translation: render_info.transform.centre,
+                        translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
-                        scale: render_info.transform.scale,
+                        scale: render_info.transform.scale.into(),
                         blend_col: ri.col,
                     });
                 }
@@ -815,11 +815,11 @@ impl Shader for BasicShader {
         let layout = pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = basic::vertex_shader::WindowData {
-            window_width: viewport.physical_width() as f32,
-            window_height: viewport.physical_height() as f32,
-            scale_factor: viewport.scale_factor() as f32,
-            view_translate_x: viewport.translation.x as f32,
-            view_translate_y: viewport.translation.y as f32,
+            window_width: viewport.physical_width(),
+            window_height: viewport.physical_height(),
+            scale_factor: viewport.scale_factor(),
+            view_translate_x: viewport.translation.x,
+            view_translate_y: viewport.translation.y,
         };
         builder
             .bind_pipeline_graphics(pipeline.clone())?

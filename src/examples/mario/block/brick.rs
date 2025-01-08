@@ -18,16 +18,16 @@ pub struct Brick {
     top_left: Vec2,
     sprite: Sprite,
 
-    initial_y: f64,
-    v_speed: f64,
-    v_accel: f64,
+    initial_y: f32,
+    v_speed: f32,
+    v_accel: f32,
 }
 
 impl Brick {
     pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(Self {
             top_left: top_left.into(),
-            initial_y: top_left.y as f64,
+            initial_y: top_left.y as f32,
             ..Default::default()
         })
     }

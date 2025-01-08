@@ -30,6 +30,7 @@ pub mod gg_time {
     use std::cmp;
     use std::time::{Duration, Instant};
     use tracing::info;
+    use crate::util::gg_float;
 
     pub fn frames(n: u64) -> Duration {
         Duration::from_millis(10 * n)
@@ -95,12 +96,11 @@ pub mod gg_time {
             *self = Self::new(&self.tag);
             self.last_report = Instant::now();
         }
-        fn max_ms(&self) -> f64 {
-            #[allow(clippy::cast_precision_loss)]
-            let max_ns = self.max_ns as f64;
+        fn max_ms(&self) -> f32 {
+            let max_ns = gg_float::from_u128_or_inf(self.max_ns);
             max_ns / 1_000_000.
         }
-        pub fn as_tuple_ms(&self) -> (String, f64, f64) {
+        pub fn as_tuple_ms(&self) -> (String, f32, f32) {
             (self.tag.clone(), self.mean_ms(), self.max_ms())
         }
         #[must_use]
@@ -119,7 +119,7 @@ pub mod gg_time {
             );
             self.reset();
         }
-        pub fn report_ms_if_at_least(&mut self, milliseconds: f64) {
+        pub fn report_ms_if_at_least(&mut self, milliseconds: f32) {
             if self.mean_ms() > milliseconds || self.max_ms() > milliseconds {
                 self.report_ms();
             } else {
@@ -131,21 +131,18 @@ pub mod gg_time {
                 self.report_ms();
             }
         }
-        fn mean_us(&self) -> f64 {
+        fn mean_us(&self) -> f32 {
             if self.n == 0 {
                 return 0.;
             }
-            #[allow(clippy::cast_precision_loss)]
-            let mean = (self.total_ns / self.n) as f64;
+            let mean = gg_float::from_u128_or_inf(self.total_ns / self.n);
             mean / 1_000.
         }
-        fn mean_ms(&self) -> f64 {
+        fn mean_ms(&self) -> f32 {
             self.mean_us() / 1_000.
         }
-        pub fn last_ms(&self) -> f64 {
-            #[allow(clippy::cast_precision_loss)]
-            let last_ns = self.last_ns as f64;
-            last_ns / 1_000_000.
+        pub fn last_ms(&self) -> f32 {
+            gg_float::from_u128_or_inf(self.last_ns) / 1_000_000.
         }
     }
 }
@@ -383,14 +380,14 @@ pub mod gg_float {
     use anyhow::{bail, Result};
     use std::num::FpCategory;
     use std::time::Duration;
-    use num_traits::Zero;
+    use num_traits::{FromPrimitive, Zero};
     use crate::util::linalg::{Transform, Vec2};
 
     pub trait GgFloat{
         fn is_normal_or_zero(&self) -> bool;
     }
 
-    impl GgFloat for f64 {
+    impl GgFloat for f32 {
         fn is_normal_or_zero(&self) -> bool {
             self.is_normal() || self.is_zero()
         }
@@ -409,21 +406,24 @@ pub mod gg_float {
                 self.scale.is_normal_or_zero()
         }
     }
-    pub fn is_normal_or_zero(x: f64) -> bool {
+    pub fn is_normal_or_zero(x: f32) -> bool {
         matches!(x.classify(), FpCategory::Zero | FpCategory::Normal)
     }
 
-    #[allow(clippy::cast_precision_loss)]
-    pub fn micros(duration: Duration) -> f64 {
-        duration.as_micros() as f64 / 1_000_000.
+    pub fn micros(duration: Duration) -> f32 {
+        from_u128_or_inf(duration.as_micros()) / 1_000_000.
     }
 
     pub fn f32_to_u32(x: f32) -> Result<u32> {
-        if f64::from(x) > f64::from(u32::MAX) || x < 0. {
+        if x > u32::MAX as f32 || x < 0. {
             bail!("{x} does not fit in range of u32");
         }
         #[allow(clippy::cast_sign_loss)]
         Ok(x as u32)
+    }
+
+    pub fn from_u128_or_inf(x: u128) -> f32 {
+        f32::from_u128(x).unwrap_or(f32::INFINITY)
     }
 }
 
@@ -431,20 +431,20 @@ pub mod gg_range {
     use std::ops::Range;
     use crate::core::config::EPSILON;
 
-    pub fn contains_f64(r1: &Range<f64>, r2: &Range<f64>) -> bool {
+    pub fn contains_f32(r1: &Range<f32>, r2: &Range<f32>) -> bool {
         r1.start <= r2.start && r1.end >= r2.end
     }
 
-    pub fn overlap_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<Range<f64>> {
+    pub fn overlap_f32(r1: &Range<f32>, r2: &Range<f32>) -> Option<Range<f32>> {
         if r1.start > r2.start {
-            return overlap_f64(r2, r1);
+            return overlap_f32(r2, r1);
         }
         if r1.end < r2.start {
             return None;
         }
 
         let start = r2.start;
-        let end = f64::min(r1.end, r2.end);
+        let end = f32::min(r1.end, r2.end);
         if (start - end).abs() < EPSILON {
             None
         } else {
@@ -452,8 +452,8 @@ pub mod gg_range {
         }
     }
 
-    pub fn overlap_len_f64(r1: &Range<f64>, r2: &Range<f64>) -> Option<f64> {
-        overlap_f64(r1, r2).map(|r| r.end - r.start)
+    pub fn overlap_len_f32(r1: &Range<f32>, r2: &Range<f32>) -> Option<f32> {
+        overlap_f32(r1, r2).map(|r| r.end - r.start)
     }
 }
 
@@ -666,7 +666,7 @@ fn setup_log() -> Result<()> {
 pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
     window_size: Vec2i,
     gui_ctx: GuiContext,
-    global_scale_factor: f64,
+    global_scale_factor: f32,
     clear_col: Colour,
     object_type: PhantomData<ObjectType>
 }
@@ -695,7 +695,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
     //     self
     // }
     #[must_use]
-    pub fn with_global_scale_factor(mut self, global_scale_factor: f64) -> Self {
+    pub fn with_global_scale_factor(mut self, global_scale_factor: f32) -> Self {
         self.global_scale_factor = global_scale_factor;
         self
     }

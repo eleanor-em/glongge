@@ -143,7 +143,7 @@ impl InputHandler {
 
     pub(crate) fn update_mouse(&mut self, ctx: &GuiContext) {
         self.mouse_pos = ctx.pointer_latest_pos()
-            .map(|p| Vec2 { x: f64::from(p.x), y: f64::from(p.y) });
+            .map(|p| Vec2 { x: p.x, y: p.y });
         ctx.input(|input| {
             if input.pointer.primary_pressed() {
                 self.queued_events.push(InputEvent::Mouse(MouseButton::Primary, ElementState::Pressed));

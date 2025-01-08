@@ -2,18 +2,18 @@ use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Colour {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-    pub a: f64,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 impl Colour {
-    pub fn new(r: f64, g: f64, b: f64, a: f64) -> Self {
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
     pub fn from_bytes(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self { r: f64::from(r) / 255., g: f64::from(g) / 255., b: f64::from(b) / 255., a: f64::from(a) / 255. }
+        Self { r: f32::from(r) / 255., g: f32::from(g) / 255., b: f32::from(b) / 255., a: f32::from(a) / 255. }
     }
     pub fn from_bytes_clamp<I: PrimInt + FromPrimitive + ToPrimitive>(r: I, g: I, b: I, a: I) -> Self {
         let min = I::from_u8(u8::MIN).expect("weird conversion failure from u8");
@@ -36,7 +36,7 @@ impl Colour {
     pub fn empty() -> Self { Self { r: 0., g: 0., b: 0., a: 0. } }
 
     #[must_use]
-    pub fn scaled(mut self, ratio: f64) -> Self {
+    pub fn scaled(mut self, ratio: f32) -> Self {
         self.r *= ratio;
         self.g *= ratio;
         self.b *= ratio;
@@ -46,7 +46,7 @@ impl Colour {
         self
     }
     #[must_use]
-    pub fn with_alpha(mut self, a: f64) -> Self {
+    pub fn with_alpha(mut self, a: f32) -> Self {
         self.a = a;
         self
     }
@@ -66,7 +66,7 @@ impl Default for Colour {
 
 impl From<Colour> for [f32; 4] {
     fn from(value: Colour) -> Self {
-        [value.r as f32, value.g as f32, value.b as f32, value.a as f32]
+        [value.r, value.g, value.b, value.a]
     }
 }
 

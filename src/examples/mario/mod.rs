@@ -28,18 +28,18 @@ use glongge::util::canvas::Canvas;
 use glongge::util::tileset::TilesetBuilder;
 use crate::object_type::ObjectType;
 
-const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
+const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 100 fps
-    (pixels as f64
-        + subpixels as f64 / 16.
-        + subsubpixels as f64 / 256.
-        + subsubsubpixels as f64 / 4096.) * 60. / 100.
+    (pixels as f32
+        + subpixels as f32 / 16.
+        + subsubpixels as f32 / 256.
+        + subsubsubpixels as f32 / 4096.) * 60. / 100.
 }
-const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f64 {
+const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 100 fps
     from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 100.)
 }
-const BASE_GRAVITY: f64 = from_nes_accel(0, 7, 0, 0);
+const BASE_GRAVITY: f32 = from_nes_accel(0, 7, 0, 0);
 const BLOCK_COLLISION_TAG: &str = "BLOCK";
 const FLAG_COLLISION_TAG: &str = "FLAG";
 const PIPE_COLLISION_TAG: &str = "PIPE";
