@@ -228,6 +228,8 @@ pub mod gg_err {
     use tracing::{error, warn};
     use vulkano::{Validated, ValidationError, VulkanError};
     use vulkano::command_buffer::CommandBufferExecError;
+    use vulkano_taskgraph::graph::ExecuteError;
+    use vulkano_taskgraph::InvalidSlotError;
 
     pub fn is_some_and_warn<T>(result: Result<Option<T>>) -> bool {
         match result {
@@ -358,6 +360,16 @@ pub mod gg_err {
     }
     impl From<CommandBufferExecError> for CatchOutOfDate {
         fn from(value: CommandBufferExecError) -> Self {
+            Self::Anyhow(value.into())
+        }
+    }
+    impl From<InvalidSlotError> for CatchOutOfDate {
+        fn from(value: InvalidSlotError) -> Self {
+            Self::Anyhow(value.into())
+        }
+    }
+    impl From<ExecuteError> for CatchOutOfDate {
+        fn from(value: ExecuteError) -> Self {
             Self::Anyhow(value.into())
         }
     }
@@ -506,7 +518,6 @@ pub trait Nonempty: Sized {
     }
 }
 
-// TODO: implement max()
 pub struct NonemptyVec<T> {
     inner: Vec<T>,
 }

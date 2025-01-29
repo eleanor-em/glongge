@@ -724,7 +724,6 @@ impl Collider for ConvexCollider {
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
-        // TODO: check that this conforms to the spec
         self.vertices.clone()
     }
 
@@ -1328,7 +1327,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.update_transform(ctx.absolute_transform());
         if self.show_wireframe {
-            let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
+            let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>()
+                .expect("No Canvas object in scene!");
             match &self.collider {
                 GenericCollider::Compound(compound) => {
                     let mut colours = [Colour::green(), Colour::red(), Colour::blue(), Colour::magenta(), Colour::yellow()];
@@ -1392,11 +1392,12 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         check!(self.show_wireframe);
         vec![RenderInfo {
             col: Colour::cyan().with_alpha(0.2).into(),
+            // TODO: removing BasicShader broke this... some sort of blending issue?
             // shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         }, RenderInfo {
             col: Colour::green().into(),
-            // shader_id: get_shader(WireframeShader::name()),
+            shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
         }]
     }
@@ -1415,5 +1416,5 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
+use crate::shader::{get_shader, Shader, WireframeShader};
 use crate::util::canvas::Canvas;
-use crate::shader::{get_shader, Shader};

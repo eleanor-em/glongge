@@ -5,7 +5,6 @@ use num_traits::Zero;
 
 use vulkano::{command_buffer::{
     CommandBufferExecFuture,
-    PrimaryAutoCommandBuffer,
 }, pipeline::graphics::viewport::Viewport, swapchain::{
     PresentFuture,
     SwapchainAcquireFuture,
@@ -20,6 +19,9 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use vulkano::pipeline::graphics::viewport::{Scissor, ViewportState};
+use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
+use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
+use vulkano_taskgraph::{resource_map, Id};
 use crate::{core::{
     input::InputHandler,
     prelude::*,
@@ -30,7 +32,7 @@ use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
-use crate::shader::{ensure_shaders_locked, Shader, SpriteShader};
+use crate::shader::{ensure_shaders_locked, Shader, SpriteShader, WireframeShader};
 use crate::util::{gg_err, gg_float, SceneHandlerBuilder, UniqueShared};
 
 pub mod vk_ctx;
@@ -149,6 +151,8 @@ struct WindowEventHandlerInner {
     resource_handler: ResourceHandler,
     platform: egui_winit::State,
     fences: Vec<Option<Arc<FenceFuture>>>,
+    task_graph: ExecutableTaskGraph<VulkanoContext>,
+    virtual_swapchain_id: Id<Swapchain>,
 }
 
 struct WindowEventHandlerCreateInfo<F, ObjectType>
@@ -174,7 +178,6 @@ where
     gui_ctx: GuiContext,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
-    last_frame_future: Option<FenceFuture>,
 
     is_first_window_event: bool,
 }
@@ -205,7 +208,6 @@ where
             gui_ctx,
             render_stats: RenderPerfStats::new(),
             last_render_stats: None,
-            last_frame_future: None,
 
             is_first_window_event: false,
         };
@@ -228,63 +230,6 @@ where
         Ok(())
     }
 
-    fn do_full_render(
-        &mut self,
-        image_idx: usize,
-        acquire_future: SwapchainAcquireFuture,
-        full_output: FullOutput
-    ) -> Result<(), gg_err::CatchOutOfDate> {
-        self.render_stats.synchronise.start();
-        let ready_future = self.synchronise(acquire_future);
-        self.render_stats.synchronise.stop();
-
-        self.render_stats.do_render.start();
-        let vk_ctx = self.expect_inner().vk_ctx.clone();
-        let command_buffer = self.expect_inner().render_handler.do_render(
-            &vk_ctx,
-            image_idx,
-            full_output
-        ).map_err(gg_err::CatchOutOfDate::from)?;
-        self.render_stats.do_render.stop();
-
-        self.expect_inner().window.inner.pre_present_notify();
-
-        self.render_stats.submit_command_buffers.start();
-        self.submit_command_buffer(command_buffer, image_idx, ready_future)?;
-        self.render_stats.submit_command_buffers.stop();
-
-        Ok(())
-    }
-
-    fn synchronise(&mut self, acquire_future: SwapchainAcquireFuture) -> SwapchainJoinFuture {
-        let last_future = if let Some(mut fence) = self.last_frame_future.take() {
-            fence.cleanup_finished();
-            fence.boxed()
-        } else {
-            let mut now = vulkano::sync::now(self.expect_inner().vk_ctx.device());
-            now.cleanup_finished();
-            now.boxed()
-        };
-        last_future.join(acquire_future)
-    }
-
-    fn submit_command_buffer(
-        &mut self,
-        command_buffer: Arc<PrimaryAutoCommandBuffer>,
-        image_idx: usize,
-        ready_future: SwapchainJoinFuture,
-    ) -> Result<()> {
-        let vk_ctx = self.expect_inner().vk_ctx.clone();
-        self.last_frame_future.replace(ready_future
-                .then_execute(vk_ctx.queue(), command_buffer)?
-                .then_swapchain_present(
-                    vk_ctx.queue(),
-                    vk_ctx.swapchain_present_info(image_idx)?
-                )
-                .then_signal_fence_and_flush()?);
-        Ok(())
-    }
-    
     fn create_inner(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         check_is_none!(self.inner);
 
@@ -295,11 +240,15 @@ where
         let vk_ctx = VulkanoContext::new(event_loop, &window)?;
         let input_handler = InputHandler::new();
         let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
+        // TODO: this always loads all the example textures...
         ObjectType::preload_all(&mut resource_handler)?;
 
+        // TODO: these need a barrier between executions because they access the current image.
+        //       That means the order of this vector matters. Need some way to let the user decide
+        //       for default shaders too.
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-            // WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
+            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
             // BasicShader::create(vk_ctx.clone(), viewport.clone())?,
             // TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
         ];
@@ -324,6 +273,11 @@ where
         );
 
         let fences = vec![None; vk_ctx.image_count()];
+        let (task_graph, virtual_swapchain_id) = Self::build_task_graph(
+            &vk_ctx,
+            &render_handler,
+            &resource_handler
+        )?;
 
         self.inner = Some(WindowEventHandlerInner {
             window,
@@ -334,8 +288,28 @@ where
             resource_handler,
             platform,
             fences,
+            task_graph,
+            virtual_swapchain_id,
         });
         Ok(())
+    }
+
+    fn build_task_graph(vk_ctx: &VulkanoContext, render_handler: &RenderHandler, resource_handler: &ResourceHandler)
+                        -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
+        info!("building task graph");
+        let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 100);
+        let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
+        let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);
+        render_handler.build_shader_task_graphs(&mut task_graph, texture_node, virtual_swapchain_id, &images)?;
+        let task_graph = unsafe {
+            task_graph.compile(&CompileInfo {
+                queues: &[&vk_ctx.queue()],
+                present_queue: Some(&vk_ctx.queue()),
+                flight_id: vk_ctx.flight_id(),
+                ..Default::default()
+            })?
+        };
+        Ok((task_graph, virtual_swapchain_id))
     }
 }
 
@@ -396,10 +370,16 @@ where
                 self.recreate_swapchain().unwrap();
             }
             WindowEvent::RedrawRequested => {
-                let vk_ctx = self.expect_inner().vk_ctx.clone();
-                self.expect_inner().resource_handler.texture
-                    .wait_maybe_upload_textures(&vk_ctx)
-                    .unwrap();
+                if self.expect_inner().resource_handler.texture.wait_textures_dirty() ||
+                        self.expect_inner().render_handler.is_dirty() {
+                    let vk_ctx = self.expect_inner().vk_ctx.clone();
+                    let render_handler = self.expect_inner().render_handler.clone();
+                    let resource_handler = self.expect_inner().resource_handler.clone();
+                    let (task_graph, virtual_swapchain_id) = Self::build_task_graph(
+                        &vk_ctx, &render_handler, &resource_handler).unwrap();
+                    self.expect_inner().task_graph = task_graph;
+                    self.expect_inner().virtual_swapchain_id = virtual_swapchain_id;
+                }
                 match self.acquire_and_handle_image() {
                     Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
                         info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
@@ -423,18 +403,27 @@ where
     ObjectType: ObjectTypeEnum,
 {
     fn acquire_and_handle_image(&mut self, ) -> Result<(), gg_err::CatchOutOfDate> {
-        let acquired = self.expect_inner().vk_ctx.acquire_next_image()?;
-
+        let vk_ctx = self.expect_inner().vk_ctx.clone();
+        vk_ctx.resources()
+            .flight(vk_ctx.flight_id()).map_err(gg_err::CatchOutOfDate::from)?
+            .wait(None).map_err(gg_err::CatchOutOfDate::from)?;
+        let _full_output = self.handle_egui();
         self.render_stats.start();
-        let rv = if let (image_idx, /* suboptimal= */ false, acquire_future) = acquired {
-            let full_output = self.handle_egui();
-            self.do_full_render(image_idx as usize, acquire_future, full_output)
-        } else {
-            info_every_seconds!(1, "suboptimal: recreating swapchain");
-            self.recreate_swapchain()
-        };
+
+        let inner = self.expect_inner();
+        let resource_map = resource_map!(
+            &inner.task_graph,
+            inner.virtual_swapchain_id => vk_ctx.swapchain_id(),
+        ).map_err(gg_err::CatchOutOfDate::from)?;
+
+        unsafe {
+            inner.task_graph.execute(resource_map, &vk_ctx, || {
+                inner.window.inner.pre_present_notify();
+            }).map_err(gg_err::CatchOutOfDate::from)?;
+        }
+
         self.last_render_stats = self.render_stats.end();
-        rv
+        Ok(())
     }
 
     fn handle_egui(&mut self) -> FullOutput {
@@ -456,6 +445,8 @@ where
             input.update_mouse(ctx);
             render_handler.do_gui(ctx, stats.clone());
         });
+        // TODO: messy.
+        render_handler.update_full_output(full_output.clone());
         self.expect_inner().platform.handle_platform_output(
             &window.inner,
             full_output.platform_output.clone()

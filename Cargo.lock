@@ -428,6 +428,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "concurrent-slotmap"
+version = "0.1.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "288086ecfcd80978f795a7ba8ffd9777d6dfcb6e5c6c74bba10e3d9a1eb52169"
+dependencies = [
+ "virtual-buffer",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1030,6 +1039,7 @@ dependencies = [
  "tracing-subscriber",
  "vulkano",
  "vulkano-shaders",
+ "vulkano-taskgraph",
  "walkdir",
 ]
 
@@ -2739,6 +2749,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
+name = "virtual-buffer"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00bbb9a832cd697a36c2abd5ef58c263b0bc33cdf280f704b895646ed3e9f595"
+dependencies = [
+ "libc",
+ "windows-targets 0.52.5",
+]
+
+[[package]]
 name = "vk-parse"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2750,7 +2770,7 @@ dependencies = [
 [[package]]
 name = "vulkano"
 version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=ea30f65#ea30f65280360b1e1bc907cd42d4eb355fed3c9d"
+source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
 dependencies = [
  "ash",
  "bytemuck",
@@ -2781,7 +2801,7 @@ dependencies = [
 [[package]]
 name = "vulkano-macros"
 version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=ea30f65#ea30f65280360b1e1bc907cd42d4eb355fed3c9d"
+source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2792,7 +2812,7 @@ dependencies = [
 [[package]]
 name = "vulkano-shaders"
 version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=ea30f65#ea30f65280360b1e1bc907cd42d4eb355fed3c9d"
+source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
 dependencies = [
  "foldhash",
  "heck 0.4.1",
@@ -2800,6 +2820,20 @@ dependencies = [
  "quote",
  "shaderc",
  "syn 2.0.68",
+ "vulkano",
+]
+
+[[package]]
+name = "vulkano-taskgraph"
+version = "0.34.0"
+source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
+dependencies = [
+ "ash",
+ "concurrent-slotmap",
+ "foldhash",
+ "parking_lot",
+ "smallvec",
+ "thread_local",
  "vulkano",
 ]
 

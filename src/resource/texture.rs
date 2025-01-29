@@ -11,7 +11,6 @@ use std::{
     sync::{
         Arc,
         Mutex,
-        RwLock,
         atomic::{AtomicUsize, Ordering}
     },
 };
@@ -19,28 +18,32 @@ use std::time::Duration;
 use asefile::AsepriteFile;
 use num_traits::Zero;
 
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{AutoCommandBufferBuilder, CopyBufferToImageInfo, PrimaryAutoCommandBuffer}, format::Format, image::{
-    Image,
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage}, format::Format, image::{
     ImageCreateInfo,
     ImageType,
     ImageUsage,
     view::ImageView
-}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, DeviceSize, Validated};
+}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, NonZeroDeviceSize, Validated};
 
 use png::ColorType;
-use vulkano::command_buffer::{CommandBufferUsage, PrimaryCommandBufferAbstract};
-use vulkano::memory::allocator::MemoryAllocatePreference;
-use vulkano::sync::GpuFuture;
+use vulkano::image::Image;
+use vulkano::memory::allocator::{DeviceLayout, MemoryAllocatePreference};
+use vulkano::memory::DeviceAlignment;
+use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
+use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandBuffer};
+use vulkano_taskgraph::graph::{NodeId, TaskGraph};
+use vulkano_taskgraph::resource::{AccessType, HostAccessType, ImageLayoutType};
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
-use crate::util::gg_err;
 
+#[derive(Clone)]
 struct RawLoadedTexture {
-    buf: Subbuffer<[u8]>,
+    buf: Vec<u8>,
     info: ImageCreateInfo,
     duration: Option<Duration>,
 }
 
+// Note: texture ID 0 represents a plain white texture.
 pub type TextureId = u32;
 
 #[derive(Debug)]
@@ -103,56 +106,45 @@ impl Drop for Texture {
 
 #[derive(Clone)]
 pub(crate) struct InternalTexture {
-    buf: Subbuffer<[u8]>,
-    info: ImageCreateInfo,
-    cached_image_view: Option<Arc<ImageView>>,
+    raw: Arc<RawLoadedTexture>,
+    buf: Id<Buffer>,
+    image: Id<Image>,
+    uploaded_image_view: Option<Arc<ImageView>>,
     ref_count: Arc<AtomicUsize>,
 }
 
 impl InternalTexture {
-    pub fn image_view(&self) -> Option<Arc<ImageView>> { self.cached_image_view.clone() }
+    pub fn image_view(&self) -> Option<Arc<ImageView>> { self.uploaded_image_view.clone() }
 
     fn create_image_view(&mut self,
                        ctx: &VulkanoContext,
-                       builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>)
-    -> Result<Arc<ImageView>> {
-        match self.cached_image_view.clone() {
-            None => {
-                let image = Image::new(
-                    ctx.memory_allocator().clone(),
-                    self.info.clone(),
-                    AllocationCreateInfo {
-                        allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
-                        ..AllocationCreateInfo::default()
-                    }
-                ).map_err(Validated::unwrap)?;
-                builder.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
-                    self.buf.clone(),
-                    image.clone()
-                ))?;
-                let image_view = ImageView::new_default(image)?;
-                self.cached_image_view = Some(image_view.clone());
-                Ok(image_view)
-            },
-            Some(image_view) => Ok(image_view),
+                       cbf: &mut RecordingCommandBuffer,
+                       _tcx: &mut TaskContext)
+    -> TaskResult {
+        if self.uploaded_image_view.is_none() {
+            unsafe {
+                cbf.copy_buffer_to_image(&CopyBufferToImageInfo {
+                    src_buffer: self.buf,
+                    dst_image: self.image,
+                    ..Default::default()
+                })?;
+            }
+            let image_view = ImageView::new_default(ctx.resources().image(self.image)?.image().clone())
+                .unwrap();
+            self.uploaded_image_view = Some(image_view);
         }
+        Ok(())
     }
 }
 
 impl AxisAlignedExtent for InternalTexture {
     fn aa_extent(&self) -> Vec2 {
-        Vec2 { x: self.info.extent[0] as f32, y: self.info.extent[1] as f32 }
+        Vec2 { x: self.raw.info.extent[0] as f32, y: self.raw.info.extent[1] as f32 }
     }
 
     fn centre(&self) -> Vec2 {
         Vec2::zero()
     }
-}
-
-#[derive(Clone)]
-enum CachedTexture {
-    Loading,
-    Ready(Arc<InternalTexture>),
 }
 
 struct WrappedPngReader<R: Read>(png::Reader<R>);
@@ -167,6 +159,7 @@ impl<R: Read> Read for WrappedPngReader<R> {
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
+    textures_dirty: bool,
 }
 
 impl TextureHandlerInner {
@@ -181,24 +174,35 @@ impl TextureHandlerInner {
             usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
             ..Default::default()
         };
-        let buf: Subbuffer<[u8]> = Buffer::new_slice(
-            ctx.memory_allocator(),
+        let buf = ctx.resources().create_buffer(
             BufferCreateInfo {
-                usage: BufferUsage::TRANSFER_SRC, ..Default::default()
+                usage: BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
+                ..Default::default()
             },
             AllocationCreateInfo {
                 memory_type_filter: MemoryTypeFilter::PREFER_HOST |
                     MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            DeviceSize::from(4 as char)
+            DeviceLayout::for_value(&[0u8; 4]).context("failed to create layout for [0, 0, 0, 0]")?
         ).map_err(Validated::unwrap)?;
-        buf.write()?.swap_with_slice(&mut Colour::white().as_bytes());
 
+        let image = ctx.resources().create_image(
+            info.clone(),
+            AllocationCreateInfo {
+                allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
+                ..AllocationCreateInfo::default()
+            }
+        ).map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
+            raw: Arc::new(RawLoadedTexture {
+                buf: Colour::white().as_bytes().to_vec(),
+                info,
+                duration: None,
+            }),
             buf,
-            info,
-            cached_image_view: None,
+            image,
+            uploaded_image_view: None,
             ref_count: Arc::new(AtomicUsize::new(1)),
         };
         textures.insert(0, internal_texture);
@@ -206,10 +210,11 @@ impl TextureHandlerInner {
         Ok(Self {
             loaded_files: BTreeMap::new(),
             textures,
+            textures_dirty: false,
         })
     }
 
-    fn create_texture(&mut self, loaded: RawLoadedTexture) -> Texture {
+    fn create_texture(&mut self, ctx: &VulkanoContext, loaded: RawLoadedTexture) -> Result<Texture> {
         // Free up unused textures first.
         self.free_all_unused_textures();
 
@@ -221,10 +226,32 @@ impl TextureHandlerInner {
             .or_else(|| self.textures.last_key_value().map(|(id, _)| id + 1))
             .expect("empty textures? (blank texture missing)");
         let ref_count = Arc::new(AtomicUsize::new(1));
+        let buf = ctx.resources().create_buffer(
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST |
+                    MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            DeviceLayout::new(NonZeroDeviceSize::new(loaded.buf.len() as u64).unwrap(), DeviceAlignment::of::<u8>())
+                .context("failed to create layout for texture")?
+        ).map_err(Validated::unwrap)?;
+        let duration = loaded.duration;
+        let image = ctx.resources().create_image(
+            loaded.info.clone(),
+            AllocationCreateInfo {
+                allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
+                ..AllocationCreateInfo::default()
+            }
+        ).map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
-            buf: loaded.buf,
-            info: loaded.info,
-            cached_image_view: None,
+            raw: Arc::new(loaded),
+            buf,
+            image,
+            uploaded_image_view: None,
             ref_count: ref_count.clone(),
         };
         let extent = internal_texture.aa_extent();
@@ -232,7 +259,8 @@ impl TextureHandlerInner {
             panic!("tried to use texture id {id}, but ref_count={}",
                    existing.ref_count.load(Ordering::Relaxed));
         }
-        Texture { id, duration: loaded.duration, extent, ref_count }
+        self.textures_dirty = true;
+        Ok(Texture { id, duration, extent, ref_count })
     }
 
     fn free_all_unused_textures(&mut self) {
@@ -259,7 +287,8 @@ impl TextureHandlerInner {
     }
 }
 
-pub type MaterialId = u16;
+// Note: material ID 0 represents a plain white texture.
+pub type MaterialId = u32;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Material {
@@ -292,8 +321,7 @@ impl MaterialHandler {
             *id
         } else {
             let id = self.materials
-                .last_key_value().map(|(&k, _)| k + 1)
-                .unwrap_or(0);
+                .last_key_value().map_or(0, |(&k, _)| k + 1);
             self.materials.insert(id, material.clone());
             self.materials_inverse.insert(material, id);
             self.dirty = true;
@@ -306,16 +334,14 @@ impl MaterialHandler {
 pub struct TextureHandler {
     ctx: VulkanoContext,
     inner: Arc<Mutex<TextureHandlerInner>>,
-    cached_textures: Arc<RwLock<BTreeMap<TextureId, CachedTexture>>>,
     material_handler: Arc<Mutex<MaterialHandler>>,
 }
 
 impl TextureHandler {
     pub(crate) fn new(ctx: VulkanoContext) -> Result<Self> {
         let inner = Arc::new(Mutex::new(TextureHandlerInner::new(&ctx)?));
-        let cached_textures = Arc::new(RwLock::new(BTreeMap::new()));
         let material_handler = Arc::new(Mutex::new(MaterialHandler::new()));
-        Ok(Self { ctx, inner, cached_textures, material_handler })
+        Ok(Self { ctx, inner, material_handler })
     }
 
     pub fn material_from_texture(&self, texture: &Texture, area: &Rect) -> MaterialId {
@@ -331,28 +357,27 @@ impl TextureHandler {
                 .and_then(|v| v.first()) {
             return Ok(texture.clone());
         }
-        let loaded = self.load_file_inner(&filename)?;
+        let loaded = Self::load_file_inner(&filename)?;
         let mut inner = self.inner.lock().unwrap();
-        let texture = inner.create_texture(loaded);
+        let texture = inner.create_texture(&self.ctx, loaded)?;
         info!("loaded texture: {} = {:?}", filename, texture.id());
         inner.loaded_files.insert(filename, vec![texture.clone()]);
-        self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
         Ok(texture)
     }
-    fn load_file_inner(&self, filename: &str) -> Result<RawLoadedTexture> {
+    fn load_file_inner(filename: &str) -> Result<RawLoadedTexture> {
         let path = Path::new(filename);
         let ext = path.extension()
             .with_context(|| format!("no file extension: {filename}"))?
             .to_str()
             .with_context(|| format!("failed conversion from OsStr: {filename}"))?;
         match ext {
-            "png" => self.load_file_inner_png(filename),
-            "aseprite" => Ok(self.load_file_inner_animated_aseprite(filename)?
+            "png" => Self::load_file_inner_png(filename),
+            "aseprite" => Ok(Self::load_file_inner_animated_aseprite(filename)?
                 .into_iter().next().context("loading aseprite file succeeded but no frames?")?),
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
-    fn load_file_inner_png(&self, filename: &str) -> Result<RawLoadedTexture> {
+    fn load_file_inner_png(filename: &str) -> Result<RawLoadedTexture> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
@@ -387,7 +412,7 @@ impl TextureHandler {
         let width = info.width;
         let height = info.height;
         image_data.resize((width * height * depth) as usize, 0);
-        self.load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
+        Self::load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
     }
 
     pub fn wait_load_file_animated(&self, filename: impl AsRef<str>) -> Result<Vec<Texture>> {
@@ -396,17 +421,15 @@ impl TextureHandler {
         if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
             return Ok(texture.clone());
         }
-        let results = self.load_file_inner_animated(&filename)?;
+        let results = Self::load_file_inner_animated(&filename)?;
         let mut inner = self.inner.lock().unwrap();
         let textures = results.into_iter().map(|loaded| {
-            let texture = inner.create_texture(loaded);
-            self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
-            texture
-        }).collect_vec();
+            inner.create_texture(&self.ctx, loaded)
+        }).collect::<Result<Vec<_>>>()?;
         inner.loaded_files.insert(filename, textures.clone());
         Ok(textures)
     }
-    fn load_file_inner_animated(&self, filename: &str) -> Result<Vec<RawLoadedTexture>> {
+    fn load_file_inner_animated(filename: &str) -> Result<Vec<RawLoadedTexture>> {
         let path = Path::new(filename);
         let ext = path.extension()
             .with_context(|| format!("no file extension: {filename}"))?
@@ -414,17 +437,17 @@ impl TextureHandler {
             .with_context(|| format!("failed conversion from OsStr: {filename}"))?;
         match ext {
             "png" => todo!("png files with multiple frames not supported"),
-            "aseprite" => self.load_file_inner_animated_aseprite(filename),
+            "aseprite" => Self::load_file_inner_animated_aseprite(filename),
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
-    fn load_file_inner_animated_aseprite(&self, filename: &str) -> Result<Vec<RawLoadedTexture>> {
+    fn load_file_inner_animated_aseprite(filename: &str) -> Result<Vec<RawLoadedTexture>> {
         let ase = AsepriteFile::read_file(filename.as_ref())?;
         (0..ase.num_frames())
             .map(|i| ase.frame(i))
             .map(|frame| {
                 let image = frame.image();
-                let mut loaded = self.load_reader_rgba_inner(
+                let mut loaded = Self::load_reader_rgba_inner(
                      &mut  image.to_vec().as_slice(),
                      image.width(),
                      image.height(),
@@ -443,15 +466,11 @@ impl TextureHandler {
         height: u32,
         format: Format
     ) -> Result<Texture> {
-        let loaded = self.load_reader_rgba_inner(reader, width, height, format)?;
-
+        let loaded = Self::load_reader_rgba_inner(reader, width, height, format)?;
         let mut inner = self.inner.lock().unwrap();
-        let texture = inner.create_texture(loaded);
-        self.cached_textures.write().unwrap().insert(texture.id(), CachedTexture::Loading);
-        Ok(texture)
+        inner.create_texture(&self.ctx, loaded)
     }
     fn load_reader_rgba_inner<R: Read>(
-        &self,
         reader: &mut R,
         width: u32,
         height: u32,
@@ -467,21 +486,8 @@ impl TextureHandler {
             usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
             ..Default::default()
         };
-        let buf = Buffer::new_slice(
-            self.ctx.memory_allocator(),
-            BufferCreateInfo {
-                usage: BufferUsage::TRANSFER_SRC, ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST |
-                    MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            DeviceSize::from(width * height * 4)
-        ).map_err(Validated::unwrap)?;
-
-        reader.read_exact(&mut buf.write()?)?;
-
+        let mut buf = vec![0; width as usize * height as usize * 4];
+        reader.read_exact(&mut buf)?;
         Ok(RawLoadedTexture {
             buf,
             info: image_create_info,
@@ -494,40 +500,9 @@ impl TextureHandler {
         inner.free_unused_files();
     }
 
-    pub(crate) fn wait_maybe_upload_textures(&self, ctx: &VulkanoContext) -> Result<(), gg_err::CatchOutOfDate> {
-        let mut inner = self.inner.lock().unwrap();
-        let textures_to_upload = inner.textures.iter_mut()
-            .filter(|(_, tex)| tex.cached_image_view.is_none())
-            .collect_vec();
-        if textures_to_upload.is_empty() {
-            return Ok(());
-        }
-
-        let mut builder = AutoCommandBufferBuilder::primary(
-            ctx.command_buffer_allocator(),
-            ctx.queue().queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        ).map_err(gg_err::CatchOutOfDate::from)?;
-        for (id, tex) in textures_to_upload {
-            info!("created image view for: {:?}", id);
-            tex.create_image_view(ctx, &mut builder).map_err(gg_err::CatchOutOfDate::from)?;
-            self.cached_textures.write().unwrap().insert(*id, CachedTexture::Ready(Arc::new(tex.clone())));
-        }
-        builder.build()?
-            .execute(ctx.queue())?
-            .then_signal_fence_and_flush()?
-            .wait(None)?;
-        Ok(())
-    }
-
-    // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub(crate) fn ready_values(&self) -> Vec<Arc<InternalTexture>> {
-        self.cached_textures.read().unwrap()
-            .values()
-            .filter_map(|tex| match tex {
-                CachedTexture::Loading => None,
-                CachedTexture::Ready(tex) => Some(tex)
-            })
+    pub(crate) fn ready_values(&self) -> Vec<InternalTexture> {
+        self.inner.lock().unwrap().textures.values()
+            .filter(|t| t.uploaded_image_view.is_some())
             .cloned().collect()
     }
 
@@ -546,12 +521,12 @@ impl TextureHandler {
         let Some(tex) = self.inner.lock().unwrap().textures.get(&texture_id).cloned() else {
             return Ok(None);
         };
-        let w = tex.info.extent[0] as usize;
-        let h = tex.info.extent[1] as usize;
+        let w = tex.raw.info.extent[0] as usize;
+        let h = tex.raw.info.extent[1] as usize;
         let mut rv = vec![vec![Colour::empty(); w]; h];
         let mut x = 0;
         let mut y = 0;
-        for bytes in tex.buf.read()?.chunks(4) {
+        for bytes in tex.raw.buf.chunks(4) {
             let col = Colour::from_bytes(bytes[0], bytes[1], bytes[2], bytes[3]);
             rv[y][x] = col;
             x += 1;
@@ -561,5 +536,59 @@ impl TextureHandler {
             }
         }
         Ok(Some(rv))
+    }
+
+    pub(crate) fn wait_textures_dirty(&self) -> bool {
+        self.inner.lock().unwrap().textures_dirty
+    }
+    pub(crate) fn build_task_graph(&self, task_graph: &mut TaskGraph<VulkanoContext>)
+            -> (NodeId, Vec<Id<Image>>) {
+        let mut inner = self.inner.lock().unwrap();
+        for tex in inner.textures.values() {
+            task_graph.add_host_buffer_access(tex.buf, HostAccessType::Write);
+        }
+        let mut upload_node = task_graph.create_task_node(
+            "texture_handler_upload",
+            QueueFamilyType::Transfer,
+            UploadTexturesTask { inner: Arc::new(self.clone()) }
+        );
+        let mut images = Vec::new();
+        for tex in inner.textures.values() {
+            upload_node.buffer_access(tex.buf, AccessType::CopyTransferRead);
+            upload_node.image_access(tex.image, AccessType::CopyTransferWrite, ImageLayoutType::Optimal);
+            images.push(tex.image);
+        }
+        let upload_node = upload_node.build();
+        inner.textures_dirty = false;
+        (upload_node, images)
+    }
+}
+
+pub(crate) struct UploadTexturesTask {
+    pub(crate) inner: Arc<TextureHandler>
+}
+
+impl Task for UploadTexturesTask {
+    type World = VulkanoContext;
+
+    unsafe fn execute(&self, cbf: &mut RecordingCommandBuffer, tcx: &mut TaskContext, world: &Self::World) -> TaskResult {
+        let mut inner = self.inner.inner.lock().unwrap();
+        if inner.textures_dirty {
+            info!("textures_dirty, skip upload");
+            return Ok(());
+        }
+        let textures_to_upload = inner.textures.iter_mut()
+            .filter(|(_, tex)| tex.uploaded_image_view.is_none())
+            .collect_vec();
+        if textures_to_upload.is_empty() {
+            return Ok(());
+        }
+
+        for (id, tex) in textures_to_upload {
+            tcx.write_buffer::<[u8]>(tex.buf, ..)?.clone_from_slice(&tex.raw.buf);
+            tex.create_image_view(world, cbf, tcx)?;
+            info!("created image view for: {:?}", id);
+        }
+        Ok(())
     }
 }

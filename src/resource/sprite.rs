@@ -120,7 +120,7 @@ impl GgInternalSprite {
     }
 
     fn set_frame_orders(&mut self, frames: Vec<usize>) {
-        for frame in frames.iter() {
+        for frame in &frames {
             check_lt!(*frame, self.materials.len());
         }
         self.material_indices = frames;

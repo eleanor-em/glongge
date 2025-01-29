@@ -26,7 +26,6 @@ impl GgInternalCanvas {
         self.render_items.push(vertex::rectangle(centre, half_widths));
         self.render_infos.push(RenderInfo {
             col: col.into(),
-            // shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         });
     }
@@ -42,7 +41,6 @@ impl GgInternalCanvas {
         self.render_items.push(vertex::quadrilateral(top_left, top_right, bottom_left, bottom_right));
         self.render_infos.push(RenderInfo {
             col: col.into(),
-            // shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         });
     }

@@ -681,44 +681,46 @@ impl GuiConsoleLog {
                     // XXX: separator needed to make it fill available space.
                     ui.separator();
                     let mut layout_job = LayoutJob::default();
-                    let last_log = log_output.len() - 1;
-                    for (i, line) in log_output.into_iter().enumerate() {
-                        let segments = if i == last_log {
-                            line.trim()
-                        } else {
-                            line.as_str()
-                        }.split("\x1b[");
-                        let style = Style::default();
-                        for segment in segments.filter(|s| !s.is_empty()) {
-                            let Some(sep) = segment.find('m') else {
-                                println!("no 'm' in {segment:?}");
-                                continue;
-                            };
-                            let colour_code = &segment[..sep];
-                            let col = colour_code.parse::<i32>()
-                                .unwrap_or(
-                                    // Probably a log line with a newline?
-                                    2
-                                );
-                            let text = &segment[sep + 1..];
-                            egui::RichText::new(text)
-                                .color(match col {
-                                    2 => Color32::from_gray(120),
-                                    31 => Color32::from_rgb(197, 15, 31),
-                                    32 => Color32::from_rgb(19, 161, 14),
-                                    33 => Color32::from_rgb(193, 156, 0),
-                                    34 => Color32::from_rgb(0, 55, 218),
-                                    0 => Color32::from_gray(240),
-                                    _ => {
-                                        warn!("unrecognised colour code: {col}");
-                                        Color32::from_gray(240)
-                                    },
-                                })
-                                .monospace()
-                                .append_to(&mut layout_job,
-                                           &style,
-                                           FontSelection::Default,
-                                           Align::Center);
+                    if !log_output.is_empty() {
+                        let last_log = log_output.len() - 1;
+                        for (i, line) in log_output.into_iter().enumerate() {
+                            let segments = if i == last_log {
+                                line.trim()
+                            } else {
+                                line.as_str()
+                            }.split("\x1b[");
+                            let style = Style::default();
+                            for segment in segments.filter(|s| !s.is_empty()) {
+                                let Some(sep) = segment.find('m') else {
+                                    println!("no 'm' in {segment:?}");
+                                    continue;
+                                };
+                                let colour_code = &segment[..sep];
+                                let col = colour_code.parse::<i32>()
+                                    .unwrap_or(
+                                        // Probably a log line with a newline?
+                                        2
+                                    );
+                                let text = &segment[sep + 1..];
+                                egui::RichText::new(text)
+                                    .color(match col {
+                                        2 => Color32::from_gray(120),
+                                        31 => Color32::from_rgb(197, 15, 31),
+                                        32 => Color32::from_rgb(19, 161, 14),
+                                        33 => Color32::from_rgb(193, 156, 0),
+                                        34 => Color32::from_rgb(0, 55, 218),
+                                        0 => Color32::from_gray(240),
+                                        _ => {
+                                            warn!("unrecognised colour code: {col}");
+                                            Color32::from_gray(240)
+                                        },
+                                    })
+                                    .monospace()
+                                    .append_to(&mut layout_job,
+                                               &style,
+                                               FontSelection::Default,
+                                               Align::Center);
+                            }
                         }
                     }
                     ui.add(egui::Label::new(layout_job)

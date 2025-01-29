@@ -54,7 +54,7 @@ pub mod vertex_shader {
             };
 
             layout(set = 0, binding = 0) uniform MaterialData {
-                Material data[1024];
+                Material data[512];
             } materials;
 
             void main() {
@@ -114,6 +114,7 @@ pub mod fragment_shader {
         ty: "fragment",
         src: r"
             #version 460
+            #extension GL_EXT_nonuniform_qualifier : require
 
             layout(location = 0) in vec2 f_uv;
             layout(location = 1) flat in uint f_texture_id;
@@ -124,7 +125,7 @@ pub mod fragment_shader {
             layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
-                const vec4 tex_col = texture(tex[f_texture_id], f_uv);
+                const vec4 tex_col = texture(tex[nonuniformEXT(f_texture_id)], f_uv);
                 f_col = tex_col * f_blend_col;
             }
         ",

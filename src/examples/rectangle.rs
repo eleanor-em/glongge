@@ -9,6 +9,7 @@ use glongge::{
     },
     resource::sprite::Sprite
 };
+use glongge::util::canvas::Canvas;
 use crate::object_type::ObjectType;
 
 #[allow(dead_code)]
@@ -18,10 +19,10 @@ impl Scene<ObjectType> for RectangleScene {
     fn name(&self) -> SceneName { SceneName::new("rectangle") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        const N: usize = 1;
-        let mut objects = Uniform::new(0., 1024.)
+        const N: usize = 5;
+        let mut objects = Uniform::new(0., 256.)
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0., 768.)
+            .zip(Uniform::new(0., 256.)
                 .sample_iter(rand::thread_rng()))
             .zip(Uniform::new(-1., 1.)
                 .sample_iter(rand::thread_rng()))
@@ -35,6 +36,7 @@ impl Scene<ObjectType> for RectangleScene {
             })
             .collect_vec();
         objects.push(RectanglePlayer::create());
+        objects.push(Canvas::create());
         objects
     }
 }
@@ -49,8 +51,7 @@ pub struct RectanglePlayer {
 }
 
 impl RectanglePlayer {
-    // const SIZE: f32 = 100.;
-    const SPEED: f32 = 300.;
+    const SPEED: f32 = 2.;
 }
 
 #[partially_derive_scene_object]
@@ -61,7 +62,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
             object_ctx,
             resource_handler,
             texture,
-            Vec2i { x: 3, y: 1 },
+            Vec2i { x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },
             Vec2i { x: 0, y: 0 },
             Vec2i { x: 2, y: 0 }
@@ -135,7 +136,7 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             object_ctx,
             resource_handler,
             texture,
-            Vec2i{ x: 2, y: 1 },
+            Vec2i{ x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },
             Vec2i { x: 0, y: 0 },
             Vec2i { x: 2, y: 0 }

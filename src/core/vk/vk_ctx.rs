@@ -12,16 +12,18 @@ use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures
 use vulkano::image::{Image, ImageUsage};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 use vulkano::pipeline::GraphicsPipeline;
-use vulkano::swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
-use vulkano::{swapchain, Validated, Version, VulkanLibrary};
+use vulkano::swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
+use vulkano::{Validated, Version, VulkanLibrary};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
+use vulkano_taskgraph::Id;
+use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
 use crate::check_eq;
 use crate::core::vk::GgWindow;
 use crate::core::prelude::*;
-use crate::util::{gg_err, gg_float, UniqueShared};
+use crate::util::{gg_float, UniqueShared};
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
@@ -33,9 +35,11 @@ pub struct VulkanoContext {
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    resources: Arc<Resources>,
+    flight_id: Id<Flight>,
 
     // May be recreated, e.g. due to window resizing:
-    swapchain: UniqueShared<Arc<Swapchain>>,
+    swapchain: UniqueShared<Id<Swapchain>>,
     images: UniqueShared<Vec<Arc<Image>>>,
     image_views: UniqueShared<Vec<Arc<ImageView>>>,
     image_count: UniqueShared<usize>,
@@ -54,6 +58,7 @@ impl VulkanoContext {
         let start = Instant::now();
         let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
         let instance = create_instance(event_loop, library)?;
+
         let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
         let physical_device = create_any_physical_device(&instance, &surface)?;
         let (device, queue) = create_any_graphical_queue_family(physical_device.clone())?;
@@ -69,18 +74,60 @@ impl VulkanoContext {
                 ..Default::default()
             }
         ));
-        let (swapchain, images) = create_swapchain(
-            window,
-            surface.clone(),
-            &physical_device,
-            device.clone(),
+        let resources = Resources::new(&device, &ResourcesCreateInfo::default());
+
+        let has_mailbox = physical_device.surface_capabilities(&surface, SurfaceInfo {
+            present_mode: Some(PresentMode::Mailbox),
+            ..SurfaceInfo::default()
+        }).is_ok();
+        let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
+        let supported_formats = physical_device
+            .surface_formats(&surface, SurfaceInfo::default())?;
+        if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
+            error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
+        }
+        info!("surface capabilities: {caps:?}");
+        let (min_image_count, present_mode) = if has_mailbox {
+            (caps.max_image_count.unwrap_or(3.max(caps.min_image_count + 1)),
+             PresentMode::Mailbox)
+        } else {
+            (3.max(caps.min_image_count),
+             PresentMode::Fifo)
+        };
+        if let Some(max_image_count) = caps.max_image_count {
+            check_le!(min_image_count, max_image_count);
+        }
+        info!("swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}");
+
+        let flight_id = resources.create_flight(min_image_count)?;
+
+        let dimensions = window.inner_size();
+        let composite_alpha = caps
+            .supported_composite_alpha
+            .into_iter()
+            .next()
+            .context("vulkano: no composite alpha modes supported")?;
+        let swapchain = resources.create_swapchain(
+            flight_id,
+            surface,
+            SwapchainCreateInfo {
+                min_image_count: resources.flight(flight_id)?.frame_count(),
+                image_format: Format::B8G8R8A8_SRGB,
+                image_color_space: ColorSpace::SrgbNonLinear,
+                image_extent: dimensions.into(),
+                image_usage: ImageUsage::COLOR_ATTACHMENT,
+                composite_alpha,
+                present_mode,
+                ..Default::default()
+            },
         )?;
+        let images = resources.swapchain(swapchain)?.images().iter().cloned().collect_vec();
+        let image_views = UniqueShared::new(images.iter()
+            .map(|image| ImageView::new_default(image.clone()))
+            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?);
+        let image_count = UniqueShared::new(images.len());
         let swapchain = UniqueShared::new(swapchain);
         let images = UniqueShared::new(images);
-        let image_views = UniqueShared::new(create_image_views(images.get().as_slice())?);
-        let image_count = UniqueShared::new(image_views.get().len());
-
-        check_eq!(swapchain.get().image_count() as usize, images.get().len());
 
         info!(
             "created vulkano context in: {:.2} ms",
@@ -92,6 +139,8 @@ impl VulkanoContext {
             memory_allocator,
             command_buffer_allocator,
             descriptor_set_allocator,
+            resources,
+            flight_id,
 
             swapchain,
             images,
@@ -102,19 +151,17 @@ impl VulkanoContext {
     }
 
     pub(crate) fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
-        let swapchain_create_info = SwapchainCreateInfo {
-            image_extent: window.inner_size().into(),
-            ..self.swapchain.get().create_info()
-        };
-        let (new_swapchain, new_images) = self.swapchain.get()
-            .recreate(swapchain_create_info).map_err(Validated::unwrap)?;
+        let new_swapchain = self.resources.recreate_swapchain(*self.swapchain.get(), |create_info| {
+            SwapchainCreateInfo {
+                image_extent: window.inner_size().into(),
+                ..create_info
+            }
+        })?;
         *self.swapchain.get() = new_swapchain;
-        *self.images.get() = new_images;
-        *self.image_views.get() = create_image_views(self.images.get().as_slice())?;
-        *self.image_count.get() = self.image_views.get().len();
-        for pipeline in self.pipelines.get().drain(..) {
-            *pipeline.get() = None;
-        }
+        *self.images.get() = self.resources.swapchain(new_swapchain)?.images().iter().cloned().collect_vec();
+        *self.image_views.get() = self.images.get().iter()
+            .map(|image| ImageView::new_default(image.clone()))
+            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?;
         Ok(())
     }
 
@@ -134,25 +181,20 @@ impl VulkanoContext {
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
     }
-
-    pub(crate) fn swapchain(&self) -> Arc<Swapchain> {
-        self.swapchain.get().clone()
+    pub fn resources(&self) -> Arc<Resources> {
+        self.resources.clone()
+    }
+    pub fn flight_id(&self) -> Id<Flight> {
+        self.flight_id
     }
 
-    // The return values of the below pub(crate) functions should not be stored between frames.
-    pub(crate) fn acquire_next_image(&self) -> Result<AcquiredSwapchainFuture, gg_err::CatchOutOfDate> {
-        // XXX: "acquire_next_image" is somewhat misleading, since it does not block
-        swapchain::acquire_next_image(self.swapchain.get().clone(), None)
-            .map_err(Validated::unwrap)
-            .map_err(gg_err::CatchOutOfDate::from)
+    pub(crate) fn swapchain(&self) -> Result<Arc<Swapchain>> {
+        Ok(self.resources.swapchain(*self.swapchain.get())?.swapchain().clone())
     }
-    pub(crate) fn swapchain_present_info(&self, image_idx: usize) -> Result<SwapchainPresentInfo> {
-        Ok(SwapchainPresentInfo::swapchain_image_index(
-            self.swapchain.get().clone(),
-            u32::try_from(image_idx)
-                .context("image_idx overflowed: {image_idx}")?
-        ))
+    pub(crate) fn swapchain_id(&self) -> Id<Swapchain> {
+        *self.swapchain.get()
     }
+
     pub(crate) fn current_image_view(&self, image_idx: usize) -> Arc<ImageView> {
         self.image_views.get()[image_idx].clone()
     }
@@ -161,7 +203,7 @@ impl VulkanoContext {
     pub fn create_pipeline<F>(&mut self, f: F) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
     where F: FnOnce(Arc<Swapchain>) -> Result<Arc<GraphicsPipeline>>
     {
-        let pipeline = UniqueShared::new(Some(f(self.swapchain.get().clone())?));
+        let pipeline = UniqueShared::new(Some(f(self.resources.swapchain(*self.swapchain.get())?.swapchain().clone())?));
         self.pipelines.get().push(pipeline.clone());
         Ok(pipeline)
     }
@@ -171,7 +213,8 @@ impl VulkanoContext {
 
 // TODO: more flexible approach here.
 fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtensions> {
-    let extensions = Surface::required_extensions(&event_loop)?;
+    let mut extensions = Surface::required_extensions(&event_loop)?;
+    extensions.ext_debug_utils = true;
     Ok(extensions)
 }
 fn device_extensions() -> DeviceExtensions {
@@ -180,16 +223,16 @@ fn device_extensions() -> DeviceExtensions {
         ..DeviceExtensions::empty()
     }
 }
-fn features() -> DeviceFeatures {
+fn device_features() -> DeviceFeatures {
     DeviceFeatures {
         // Required for extra texture samplers on macOS:
         descriptor_indexing: true,
         fill_mode_non_solid: true,
+        // Required to fix sampler cross-talk with AMD drivers:
+        shader_sampled_image_array_non_uniform_indexing: true,
         ..Default::default()
     }
 }
-
-pub(crate) type AcquiredSwapchainFuture = (u32, bool, SwapchainAcquireFuture);
 
 fn create_instance(
     event_loop: &ActiveEventLoop,
@@ -220,7 +263,7 @@ fn create_any_physical_device(
     let device = instance
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
-        .filter(|p| p.supported_features().contains(&features()))
+        .filter(|p| p.supported_features().contains(&device_features()))
         // Dynamic rendering support:
         .filter(|p| p.api_version() >= Version::V1_3 || p.supported_extensions().khr_dynamic_rendering)
         .filter_map(|p| {
@@ -265,7 +308,7 @@ fn create_any_graphical_queue_family(
         physical_device.queue_family_properties()[queue_family_index]);
 
     let mut enabled_extensions = device_extensions();
-    let mut enabled_features = features();
+    let mut enabled_features = device_features();
     // Also enable dynamic rendering, guaranteed to be available by filtering:
     enabled_extensions.khr_dynamic_rendering = true;
     enabled_features.dynamic_rendering = true;
@@ -286,59 +329,4 @@ fn create_any_graphical_queue_family(
         device,
         queues.next().context("vulkano: UNEXPECTED: zero queues?")?,
     ))
-}
-fn create_swapchain(
-    window: &GgWindow,
-    surface: Arc<Surface>,
-    physical_device: &Arc<PhysicalDevice>,
-    device: Arc<Device>,
-) -> Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
-    let has_mailbox = physical_device.surface_capabilities(&surface, SurfaceInfo {
-        present_mode: Some(PresentMode::Mailbox),
-        ..SurfaceInfo::default()
-    }).is_ok();
-    let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
-    let dimensions = window.inner_size();
-    let composite_alpha = caps
-        .supported_composite_alpha
-        .into_iter()
-        .next()
-        .context("vulkano: no composite alpha modes supported")?;
-    let supported_formats = physical_device
-        .surface_formats(&surface, SurfaceInfo::default())?;
-    if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
-        error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
-    }
-    info!("surface capabilities: {caps:?}");
-    let (min_image_count, present_mode) = if has_mailbox {
-        (caps.max_image_count.unwrap_or(3.max(caps.min_image_count + 1)),
-         PresentMode::Mailbox)
-    } else {
-        (3.max(caps.min_image_count),
-         PresentMode::Fifo)
-    };
-    if let Some(max_image_count) = caps.max_image_count {
-        check_le!(min_image_count, max_image_count);
-    }
-    info!("swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}");
-    Ok(Swapchain::new(
-        device,
-        surface,
-        SwapchainCreateInfo {
-            min_image_count,
-            image_format: Format::B8G8R8A8_SRGB,
-            image_color_space: ColorSpace::SrgbNonLinear,
-            image_extent: dimensions.into(),
-            image_usage: ImageUsage::COLOR_ATTACHMENT,
-            composite_alpha,
-            present_mode,
-            ..Default::default()
-        },
-    )?)
-}
-
-fn create_image_views(images: &[Arc<Image>]) -> Result<Vec<Arc<ImageView>>> {
-    Ok(images.iter()
-            .map(|image| ImageView::new_default(image.clone()))
-            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?)
 }

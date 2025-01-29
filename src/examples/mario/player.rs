@@ -317,7 +317,6 @@ impl Player {
                     CoroutineState::Waiting => { this.pipe_sound.play(); }
                     _ => {}
                 }
-                // TODO: replace this with some sort of cached collision feature (from end of last update).
                 if ctx.object().test_collision(vec![PIPE_COLLISION_TAG]).is_none() {
                     this.state = PlayerState::Idle;
                     this.v_speed = 0.;

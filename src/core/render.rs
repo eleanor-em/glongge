@@ -6,13 +6,15 @@ use std::{
     collections::BTreeMap
 };
 use egui::FullOutput;
-
-use vulkano::{command_buffer::{
-    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
-}, Validated};
-use vulkano::command_buffer::{CommandBufferUsage, RenderingAttachmentInfo, RenderingInfo};
+use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
+use vulkano::image::Image;
 use vulkano::render_pass::AttachmentLoadOp::Clear;
 use vulkano::render_pass::AttachmentStoreOp::Store;
+use vulkano::swapchain::Swapchain;
+use vulkano_taskgraph::graph::{NodeId, TaskGraph};
+use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
+use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
+use vulkano_taskgraph::resource::{AccessType, HostAccessType, ImageLayoutType};
 use crate::{
     core::{
         prelude::*,
@@ -143,11 +145,13 @@ pub struct ShaderRenderFrame<'a> {
 pub struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    window: GgWindow,
+    window: UniqueShared<GgWindow>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
-    gui_shader: UniqueShared<GuiRenderer>,
+    gui_shader: GuiRenderer,
+    last_full_output: UniqueShared<Option<FullOutput>>,
 }
+
 
 impl RenderHandler {
     pub fn new(
@@ -167,9 +171,10 @@ impl RenderHandler {
         Ok(Self {
             gui_ctx,
             render_data_channel,
-            window,
+            window: UniqueShared::new(window),
             viewport,
             shaders,
+            last_full_output: UniqueShared::new(None),
             gui_shader,
         })
     }
@@ -194,16 +199,12 @@ impl RenderHandler {
     pub(crate) fn viewport(&self) -> AdjustedViewport { self.viewport.get().clone() }
 
     pub(crate) fn on_recreate_swapchain(
-        &mut self,
+        &self,
         window: GgWindow,
     ) {
-        self.window = window;
-        self.viewport.get().update_from_window(&self.window);
+        *self.window.get() = window;
+        self.viewport.get().update_from_window(&self.window.get());
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
-        self.gui_shader.get().on_recreate_swapchain();
-        for shader in &mut self.shaders {
-            shader.get().on_recreate_swapchain();
-        }
     }
 
     pub(crate) fn do_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
@@ -215,60 +216,135 @@ impl RenderHandler {
         gui_commands.into_iter().for_each(|cmd| cmd(ctx));
     }
 
-    pub(crate) fn do_render(
-        &mut self,
-        vk_ctx: &VulkanoContext,
-        image_idx: usize,
-        full_output: FullOutput
-    ) -> Result<Arc<PrimaryAutoCommandBuffer>, gg_err::CatchOutOfDate> {
-        let (global_scale_factor, render_frame, gui_enabled) = {
-            let mut rx = self.render_data_channel.lock().unwrap();
-            self.viewport.get().translation = rx.viewport.translation;
-            let global_scale_factor = rx.should_resize_with_scale_factor();
-            (global_scale_factor, rx.next_frame(), rx.gui_enabled)
-        };
-        if let Some(global_scale_factor) = global_scale_factor {
-            self.viewport.get().set_global_scale_factor(global_scale_factor);
-            self.on_recreate_swapchain(self.window.clone());
-        }
-
-        let mut builder = AutoCommandBufferBuilder::primary(
-            vk_ctx.command_buffer_allocator(),
-            vk_ctx.queue().queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        ).map_err(gg_err::CatchOutOfDate::from)?;
-        for mut shader in self.shaders.iter_mut().map(|s| s.get()) {
-            let shader_id = shader.id();
-            shader.do_render_shader(image_idx, render_frame.for_shader(shader_id), &mut builder)
-                .map_err(gg_err::CatchOutOfDate::from)?;
-        }
-
-        self.gui_shader.get().update_textures(&full_output.textures_delta.set)?;
-        builder.begin_rendering(
-            RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    // Set the format the same as the swapchain.
-                    clear_value: Some(render_frame.clear_col.as_f32().into()),
-                    load_op: Clear,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(vk_ctx.current_image_view(image_idx))
-                })],
-                ..Default::default()
-            },
-        ).map_err(gg_err::CatchOutOfDate::from)?;
-        for shader in &mut self.shaders {
-            shader.get().build_render_pass(&mut builder)?;
-        }
-
-        let primitives = self.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-        self.gui_shader.get().build_render_pass(&mut builder, gui_enabled, &primitives)?;
-
-        builder.end_rendering()?;
-        Ok(builder.build().map_err(Validated::unwrap)?)
-    }
-
     pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderDataChannel>> {
         self.render_data_channel.clone()
+    }
+
+    pub(crate) fn build_shader_task_graphs(&self,
+                                           task_graph: &mut TaskGraph<VulkanoContext>,
+                                           texture_node: NodeId,
+                                           virtual_swapchain_id: Id<Swapchain>,
+                                           textures: &[Id<Image>]
+    ) -> Result<()> {
+        // Host buffer accesses
+        for buffer in self.shaders.iter()
+            .flat_map(|s| s.get().buffer_writes()) {
+            task_graph.add_host_buffer_access(buffer, HostAccessType::Write);
+        }
+        for buffer in self.gui_shader.buffer_writes() {
+            task_graph.add_host_buffer_access(buffer, HostAccessType::Write);
+        }
+
+        // Preparation for the render
+        let mut pre_render_node = task_graph.create_task_node(
+            "pre_render_handler",
+            QueueFamilyType::Graphics,
+            PreRenderTask { handler: self.clone() },
+        );
+        for image in self.gui_shader.image_writes() {
+            pre_render_node.image_access(image, AccessType::CopyTransferWrite, ImageLayoutType::Optimal);
+        }
+        let pre_render_node = pre_render_node.build();
+        task_graph.add_edge(texture_node, pre_render_node)?;
+        let clear_node = task_graph.create_task_node(
+            "clear_handler",
+            QueueFamilyType::Graphics,
+            ClearTask { handler: self.clone() }
+        ).image_access(
+            virtual_swapchain_id.current_image_id(),
+            AccessType::ColorAttachmentWrite,
+            ImageLayoutType::Optimal
+        ).build();
+        task_graph.add_edge(pre_render_node, clear_node)?;
+
+        // The actual render
+        let shader_nodes = self.shaders.iter().map(|s| {
+            s.get().build_task_node(task_graph, virtual_swapchain_id, textures)
+        }).collect_vec();
+        if let Some(&first_shader) = shader_nodes.first() {
+            task_graph.add_edge(clear_node, first_shader)?;
+        }
+        let last_non_gui_node = *shader_nodes.last().unwrap_or(&clear_node);
+        for (a, b) in shader_nodes.into_iter().tuple_windows() {
+            task_graph.add_edge(a, b)?;
+        }
+
+        // GUI
+        let gui_node = self.gui_shader.build_task_graph(task_graph, virtual_swapchain_id);
+        task_graph.add_edge(last_non_gui_node, gui_node)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn update_full_output(&self, full_output: FullOutput) {
+        *self.last_full_output.get() = Some(full_output);
+    }
+
+    pub(crate) fn is_dirty(&self) -> bool { self.gui_shader.is_dirty() }
+}
+
+struct PreRenderTask {
+    handler: RenderHandler,
+}
+
+impl Task for PreRenderTask {
+    type World = VulkanoContext;
+
+    unsafe fn execute(&self, cbf: &mut RecordingCommandBuffer, tcx: &mut TaskContext, world: &Self::World) -> TaskResult {
+        let image_idx = tcx.swapchain(world.swapchain_id()).unwrap().current_image_index().unwrap() as usize;
+
+        let (global_scale_factor, render_frame) = {
+            let mut rx = self.handler.render_data_channel.lock().unwrap();
+            self.handler.viewport.get().translation = rx.viewport.translation;
+            let global_scale_factor = rx.should_resize_with_scale_factor();
+            *self.handler.gui_shader.gui_enabled.get() = rx.gui_enabled;
+            (global_scale_factor, rx.next_frame())
+        };
+        if let Some(global_scale_factor) = global_scale_factor {
+            self.handler.viewport.get().set_global_scale_factor(global_scale_factor);
+            self.handler.on_recreate_swapchain(self.handler.window.get().clone());
+        }
+        for mut shader in self.handler.shaders.iter().map(|s| s.get()) {
+            let shader_id = shader.id();
+            shader.pre_render_update(image_idx, render_frame.for_shader(shader_id), tcx)
+                .map_err(gg_err::CatchOutOfDate::from).unwrap();
+        }
+        let full_output = self.handler.last_full_output.clone_inner()
+            .expect("GUI output missing");
+        let primitives = self.handler.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        *self.handler.gui_shader.primitives.get() = Some(primitives);
+        self.handler.gui_shader.pre_render_update(cbf, tcx, world, &full_output.textures_delta.set).unwrap();
+        Ok(())
+    }
+}
+
+struct ClearTask {
+    handler: RenderHandler,
+}
+
+impl Task for ClearTask {
+    type World = VulkanoContext;
+
+    unsafe fn execute(&self, cbf: &mut RecordingCommandBuffer, tcx: &mut TaskContext, world: &Self::World) -> TaskResult {
+        let image_idx = tcx.swapchain(world.swapchain_id()).unwrap().current_image_index().unwrap() as usize;
+        let image_view = world.current_image_view(image_idx);
+        let viewport_extent = self.handler.viewport.get().inner().extent;
+        cbf.as_raw().begin_rendering(
+            &RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    clear_value: Some(self.handler.render_data_channel.lock().unwrap().clear_col.as_f32().into()),
+                    load_op: Clear,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(image_view)
+                })],
+                render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
+                layer_count: 1,
+                ..Default::default()
+            },
+        ).unwrap();
+        cbf.as_raw().end_rendering().unwrap();
+
+        Ok(())
     }
 }
 
