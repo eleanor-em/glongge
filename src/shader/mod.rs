@@ -26,6 +26,7 @@ use vulkano::{pipeline::{
     layout::DescriptorSetLayoutCreateFlags
 }, command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer}, buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer}, shader::ShaderModule, Validated, DeviceSize};
 use vulkano::command_buffer::{CommandBufferUsage, CopyBufferInfo, PrimaryCommandBufferAbstract};
+use vulkano::pipeline::DynamicState;
 use vulkano::pipeline::graphics::input_assembly::PrimitiveTopology;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
@@ -302,7 +303,7 @@ impl SpriteShader {
                          stages: stages.into_iter().collect(),
                          vertex_input_state: Some(vertex_input_state),
                          input_assembly_state: Some(InputAssemblyState::default()),
-                         viewport_state: Some(self.viewport.get().as_viewport_state()),
+                         viewport_state: Some(ViewportState::default()),
                          rasterization_state: Some(RasterizationState::default()),
                          multisample_state: Some(MultisampleState::default()),
                          color_blend_state: Some(ColorBlendState::with_attachment_states(
@@ -312,6 +313,7 @@ impl SpriteShader {
                                  ..Default::default()
                              },
                          )),
+                         dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                          subpass: Some(subpass.into()),
                          ..GraphicsPipelineCreateInfo::layout(layout)
                      })?)
@@ -464,6 +466,7 @@ impl Shader for SpriteShader {
             view_translate_y: viewport.translation.y,
         };
         builder
+            .set_viewport(0, std::slice::from_ref(&viewport.inner()).into())?
             .bind_pipeline_graphics(pipeline.clone())?
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
