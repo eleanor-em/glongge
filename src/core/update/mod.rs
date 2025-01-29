@@ -57,8 +57,9 @@ use crate::{
     util::{gg_err, gg_iter},
     core::vk::RenderPerfStats,
     resource::sprite::GgInternalSprite,
-    shader::{BasicShader, get_shader, Shader}
+    shader::{get_shader, Shader}
 };
+use crate::shader::SpriteShader;
 use crate::util::gg_float;
 
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
@@ -258,7 +259,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     #[cold]
     fn maybe_replace_invalid_shader_id(render_info: &mut RenderInfo) {
         if !render_info.shader_id.is_valid() {
-            render_info.shader_id = get_shader(BasicShader::name());
+            render_info.shader_id = get_shader(SpriteShader::name());
         }
     }
 

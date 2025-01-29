@@ -4,7 +4,6 @@ use rand::{distributions::{Distribution, Uniform}, Rng};
 use glongge_derive::*;
 use glongge::core::{
     prelude::*,
-    render::VertexWithUV,
     scene::{Scene, SceneName},
 };
 use crate::object_type::ObjectType;
@@ -97,7 +96,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
             x: 0.,
             y: tri_height / 2. - centre_correction,
         };
-        Ok(Some(RenderItem::new(VertexWithUV::from_vec2s(vec![vertex1, vertex2, vertex3]))))
+        Ok(Some(RenderItem::new(vec![vertex1, vertex2, vertex3])))
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space) &&

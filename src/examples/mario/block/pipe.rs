@@ -40,6 +40,7 @@ impl SceneObject<ObjectType> for Pipe {
         self.sprite = if self.orientation.x.is_zero() {
             Sprite::from_single_coords(
                 object_ctx,
+                resource_handler,
                 texture,
                 Vec2i { x: 112, y: 612 },
                 Vec2i { x: 144, y: 676}
@@ -47,6 +48,7 @@ impl SceneObject<ObjectType> for Pipe {
         } else {
             Sprite::from_single_coords(
                 object_ctx,
+                resource_handler,
                 texture,
                 Vec2i { x: 192, y: 644 },
                 Vec2i { x: 256, y: 676}

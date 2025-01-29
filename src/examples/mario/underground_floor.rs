@@ -24,6 +24,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_extent(
             object_ctx,
+            resource_handler,
             texture.clone(),
             Vec2i { x: 147, y: 16 },
             Vec2i { x: 16, y: 16 }

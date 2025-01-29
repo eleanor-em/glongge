@@ -27,6 +27,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
+            resource_handler,
             texture,
             Vec2i { x: 224, y: 324 },
             Vec2i { x: 256, y: 676}

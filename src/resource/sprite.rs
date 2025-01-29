@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::resource::texture::TextureId;
 use num_traits::{ToPrimitive, Zero};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::{
@@ -9,7 +8,7 @@ use crate::{
         ObjectTypeEnum,
         prelude::*,
     },
-    resource::texture::{Texture, TextureSubArea}
+    resource::texture::{MaterialId, Texture}
 };
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
@@ -31,9 +30,8 @@ enum SpriteState {
 
 #[register_scene_object]
 pub struct GgInternalSprite {
-    textures: Vec<Texture>,
-    texture_indices: Vec<usize>,
-    areas: Vec<TextureSubArea>,
+    materials: Vec<MaterialId>,
+    material_indices: Vec<usize>,
     elapsed_us: u128,
     frame_time_ms: Vec<u32>,
     frame: usize,
@@ -49,9 +47,10 @@ pub struct GgInternalSprite {
 impl GgInternalSprite {
     fn from_textures<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         textures: Vec<Texture>
     ) -> Sprite {
-        let areas = textures.iter().map(|_| TextureSubArea::default()).collect_vec();
+        let areas = textures.iter().map(|_| Rect::default()).collect_vec();
         let frame_time_ms = textures.iter().map(|tex| {
             tex.duration().map_or(1000, |d| {
                 u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
@@ -59,10 +58,14 @@ impl GgInternalSprite {
         }).collect_vec();
         let render_item = vertex::rectangle(Vec2::zero(), textures[0].half_widths());
         let extent = textures[0].aa_extent();
+        let materials = textures.into_iter()
+            .zip(&areas)
+            .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
+            .collect_vec();
+        let material_indices = (0..areas.len()).collect_vec();
         let inner = Rc::new(RefCell::new(Self {
-            textures,
-            texture_indices: (0..areas.len()).collect_vec(),
-            areas, frame_time_ms, render_item,
+            materials, material_indices,
+            frame_time_ms, render_item,
             paused: false,
             elapsed_us: 0,
             frame: 0,
@@ -77,6 +80,7 @@ impl GgInternalSprite {
 
     fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
@@ -88,15 +92,20 @@ impl GgInternalSprite {
                 let top_left = offset
                     + tile_x * (tile_size + margin).x * Vec2i::right()
                     + tile_y * (tile_size + margin).y * Vec2i::down();
-                TextureSubArea::new(top_left + tile_size / 2, tile_size / 2)
+                Rect::new((top_left + tile_size / 2).into(), (tile_size / 2).into())
             })
             .collect_vec();
         let frame_time_ms = vec![1000; areas.len()];
         let render_item = vertex::rectangle(Vec2::zero(), (tile_size / 2).into());
+        let textures = vec![texture; areas.len()];
+        let materials = textures.into_iter()
+            .zip(&areas)
+            .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
+            .collect_vec();
+        let material_indices = (0..areas.len()).collect_vec();
         let inner = Rc::new(RefCell::new(Self {
-            textures: vec![texture],
-            texture_indices: vec![0; areas.len()],
-            areas, frame_time_ms, render_item,
+            materials, material_indices,
+            frame_time_ms, render_item,
             paused: false,
             elapsed_us: 0,
             frame: 0,
@@ -110,14 +119,11 @@ impl GgInternalSprite {
         Sprite { inner, extent, collider }
     }
 
-    fn current_frame(&self) -> TextureSubArea {
-        self.areas[self.frame]
-    }
-
     fn set_frame_orders(&mut self, frames: Vec<usize>) {
-        self.areas = frames.iter().map(|i| self.areas[*i]).collect();
-        // XXX: not tested properly.
-        self.texture_indices = frames.into_iter().map(|i| self.texture_indices[i]).collect();
+        for frame in frames.iter() {
+            check_lt!(*frame, self.materials.len());
+        }
+        self.material_indices = frames;
     }
 
     fn set_depth(&mut self, depth: VertexDepth) {
@@ -162,7 +168,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
             .cumsum()
             .filter(|&ms| cycle_elapsed_ms >= u128::from(ms))
             .count();
-        check_lt!(self.frame, self.areas.len());
+        check_lt!(self.frame, self.material_indices.len());
     }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
@@ -196,14 +202,12 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
     }
     fn render_info(&self) -> Vec<RenderInfo> {
         check_eq!(self.state, SpriteState::Show);
-        check_lt!(self.frame, self.areas.len());
-        check_eq!(self.texture_indices.len(), self.areas.len());
-        let texture_index = self.texture_indices[self.frame];
-        let texture_id = self.textures[texture_index].id();
+        check_lt!(self.frame, self.material_indices.len());
+        let material_index = self.material_indices[self.frame];
+        let material_id = self.materials[material_index];
         vec![RenderInfo {
             shader_id: get_shader(SpriteShader::name()),
-            texture_id,
-            texture_sub_area: self.current_frame(),
+            material_id,
             ..Default::default()
         }]
     }
@@ -232,7 +236,7 @@ impl Sprite {
         filename: impl AsRef<str>
     ) -> Result<Sprite> {
         Ok(GgInternalSprite::from_textures(
-            object_ctx,
+            object_ctx, resource_handler,
             vec![resource_handler.texture.wait_load_file(filename)?]
         ))
     }
@@ -242,28 +246,31 @@ impl Sprite {
         filename: impl AsRef<str>
     ) -> Result<Sprite> {
         Ok(GgInternalSprite::from_textures(
-            object_ctx,
+            object_ctx, resource_handler,
             resource_handler.texture.wait_load_file_animated(filename)?
         ))
     }
     pub fn from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
         offset: Vec2i,
         margin: Vec2i
     ) -> Sprite {
-        GgInternalSprite::from_tileset(object_ctx, texture, tile_count, tile_size, offset, margin)
+        GgInternalSprite::from_tileset(object_ctx, resource_handler, texture, tile_count, tile_size, offset, margin)
     }
     pub fn from_single_extent<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         extent: Vec2i
     ) -> Sprite {
         Self::from_tileset(
             object_ctx,
+            resource_handler,
             texture,
             Vec2i::one(),
             extent,
@@ -273,12 +280,14 @@ impl Sprite {
     }
     pub fn from_single_coords<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         bottom_right: Vec2i,
     ) -> Sprite {
         Self::from_single_extent(
             object_ctx,
+            resource_handler,
             texture,
             top_left,
             bottom_right - top_left
@@ -287,10 +296,11 @@ impl Sprite {
 
     pub(crate) fn from_texture<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
         texture: Texture
     ) -> Sprite {
         let extent = texture.aa_extent().as_vec2int_lossy();
-        Self::from_single_extent(object_ctx, texture, Vec2i::zero(), extent)
+        Self::from_single_extent(object_ctx, resource_handler, texture, Vec2i::zero(), extent)
     }
 
     #[must_use]
@@ -302,7 +312,7 @@ impl Sprite {
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
             let mut inner = self.inner.borrow_mut();
-            inner.frame_time_ms = vec![ms; inner.areas.len()];
+            inner.frame_time_ms = vec![ms; inner.materials.len()];
         }
         self
     }
@@ -310,7 +320,7 @@ impl Sprite {
     pub fn with_frame_time_ms(self, times: Vec<u32>) -> Self {
         {
             let mut inner = self.inner.borrow_mut();
-            check_eq!(times.len(), inner.areas.len());
+            check_eq!(times.len(), inner.material_indices.len());
             inner.frame_time_ms = times;
         }
         self
@@ -369,11 +379,6 @@ impl Sprite {
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
         self.inner.borrow_mut().set_depth(depth);
-    }
-
-    pub fn texture_id(&self) -> TextureId {
-        let inner = self.inner.borrow();
-        inner.textures[inner.frame].id()
     }
 }
 

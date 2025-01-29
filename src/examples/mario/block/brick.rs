@@ -39,6 +39,7 @@ impl SceneObject<ObjectType> for Brick {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_extent(
             object_ctx,
+            resource_handler,
             texture,
             Vec2i { x: 17, y: 16 },
             Vec2i { x: 16, y: 16});

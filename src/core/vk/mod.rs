@@ -25,12 +25,12 @@ use crate::{core::{
     prelude::*,
 }, info_every_seconds, resource::ResourceHandler, util::{
     gg_time::TimeIt
-}};
+}, warn_every_seconds};
 use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
-use crate::shader::{ensure_shaders_locked, BasicShader, Shader, SpriteShader, TriangleFanShader, WireframeShader};
+use crate::shader::{ensure_shaders_locked, Shader, SpriteShader};
 use crate::util::{gg_err, gg_float, SceneHandlerBuilder, UniqueShared};
 
 pub mod vk_ctx;
@@ -299,9 +299,9 @@ where
 
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
-            BasicShader::create(vk_ctx.clone(), viewport.clone())?,
-            TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
+            // WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
+            // BasicShader::create(vk_ctx.clone(), viewport.clone())?,
+            // TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
         ];
 
         let render_handler = RenderHandler::new(
@@ -529,7 +529,7 @@ impl RenderPerfStats {
                 msg += format!("{time:.1}, ").as_str();
             }
             msg += format!("{:.1}", late_in_row.last().unwrap()).as_str();
-            warn!("{msg}");
+            warn_every_seconds!(1, "{msg}");
         }
         if render_time <= DEADLINE_MS {
             self.on_time += 1;

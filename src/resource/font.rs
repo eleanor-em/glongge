@@ -91,6 +91,7 @@ impl Font {
         let width = reader.width();
         let height = reader.height();
         Ok(Sprite::from_texture(object_ctx,
+                                resource_handler,
             resource_handler.texture.wait_load_reader_rgba(
                 &mut reader,
                 width,

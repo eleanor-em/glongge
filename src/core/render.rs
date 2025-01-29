@@ -10,7 +10,6 @@ use egui::FullOutput;
 use vulkano::{command_buffer::{
     AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
 }, Validated};
-use num_traits::Zero;
 use vulkano::command_buffer::{CommandBufferUsage, RenderingAttachmentInfo, RenderingInfo};
 use vulkano::render_pass::AttachmentLoadOp::Clear;
 use vulkano::render_pass::AttachmentStoreOp::Store;
@@ -20,7 +19,6 @@ use crate::{
         vk::AdjustedViewport,
         ObjectId,
     },
-    resource::texture::TextureSubArea,
 };
 use crate::core::scene::GuiClosure;
 use crate::util::{gg_err, UniqueShared};
@@ -28,13 +26,13 @@ use crate::core::vk::{GgWindow, RenderPerfStats};
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;
+use crate::resource::texture::MaterialId;
 use crate::shader::{Shader, ShaderId};
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
     pub col: [f32; 4],
-    pub texture_id: u16,
-    pub texture_sub_area: TextureSubArea,
+    pub material_id: MaterialId,
     pub shader_id: ShaderId,
 }
 
@@ -42,8 +40,7 @@ impl Default for RenderInfo {
     fn default() -> Self {
         Self {
             col: Colour::white().into(),
-            texture_id: 0,
-            texture_sub_area: TextureSubArea::default(),
+            material_id: 0,
             shader_id: ShaderId::default()
         }
     }
@@ -58,7 +55,7 @@ pub struct RenderInfoFull {
 }
 
 pub struct RenderDataChannel {
-    pub(crate) vertices: Vec<VertexWithUV>,
+    pub(crate) vertices: Vec<Vec2>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     pub(crate) gui_enabled: bool,
@@ -117,7 +114,7 @@ impl RenderDataChannel {
 
 #[derive(Clone)]
 pub struct RenderFrame {
-    pub vertices: Vec<VertexWithUV>,
+    pub vertices: Vec<Vec2>,
     pub render_infos: Vec<RenderInfoFull>,
     pub clear_col: Colour,
 }
@@ -138,7 +135,7 @@ impl RenderFrame {
 }
 
 pub struct ShaderRenderFrame<'a> {
-    pub vertices: &'a [VertexWithUV],
+    pub vertices: &'a [Vec2],
     pub render_infos: Vec<RenderInfoFull>,
 }
 
@@ -320,35 +317,14 @@ impl Ord for VertexDepth {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialOrd, PartialEq)]
-pub struct VertexWithUV {
-    pub xy: [f32; 2],
-    pub uv: [f32; 2],
-}
-
-impl VertexWithUV {
-    pub fn from_vertex(vertex: Vec2) -> Self {
-        Self { xy: vertex.into(), uv: Vec2::zero().into() }
-    }
-
-    pub fn from_vec2s<I: IntoIterator<Item=Vec2>>(vertices: I) -> Vec<Self> {
-        vertices.into_iter().map(Self::from_vertex).collect()
-    }
-    pub fn zip_from_vec2s<I: IntoIterator<Item=Vec2>, J: IntoIterator<Item=Vec2>>(vertices: I, uvs: J) -> Vec<Self> {
-        vertices.into_iter().zip(uvs)
-            .map(|(vertex, uv)| Self { xy: vertex.into(), uv: uv.into() })
-            .collect()
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct RenderItem {
     pub depth: VertexDepth,
-    pub vertices: Vec<VertexWithUV>,
+    pub vertices: Vec<Vec2>,
 }
 
 impl RenderItem {
-    pub fn new(vertices: Vec<VertexWithUV>) -> Self {
+    pub fn new(vertices: Vec<Vec2>) -> Self {
         Self {
             depth: VertexDepth::Middle,
             vertices,
@@ -419,6 +395,6 @@ pub(crate) struct StoredRenderItem {
 }
 
 impl StoredRenderItem {
-    pub(crate) fn vertices(&self) -> &[VertexWithUV] { &self.render_item.vertices }
+    pub(crate) fn vertices(&self) -> &[Vec2] { &self.render_item.vertices }
     pub(crate) fn len(&self) -> usize { self.render_item.len()}
 }

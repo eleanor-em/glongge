@@ -123,12 +123,13 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
         let sprite = if let Some(tex_segment) = self.tex_segment {
             Sprite::from_single_coords(
                 object_ctx,
+                resource_handler,
                 resource_handler.texture.wait_load_file(self.filename.clone())?,
                 tex_segment.top_left().as_vec2int_lossy(),
                 tex_segment.bottom_right().as_vec2int_lossy(),
             )
         } else {
-            Sprite::from_texture(object_ctx, resource_handler.texture.wait_load_file(self.filename.clone())?)
+            Sprite::from_texture(object_ctx, resource_handler, resource_handler.texture.wait_load_file(self.filename.clone())?)
         };
         if let Some(depth) = self.depth {
             self.sprite = sprite.with_depth(depth);

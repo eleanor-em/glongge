@@ -45,6 +45,7 @@ impl SceneObject<ObjectType> for Goomba {
         let texture = resource_handler.texture.wait_load_file("res/enemies_sheet.png")?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
+            resource_handler,
             texture.clone(),
             Vec2i { x: 2, y: 1},
             Vec2i { x: 16, y: 16 },
@@ -53,6 +54,7 @@ impl SceneObject<ObjectType> for Goomba {
         ).with_fixed_ms_per_frame(200);
         self.die_sprite = Sprite::from_single_extent(
             object_ctx,
+            resource_handler,
             texture.clone(),
             Vec2i { x: 36, y: 16 },
             Vec2i { x: 16, y: 16 }

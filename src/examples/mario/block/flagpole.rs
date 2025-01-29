@@ -27,6 +27,7 @@ impl SceneObject<ObjectType> for Flagpole {
         let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
+            resource_handler,
             texture,
             Vec2i { x: 0, y: 588},
             Vec2i { x: 16, y: 748 });

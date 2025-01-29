@@ -167,8 +167,7 @@ impl VulkanoContext {
 
 // TODO: more flexible approach here.
 fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtensions> {
-    let mut extensions = Surface::required_extensions(&event_loop)?;
-    extensions.ext_surface_maintenance1 = true;
+    let extensions = Surface::required_extensions(&event_loop)?;
     Ok(extensions)
 }
 fn device_extensions() -> DeviceExtensions {

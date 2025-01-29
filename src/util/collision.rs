@@ -1298,12 +1298,8 @@ impl GgInternalCollisionShape {
     pub fn collider(&self) -> &GenericCollider { &self.collider }
 
     fn triangles(&self) -> RenderItem {
-        RenderItem::new(
-            self.collider.as_triangles().into_flattened()
-                .into_iter()
-                .map(VertexWithUV::from_vertex)
-                .collect()
-        ).with_depth(VertexDepth::max_value())
+        RenderItem::new(self.collider.as_triangles().into_flattened())
+            .with_depth(VertexDepth::max_value())
     }
 
     pub fn show_wireframe(&mut self) { self.show_wireframe = true; }
@@ -1396,11 +1392,11 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         check!(self.show_wireframe);
         vec![RenderInfo {
             col: Colour::cyan().with_alpha(0.2).into(),
-            shader_id: get_shader(BasicShader::name()),
+            // shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         }, RenderInfo {
             col: Colour::green().into(),
-            shader_id: get_shader(WireframeShader::name()),
+            // shader_id: get_shader(WireframeShader::name()),
             ..Default::default()
         }]
     }
@@ -1417,7 +1413,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 
 
 pub use GgInternalCollisionShape as CollisionShape;
-use crate::core::render::{VertexDepth, VertexWithUV};
+use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
 use crate::util::canvas::Canvas;
-use crate::shader::{BasicShader, get_shader, Shader, WireframeShader};
+use crate::shader::{get_shader, Shader};

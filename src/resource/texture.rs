@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     default::Default,
     fmt::{Display, Formatter},
     fs,
@@ -41,7 +41,7 @@ struct RawLoadedTexture {
     duration: Option<Duration>,
 }
 
-pub type TextureId = u16;
+pub type TextureId = u32;
 
 #[derive(Debug)]
 pub struct Texture {
@@ -101,12 +101,6 @@ impl Drop for Texture {
     }
 }
 
-impl From<Texture> for u32 {
-    fn from(value: Texture) -> Self {
-        u32::from(value.id)
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct InternalTexture {
     buf: Subbuffer<[u8]>,
@@ -156,18 +150,9 @@ impl AxisAlignedExtent for InternalTexture {
 }
 
 #[derive(Clone)]
-pub(crate) enum CachedTexture {
+enum CachedTexture {
     Loading,
     Ready(Arc<InternalTexture>),
-}
-
-impl CachedTexture {
-    pub fn ready(self) -> Option<Arc<InternalTexture>> {
-        match self {
-            Self::Loading => None,
-            Self::Ready(tex) => Some(tex)
-        }
-    }
 }
 
 struct WrappedPngReader<R: Read>(png::Reader<R>);
@@ -274,18 +259,67 @@ impl TextureHandlerInner {
     }
 }
 
+pub type MaterialId = u16;
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Material {
+    pub texture_id: TextureId,
+    pub area: Rect,
+    pub texture_extent: Vec2,
+}
+
+struct MaterialHandler {
+    materials: BTreeMap<MaterialId, Material>,
+    materials_inverse: HashMap<Material, MaterialId>,
+    dirty: bool,
+}
+
+impl MaterialHandler {
+    fn new() -> Self {
+        Self {
+            materials: BTreeMap::new(),
+            materials_inverse: HashMap::new(),
+            dirty: false,
+        }
+    }
+    fn material_from_texture(&mut self, texture: &Texture, area: &Rect) -> MaterialId {
+        let material = Material {
+            texture_id: texture.id,
+            area: *area,
+            texture_extent: texture.extent,
+        };
+        if let Some(id) = self.materials_inverse.get(&material) {
+            *id
+        } else {
+            let id = self.materials
+                .last_key_value().map(|(&k, _)| k + 1)
+                .unwrap_or(0);
+            self.materials.insert(id, material.clone());
+            self.materials_inverse.insert(material, id);
+            self.dirty = true;
+            id
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TextureHandler {
     ctx: VulkanoContext,
     inner: Arc<Mutex<TextureHandlerInner>>,
     cached_textures: Arc<RwLock<BTreeMap<TextureId, CachedTexture>>>,
+    material_handler: Arc<Mutex<MaterialHandler>>,
 }
 
 impl TextureHandler {
     pub(crate) fn new(ctx: VulkanoContext) -> Result<Self> {
         let inner = Arc::new(Mutex::new(TextureHandlerInner::new(&ctx)?));
         let cached_textures = Arc::new(RwLock::new(BTreeMap::new()));
-        Ok(Self { ctx, inner, cached_textures })
+        let material_handler = Arc::new(Mutex::new(MaterialHandler::new()));
+        Ok(Self { ctx, inner, cached_textures, material_handler })
+    }
+
+    pub fn material_from_texture(&self, texture: &Texture, area: &Rect) -> MaterialId {
+        self.material_handler.lock().unwrap().material_from_texture(texture, area)
     }
 
     // TODO: implement spawn_load_file().
@@ -497,17 +531,17 @@ impl TextureHandler {
             .cloned().collect()
     }
 
-    // Uses RwLock. Blocks only if another thread is loading a texture, see wait_load_file().
-    pub(crate) fn get(&self, texture_id: TextureId) -> Option<CachedTexture> {
-        self.cached_textures.read().unwrap().get(&texture_id).cloned()
-    }
-    pub(crate) fn get_nonblank(&self, texture_id: TextureId) -> Option<CachedTexture> {
-        if texture_id.is_zero() {
-            None
+    pub(crate) fn get_updated_materials(&self) -> Option<Vec<Material>> {
+        let mut material_handler = self.material_handler.lock().unwrap();
+        if material_handler.dirty {
+            let rv = material_handler.materials.values().cloned().collect();
+            material_handler.dirty = false;
+            Some(rv)
         } else {
-            self.get(texture_id)
+            None
         }
     }
+
     pub fn wait_get_raw(&self, texture_id: TextureId) -> Result<Option<Vec<Vec<Colour>>>> {
         let Some(tex) = self.inner.lock().unwrap().textures.get(&texture_id).cloned() else {
             return Ok(None);
@@ -527,42 +561,5 @@ impl TextureHandler {
             }
         }
         Ok(Some(rv))
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct TextureSubArea {
-    rect: Rect,
-}
-
-impl TextureSubArea {
-    pub fn new(centre: Vec2i, half_widths: Vec2i) -> Self {
-        Self::from_rect(Rect::new(centre.into(), half_widths.into()))
-    }
-    pub fn from_rect(rect: Rect) -> Self {
-        Self { rect }
-    }
-
-    pub(crate) fn uv<T: AxisAlignedExtent>(&self, texture: &T, raw_uv: Vec2) -> Vec2 {
-        if self.rect == Rect::default() {
-            raw_uv
-        } else {
-            let extent = texture.aa_extent();
-            let u0 = self.rect.top_left().x / extent.x;
-            let v0 = self.rect.top_left().y / extent.y;
-            let u1 = self.rect.bottom_right().x / extent.x;
-            let v1 = self.rect.bottom_right().y / extent.y;
-            Vec2 { x: linalg::lerp(u0, u1, raw_uv.x), y: linalg::lerp(v0, v1, raw_uv.y) }
-        }
-    }
-}
-
-impl AxisAlignedExtent for TextureSubArea {
-    fn aa_extent(&self) -> Vec2 {
-        self.rect.aa_extent()
-    }
-
-    fn centre(&self) -> Vec2 {
-        self.rect.centre()
     }
 }

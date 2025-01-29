@@ -18,6 +18,7 @@ use std::{
     }
 };
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use std::iter::Sum;
 use std::sync::Arc;
 use itertools::Product;
@@ -265,6 +266,13 @@ impl Ord for Vec2 {
                 o => o
             }
         }
+    }
+}
+
+impl Hash for Vec2 {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.x.to_bits().hash(state);
+        self.y.to_bits().hash(state);
     }
 }
 
@@ -906,7 +914,7 @@ impl<T: AxisAlignedExtent> AxisAlignedExtent for Arc<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Rect {
     centre: Vec2,
     half_widths: Vec2,
