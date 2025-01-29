@@ -217,10 +217,8 @@ impl<T: VkVertex + Copy> CachedVertexBuffer<T> {
 #[derive(Clone)]
 pub struct SpriteShader {
     ctx: VulkanoContext,
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
     viewport: UniqueShared<AdjustedViewport>,
-    pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
+    pipeline: Arc<GraphicsPipeline>,
     vertex_buffer: CachedVertexBuffer<sprite::Vertex>,
     resource_handler: ResourceHandler,
     materials: Subbuffer<sprite::vertex_shader::MaterialData>,
@@ -233,8 +231,8 @@ impl SpriteShader {
         resource_handler: ResourceHandler
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
-        let device = ctx.device();
         let vertex_buffer = CachedVertexBuffer::new(ctx.clone(), 10_000)?;
+        // Create materials:
         let materials: Subbuffer<sprite::vertex_shader::MaterialData> = Buffer::new_unsized(
             ctx.memory_allocator(),
             BufferCreateInfo {
@@ -258,71 +256,57 @@ impl SpriteShader {
                 dummy3: 0,
             }; MAX_MATERIAL_COUNT],
         };
+        // Create pipeline:
+        let vs = sprite::vertex_shader::load(ctx.device()).context("failed to create shader module")?;
+        let fs = sprite::fragment_shader::load(ctx.device()).context("failed to create shader module")?;
+        let vs_entry = vs.entry_point("main")
+            .context("vertex shader: entry point missing")?;
+        let fs_entry = fs.entry_point("main")
+            .context("fragment shader: entry point missing")?;
+        let vertex_input_state =
+            sprite::Vertex::per_vertex().definition(&vs_entry)?;
+        let stages = [
+            PipelineShaderStageCreateInfo::new(vs_entry),
+            PipelineShaderStageCreateInfo::new(fs_entry),
+        ];
+        let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
+        for layout in &mut create_info.set_layouts {
+            layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
+        }
+        let layout = PipelineLayout::new(
+            ctx.device(),
+            create_info.into_pipeline_layout_create_info(ctx.device())?,
+        ).map_err(Validated::unwrap)?;
+        let subpass = PipelineRenderingCreateInfo {
+            color_attachment_formats: vec![Some(ctx.swapchain().image_format())],
+            ..Default::default()
+        };
+        let pipeline = GraphicsPipeline::new(ctx.device(),
+            /* cache= */ None,
+         GraphicsPipelineCreateInfo {
+             stages: stages.into_iter().collect(),
+             vertex_input_state: Some(vertex_input_state),
+             input_assembly_state: Some(InputAssemblyState::default()),
+             viewport_state: Some(ViewportState::default()),
+             rasterization_state: Some(RasterizationState::default()),
+             multisample_state: Some(MultisampleState::default()),
+             color_blend_state: Some(ColorBlendState::with_attachment_states(
+                 subpass.color_attachment_formats.len() as u32,
+                 ColorBlendAttachmentState {
+                     blend: Some(AttachmentBlend::alpha()),
+                     ..Default::default()
+                 },
+             )),
+             dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+             subpass: Some(subpass.into()),
+             ..GraphicsPipelineCreateInfo::layout(layout)
+         })?;
         Ok(UniqueShared::new(Box::new(Self {
-            ctx,
-            vs: sprite::vertex_shader::load(device.clone()).context("failed to create shader module")?,
-            fs: sprite::fragment_shader::load(device).context("failed to create shader module")?,
-            viewport,
-            pipeline: UniqueShared::default(),
-            vertex_buffer,
-            resource_handler,
-            materials,
+            ctx, viewport, pipeline, vertex_buffer, resource_handler, materials,
         }) as Box<dyn Shader>))
     }
 
-    fn get_or_create_pipeline(&mut self) -> Result<Arc<GraphicsPipeline>> {
-        if self.pipeline.get().is_none() {
-            let vs = self.vs.entry_point("main")
-                .context("vertex shader: entry point missing")?;
-            let fs = self.fs.entry_point("main")
-                .context("fragment shader: entry point missing")?;
-            let vertex_input_state =
-                sprite::Vertex::per_vertex().definition(&vs)?;
-            let stages = [
-                PipelineShaderStageCreateInfo::new(vs),
-                PipelineShaderStageCreateInfo::new(fs),
-            ];
-            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-            for layout in &mut create_info.set_layouts {
-                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-            }
-            let layout = PipelineLayout::new(
-                self.ctx.device(),
-                create_info.into_pipeline_layout_create_info(self.ctx.device())?,
-            ).map_err(Validated::unwrap)?;
-
-            let device = self.ctx.device();
-            self.pipeline = self.ctx.create_pipeline(|swapchain| {
-                let subpass = PipelineRenderingCreateInfo {
-                    color_attachment_formats: vec![Some(swapchain.image_format())],
-                    ..Default::default()
-                };
-                Ok(GraphicsPipeline::new(device,
-                     /* cache= */ None,
-                     GraphicsPipelineCreateInfo {
-                         stages: stages.into_iter().collect(),
-                         vertex_input_state: Some(vertex_input_state),
-                         input_assembly_state: Some(InputAssemblyState::default()),
-                         viewport_state: Some(ViewportState::default()),
-                         rasterization_state: Some(RasterizationState::default()),
-                         multisample_state: Some(MultisampleState::default()),
-                         color_blend_state: Some(ColorBlendState::with_attachment_states(
-                             subpass.color_attachment_formats.len() as u32,
-                             ColorBlendAttachmentState {
-                                 blend: Some(AttachmentBlend::alpha()),
-                                 ..Default::default()
-                             },
-                         )),
-                         dynamic_state: [DynamicState::Viewport].into_iter().collect(),
-                         subpass: Some(subpass.into()),
-                         ..GraphicsPipelineCreateInfo::layout(layout)
-                     })?)
-            })?;
-        }
-        Ok(self.pipeline.get().clone().unwrap())
-    }
     fn create_uniform_desc_sets(&mut self) -> Result<Vec<Arc<DescriptorSet>>> {
-        let pipeline = self.get_or_create_pipeline()?;
         let sampler = Sampler::new(
             self.ctx.device(),
             SamplerCreateInfo {
@@ -398,7 +382,7 @@ impl SpriteShader {
         Ok(vec![
             DescriptorSet::new(
                 self.ctx.descriptor_set_allocator(),
-                pipeline.layout().set_layouts()[0].clone(),
+                self.pipeline.layout().set_layouts()[0].clone(),
                 [
                     WriteDescriptorSet::buffer(0, self.materials.clone()),
                     WriteDescriptorSet::image_view_sampler_array(
@@ -454,9 +438,8 @@ impl Shader for SpriteShader {
         builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>
     ) -> Result<()> {
         if self.vertex_buffer.vertex_count.is_none() { return Ok(()); }
-        let pipeline = self.get_or_create_pipeline()?;
         let uniform_desc_sets = self.create_uniform_desc_sets()?;
-        let layout = pipeline.layout().clone();
+        let layout = self.pipeline.layout().clone();
         let viewport = self.viewport.get();
         let pc = sprite::vertex_shader::WindowData {
             window_width: viewport.physical_width(),
@@ -467,7 +450,7 @@ impl Shader for SpriteShader {
         };
         builder
             .set_viewport(0, std::slice::from_ref(&viewport.inner()).into())?
-            .bind_pipeline_graphics(pipeline.clone())?
+            .bind_pipeline_graphics(self.pipeline.clone())?
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 layout.clone(),

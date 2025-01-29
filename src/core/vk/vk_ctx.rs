@@ -135,6 +135,10 @@ impl VulkanoContext {
         self.descriptor_set_allocator.clone()
     }
 
+    pub(crate) fn swapchain(&self) -> Arc<Swapchain> {
+        self.swapchain.get().clone()
+    }
+
     // The return values of the below pub(crate) functions should not be stored between frames.
     pub(crate) fn acquire_next_image(&self) -> Result<AcquiredSwapchainFuture, gg_err::CatchOutOfDate> {
         // XXX: "acquire_next_image" is somewhat misleading, since it does not block
