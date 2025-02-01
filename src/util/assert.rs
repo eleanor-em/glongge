@@ -132,7 +132,6 @@ macro_rules! check_is_none {
 #[allow(unused_imports)]
 pub use check_is_none;
 
-
 #[allow(unused_macros)]
 #[macro_export]
 macro_rules! check_lt {

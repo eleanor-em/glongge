@@ -1,16 +1,36 @@
-use num_traits::FloatConst;
 use crate::core::prelude::*;
+use num_traits::FloatConst;
 
 pub fn rectangle(centre: Vec2, half_widths: Vec2) -> RenderItem {
     let top_left = centre - half_widths;
-    let top_right = centre + Vec2 {  x: half_widths.x, y: -half_widths.y };
-    let bottom_left = centre + Vec2 { x: -half_widths.x, y: half_widths.y };
+    let top_right = centre
+        + Vec2 {
+            x: half_widths.x,
+            y: -half_widths.y,
+        };
+    let bottom_left = centre
+        + Vec2 {
+            x: -half_widths.x,
+            y: half_widths.y,
+        };
     let bottom_right = centre + half_widths;
     quadrilateral(top_left, top_right, bottom_left, bottom_right)
 }
 
-pub fn quadrilateral(top_left: Vec2, top_right: Vec2, bottom_left: Vec2, bottom_right: Vec2) -> RenderItem {
-    RenderItem::new(vec![top_left, top_right, bottom_left, top_right, bottom_right, bottom_left])
+pub fn quadrilateral(
+    top_left: Vec2,
+    top_right: Vec2,
+    bottom_left: Vec2,
+    bottom_right: Vec2,
+) -> RenderItem {
+    RenderItem::new(vec![
+        top_left,
+        top_right,
+        bottom_left,
+        top_right,
+        bottom_right,
+        bottom_left,
+    ])
 }
 
 pub fn line(start: Vec2, end: Vec2, width: f32) -> RenderItem {
@@ -20,20 +40,35 @@ pub fn line(start: Vec2, end: Vec2, width: f32) -> RenderItem {
     let top_left = end - axis * width / 2;
     let top_right = end + axis * width / 2;
     RenderItem::new(vec![
-        bottom_left, bottom_right, top_left,
-        bottom_right, top_left, top_right,
+        bottom_left,
+        bottom_right,
+        top_left,
+        bottom_right,
+        top_left,
+        top_right,
     ])
 }
 
 pub fn circle(centre: Vec2, radius: f32, steps: u32) -> RenderItem {
     let dt = 2. * f32::PI() / steps as f32;
-    RenderItem::new((0..steps).circular_tuple_windows()
+    RenderItem::new(
+        (0..steps)
+            .circular_tuple_windows()
             .flat_map(|(i, j)| {
                 vec![
                     centre,
-                    centre + Vec2 { x: radius * (i as f32 * dt).cos(), y: radius * (i as f32 * dt).sin() },
-                    centre + Vec2 { x: radius * (j as f32 * dt).cos(), y: radius * (j as f32 * dt).sin() },
+                    centre
+                        + Vec2 {
+                            x: radius * (i as f32 * dt).cos(),
+                            y: radius * (i as f32 * dt).sin(),
+                        },
+                    centre
+                        + Vec2 {
+                            x: radius * (j as f32 * dt).cos(),
+                            y: radius * (j as f32 * dt).sin(),
+                        },
                 ]
             })
-        .collect())
+            .collect(),
+    )
 }

@@ -1,36 +1,32 @@
 use crate::core::prelude::*;
 
-use std::{
-    hash::Hash,
-    ops::Deref,
-    vec::IntoIter
-};
-use std::fmt::{Debug, Display, Formatter};
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex, MutexGuard};
-use tracing_subscriber::fmt::time::OffsetTime;
 use crate::core::input::InputHandler;
-use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
 use crate::core::vk::WindowEventHandler;
+use crate::core::ObjectTypeEnum;
 use crate::gui::GuiContext;
+use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::{hash::Hash, ops::Deref, vec::IntoIter};
+use tracing_subscriber::fmt::time::OffsetTime;
 
-pub mod linalg;
-pub mod colour;
 pub mod assert;
-pub mod log;
-pub mod collision;
 pub mod canvas;
-pub mod tileset;
+pub mod collision;
+pub mod colour;
+pub mod linalg;
+pub mod log;
 pub mod spline;
+pub mod tileset;
 
 #[allow(dead_code)]
 pub mod gg_time {
+    use crate::util::gg_float;
     use std::cmp;
     use std::time::{Duration, Instant};
     use tracing::info;
-    use crate::util::gg_float;
 
     pub fn frames(n: u64) -> Duration {
         Duration::from_millis(10 * n)
@@ -152,7 +148,7 @@ pub mod gg_iter {
     use std::cmp;
     use std::ops::Add;
 
-    pub fn sum_tuple3<T: Add<Output=T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
+    pub fn sum_tuple3<T: Add<Output = T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
         (acc.0 + x.0, acc.1 + x.1, acc.2 + x.2)
     }
 
@@ -166,7 +162,8 @@ pub mod gg_iter {
     }
 
     pub fn partition_point_by<T, F>(slice: &[T], mut comparator: F) -> usize
-    where F: FnMut(&T) -> cmp::Ordering
+    where
+        F: FnMut(&T) -> cmp::Ordering,
     {
         slice.partition_point(|x| (comparator)(x) != cmp::Ordering::Greater)
     }
@@ -176,7 +173,7 @@ pub mod gg_iter {
     where
         I: Iterator,
         I::Item: Clone + Add,
-        <I::Item as Add>::Output: Into<I::Item>
+        <I::Item as Add>::Output: Into<I::Item>,
     {
         it: I,
         cum_sum: Option<I::Item>,
@@ -186,7 +183,7 @@ pub mod gg_iter {
     where
         I: Iterator,
         I::Item: Clone + Add,
-        <I::Item as Add>::Output: Into<I::Item>
+        <I::Item as Add>::Output: Into<I::Item>,
     {
         type Item = I::Item;
 
@@ -210,7 +207,7 @@ pub mod gg_iter {
         where
             Self::Item: Clone + Add,
             <Self::Item as Add>::Output: Into<Self::Item>,
-            Self: Sized
+            Self: Sized,
         {
             CumSum {
                 it: self,
@@ -226,8 +223,8 @@ pub mod gg_iter {
 pub mod gg_err {
     use anyhow::Result;
     use tracing::{error, warn};
-    use vulkano::{Validated, ValidationError, VulkanError};
     use vulkano::command_buffer::CommandBufferExecError;
+    use vulkano::{Validated, ValidationError, VulkanError};
     use vulkano_taskgraph::graph::ExecuteError;
     use vulkano_taskgraph::InvalidSlotError;
 
@@ -389,13 +386,13 @@ pub mod gg_err {
 }
 
 pub mod gg_float {
+    use crate::util::linalg::{Transform, Vec2};
     use anyhow::{bail, Result};
+    use num_traits::{FromPrimitive, Zero};
     use std::num::FpCategory;
     use std::time::Duration;
-    use num_traits::{FromPrimitive, Zero};
-    use crate::util::linalg::{Transform, Vec2};
 
-    pub trait GgFloat{
+    pub trait GgFloat {
         fn is_normal_or_zero(&self) -> bool;
     }
 
@@ -413,9 +410,9 @@ pub mod gg_float {
 
     impl GgFloat for Transform {
         fn is_normal_or_zero(&self) -> bool {
-            self.centre.is_normal_or_zero() &&
-                self.rotation.is_normal_or_zero() &&
-                self.scale.is_normal_or_zero()
+            self.centre.is_normal_or_zero()
+                && self.rotation.is_normal_or_zero()
+                && self.scale.is_normal_or_zero()
         }
     }
     pub fn is_normal_or_zero(x: f32) -> bool {
@@ -440,8 +437,8 @@ pub mod gg_float {
 }
 
 pub mod gg_range {
-    use std::ops::Range;
     use crate::core::config::EPSILON;
+    use std::ops::Range;
 
     pub fn contains_f32(r1: &Range<f32>, r2: &Range<f32>) -> bool {
         r1.start <= r2.start && r1.end >= r2.end
@@ -473,7 +470,11 @@ pub mod gg_range {
 pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq>(T, T);
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq> UnorderedPair<T> {
     pub fn new(a: T, b: T) -> Self {
-        if a < b { Self(a, b) } else { Self(b, a) }
+        if a < b {
+            Self(a, b)
+        } else {
+            Self(b, a)
+        }
     }
     pub fn new_distinct(a: T, b: T) -> Option<Self> {
         if a == b {
@@ -483,9 +484,15 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq> UnorderedPair<T> {
         }
     }
 
-    pub fn fst(&self) -> T { self.0 }
-    pub fn snd(&self) -> T { self.1 }
-    pub fn contains(&self, value: T) -> bool { self.fst() == value || self.snd() == value }
+    pub fn fst(&self) -> T {
+        self.0
+    }
+    pub fn snd(&self) -> T {
+        self.1
+    }
+    pub fn contains(&self, value: T) -> bool {
+        self.fst() == value || self.snd() == value
+    }
 }
 
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(T, T)> for UnorderedPair<T> {
@@ -494,7 +501,9 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(T, T)> fo
     }
 }
 
-impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)> for UnorderedPair<T> {
+impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)>
+    for UnorderedPair<T>
+{
     fn from(value: (&T, &T)) -> Self {
         Self::new(*value.0, *value.1)
     }
@@ -503,16 +512,16 @@ impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq + Hash> From<(&T, &T)> 
 pub trait Nonempty: Sized {
     type Inner: IntoIterator;
 
-    fn iter(&self) -> impl Iterator<Item=&<Self::Inner as IntoIterator>::Item>;
+    fn iter(&self) -> impl Iterator<Item = &<Self::Inner as IntoIterator>::Item>;
     fn min(&self) -> &<Self::Inner as IntoIterator>::Item
     where
-        <Self::Inner as IntoIterator>::Item: Ord
+        <Self::Inner as IntoIterator>::Item: Ord,
     {
         unsafe { self.iter().min().unwrap_unchecked() }
     }
     fn max(&self) -> &<Self::Inner as IntoIterator>::Item
     where
-        <Self::Inner as IntoIterator>::Item: Ord
+        <Self::Inner as IntoIterator>::Item: Ord,
     {
         unsafe { self.iter().max().unwrap_unchecked() }
     }
@@ -523,8 +532,12 @@ pub struct NonemptyVec<T> {
 }
 
 impl<T> NonemptyVec<T> {
-    pub fn is_empty(&self) -> bool { false }
-    pub fn len(&self) -> usize { self.inner.len() }
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
 
     pub fn first(&self) -> &T {
         unsafe { self.inner.first().unwrap_unchecked() }
@@ -539,7 +552,7 @@ impl<T> NonemptyVec<T> {
     }
     pub fn try_from_iter<I>(iter: I) -> Option<Self>
     where
-        I: Iterator<Item=T>
+        I: Iterator<Item = T>,
     {
         Self::try_from_vec(iter.collect_vec())
     }
@@ -563,7 +576,7 @@ impl<T> IntoIterator for NonemptyVec<T> {
 impl<T> Nonempty for NonemptyVec<T> {
     type Inner = Vec<T>;
 
-    fn iter(&self) -> impl Iterator<Item=&<Self::Inner as IntoIterator>::Item> {
+    fn iter(&self) -> impl Iterator<Item = &<Self::Inner as IntoIterator>::Item> {
         self.inner.iter()
     }
 }
@@ -585,7 +598,7 @@ impl<'a, T> NonemptyVecRefMut<'a, T> {
 impl<T> Nonempty for NonemptyVecRefMut<'_, T> {
     type Inner = Vec<T>;
 
-    fn iter(&self) -> impl Iterator<Item=&<Self::Inner as IntoIterator>::Item> {
+    fn iter(&self) -> impl Iterator<Item = &<Self::Inner as IntoIterator>::Item> {
         self.inner.iter()
     }
 }
@@ -593,13 +606,14 @@ impl<T> Nonempty for NonemptyVecRefMut<'_, T> {
 impl<T> Deref for NonemptyVecRefMut<'_, T> {
     type Target = [T];
 
-    fn deref(&self) -> &Self::Target { self.inner }
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
 }
 
 pub struct UniqueShared<T: ?Sized> {
     inner: Arc<Mutex<T>>,
 }
-
 
 unsafe impl<T: ?Sized + Send> Send for UniqueShared<T> {}
 unsafe impl<T: ?Sized + Send> Sync for UniqueShared<T> {}
@@ -607,30 +621,39 @@ unsafe impl<T: ?Sized + Send> Sync for UniqueShared<T> {}
 // #[derive(Clone)] does not respect ?Sized.
 impl<T: ?Sized> Clone for UniqueShared<T> {
     fn clone(&self) -> Self {
-        UniqueShared { inner: self.inner.clone() }
+        UniqueShared {
+            inner: self.inner.clone(),
+        }
     }
 }
 
 impl<T> UniqueShared<T> {
     pub fn new(value: T) -> Self {
-        Self { inner: Arc::new(Mutex::new(value)) }
+        Self {
+            inner: Arc::new(Mutex::new(value)),
+        }
     }
 }
 impl<T: Clone> UniqueShared<T> {
     pub fn new_from_ref(value: &T) -> Self {
-        Self { inner: Arc::new(Mutex::new(value.clone())) }
+        Self {
+            inner: Arc::new(Mutex::new(value.clone())),
+        }
     }
 }
 
 impl<T: ?Sized> UniqueShared<T> {
     pub fn get(&self) -> MutexGuard<T> {
-        self.inner.try_lock()
+        self.inner
+            .try_lock()
             .expect("attempted to acquire UniqueShared but it was already in use")
     }
 }
 
 impl<T: Clone> UniqueShared<T> {
-    pub fn clone_inner(&self) -> T { self.get().clone() }
+    pub fn clone_inner(&self) -> T {
+        self.get().clone()
+    }
 }
 
 impl<T: Debug> Debug for UniqueShared<T> {
@@ -659,7 +682,7 @@ fn setup_log() -> Result<()> {
         .open("run.log")?;
     let timer = OffsetTime::new(
         time::UtcOffset::UTC,
-        time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]")
+        time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]"),
     );
     tracing_subscriber::fmt()
         .event_format(
@@ -667,7 +690,7 @@ fn setup_log() -> Result<()> {
                 .with_target(false)
                 .with_file(true)
                 .with_line_number(true)
-                .with_timer(timer)
+                .with_timer(timer),
         )
         .with_writer(logfile)
         .init();
@@ -679,13 +702,11 @@ pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
     gui_ctx: GuiContext,
     global_scale_factor: f32,
     clear_col: Colour,
-    object_type: PhantomData<ObjectType>
+    object_type: PhantomData<ObjectType>,
 }
 
 impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
-    pub fn new(
-        window_size: impl Into<Vec2i>,
-    ) -> Result<Self> {
+    pub fn new(window_size: impl Into<Vec2i>) -> Result<Self> {
         setup_log()?;
         let gui_ctx = GuiContext::default();
         Ok(Self {
@@ -693,7 +714,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
             gui_ctx,
             global_scale_factor: 1.,
             clear_col: Colour::black(),
-            object_type: PhantomData
+            object_type: PhantomData,
         })
     }
 
@@ -717,14 +738,15 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
     }
 
     pub fn build_and_run_window<F>(self, create_and_start_scene_handler: F) -> Result<()>
-    where F: FnOnce(SceneHandlerBuilder<ObjectType>)
+    where
+        F: FnOnce(SceneHandlerBuilder<ObjectType>),
     {
         WindowEventHandler::create_and_run(
             self.window_size,
             self.global_scale_factor,
             self.clear_col,
             self.gui_ctx,
-            create_and_start_scene_handler
+            create_and_start_scene_handler,
         )
     }
 }
@@ -737,11 +759,14 @@ pub struct SceneHandlerBuilder<ObjectType> {
 }
 
 impl<ObjectType> SceneHandlerBuilder<ObjectType>
-where ObjectType: ObjectTypeEnum
+where
+    ObjectType: ObjectTypeEnum,
 {
-    pub fn new(input_handler: Arc<Mutex<InputHandler>>,
-               resource_handler: ResourceHandler,
-               render_handler: RenderHandler) -> Self {
+    pub fn new(
+        input_handler: Arc<Mutex<InputHandler>>,
+        resource_handler: ResourceHandler,
+        render_handler: RenderHandler,
+    ) -> Self {
         Self {
             input_handler,
             resource_handler,
@@ -750,6 +775,10 @@ where ObjectType: ObjectTypeEnum
         }
     }
     pub fn build(self) -> SceneHandler<ObjectType> {
-        SceneHandler::new(self.input_handler, self.resource_handler, self.render_handler)
+        SceneHandler::new(
+            self.input_handler,
+            self.resource_handler,
+            self.render_handler,
+        )
     }
 }

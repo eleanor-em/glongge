@@ -1,16 +1,9 @@
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use glongge::{
-    core::prelude::*,
-    resource::sprite::Sprite
-};
 use crate::examples::mario::{
-    block::Bumpable,
-    BLOCK_COLLISION_TAG,
-    from_nes,
-    from_nes_accel,
-    player::Player
+    block::Bumpable, from_nes, from_nes_accel, player::Player, BLOCK_COLLISION_TAG,
 };
 use crate::object_type::ObjectType;
+use glongge::{core::prelude::*, resource::sprite::Sprite};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 #[register_scene_object]
 pub struct UndergroundBrick {
@@ -34,14 +27,21 @@ impl UndergroundBrick {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for UndergroundBrick {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
+        let texture = resource_handler
+            .texture
+            .wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_extent(
             object_ctx,
             resource_handler,
             texture,
             Vec2i { x: 164, y: 16 },
-            Vec2i { x: 16, y: 16});
+            Vec2i { x: 16, y: 16 },
+        );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         self.initial_y += self.sprite.half_widths().y;
         Ok(None)
@@ -50,7 +50,7 @@ impl SceneObject<ObjectType> for UndergroundBrick {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
-            &self.listening_tags()
+            &self.listening_tags(),
         ));
     }
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {

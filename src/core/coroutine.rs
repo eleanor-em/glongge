@@ -1,11 +1,7 @@
+use crate::core::{update::UpdateContext, ObjectTypeEnum, SceneObjectWithId};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
-    time::{Duration, Instant}
-};
-use crate::core::{
-    ObjectTypeEnum,
-    SceneObjectWithId,
-    update::UpdateContext
+    time::{Duration, Instant},
 };
 
 static NEXT_COROUTINE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -33,7 +29,7 @@ pub enum CoroutineResponse {
 pub type CoroutineFunc<ObjectType> = dyn FnMut(
     SceneObjectWithId<ObjectType>,
     &mut UpdateContext<ObjectType>,
-    CoroutineState
+    CoroutineState,
 ) -> CoroutineResponse;
 
 pub(crate) struct Coroutine<ObjectType: ObjectTypeEnum> {
@@ -46,7 +42,12 @@ pub(crate) struct Coroutine<ObjectType: ObjectTypeEnum> {
 impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
     pub(crate) fn new<F>(func: F) -> Self
     where
-        F: FnMut(SceneObjectWithId<ObjectType>, &mut UpdateContext<ObjectType>, CoroutineState) -> CoroutineResponse + 'static
+        F: FnMut(
+                SceneObjectWithId<ObjectType>,
+                &mut UpdateContext<ObjectType>,
+                CoroutineState,
+            ) -> CoroutineResponse
+            + 'static,
     {
         Self {
             func: Box::new(func),
@@ -56,7 +57,11 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
         }
     }
 
-    pub(crate) fn resume(mut self, this: SceneObjectWithId<ObjectType>, ctx: &mut UpdateContext<ObjectType>) -> Option<Self> {
+    pub(crate) fn resume(
+        mut self,
+        this: SceneObjectWithId<ObjectType>,
+        ctx: &mut UpdateContext<ObjectType>,
+    ) -> Option<Self> {
         if self.wait_since.elapsed() < self.wait_duration {
             return Some(self);
         }
@@ -72,7 +77,7 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
                 self.last_action = CoroutineState::Waiting;
                 Some(self)
             }
-            CoroutineResponse::Complete => None
+            CoroutineResponse::Complete => None,
         }
     }
 }

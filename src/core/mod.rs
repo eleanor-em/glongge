@@ -1,30 +1,23 @@
+use crate::{core::prelude::*, resource::ResourceHandler, util::linalg::Transform};
+use scene::SceneObject;
 use std::{
     any::TypeId,
     cell::{Ref, RefCell, RefMut},
-    fmt::{
-        Debug,
-        Formatter
-    },
+    fmt::{Debug, Formatter},
     ops::Deref,
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use scene::SceneObject;
-use crate::{
-    core::prelude::*,
-    resource::ResourceHandler,
-    util::linalg::Transform
-};
 
-pub mod input;
-pub mod vk;
-pub mod prelude;
+pub mod builtin;
 pub mod config;
 pub mod coroutine;
+pub mod input;
+pub mod prelude;
 pub mod render;
 pub mod scene;
 pub mod update;
-pub mod builtin;
+pub mod vk;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static + Send {
     fn as_default(self) -> AnySceneObject<Self>;
@@ -42,7 +35,10 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
 
     fn preload_all(resource_handler: &mut ResourceHandler) -> Result<()> {
         for value in Self::all_values() {
-            value.as_default().borrow_mut().on_preload(resource_handler)?;
+            value
+                .as_default()
+                .borrow_mut()
+                .on_preload(resource_handler)?;
         }
         resource_handler.wait_all()?;
         Ok(())
@@ -52,22 +48,38 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
-                check_ne!(value.as_typeid(), actual,
-                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value));
+                check_ne!(
+                    value.as_typeid(),
+                    actual,
+                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                );
             }
-            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
+            panic!(
+                "attempt to downcast {:?}: type missing? {:?}",
+                obj.get_type(),
+                Self::all_values()
+            );
         }
         obj.as_any().downcast_ref::<T>().unwrap()
     }
-    fn checked_downcast_mut<T: SceneObject<Self> + 'static>(obj: &mut dyn SceneObject<Self>) -> &mut T {
+    fn checked_downcast_mut<T: SceneObject<Self> + 'static>(
+        obj: &mut dyn SceneObject<Self>,
+    ) -> &mut T {
         let actual = obj.get_type().as_typeid();
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
-                check_ne!(value.as_typeid(), actual,
-                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value));
+                check_ne!(
+                    value.as_typeid(),
+                    actual,
+                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                );
             }
-            panic!("attempt to downcast {:?}: type missing? {:?}", obj.get_type(), Self::all_values());
+            panic!(
+                "attempt to downcast {:?}: type missing? {:?}",
+                obj.get_type(),
+                Self::all_values()
+            );
         }
         obj.as_any_mut().downcast_mut::<T>().unwrap()
     }
@@ -79,11 +91,16 @@ static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 pub struct ObjectId(pub(crate) usize);
 
 impl ObjectId {
-    fn next() -> Self { ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed)) }
-    pub(crate) fn is_root(self) -> bool { self.0 == 0 }
-    pub(crate) fn root() -> Self { ObjectId(0) }
+    fn next() -> Self {
+        ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+    pub(crate) fn is_root(self) -> bool {
+        self.0 == 0
+    }
+    pub(crate) fn root() -> Self {
+        ObjectId(0)
+    }
 }
-
 
 #[derive(Clone)]
 pub struct AnySceneObject<ObjectType> {
@@ -95,20 +112,26 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
     pub fn new<O: SceneObject<ObjectType>>(inner: O) -> Self {
         Self {
             transform: Rc::new(RefCell::new(Transform::default())),
-            inner: Rc::new(RefCell::new(inner))
+            inner: Rc::new(RefCell::new(inner)),
         }
     }
 
     pub(crate) fn from_rc<O: SceneObject<ObjectType>>(rc: Rc<RefCell<O>>) -> Self {
         Self {
             transform: Rc::new(RefCell::new(Transform::default())),
-            inner: rc
+            inner: rc,
         }
     }
 
-    pub(crate) fn name(&self) -> String { self.inner.borrow().name() }
-    pub(crate) fn transform(&self) -> Transform { *self.transform.borrow() }
-    pub(crate) fn transform_mut(&mut self) -> RefMut<Transform> { self.transform.borrow_mut() }
+    pub(crate) fn name(&self) -> String {
+        self.inner.borrow().name()
+    }
+    pub(crate) fn transform(&self) -> Transform {
+        *self.transform.borrow()
+    }
+    pub(crate) fn transform_mut(&mut self) -> RefMut<Transform> {
+        self.transform.borrow_mut()
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
@@ -127,15 +150,28 @@ pub struct SceneObjectWithId<ObjectType> {
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     fn new(object_id: ObjectId, obj: AnySceneObject<ObjectType>) -> Self {
-        Self { object_id, inner: obj }
+        Self {
+            object_id,
+            inner: obj,
+        }
     }
 
-    pub fn get_type(&self) -> ObjectType { self.inner.borrow().get_type() }
-    pub fn name(&self) -> String { self.inner.borrow().name() }
+    pub fn get_type(&self) -> ObjectType {
+        self.inner.borrow().get_type()
+    }
+    pub fn name(&self) -> String {
+        self.inner.borrow().name()
+    }
 
-    pub fn transform(&self) -> Transform { self.inner.transform() }
-    pub fn emitting_tags(&self) -> Vec<&'static str> { self.inner.borrow().emitting_tags() }
-    pub fn listening_tags(&self) -> Vec<&'static str> { self.inner.borrow().listening_tags() }
+    pub fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+    pub fn emitting_tags(&self) -> Vec<&'static str> {
+        self.inner.borrow().emitting_tags()
+    }
+    pub fn listening_tags(&self) -> Vec<&'static str> {
+        self.inner.borrow().listening_tags()
+    }
 }
 
 impl<ObjectType: ObjectTypeEnum> Debug for SceneObjectWithId<ObjectType> {
@@ -153,15 +189,14 @@ pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
 
 impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for AnySceneObject<ObjectType> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
-        Ref::filter_map(self.borrow(), |obj| {
-            obj.as_any().downcast_ref::<T>()
-        }).ok()
+        Ref::filter_map(self.borrow(), |obj| obj.as_any().downcast_ref::<T>()).ok()
     }
 
     fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         RefMut::filter_map(self.borrow_mut(), |obj| {
             obj.as_any_mut().downcast_mut::<T>()
-        }).ok()
+        })
+        .ok()
     }
 
     fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
@@ -169,7 +204,9 @@ impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for AnySceneObject<Obje
     }
 
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
-        RefMut::map(self.borrow_mut(), |obj| ObjectType::checked_downcast_mut::<T>(obj))
+        RefMut::map(self.borrow_mut(), |obj| {
+            ObjectType::checked_downcast_mut::<T>(obj)
+        })
     }
 }
 

@@ -1,15 +1,15 @@
+use crate::core::prelude::*;
+use crate::core::render::VertexDepth;
+use crate::core::ObjectTypeEnum;
+use crate::resource::texture::{MaterialId, Texture};
+use crate::util::collision::CompoundCollider;
+use crate::util::linalg::{Edge2i, Vec2i};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use num_traits::Zero;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::rc::Rc;
-use num_traits::Zero;
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use crate::core::ObjectTypeEnum;
-use crate::core::prelude::*;
-use crate::core::render::VertexDepth;
-use crate::resource::texture::{MaterialId, Texture};
-use crate::util::collision::CompoundCollider;
-use crate::util::linalg::{Edge2i, Vec2i};
 
 #[derive(Clone)]
 pub struct Tile {
@@ -30,7 +30,7 @@ struct PolygonBuilder {
     edges: BTreeSet<Edge2i>,
     vertices: BTreeSet<Vec2i>,
     by_src: BTreeMap<Vec2i, Vec2i>,
-    by_dest: BTreeMap<Vec2i, Vec2i>
+    by_dest: BTreeMap<Vec2i, Vec2i>,
 }
 
 impl PolygonBuilder {
@@ -79,7 +79,10 @@ impl PolygonBuilder {
         let mut visited = BTreeSet::new();
         for i in 0..self.edges.len() {
             if visited.contains(&src) {
-                warn!("polygon contains hole: reached start at {i}/{} vertices", self.edges.len());
+                warn!(
+                    "polygon contains hole: reached start at {i}/{} vertices",
+                    self.edges.len()
+                );
                 return None;
             }
             vertices.push(src);
@@ -113,7 +116,7 @@ impl TilesetBuilder {
             collision_sets: Vec::new(),
             tile_size,
             tile_map: BTreeMap::new(),
-            collision_edges: BTreeMap::new()
+            collision_edges: BTreeMap::new(),
         }
     }
 
@@ -134,11 +137,18 @@ impl TilesetBuilder {
         self.all_tiles.push(tile.clone());
         tile
     }
-    pub fn create_tile_collision(&mut self, tex_top_left: impl Into<Vec2i>, emitting_tags: &Vec<&'static str>) -> Tile {
+    pub fn create_tile_collision(
+        &mut self,
+        tex_top_left: impl Into<Vec2i>,
+        emitting_tags: &Vec<&'static str>,
+    ) -> Tile {
         check_false!(emitting_tags.is_empty());
         let id = self.all_tiles.len();
         #[allow(clippy::map_unwrap_or)] // borrowing issues with self.collision_sets
-        let collision_id = self.collision_sets.iter().enumerate()
+        let collision_id = self
+            .collision_sets
+            .iter()
+            .enumerate()
             .find(|(_, t)| *t == emitting_tags)
             .map(|(i, _)| i)
             .unwrap_or_else(|| {
@@ -168,15 +178,16 @@ impl TilesetBuilder {
         let tile_coord = tile_coord.into();
         let rv = self.tile_map.entry(tile.id).or_default().insert(tile_coord);
         if let Some(collision_id) = tile.collision_id {
-            let tile_vertices = self.all_polygons[tile.id].iter()
+            let tile_vertices = self.all_polygons[tile.id]
+                .iter()
                 .map(|v| *v + tile_coord)
                 .collect_vec();
             let entry = self.collision_edges.entry(collision_id).or_default();
 
-            for poly in entry.iter_mut()
-                .filter(|edges| {
-                    tile_vertices.iter().any(|v| edges.contains_vertex(*v))
-                }) {
+            for poly in entry
+                .iter_mut()
+                .filter(|edges| tile_vertices.iter().any(|v| edges.contains_vertex(*v)))
+            {
                 let mut next_poly = poly.clone();
                 for (u, v) in tile_vertices.iter().circular_tuple_windows() {
                     let edge = Edge2i(*u, *v);
@@ -200,30 +211,54 @@ impl TilesetBuilder {
     }
 
     pub fn build<O: ObjectTypeEnum>(self) -> AnySceneObject<O> {
-        let texture_areas: BTreeMap<_, _> = self.all_tiles.iter()
+        let texture_areas: BTreeMap<_, _> = self
+            .all_tiles
+            .iter()
             .map(|tile| {
-                (tile.id, Rect::from_coords(tile.tex_top_left.into(),
-                                  (tile.tex_top_left + self.tile_size * Vec2i::one()).into()))
+                (
+                    tile.id,
+                    Rect::from_coords(
+                        tile.tex_top_left.into(),
+                        (tile.tex_top_left + self.tile_size * Vec2i::one()).into(),
+                    ),
+                )
             })
             .collect();
-        let tiles = self.tile_map.into_iter().flat_map(|(id, top_lefts)| {
-            let tex_area = *texture_areas.get(&id).unwrap();
-            let depth = *self.all_tiles[id].depth.borrow();
-            let collision_id = self.all_tiles[id].collision_id;
-            top_lefts.into_iter().map(move |top_left| {
-                let top_left = self.tile_size * top_left;
-                (collision_id, RenderableTile { tex_area, top_left, depth })
+        let tiles = self
+            .tile_map
+            .into_iter()
+            .flat_map(|(id, top_lefts)| {
+                let tex_area = *texture_areas.get(&id).unwrap();
+                let depth = *self.all_tiles[id].depth.borrow();
+                let collision_id = self.all_tiles[id].collision_id;
+                top_lefts.into_iter().map(move |top_left| {
+                    let top_left = self.tile_size * top_left;
+                    (
+                        collision_id,
+                        RenderableTile {
+                            tex_area,
+                            top_left,
+                            depth,
+                        },
+                    )
+                })
             })
-        }).collect_vec();
-        let colliders = self.collision_edges.into_iter()
+            .collect_vec();
+        let colliders = self
+            .collision_edges
+            .into_iter()
             .zip(self.collision_sets)
             .map(|((collision_id, polygons), emitting_tags)| {
-                let collider = polygons.into_iter()
+                let collider = polygons
+                    .into_iter()
                     .filter_map(|poly| {
                         poly.build().map(|vertices| {
-                            CompoundCollider::decompose(vertices.into_iter()
-                                .map(|v| (self.tile_size * v).into())
-                                .collect())
+                            CompoundCollider::decompose(
+                                vertices
+                                    .into_iter()
+                                    .map(|v| (self.tile_size * v).into())
+                                    .collect(),
+                            )
                         })
                     })
                     .reduce(CompoundCollider::combined)
@@ -234,7 +269,8 @@ impl TilesetBuilder {
                     filename: self.filename.clone(),
                     texture: Texture::default(),
                     material_id: MaterialId::default(),
-                    tiles: tiles.iter()
+                    tiles: tiles
+                        .iter()
                         .cloned()
                         .filter_map(|(id, tile)| {
                             if id == Some(collision_id) {
@@ -242,7 +278,8 @@ impl TilesetBuilder {
                             } else {
                                 None
                             }
-                        }).collect_vec(),
+                        })
+                        .collect_vec(),
                     collider,
                     emitting_tags,
                 })
@@ -279,12 +316,13 @@ pub struct GgInternalTileset {
 
 impl GgInternalTileset {
     pub fn tiles(&self) -> Vec<CollidableTile> {
-        self.tiles.iter().map(|t| {
-            CollidableTile {
+        self.tiles
+            .iter()
+            .map(|t| CollidableTile {
                 pos: t.top_left / self.tile_size,
-                emitting_tags: self.emitting_tags.clone()
-            }
-        }).collect_vec()
+                emitting_tags: self.emitting_tags.clone(),
+            })
+            .collect_vec()
     }
 }
 
@@ -293,13 +331,23 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
     fn name(&self) -> String {
         "TilesetSegment".to_string()
     }
-    fn get_type(&self) -> ObjectType { ObjectType::gg_tileset() }
+    fn get_type(&self) -> ObjectType {
+        ObjectType::gg_tileset()
+    }
 
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        self.texture = resource_handler.texture.wait_load_file(self.filename.clone())?;
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
+        self.texture = resource_handler
+            .texture
+            .wait_load_file(self.filename.clone())?;
         let mut rv = RenderItem::default();
         for tile in &self.tiles {
-            self.material_id = resource_handler.texture.material_from_texture(&self.texture, &tile.tex_area);
+            self.material_id = resource_handler
+                .texture
+                .material_from_texture(&self.texture, &tile.tex_area);
             let vertices = vertex::rectangle(
                 (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
                 (self.tile_size * Vec2i::one() / 2).into(),
@@ -309,7 +357,11 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
                 depth: tile.depth,
             });
         }
-        object_ctx.add_child(CollisionShape::from_collider(self.collider.clone(), &self.emitting_tags, &[]));
+        object_ctx.add_child(CollisionShape::from_collider(
+            self.collider.clone(),
+            &self.emitting_tags,
+            &[],
+        ));
         Ok(Some(rv))
     }
 
@@ -332,6 +384,6 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalTile
     }
 }
 
-pub use GgInternalTileset as Tileset;
 use crate::core::builtin::Container;
-use crate::shader::{get_shader, Shader, SpriteShader, vertex};
+use crate::shader::{get_shader, vertex, Shader, SpriteShader};
+pub use GgInternalTileset as Tileset;

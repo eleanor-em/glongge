@@ -1,29 +1,37 @@
 // VulkanoContext is in a separate module because the details of handling Swapchain, and objects
 // derived from it, are rather complicated. Don't make stuff here public unless really necessary.
+use crate::check_eq;
+use crate::core::prelude::*;
+use crate::core::vk::GgWindow;
+use crate::util::{gg_float, UniqueShared};
+use anyhow::{Context, Result};
+use egui_winit::winit::event_loop::ActiveEventLoop;
 use std::env;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Instant;
-use anyhow::{Context, Result};
-use egui_winit::winit::event_loop::ActiveEventLoop;
 use tracing::info;
-use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
-use vulkano::descriptor_set::allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo};
-use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags};
-use vulkano::image::{Image, ImageUsage};
-use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::GraphicsPipeline;
-use vulkano::swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
-use vulkano::{Validated, Version, VulkanLibrary};
+use vulkano::command_buffer::allocator::{
+    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
+};
+use vulkano::descriptor_set::allocator::{
+    StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo,
+};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
+use vulkano::device::{
+    Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags,
+};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
+use vulkano::image::{Image, ImageUsage};
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
-use vulkano_taskgraph::Id;
+use vulkano::memory::allocator::StandardMemoryAllocator;
+use vulkano::pipeline::GraphicsPipeline;
+use vulkano::swapchain::{
+    ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo,
+};
+use vulkano::{Validated, Version, VulkanLibrary};
 use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
-use crate::check_eq;
-use crate::core::vk::GgWindow;
-use crate::core::prelude::*;
-use crate::util::{gg_float, UniqueShared};
+use vulkano_taskgraph::Id;
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
@@ -47,6 +55,8 @@ pub struct VulkanoContext {
 }
 
 impl VulkanoContext {
+    // There's just a ton of stuff to do here, so disable the lint.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn new(event_loop: &ActiveEventLoop, window: &GgWindow) -> Result<Self> {
         {
             let mut vulkano_context_created = VULKANO_CONTEXT_CREATED.lock().unwrap();
@@ -72,27 +82,34 @@ impl VulkanoContext {
             StandardDescriptorSetAllocatorCreateInfo {
                 update_after_bind: true,
                 ..Default::default()
-            }
+            },
         ));
         let resources = Resources::new(&device, &ResourcesCreateInfo::default());
 
-        let has_mailbox = physical_device.surface_capabilities(&surface, SurfaceInfo {
-            present_mode: Some(PresentMode::Mailbox),
-            ..SurfaceInfo::default()
-        }).is_ok();
+        let has_mailbox = physical_device
+            .surface_capabilities(
+                &surface,
+                SurfaceInfo {
+                    present_mode: Some(PresentMode::Mailbox),
+                    ..SurfaceInfo::default()
+                },
+            )
+            .is_ok();
         let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
-        let supported_formats = physical_device
-            .surface_formats(&surface, SurfaceInfo::default())?;
+        let supported_formats =
+            physical_device.surface_formats(&surface, SurfaceInfo::default())?;
         if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
             error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
         }
         info!("surface capabilities: {caps:?}");
         let (min_image_count, present_mode) = if has_mailbox {
-            (caps.max_image_count.unwrap_or(3.max(caps.min_image_count + 1)),
-             PresentMode::Mailbox)
+            (
+                caps.max_image_count
+                    .unwrap_or(3.max(caps.min_image_count + 1)),
+                PresentMode::Mailbox,
+            )
         } else {
-            (3.max(caps.min_image_count),
-             PresentMode::Fifo)
+            (3.max(caps.min_image_count), PresentMode::Fifo)
         };
         if let Some(max_image_count) = caps.max_image_count {
             check_le!(min_image_count, max_image_count);
@@ -121,10 +138,19 @@ impl VulkanoContext {
                 ..Default::default()
             },
         )?;
-        let images = resources.swapchain(swapchain)?.images().iter().cloned().collect_vec();
-        let image_views = UniqueShared::new(images.iter()
-            .map(|image| ImageView::new_default(image.clone()))
-            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?);
+        let images = resources
+            .swapchain(swapchain)?
+            .images()
+            .iter()
+            .cloned()
+            .collect_vec();
+        let image_views = UniqueShared::new(
+            images
+                .iter()
+                .map(|image| ImageView::new_default(image.clone()))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(Validated::unwrap)?,
+        );
         let image_count = UniqueShared::new(images.len());
         let swapchain = UniqueShared::new(swapchain);
         let images = UniqueShared::new(images);
@@ -151,17 +177,27 @@ impl VulkanoContext {
     }
 
     pub(crate) fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
-        let new_swapchain = self.resources.recreate_swapchain(*self.swapchain.get(), |create_info| {
-            SwapchainCreateInfo {
-                image_extent: window.inner_size().into(),
-                ..create_info
-            }
-        })?;
+        let new_swapchain =
+            self.resources
+                .recreate_swapchain(*self.swapchain.get(), |create_info| SwapchainCreateInfo {
+                    image_extent: window.inner_size().into(),
+                    ..create_info
+                })?;
         *self.swapchain.get() = new_swapchain;
-        *self.images.get() = self.resources.swapchain(new_swapchain)?.images().iter().cloned().collect_vec();
-        *self.image_views.get() = self.images.get().iter()
+        *self.images.get() = self
+            .resources
+            .swapchain(new_swapchain)?
+            .images()
+            .iter()
+            .cloned()
+            .collect_vec();
+        *self.image_views.get() = self
+            .images
+            .get()
+            .iter()
             .map(|image| ImageView::new_default(image.clone()))
-            .collect::<Result<Vec<_>, _>>().map_err(Validated::unwrap)?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Validated::unwrap)?;
         Ok(())
     }
 
@@ -189,7 +225,11 @@ impl VulkanoContext {
     }
 
     pub(crate) fn swapchain(&self) -> Result<Arc<Swapchain>> {
-        Ok(self.resources.swapchain(*self.swapchain.get())?.swapchain().clone())
+        Ok(self
+            .resources
+            .swapchain(*self.swapchain.get())?
+            .swapchain()
+            .clone())
     }
     pub(crate) fn swapchain_id(&self) -> Id<Swapchain> {
         *self.swapchain.get()
@@ -200,15 +240,25 @@ impl VulkanoContext {
     }
 
     // When the created pipeline is invalidated, it will be destroyed => safe to store this.
-    pub fn create_pipeline<F>(&mut self, f: F) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
-    where F: FnOnce(Arc<Swapchain>) -> Result<Arc<GraphicsPipeline>>
+    pub fn create_pipeline<F>(
+        &mut self,
+        f: F,
+    ) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
+    where
+        F: FnOnce(Arc<Swapchain>) -> Result<Arc<GraphicsPipeline>>,
     {
-        let pipeline = UniqueShared::new(Some(f(self.resources.swapchain(*self.swapchain.get())?.swapchain().clone())?));
+        let pipeline = UniqueShared::new(Some(f(self
+            .resources
+            .swapchain(*self.swapchain.get())?
+            .swapchain()
+            .clone())?));
         self.pipelines.get().push(pipeline.clone());
         Ok(pipeline)
     }
     // May change between frames, e.g. due to recreate_swapchain().
-    pub fn image_count(&self) -> usize { *self.image_count.get() }
+    pub fn image_count(&self) -> usize {
+        *self.image_count.get()
+    }
 }
 
 // TODO: more flexible approach here.
@@ -265,7 +315,9 @@ fn create_any_physical_device(
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
         .filter(|p| p.supported_features().contains(&device_features()))
         // Dynamic rendering support:
-        .filter(|p| p.api_version() >= Version::V1_3 || p.supported_extensions().khr_dynamic_rendering)
+        .filter(|p| {
+            p.api_version() >= Version::V1_3 || p.supported_extensions().khr_dynamic_rendering
+        })
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -275,9 +327,7 @@ fn create_any_physical_device(
                     q.queue_flags.contains(QueueFlags::GRAPHICS)
                         && p.surface_support(i, surface).unwrap_or(false)
                 })
-                .map(|q| {
-                    (p, q as u32)
-                })
+                .map(|q| (p, q as u32))
         })
         .min_by_key(|(p, _)| match p.properties().device_type {
             PhysicalDeviceType::DiscreteGpu => 0,
@@ -288,7 +338,11 @@ fn create_any_physical_device(
         })
         .context("vulkano: no appropriate physical device available")?
         .0;
-    info!("device: {} [{:?}]", device.properties().device_name, device.properties().device_type);
+    info!(
+        "device: {} [{:?}]",
+        device.properties().device_name,
+        device.properties().device_type
+    );
     info!("vulkan version: {}", device.api_version());
     Ok(device)
 }
@@ -304,8 +358,10 @@ fn create_any_graphical_queue_family(
                 .contains(QueueFlags::GRAPHICS)
         })
         .context("vulkano: couldn't find a graphical queue family")?;
-    info!("queue family properties: {:?}",
-        physical_device.queue_family_properties()[queue_family_index]);
+    info!(
+        "queue family properties: {:?}",
+        physical_device.queue_family_properties()[queue_family_index]
+    );
 
     let mut enabled_extensions = device_extensions();
     let mut enabled_features = device_features();

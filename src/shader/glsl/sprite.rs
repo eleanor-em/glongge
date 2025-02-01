@@ -1,5 +1,5 @@
-use vulkano::buffer::BufferContents;
 use crate::shader::VkVertex;
+use vulkano::buffer::BufferContents;
 
 #[derive(BufferContents, VkVertex, Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]

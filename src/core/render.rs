@@ -1,35 +1,29 @@
+use crate::core::scene::GuiClosure;
+use crate::core::vk::vk_ctx::VulkanoContext;
+use crate::core::vk::{GgWindow, RenderPerfStats};
+use crate::core::{prelude::*, vk::AdjustedViewport, ObjectId};
+use crate::gui::render::GuiRenderer;
+use crate::gui::GuiContext;
+use crate::resource::texture::MaterialId;
+use crate::shader::{Shader, ShaderId};
+use crate::util::{gg_err, UniqueShared};
+use egui::FullOutput;
 use std::{
     cmp,
+    collections::BTreeMap,
     default::Default,
-    sync::{Arc, Mutex},
     ops::Range,
-    collections::BTreeMap
+    sync::{Arc, Mutex},
 };
-use egui::FullOutput;
 use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
 use vulkano::image::Image;
 use vulkano::render_pass::AttachmentLoadOp::Clear;
 use vulkano::render_pass::AttachmentStoreOp::Store;
 use vulkano::swapchain::Swapchain;
-use vulkano_taskgraph::graph::{NodeId, TaskGraph};
-use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
+use vulkano_taskgraph::graph::{NodeId, TaskGraph};
 use vulkano_taskgraph::resource::{AccessType, HostAccessType, ImageLayoutType};
-use crate::{
-    core::{
-        prelude::*,
-        vk::AdjustedViewport,
-        ObjectId,
-    },
-};
-use crate::core::scene::GuiClosure;
-use crate::util::{gg_err, UniqueShared};
-use crate::core::vk::{GgWindow, RenderPerfStats};
-use crate::core::vk::vk_ctx::VulkanoContext;
-use crate::gui::GuiContext;
-use crate::gui::render::GuiRenderer;
-use crate::resource::texture::MaterialId;
-use crate::shader::{Shader, ShaderId};
+use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
@@ -43,7 +37,7 @@ impl Default for RenderInfo {
         Self {
             col: Colour::white().into(),
             material_id: 0,
-            shader_id: ShaderId::default()
+            shader_id: ShaderId::default(),
         }
     }
 }
@@ -85,7 +79,7 @@ impl RenderDataChannel {
         RenderFrame {
             vertices: self.vertices.clone(),
             render_infos: self.render_infos.clone(),
-            clear_col: self.clear_col
+            clear_col: self.clear_col,
         }
     }
 
@@ -100,13 +94,21 @@ impl RenderDataChannel {
             self.should_resize = true;
         }
     }
-    pub(crate) fn set_clear_col(&mut self, col: Colour) { self.clear_col = col; }
-    pub(crate) fn get_clear_col(&mut self) -> Colour { self.clear_col }
+    pub(crate) fn set_clear_col(&mut self, col: Colour) {
+        self.clear_col = col;
+    }
+    pub(crate) fn get_clear_col(&mut self) -> Colour {
+        self.clear_col
+    }
 
     pub(crate) fn should_resize_with_scale_factor(&mut self) -> Option<f32> {
         let rv = self.should_resize;
         self.should_resize = false;
-        if rv { Some(self.viewport.global_scale_factor()) } else { None }
+        if rv {
+            Some(self.viewport.global_scale_factor())
+        } else {
+            None
+        }
     }
 
     pub fn set_translation(&mut self, translation: Vec2) {
@@ -123,9 +125,16 @@ pub struct RenderFrame {
 
 impl RenderFrame {
     fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame {
-        let render_infos = self.render_infos.clone().into_iter()
+        let render_infos = self
+            .render_infos
+            .clone()
+            .into_iter()
             .map(move |mut ri| {
-                ri.inner = ri.inner.into_iter().filter(|ri| ri.shader_id == id).collect_vec();
+                ri.inner = ri
+                    .inner
+                    .into_iter()
+                    .filter(|ri| ri.shader_id == id)
+                    .collect_vec();
                 ri
             })
             .collect_vec();
@@ -152,7 +161,6 @@ pub struct RenderHandler {
     last_full_output: UniqueShared<Option<FullOutput>>,
 }
 
-
 impl RenderHandler {
     pub fn new(
         vk_ctx: &VulkanoContext,
@@ -163,9 +171,11 @@ impl RenderHandler {
     ) -> Result<Self> {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {
-            check_ne!(a.get().name_concrete(),
-                      b.get().name_concrete(),
-                      "duplicate shader name");
+            check_ne!(
+                a.get().name_concrete(),
+                b.get().name_concrete(),
+                "duplicate shader name"
+            );
         }
         let gui_shader = GuiRenderer::new(vk_ctx.clone(), viewport.clone())?;
         Ok(Self {
@@ -181,7 +191,9 @@ impl RenderHandler {
 
     #[must_use]
     pub fn with_global_scale_factor(self, global_scale_factor: f32) -> Self {
-        self.viewport.get().set_global_scale_factor(global_scale_factor);
+        self.viewport
+            .get()
+            .set_global_scale_factor(global_scale_factor);
         {
             let mut rc = self.render_data_channel.lock().unwrap();
             rc.set_global_scale_factor(global_scale_factor);
@@ -192,16 +204,18 @@ impl RenderHandler {
 
     #[must_use]
     pub fn with_clear_col(self, clear_col: Colour) -> Self {
-        self.render_data_channel.lock().unwrap().set_clear_col(clear_col);
+        self.render_data_channel
+            .lock()
+            .unwrap()
+            .set_clear_col(clear_col);
         self
     }
 
-    pub(crate) fn viewport(&self) -> AdjustedViewport { self.viewport.get().clone() }
+    pub(crate) fn viewport(&self) -> AdjustedViewport {
+        self.viewport.get().clone()
+    }
 
-    pub(crate) fn on_recreate_swapchain(
-        &self,
-        window: GgWindow,
-    ) {
+    pub(crate) fn on_recreate_swapchain(&self, window: GgWindow) {
         *self.window.get() = window;
         self.viewport.get().update_from_window(&self.window.get());
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
@@ -220,15 +234,15 @@ impl RenderHandler {
         self.render_data_channel.clone()
     }
 
-    pub(crate) fn build_shader_task_graphs(&self,
-                                           task_graph: &mut TaskGraph<VulkanoContext>,
-                                           texture_node: NodeId,
-                                           virtual_swapchain_id: Id<Swapchain>,
-                                           textures: &[Id<Image>]
+    pub(crate) fn build_shader_task_graphs(
+        &self,
+        task_graph: &mut TaskGraph<VulkanoContext>,
+        texture_node: NodeId,
+        virtual_swapchain_id: Id<Swapchain>,
+        textures: &[Id<Image>],
     ) -> Result<()> {
         // Host buffer accesses
-        for buffer in self.shaders.iter()
-            .flat_map(|s| s.get().buffer_writes()) {
+        for buffer in self.shaders.iter().flat_map(|s| s.get().buffer_writes()) {
             task_graph.add_host_buffer_access(buffer, HostAccessType::Write);
         }
         for buffer in self.gui_shader.buffer_writes() {
@@ -239,28 +253,44 @@ impl RenderHandler {
         let mut pre_render_node = task_graph.create_task_node(
             "pre_render_handler",
             QueueFamilyType::Graphics,
-            PreRenderTask { handler: self.clone() },
+            PreRenderTask {
+                handler: self.clone(),
+            },
         );
         for image in self.gui_shader.image_writes() {
-            pre_render_node.image_access(image, AccessType::CopyTransferWrite, ImageLayoutType::Optimal);
+            pre_render_node.image_access(
+                image,
+                AccessType::CopyTransferWrite,
+                ImageLayoutType::Optimal,
+            );
         }
         let pre_render_node = pre_render_node.build();
         task_graph.add_edge(texture_node, pre_render_node)?;
-        let clear_node = task_graph.create_task_node(
-            "clear_handler",
-            QueueFamilyType::Graphics,
-            ClearTask { handler: self.clone() }
-        ).image_access(
-            virtual_swapchain_id.current_image_id(),
-            AccessType::ColorAttachmentWrite,
-            ImageLayoutType::Optimal
-        ).build();
+        let clear_node = task_graph
+            .create_task_node(
+                "clear_handler",
+                QueueFamilyType::Graphics,
+                ClearTask {
+                    handler: self.clone(),
+                },
+            )
+            .image_access(
+                virtual_swapchain_id.current_image_id(),
+                AccessType::ColorAttachmentWrite,
+                ImageLayoutType::Optimal,
+            )
+            .build();
         task_graph.add_edge(pre_render_node, clear_node)?;
 
         // The actual render
-        let shader_nodes = self.shaders.iter().map(|s| {
-            s.get().build_task_node(task_graph, virtual_swapchain_id, textures)
-        }).collect_vec();
+        let shader_nodes = self
+            .shaders
+            .iter()
+            .map(|s| {
+                s.get()
+                    .build_task_node(task_graph, virtual_swapchain_id, textures)
+            })
+            .collect_vec();
         if let Some(&first_shader) = shader_nodes.first() {
             task_graph.add_edge(clear_node, first_shader)?;
         }
@@ -270,7 +300,9 @@ impl RenderHandler {
         }
 
         // GUI
-        let gui_node = self.gui_shader.build_task_graph(task_graph, virtual_swapchain_id);
+        let gui_node = self
+            .gui_shader
+            .build_task_graph(task_graph, virtual_swapchain_id);
         task_graph.add_edge(last_non_gui_node, gui_node)?;
 
         Ok(())
@@ -280,7 +312,9 @@ impl RenderHandler {
         *self.last_full_output.get() = Some(full_output);
     }
 
-    pub(crate) fn is_dirty(&self) -> bool { self.gui_shader.is_dirty() }
+    pub(crate) fn is_dirty(&self) -> bool {
+        self.gui_shader.is_dirty()
+    }
 }
 
 struct PreRenderTask {
@@ -290,8 +324,17 @@ struct PreRenderTask {
 impl Task for PreRenderTask {
     type World = VulkanoContext;
 
-    unsafe fn execute(&self, cbf: &mut RecordingCommandBuffer, tcx: &mut TaskContext, world: &Self::World) -> TaskResult {
-        let image_idx = tcx.swapchain(world.swapchain_id()).unwrap().current_image_index().unwrap() as usize;
+    unsafe fn execute(
+        &self,
+        cbf: &mut RecordingCommandBuffer,
+        tcx: &mut TaskContext,
+        world: &Self::World,
+    ) -> TaskResult {
+        let image_idx = tcx
+            .swapchain(world.swapchain_id())
+            .unwrap()
+            .current_image_index()
+            .unwrap() as usize;
 
         let (global_scale_factor, render_frame) = {
             let mut rx = self.handler.render_data_channel.lock().unwrap();
@@ -301,19 +344,34 @@ impl Task for PreRenderTask {
             (global_scale_factor, rx.next_frame())
         };
         if let Some(global_scale_factor) = global_scale_factor {
-            self.handler.viewport.get().set_global_scale_factor(global_scale_factor);
-            self.handler.on_recreate_swapchain(self.handler.window.get().clone());
+            self.handler
+                .viewport
+                .get()
+                .set_global_scale_factor(global_scale_factor);
+            self.handler
+                .on_recreate_swapchain(self.handler.window.get().clone());
         }
         for mut shader in self.handler.shaders.iter().map(|s| s.get()) {
             let shader_id = shader.id();
-            shader.pre_render_update(image_idx, render_frame.for_shader(shader_id), tcx)
-                .map_err(gg_err::CatchOutOfDate::from).unwrap();
+            shader
+                .pre_render_update(image_idx, render_frame.for_shader(shader_id), tcx)
+                .map_err(gg_err::CatchOutOfDate::from)
+                .unwrap();
         }
-        let full_output = self.handler.last_full_output.clone_inner()
+        let full_output = self
+            .handler
+            .last_full_output
+            .clone_inner()
             .expect("GUI output missing");
-        let primitives = self.handler.gui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let primitives = self
+            .handler
+            .gui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
         *self.handler.gui_shader.primitives.get() = Some(primitives);
-        self.handler.gui_shader.pre_render_update(cbf, tcx, world, &full_output.textures_delta.set).unwrap();
+        self.handler
+            .gui_shader
+            .pre_render_update(cbf, tcx, world, &full_output.textures_delta.set)
+            .unwrap();
         Ok(())
     }
 }
@@ -325,14 +383,31 @@ struct ClearTask {
 impl Task for ClearTask {
     type World = VulkanoContext;
 
-    unsafe fn execute(&self, cbf: &mut RecordingCommandBuffer, tcx: &mut TaskContext, world: &Self::World) -> TaskResult {
-        let image_idx = tcx.swapchain(world.swapchain_id()).unwrap().current_image_index().unwrap() as usize;
+    unsafe fn execute(
+        &self,
+        cbf: &mut RecordingCommandBuffer,
+        tcx: &mut TaskContext,
+        world: &Self::World,
+    ) -> TaskResult {
+        let image_idx = tcx
+            .swapchain(world.swapchain_id())
+            .unwrap()
+            .current_image_index()
+            .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
         let viewport_extent = self.handler.viewport.get().inner().extent;
-        cbf.as_raw().begin_rendering(
-            &RenderingInfo {
+        cbf.as_raw()
+            .begin_rendering(&RenderingInfo {
                 color_attachments: vec![Some(RenderingAttachmentInfo {
-                    clear_value: Some(self.handler.render_data_channel.lock().unwrap().clear_col.as_f32().into()),
+                    clear_value: Some(
+                        self.handler
+                            .render_data_channel
+                            .lock()
+                            .unwrap()
+                            .clear_col
+                            .as_f32()
+                            .into(),
+                    ),
                     load_op: Clear,
                     store_op: Store,
                     ..RenderingAttachmentInfo::image_view(image_view)
@@ -340,8 +415,8 @@ impl Task for ClearTask {
                 render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
                 layer_count: 1,
                 ..Default::default()
-            },
-        ).unwrap();
+            })
+            .unwrap();
         cbf.as_raw().end_rendering().unwrap();
 
         Ok(())
@@ -357,8 +432,12 @@ pub enum VertexDepth {
 }
 
 impl VertexDepth {
-    pub fn min_value() -> Self { Self::Back(0) }
-    pub fn max_value() -> Self { Self::Front(u16::MAX) }
+    pub fn min_value() -> Self {
+        Self::Back(0)
+    }
+    pub fn max_value() -> Self {
+        Self::Front(u16::MAX)
+    }
 }
 
 impl PartialOrd for VertexDepth {
@@ -370,24 +449,18 @@ impl PartialOrd for VertexDepth {
 impl Ord for VertexDepth {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         match self {
-            VertexDepth::Back(depth) => {
-                match other {
-                    VertexDepth::Back(other_depth) => depth.cmp(other_depth),
-                    _ => cmp::Ordering::Less,
-                }
+            VertexDepth::Back(depth) => match other {
+                VertexDepth::Back(other_depth) => depth.cmp(other_depth),
+                _ => cmp::Ordering::Less,
             },
-            VertexDepth::Middle => {
-                match other {
-                    VertexDepth::Back(_) => cmp::Ordering::Greater,
-                    VertexDepth::Middle => cmp::Ordering::Equal,
-                    VertexDepth::Front(_) => cmp::Ordering::Less,
-                }
+            VertexDepth::Middle => match other {
+                VertexDepth::Back(_) => cmp::Ordering::Greater,
+                VertexDepth::Middle => cmp::Ordering::Equal,
+                VertexDepth::Front(_) => cmp::Ordering::Less,
             },
-            VertexDepth::Front(depth) => {
-                match other {
-                    VertexDepth::Front(other_depth) => depth.cmp(other_depth),
-                    _ => cmp::Ordering::Greater,
-                }
+            VertexDepth::Front(depth) => match other {
+                VertexDepth::Front(other_depth) => depth.cmp(other_depth),
+                _ => cmp::Ordering::Greater,
             },
         }
     }
@@ -421,8 +494,12 @@ impl RenderItem {
         }
     }
 
-    pub fn is_empty(&self) -> bool { self.vertices.is_empty() }
-    pub fn len(&self) -> usize { self.vertices.len() }
+    pub fn is_empty(&self) -> bool {
+        self.vertices.is_empty()
+    }
+    pub fn len(&self) -> usize {
+        self.vertices.len()
+    }
 }
 
 pub(crate) struct VertexMap {
@@ -440,7 +517,13 @@ impl VertexMap {
 
     pub(crate) fn insert(&mut self, object_id: ObjectId, render_item: RenderItem) {
         check_eq!(render_item.len() % 3, 0);
-        self.render_items.insert(object_id, StoredRenderItem { object_id, render_item });
+        self.render_items.insert(
+            object_id,
+            StoredRenderItem {
+                object_id,
+                render_item,
+            },
+        );
         self.vertices_changed = true;
     }
     pub(crate) fn remove(&mut self, object_id: ObjectId) -> Option<RenderItem> {
@@ -452,10 +535,12 @@ impl VertexMap {
             None
         }
     }
-    pub(crate) fn render_items(&self) -> impl Iterator<Item=&StoredRenderItem> {
+    pub(crate) fn render_items(&self) -> impl Iterator<Item = &StoredRenderItem> {
         self.render_items.values()
     }
-    pub(crate) fn len(&self) -> usize { self.render_items.len() }
+    pub(crate) fn len(&self) -> usize {
+        self.render_items.len()
+    }
 
     pub(crate) fn consume_vertices_changed(&mut self) -> bool {
         let rv = self.vertices_changed;
@@ -471,6 +556,10 @@ pub(crate) struct StoredRenderItem {
 }
 
 impl StoredRenderItem {
-    pub(crate) fn vertices(&self) -> &[Vec2] { &self.render_item.vertices }
-    pub(crate) fn len(&self) -> usize { self.render_item.len()}
+    pub(crate) fn vertices(&self) -> &[Vec2] {
+        &self.render_item.vertices
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.render_item.len()
+    }
 }

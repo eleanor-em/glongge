@@ -1,9 +1,7 @@
-use std::cell::RefMut;
-use glongge::core::prelude::*;
-use crate::examples::mario::{
-    enemy::goomba::Goomba,
-};
+use crate::examples::mario::enemy::goomba::Goomba;
 use crate::object_type::ObjectType;
+use glongge::core::prelude::*;
+use std::cell::RefMut;
 
 pub mod goomba;
 
@@ -12,9 +10,11 @@ pub trait Stompable: SceneObject<ObjectType> {
     fn dead(&self) -> bool;
 }
 
-pub fn downcast_stompable_mut(obj: &mut SceneObjectWithId<ObjectType>) -> Option<RefMut<dyn Stompable>> {
+pub fn downcast_stompable_mut(
+    obj: &mut SceneObjectWithId<ObjectType>,
+) -> Option<RefMut<dyn Stompable>> {
     match obj.get_type() {
         ObjectType::Goomba => Some(obj.downcast_mut::<Goomba>().unwrap() as RefMut<dyn Stompable>),
-        _ => None
+        _ => None,
     }
 }

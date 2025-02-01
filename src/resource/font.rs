@@ -4,22 +4,19 @@ use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
 
-use ab_glyph::{point, Glyph, ScaleFont, OutlinedGlyph, FontVec, PxScaleFont};
 use crate::{
-    core::{
-        prelude::*,
-        ObjectTypeEnum,
-    },
-    resource::sprite::Sprite
+    core::{prelude::*, ObjectTypeEnum},
+    resource::sprite::Sprite,
 };
+use ab_glyph::{point, FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont};
 
 const SAMPLE_RATIO: f32 = 8.;
 
 mod internal {
-    use anyhow::Result;
-    use ab_glyph::{Font, FontVec, PxScale, PxScaleFont};
-    use itertools::Itertools;
     use crate::resource::font::SAMPLE_RATIO;
+    use ab_glyph::{Font, FontVec, PxScale, PxScaleFont};
+    use anyhow::Result;
+    use itertools::Itertools;
 
     pub fn font_from_slice(slice: &[u8], size: f32) -> Result<PxScaleFont<FontVec>> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
@@ -34,11 +31,17 @@ pub struct Font {
 
 impl Font {
     pub fn from_slice(slice: &[u8], size: f32) -> Result<Self> {
-        Ok(Self { inner: internal::font_from_slice(slice, size)? })
+        Ok(Self {
+            inner: internal::font_from_slice(slice, size)?,
+        })
     }
 
-    pub fn sample_ratio(&self) -> f32 { SAMPLE_RATIO }
-    pub fn height(&self) -> f32 { self.inner.height() }
+    pub fn sample_ratio(&self) -> f32 {
+        SAMPLE_RATIO
+    }
+    pub fn height(&self) -> f32 {
+        self.inner.height()
+    }
 
     fn layout(&self, text: &str, max_width: f32, text_wrap_mode: TextWrapMode) -> Vec<Glyph> {
         match text_wrap_mode {
@@ -84,22 +87,23 @@ impl Font {
         resource_handler: &mut ResourceHandler,
         text: &str,
         max_width: f32,
-        text_wrap_mode: TextWrapMode
+        text_wrap_mode: TextWrapMode,
     ) -> Result<Sprite> {
         let glyphs = self.layout(text, max_width * SAMPLE_RATIO, text_wrap_mode);
         let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        Ok(Sprite::from_texture(object_ctx,
-                                resource_handler,
+        Ok(Sprite::from_texture(
+            object_ctx,
+            resource_handler,
             resource_handler.texture.wait_load_reader_rgba(
                 &mut reader,
                 width,
                 height,
-                Format::R8G8B8A8_UNORM
-            )?))
+                Format::R8G8B8A8_UNORM,
+            )?,
+        ))
     }
-
 }
 
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
@@ -137,19 +141,33 @@ impl GlyphReader {
         check_ge!(all_px_bounds.min.y, 0.);
         check_ge!(all_px_bounds.max.x, 0.);
         check_ge!(all_px_bounds.max.y, 0.);
-        Ok(Self { inner: Some(glyphs), col: col.as_bytes(), all_px_bounds })
+        Ok(Self {
+            inner: Some(glyphs),
+            col: col.as_bytes(),
+            all_px_bounds,
+        })
     }
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn width(&self) -> u32 { self.all_px_bounds.max.x as u32 }
+    fn width(&self) -> u32 {
+        self.all_px_bounds.max.x as u32
+    }
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn height(&self) -> u32 { self.all_px_bounds.max.y as u32 }
+    fn height(&self) -> u32 {
+        self.all_px_bounds.max.y as u32
+    }
 }
 
 impl Read for GlyphReader {
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let glyphs = self.inner.take()
+        let glyphs = self
+            .inner
+            .take()
             .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?;
 
         // Zero out the buffer first.

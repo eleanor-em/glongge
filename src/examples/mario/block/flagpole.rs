@@ -1,10 +1,7 @@
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use glongge::{
-    core::prelude::*,
-    resource::sprite::Sprite
-};
-use crate::examples::mario::{FLAG_COLLISION_TAG};
+use crate::examples::mario::FLAG_COLLISION_TAG;
 use crate::object_type::ObjectType;
+use glongge::{core::prelude::*, resource::sprite::Sprite};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 #[register_scene_object]
 pub struct Flagpole {
@@ -23,14 +20,21 @@ impl Flagpole {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Flagpole {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
+        let texture = resource_handler
+            .texture
+            .wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_single_coords(
             object_ctx,
             resource_handler,
             texture,
-            Vec2i { x: 0, y: 588},
-            Vec2i { x: 16, y: 748 });
+            Vec2i { x: 0, y: 588 },
+            Vec2i { x: 16, y: 748 },
+        );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
@@ -38,7 +42,7 @@ impl SceneObject<ObjectType> for Flagpole {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
-            &self.listening_tags()
+            &self.listening_tags(),
         ));
     }
     fn emitting_tags(&self) -> Vec<&'static str> {

@@ -10,14 +10,14 @@ use crate::object_type::ObjectType;
 
 pub mod examples;
 
-#[allow(unused_imports)]
-use crate::examples::{
-    triangle::TriangleScene,
-    rectangle::RectangleScene,
-    mario::{MarioOverworldScene, MarioUndergroundScene},
-};
 use crate::examples::concave::ConcaveScene;
 use crate::examples::spline::SplineScene;
+#[allow(unused_imports)]
+use crate::examples::{
+    mario::{MarioOverworldScene, MarioUndergroundScene},
+    rectangle::RectangleScene,
+    triangle::TriangleScene,
+};
 
 fn main() -> Result<()> {
     run_test_cases();
@@ -55,22 +55,55 @@ fn run_test_cases() {
             .almost_eq(Mat3x3::one())
     );
 
-    check_almost_eq!(Vec2::right().rotated(45_f32.to_radians()), Vec2 { x: 1., y: 1. }.normed());
+    check_almost_eq!(
+        Vec2::right().rotated(45_f32.to_radians()),
+        Vec2 { x: 1., y: 1. }.normed()
+    );
     check_almost_eq!(Vec2::right().rotated(90_f32.to_radians()), Vec2::down());
-    check_almost_eq!(Vec2::right().rotated(135_f32.to_radians()), Vec2 { x: -1., y: 1. }.normed());
+    check_almost_eq!(
+        Vec2::right().rotated(135_f32.to_radians()),
+        Vec2 { x: -1., y: 1. }.normed()
+    );
     check_almost_eq!(Vec2::right().rotated(180_f32.to_radians()), Vec2::left());
-    check_almost_eq!(Vec2::right().rotated(225_f32.to_radians()), Vec2 { x: -1., y: -1. }.normed());
+    check_almost_eq!(
+        Vec2::right().rotated(225_f32.to_radians()),
+        Vec2 { x: -1., y: -1. }.normed()
+    );
     check_almost_eq!(Vec2::right().rotated(270_f32.to_radians()), Vec2::up());
-    check_almost_eq!(Vec2::right().rotated(315_f32.to_radians()), Vec2 { x: 1., y: -1. }.normed());
+    check_almost_eq!(
+        Vec2::right().rotated(315_f32.to_radians()),
+        Vec2 { x: 1., y: -1. }.normed()
+    );
     check_almost_eq!(Vec2::right().rotated(360_f32.to_radians()), Vec2::right());
 
     for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
-        check_almost_eq!(vec.rotated(45_f32.to_radians()), vec.rotated((-315_f32).to_radians()));
-        check_almost_eq!(vec.rotated(90_f32.to_radians()), vec.rotated((-270_f32).to_radians()));
-        check_almost_eq!(vec.rotated(135_f32.to_radians()), vec.rotated((-225_f32).to_radians()));
-        check_almost_eq!(vec.rotated(180_f32.to_radians()), vec.rotated((-180_f32).to_radians()));
-        check_almost_eq!(vec.rotated(225_f32.to_radians()), vec.rotated((-135_f32).to_radians()));
-        check_almost_eq!(vec.rotated(270_f32.to_radians()), vec.rotated((-90_f32).to_radians()));
-        check_almost_eq!(vec.rotated(315_f32.to_radians()), vec.rotated((-45_f32).to_radians()));
+        check_almost_eq!(
+            vec.rotated(45_f32.to_radians()),
+            vec.rotated((-315_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(90_f32.to_radians()),
+            vec.rotated((-270_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(135_f32.to_radians()),
+            vec.rotated((-225_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(180_f32.to_radians()),
+            vec.rotated((-180_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(225_f32.to_radians()),
+            vec.rotated((-135_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(270_f32.to_radians()),
+            vec.rotated((-90_f32).to_radians())
+        );
+        check_almost_eq!(
+            vec.rotated(315_f32.to_radians()),
+            vec.rotated((-45_f32).to_radians())
+        );
     }
 }

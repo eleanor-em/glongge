@@ -1,15 +1,15 @@
+use crate::core::prelude::*;
+use egui::{Color32, Response, WidgetText};
+use num_traits::Zero;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::str::FromStr;
-use std::sync::{Arc, mpsc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use egui::{Color32, Response, WidgetText};
-use num_traits::Zero;
-use crate::core::prelude::*;
+use std::sync::{mpsc, Arc, Mutex};
 
-pub mod render;
 pub mod debug_gui;
+pub mod render;
 
 pub type GuiContext = egui::Context;
 
@@ -41,7 +41,8 @@ impl<T: Clone + Default + Display + FromStr> EditCellReceiver<T> {
             editing: Arc::new(AtomicBool::new(false)),
             dragging: Arc::new(AtomicBool::new(false)),
             last_value: T::default(),
-            tx, rx
+            tx,
+            rx,
         }
     }
 
@@ -81,7 +82,9 @@ impl<T: Clone + Default + Display + FromStr> Default for EditCellReceiver<T> {
 }
 
 impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
-    pub fn is_valid(&self) -> bool { self.is_valid }
+    pub fn is_valid(&self) -> bool {
+        self.is_valid
+    }
 
     pub fn singleline(&mut self, ui: &mut GuiUi, label: impl Into<WidgetText>) -> Response {
         ui.with_layout(*ui.layout(), |ui| {
@@ -107,7 +110,8 @@ impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
                 self.is_valid = text.parse::<T>().is_ok();
             }
             response
-        }).inner
+        })
+        .inner
     }
 }
 
@@ -115,7 +119,9 @@ impl EditCellSender<f32> {
     fn get_zoom(response: &Response, ui: &mut GuiUi) -> Option<f32> {
         let mut delta = response.drag_delta().y;
         if delta.is_zero() && response.hovered() {
-            ui.input(|i| { delta = i.raw_scroll_delta.y; });
+            ui.input(|i| {
+                delta = i.raw_scroll_delta.y;
+            });
         }
         if delta.is_zero() {
             None
@@ -124,7 +130,12 @@ impl EditCellSender<f32> {
         }
     }
 
-    pub fn singleline_with_drag(&mut self, ui: &mut GuiUi, drag_speed: f32, label: impl Into<WidgetText>) {
+    pub fn singleline_with_drag(
+        &mut self,
+        ui: &mut GuiUi,
+        drag_speed: f32,
+        label: impl Into<WidgetText>,
+    ) {
         let response = self.singleline(ui, label);
         self.dragging.store(response.dragged(), Ordering::Relaxed);
         if let Some(dy) = Self::get_zoom(&response, ui) {
@@ -141,7 +152,13 @@ impl EditCellSender<f32> {
 }
 
 impl Vec2 {
-    pub fn build_gui(&self, ui: &mut GuiUi, drag_speed: f32, mut x: EditCellSender<f32>, mut y: EditCellSender<f32>) {
+    pub fn build_gui(
+        &self,
+        ui: &mut GuiUi,
+        drag_speed: f32,
+        mut x: EditCellSender<f32>,
+        mut y: EditCellSender<f32>,
+    ) {
         egui::Grid::new(ui.next_auto_id())
             .num_columns(2)
             .show(ui, |ui| {
@@ -172,9 +189,15 @@ impl TransformCell {
     }
     pub fn recv(&mut self) -> Transform {
         Transform {
-            centre: Vec2 { x: self.centre_x.recv(), y: self.centre_y.recv() },
+            centre: Vec2 {
+                x: self.centre_x.recv(),
+                y: self.centre_y.recv(),
+            },
             rotation: self.rotation.recv().to_radians(),
-            scale: Vec2 { x: self.scale_x.recv(), y: self.scale_y.recv() },
+            scale: Vec2 {
+                x: self.scale_x.recv(),
+                y: self.scale_y.recv(),
+            },
         }
     }
     pub fn update_live(&mut self, transform: Transform) {
@@ -219,10 +242,7 @@ pub struct TransformCellSender {
 }
 
 impl Transform {
-    pub fn build_gui(&self,
-                     ui: &mut GuiUi,
-                     mut cell: TransformCellSender,
-    ) {
+    pub fn build_gui(&self, ui: &mut GuiUi, mut cell: TransformCellSender) {
         egui::Grid::new(ui.next_auto_id())
             .num_columns(2)
             .show(ui, |ui| {

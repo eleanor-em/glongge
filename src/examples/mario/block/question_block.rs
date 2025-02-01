@@ -1,17 +1,9 @@
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use glongge::{
-    core::prelude::*,
-    resource::sprite::Sprite
-};
 use crate::examples::mario::{
-    block::Bumpable,
-    BLOCK_COLLISION_TAG,
-    from_nes,
-    from_nes_accel,
-    player::Player
+    block::Bumpable, from_nes, from_nes_accel, player::Player, BLOCK_COLLISION_TAG,
 };
 use crate::object_type::ObjectType;
-
+use glongge::{core::prelude::*, resource::sprite::Sprite};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 #[register_scene_object]
 pub struct QuestionBlock {
@@ -38,26 +30,33 @@ impl QuestionBlock {
 
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for QuestionBlock {
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/world_sheet.png")?;
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
+        let texture = resource_handler
+            .texture
+            .wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::from_tileset(
             object_ctx,
             resource_handler,
             texture.clone(),
-            Vec2i { x: 3, y: 1},
+            Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
             Vec2i { x: 298, y: 78 },
-            Vec2i { x: 1, y: 0 })
-            .with_frame_orders(vec![0, 1, 2, 1])
-            .with_frame_time_ms(vec![600, 100, 100, 100]);
+            Vec2i { x: 1, y: 0 },
+        )
+        .with_frame_orders(vec![0, 1, 2, 1])
+        .with_frame_time_ms(vec![600, 100, 100, 100]);
         self.empty_sprite = Sprite::from_single_extent(
             object_ctx,
             resource_handler,
             texture,
             Vec2i { x: 349, y: 78 },
-            Vec2i { x: 16, y: 16 }
+            Vec2i { x: 16, y: 16 },
         )
-            .with_hidden();
+        .with_hidden();
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         self.initial_y += self.sprite.half_widths().y;
         Ok(None)
@@ -66,7 +65,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
-            &self.listening_tags()
+            &self.listening_tags(),
         ));
     }
 

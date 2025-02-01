@@ -1,3 +1,19 @@
+use crate::core::input::InputHandler;
+use crate::core::prelude::*;
+use crate::core::scene::{GuiClosure, GuiInsideClosure};
+use crate::core::update::collision::Collision;
+use crate::core::update::{ObjectHandler, UpdatePerfStats};
+use crate::core::vk::{AdjustedViewport, RenderPerfStats};
+use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
+use crate::gui::{GuiUi, TransformCell};
+use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
+use egui::style::ScrollStyle;
+use egui::text::LayoutJob;
+use egui::{
+    Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, TextStyle, Ui,
+};
+use itertools::Itertools;
+use num_traits::Zero;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -6,21 +22,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
-use egui::{Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, TextStyle, Ui};
-use egui::style::ScrollStyle;
-use egui::text::LayoutJob;
-use itertools::Itertools;
-use num_traits::Zero;
 use tracing::warn;
-use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
-use crate::core::input::InputHandler;
-use crate::core::prelude::*;
-use crate::core::scene::{GuiClosure, GuiInsideClosure};
-use crate::core::update::collision::Collision;
-use crate::core::update::{ObjectHandler, UpdatePerfStats};
-use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
-use crate::core::vk::{AdjustedViewport, RenderPerfStats};
-use crate::gui::{GuiUi, TransformCell};
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -47,17 +49,17 @@ impl ObjectLabel {
 
     fn set_tags(&mut self, new_tags: impl AsRef<str>) {
         match self {
-            ObjectLabel::Root => {},
+            ObjectLabel::Root => {}
             ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) => {
                 *tags = new_tags.as_ref().to_string();
-            },
+            }
         }
     }
 
     fn get_tags(&self) -> &str {
         match self {
             ObjectLabel::Root => "",
-            ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) =>  tags.as_str()
+            ObjectLabel::Unique(_, tags) | ObjectLabel::Disambiguated(_, tags, _) => tags.as_str(),
         }
     }
 }
@@ -86,7 +88,7 @@ impl GuiObjectView {
     fn update_selection<O: ObjectTypeEnum>(
         &mut self,
         object_handler: &ObjectHandler<O>,
-        selected_id: ObjectId
+        selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
             if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id)? {
@@ -107,12 +109,17 @@ impl GuiObjectView {
         object_handler: &mut ObjectHandler<O>,
         mut gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
         frame: Frame,
-        enabled: bool
+        enabled: bool,
     ) -> Result<Box<GuiClosure>> {
         let object_id = self.object_id;
-        if object_id.is_root() { return Ok(Box::new(|_| {})); }
+        if object_id.is_root() {
+            return Ok(Box::new(|_| {}));
+        }
 
-        let mut absolute_transform = object_handler.absolute_transforms.get(&object_id).copied()
+        let mut absolute_transform = object_handler
+            .absolute_transforms
+            .get(&object_id)
+            .copied()
             .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
         let object = gg_err::log_err_then(object_handler.get_object_mut(object_id))
             .with_context(|| {
@@ -147,42 +154,50 @@ impl GuiObjectView {
             egui::SidePanel::right(Id::new("object-view"))
                 .frame(frame)
                 .show_animated(ctx, enabled && !object_id.is_root(), |ui| {
-                    egui::ScrollArea::vertical()
-                        .show(ui, |ui| {
-                            ui.vertical_centered(|ui| {
-                                let mut layout_job = LayoutJob::default();
-                                layout_job.append(format!("{name} [{}]", object_id.0).as_str(), 0., TextFormat {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let mut layout_job = LayoutJob::default();
+                            layout_job.append(
+                                format!("{name} [{}]", object_id.0).as_str(),
+                                0.,
+                                TextFormat {
                                     color: Color32::from_white_alpha(255),
                                     ..Default::default()
-                                });
-                                ui.add(egui::Label::new(layout_job)
-                                    .selectable(false));
-                                ui.separator();
-                            });
-
-                            let mut layout_job = LayoutJob::default();
-                            layout_job.append("Absolute transform:", 0., TextFormat {
-                                color: Color32::from_white_alpha(255),
-                                ..Default::default()
-                            });
-                            ui.add(egui::Label::new(layout_job)
-                                .selectable(false));
-                            absolute_transform.build_gui(ui, absolute_sender);
+                                },
+                            );
+                            ui.add(egui::Label::new(layout_job).selectable(false));
                             ui.separator();
-                            let mut layout_job = LayoutJob::default();
-                            layout_job.append("Relative transform:", 0., TextFormat {
+                        });
+
+                        let mut layout_job = LayoutJob::default();
+                        layout_job.append(
+                            "Absolute transform:",
+                            0.,
+                            TextFormat {
                                 color: Color32::from_white_alpha(255),
                                 ..Default::default()
-                            });
-                            ui.add(egui::Label::new(layout_job)
-                                .selectable(false));
-                            relative_transform.build_gui(ui, relative_sender);
+                            },
+                        );
+                        ui.add(egui::Label::new(layout_job).selectable(false));
+                        absolute_transform.build_gui(ui, absolute_sender);
+                        ui.separator();
+                        let mut layout_job = LayoutJob::default();
+                        layout_job.append(
+                            "Relative transform:",
+                            0.,
+                            TextFormat {
+                                color: Color32::from_white_alpha(255),
+                                ..Default::default()
+                            },
+                        );
+                        ui.add(egui::Label::new(layout_job).selectable(false));
+                        relative_transform.build_gui(ui, relative_sender);
 
-                            if let Some(gui_cmd) = gui_cmd {
-                                ui.separator();
-                                gui_cmd(ui);
-                            }
-                        });
+                        if let Some(gui_cmd) = gui_cmd {
+                            ui.separator();
+                            gui_cmd(ui);
+                        }
+                    });
                 });
         }))
     }
@@ -209,7 +224,8 @@ impl GuiObjectTreeNode {
             depth: 0,
             disambiguation: Rc::new(RefCell::new(BTreeMap::new())),
             open: false,
-            open_tx, open_rx
+            open_tx,
+            open_rx,
         }
     }
 
@@ -231,8 +247,11 @@ impl GuiObjectTreeNode {
 
     fn child<O: ObjectTypeEnum>(&self, object: &SceneObjectWithId<O>) -> Self {
         let name = object.inner.borrow().name();
-        let count = *self.disambiguation.borrow_mut().entry(name.clone())
-            .and_modify(|count| { *count += 1 })
+        let count = *self
+            .disambiguation
+            .borrow_mut()
+            .entry(name.clone())
+            .and_modify(|count| *count += 1)
             .or_default();
         let (open_tx, open_rx) = mpsc::channel();
         Self {
@@ -246,21 +265,31 @@ impl GuiObjectTreeNode {
             depth: self.depth + 1,
             disambiguation: self.disambiguation.clone(),
             open: false,
-            open_tx, open_rx
+            open_tx,
+            open_rx,
         }
     }
 
     fn update_open_with_selected(&mut self, selected_id: ObjectId) -> bool {
         let mut rv = false;
-        if self.displayed.contains_key(&selected_id) ||
-                self.displayed.values_mut().any(|c| c.update_open_with_selected(selected_id)) {
+        if self.displayed.contains_key(&selected_id)
+            || self
+                .displayed
+                .values_mut()
+                .any(|c| c.update_open_with_selected(selected_id))
+        {
             self.open = true;
             rv = true;
         }
         rv
     }
 
-    fn as_builder(&mut self, selected_changed: bool, selected_id: ObjectId, selected_tx: Sender<ObjectId>) -> GuiObjectTreeBuilder {
+    fn as_builder(
+        &mut self,
+        selected_changed: bool,
+        selected_id: ObjectId,
+        selected_tx: Sender<ObjectId>,
+    ) -> GuiObjectTreeBuilder {
         if let Some(next) = self.open_rx.try_iter().last() {
             self.open = next;
         }
@@ -268,12 +297,21 @@ impl GuiObjectTreeNode {
         GuiObjectTreeBuilder {
             label: self.label.clone(),
             object_id: self.object_id,
-            displayed: self.displayed.iter_mut()
-                .map(|(id, tree)| (*id, tree.as_builder(selected_changed, selected_id, selected_tx.clone())))
+            displayed: self
+                .displayed
+                .iter_mut()
+                .map(|(id, tree)| {
+                    (
+                        *id,
+                        tree.as_builder(selected_changed, selected_id, selected_tx.clone()),
+                    )
+                })
                 .collect(),
             open: self.open,
             open_tx: self.open_tx.clone(),
-            selected_changed, selected, selected_tx,
+            selected_changed,
+            selected,
+            selected_tx,
         }
     }
 }
@@ -296,8 +334,12 @@ impl GuiObjectTree {
         let (selected_tx, selected_rx) = mpsc::channel();
         Self {
             root: GuiObjectTreeNode::new(),
-            show: true, show_tx, show_rx,
-            selected_id, selected_tx, selected_rx,
+            show: true,
+            show_tx,
+            show_rx,
+            selected_id,
+            selected_tx,
+            selected_rx,
         }
     }
 
@@ -313,11 +355,9 @@ impl GuiObjectTree {
             self.root.update_open_with_selected(self.selected_id);
             selected_changed = true;
         }
-        let mut root = self.root.as_builder(
-            selected_changed,
-            self.selected_id,
-            self.selected_tx.clone()
-        );
+        let mut root =
+            self.root
+                .as_builder(selected_changed, self.selected_id, self.selected_tx.clone());
         Box::new(move |ctx| {
             egui::SidePanel::left(Id::new("object-tree"))
                 .resizable(true)
@@ -335,18 +375,20 @@ impl GuiObjectTree {
                             if ui.add(Button::new("🌳").selected(show)).clicked() {
                                 show_tx.send(!show).unwrap();
                             }
-                            egui::ScrollArea::vertical()
-                                .show(ui, |ui| {
-                                    let mut layout_job = LayoutJob::default();
-                                    layout_job.append("Object Tree", 0., TextFormat {
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                let mut layout_job = LayoutJob::default();
+                                layout_job.append(
+                                    "Object Tree",
+                                    0.,
+                                    TextFormat {
                                         color: Color32::from_white_alpha(255),
                                         ..Default::default()
-                                    });
-                                    ui.add(egui::Label::new(layout_job)
-                                        .selectable(false));
-                                    ui.separator();
-                                    root.build(ui);
-                                });
+                                    },
+                                );
+                                ui.add(egui::Label::new(layout_job).selectable(false));
+                                ui.separator();
+                                root.build(ui);
+                            });
                         });
                     } else if ui.add(Button::new("🌳").selected(show)).clicked() {
                         show_tx.send(!show).unwrap();
@@ -359,7 +401,7 @@ impl GuiObjectTree {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &ObjectHandler<O>,
-        wireframe_mouseovers: &[ObjectId]
+        wireframe_mouseovers: &[ObjectId],
     ) {
         if input_handler.pressed(KeyCode::KeyF) {
             if let Some(i) = gg_iter::index_of(wireframe_mouseovers, &self.selected_id) {
@@ -374,8 +416,11 @@ impl GuiObjectTree {
                 if let Some(object_id) = object_handler.get_first_object_id() {
                     self.selected_tx.send(object_id).unwrap();
                 }
-            } else if let Some(child) = gg_err::log_err_then(object_handler.get_children(self.selected_id)
-                .map(|v| v.first())) {
+            } else if let Some(child) = gg_err::log_err_then(
+                object_handler
+                    .get_children(self.selected_id)
+                    .map(|v| v.first()),
+            ) {
                 self.selected_tx.send(child.object_id).unwrap();
             } else {
                 self.select_next_sibling(object_handler);
@@ -385,7 +430,8 @@ impl GuiObjectTree {
             self.select_next_sibling(object_handler);
         }
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
-            if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id)) {
+            if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
+            {
                 self.selected_tx.send(parent.object_id).unwrap();
             }
         }
@@ -397,36 +443,50 @@ impl GuiObjectTree {
     fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         if let Some(sibling_id) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
             .and_then(|parent| {
-                let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent.object_id))
-                    .iter()
-                    .map(|o| o.object_id)
-                    .collect_vec();
+                let siblings = gg_err::log_unwrap_or(
+                    &Vec::new(),
+                    object_handler.get_children(parent.object_id),
+                )
+                .iter()
+                .map(|o| o.object_id)
+                .collect_vec();
                 gg_iter::index_of(&siblings, &self.selected_id)
                     .map(|i| siblings[(i + 1) % siblings.len()])
-            }) {
+            })
+        {
             self.selected_tx.send(sibling_id).unwrap();
         } else if let Some(sibling_id) = object_handler.get_next_object_id(self.selected_id) {
             self.selected_tx.send(sibling_id).unwrap();
         }
     }
 
-    pub fn on_add_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, object: &SceneObjectWithId<O>) {
+    pub fn on_add_object<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        object: &SceneObjectWithId<O>,
+    ) {
         let mut tree = &mut self.root;
         match object_handler.get_parent_chain(object.object_id) {
-            Ok(chain) => for id in chain.into_iter().rev() {
-                if tree.displayed.contains_key(&id) {
-                    tree = tree.displayed.get_mut(&id).unwrap();
-                } else {
-                    let child = tree.child(object);
-                    tree.displayed.insert(object.object_id, child);
-                    return;
+            Ok(chain) => {
+                for id in chain.into_iter().rev() {
+                    if tree.displayed.contains_key(&id) {
+                        tree = tree.displayed.get_mut(&id).unwrap();
+                    } else {
+                        let child = tree.child(object);
+                        tree.displayed.insert(object.object_id, child);
+                        return;
+                    }
                 }
-            },
+            }
             Err(e) => error!("{}", e.root_cause()),
         }
     }
 
-    pub fn on_remove_object<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, removed_id: ObjectId) {
+    pub fn on_remove_object<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        removed_id: ObjectId,
+    ) {
         match object_handler.get_parent_chain(removed_id) {
             Ok(mut chain) => {
                 let mut tree = &mut self.root;
@@ -441,7 +501,7 @@ impl GuiObjectTree {
                     id = chain.pop().unwrap();
                 }
                 tree.displayed.remove(&id);
-            },
+            }
             Err(e) => error!("{}", e.root_cause()),
         }
     }
@@ -482,11 +542,16 @@ impl GuiObjectTreeBuilder {
                     .open(Some(self.open))
                     .show(ui, |ui| {
                         ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
-                        for (_, child_group) in &self.displayed.values_mut()
-                            .chunk_by(|tree| tree.label.name().to_string()) {
+                        for (_, child_group) in &self
+                            .displayed
+                            .values_mut()
+                            .chunk_by(|tree| tree.label.name().to_string())
+                        {
                             let mut child_group = child_group.collect_vec();
                             let max_displayed = 10;
-                            child_group.iter_mut().take(max_displayed)
+                            child_group
+                                .iter_mut()
+                                .take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
                             if child_group.len() > max_displayed {
                                 ui.label(format!("[..{}]", child_group.len()));
@@ -497,7 +562,9 @@ impl GuiObjectTreeBuilder {
                 if self.selected_changed && self.selected {
                     response.header_response.scroll_to_me(Some(Align::Center));
                 }
-                if response.header_response.double_clicked() || response.header_response.secondary_clicked() {
+                if response.header_response.double_clicked()
+                    || response.header_response.secondary_clicked()
+                {
                     self.open_tx.send(!self.open).unwrap();
                 }
                 if response.header_response.clicked() {
@@ -512,7 +579,7 @@ impl GuiObjectTreeBuilder {
 enum ViewPerfMode {
     Update,
     Render,
-    None
+    None,
 }
 
 pub(crate) struct GuiConsoleLog {
@@ -528,15 +595,14 @@ impl GuiConsoleLog {
     const MAX_LOG_LINES: usize = 40;
 
     fn new() -> Result<Self> {
-        let log_file = BufReader::new(std::fs::OpenOptions::new()
-            .read(true)
-            .open("run.log")?);
+        let log_file = BufReader::new(std::fs::OpenOptions::new().read(true).open("run.log")?);
         let (view_perf_tx, view_perf_rx) = mpsc::channel();
         Ok(Self {
             log_output: Vec::new(),
             log_file,
             view_perf: ViewPerfMode::None,
-            view_perf_tx, view_perf_rx,
+            view_perf_tx,
+            view_perf_rx,
             update_perf_stats: None,
             render_perf_stats: None,
         })
@@ -573,9 +639,10 @@ impl GuiConsoleLog {
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
                     ui.with_layout(egui::Layout::right_to_left(Align::TOP), |ui| {
-                        if ui.add(egui::Button::new("🖥")
-                            .selected(view_perf == ViewPerfMode::Update)
-                        ).clicked() {
+                        if ui
+                            .add(egui::Button::new("🖥").selected(view_perf == ViewPerfMode::Update))
+                            .clicked()
+                        {
                             let next = if view_perf == ViewPerfMode::Update {
                                 ViewPerfMode::None
                             } else {
@@ -583,9 +650,12 @@ impl GuiConsoleLog {
                             };
                             view_perf_tx.send(next).unwrap();
                         }
-                        if ui.add(egui::Button::new("🎨")
-                            .selected(view_perf == ViewPerfMode::Render)
-                        ).clicked() {
+                        if ui
+                            .add(
+                                egui::Button::new("🎨").selected(view_perf == ViewPerfMode::Render),
+                            )
+                            .clicked()
+                        {
                             let next = if view_perf == ViewPerfMode::Render {
                                 ViewPerfMode::None
                             } else {
@@ -601,20 +671,27 @@ impl GuiConsoleLog {
         })
     }
 
-    fn build_update_perf(ui: &mut Ui, view_perf: ViewPerfMode, frame: Frame, update_perf_stats: Option<UpdatePerfStats>) {
+    fn build_update_perf(
+        ui: &mut Ui,
+        view_perf: ViewPerfMode,
+        frame: Frame,
+        update_perf_stats: Option<UpdatePerfStats>,
+    ) {
         egui::SidePanel::right("perf-update")
             .default_width(160.)
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Update, |ui| {
                 ui.vertical_centered(|ui| {
                     let mut layout_job = LayoutJob::default();
-                    layout_job.append("Update Performance", 0., TextFormat {
-                        color: Color32::from_white_alpha(255),
-                        ..Default::default()
-                    });
-                    ui.add(egui::Label::new(layout_job)
-                        .extend()
-                        .selectable(false));
+                    layout_job.append(
+                        "Update Performance",
+                        0.,
+                        TextFormat {
+                            color: Color32::from_white_alpha(255),
+                            ..Default::default()
+                        },
+                    );
+                    ui.add(egui::Label::new(layout_job).extend().selectable(false));
                     ui.separator();
                 });
                 if let Some(perf_stats) = update_perf_stats {
@@ -636,19 +713,26 @@ impl GuiConsoleLog {
                 }
             });
     }
-    fn build_render_perf(ui: &mut Ui, view_perf: ViewPerfMode, frame: Frame, render_perf_stats: Option<RenderPerfStats>) {
+    fn build_render_perf(
+        ui: &mut Ui,
+        view_perf: ViewPerfMode,
+        frame: Frame,
+        render_perf_stats: Option<RenderPerfStats>,
+    ) {
         egui::SidePanel::right("perf-render")
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Render, |ui| {
                 ui.vertical_centered(|ui| {
                     let mut layout_job = LayoutJob::default();
-                    layout_job.append("Render Performance", 0., TextFormat {
-                        color: Color32::from_white_alpha(255),
-                        ..Default::default()
-                    });
-                    ui.add(egui::Label::new(layout_job)
-                        .extend()
-                        .selectable(false));
+                    layout_job.append(
+                        "Render Performance",
+                        0.,
+                        TextFormat {
+                            color: Color32::from_white_alpha(255),
+                            ..Default::default()
+                        },
+                    );
+                    ui.add(egui::Label::new(layout_job).extend().selectable(false));
                     ui.separator();
                 });
                 if let Some(perf_stats) = render_perf_stats {
@@ -671,7 +755,6 @@ impl GuiConsoleLog {
             });
     }
 
-
     fn build_log_scroll_area(ui: &mut Ui, log_output: Vec<String>) {
         ui.with_layout(egui::Layout::top_down(Align::LEFT), |ui| {
             egui::ScrollArea::both()
@@ -688,7 +771,8 @@ impl GuiConsoleLog {
                                 line.trim()
                             } else {
                                 line.as_str()
-                            }.split("\x1b[");
+                            }
+                            .split("\x1b[");
                             let style = Style::default();
                             for segment in segments.filter(|s| !s.is_empty()) {
                                 let Some(sep) = segment.find('m') else {
@@ -696,11 +780,10 @@ impl GuiConsoleLog {
                                     continue;
                                 };
                                 let colour_code = &segment[..sep];
-                                let col = colour_code.parse::<i32>()
-                                    .unwrap_or(
-                                        // Probably a log line with a newline?
-                                        2
-                                    );
+                                let col = colour_code.parse::<i32>().unwrap_or(
+                                    // Probably a log line with a newline?
+                                    2,
+                                );
                                 let text = &segment[sep + 1..];
                                 egui::RichText::new(text)
                                     .color(match col {
@@ -713,18 +796,19 @@ impl GuiConsoleLog {
                                         _ => {
                                             warn!("unrecognised colour code: {col}");
                                             Color32::from_gray(240)
-                                        },
+                                        }
                                     })
                                     .monospace()
-                                    .append_to(&mut layout_job,
-                                               &style,
-                                               FontSelection::Default,
-                                               Align::Center);
+                                    .append_to(
+                                        &mut layout_job,
+                                        &style,
+                                        FontSelection::Default,
+                                        Align::Center,
+                                    );
                             }
                         }
                     }
-                    ui.add(egui::Label::new(layout_job)
-                        .selectable(true));
+                    ui.add(egui::Label::new(layout_job).selectable(true));
                 });
         });
     }
@@ -733,7 +817,7 @@ impl GuiConsoleLog {
 enum SceneControlCommand {
     TogglePause,
     Step,
-    BigStep
+    BigStep,
 }
 pub(crate) struct GuiSceneControl {
     paused: bool,
@@ -748,10 +832,10 @@ impl GuiSceneControl {
         Self {
             paused: false,
             should_step: 0,
-            cmd_tx, cmd_rx
+            cmd_tx,
+            cmd_rx,
         }
     }
-
 
     fn on_input(&mut self, input_handler: &InputHandler) {
         if input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
@@ -779,24 +863,32 @@ impl GuiSceneControl {
 
         Box::new(move |ctx| {
             egui::TopBottomPanel::bottom("scene-control")
-                .frame(frame.fill(Color32::from_black_alpha(0))
-                    .outer_margin(12.)
-                    .inner_margin(0.))
+                .frame(
+                    frame
+                        .fill(Color32::from_black_alpha(0))
+                        .outer_margin(12.)
+                        .inner_margin(0.),
+                )
                 .show_separator_line(false)
                 .show_animated(ctx, enabled, |ui| {
                     ui.style_mut().override_text_style = Some(TextStyle::Monospace);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing = [2., 0.].into();
                         let size = 24.;
-                        if ui.add(Button::new("⏸")
-                            .selected(paused)
-                            .min_size([size, size].into()))
-                            .clicked() {
+                        if ui
+                            .add(
+                                Button::new("⏸")
+                                    .selected(paused)
+                                    .min_size([size, size].into()),
+                            )
+                            .clicked()
+                        {
                             cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
                         };
-                        if ui.add(Button::new("⟳")
-                            .min_size([size, size].into()))
-                            .clicked() {
+                        if ui
+                            .add(Button::new("⟳").min_size([size, size].into()))
+                            .clicked()
+                        {
                             if ui.input(|i| i.modifiers.shift) {
                                 cmd_tx.send(SceneControlCommand::BigStep).unwrap();
                             } else {
@@ -807,7 +899,9 @@ impl GuiSceneControl {
                 });
         })
     }
-    pub fn is_paused(&self) -> bool { self.paused }
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
     pub fn should_step(&mut self) -> bool {
         let rv = self.paused && self.should_step > 0;
         if rv {
@@ -849,11 +943,9 @@ impl DebugGui {
         })
     }
 
-    pub fn clear_mouseovers<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>
-    ) {
-        self.wireframe_mouseovers.drain(..)
+    pub fn clear_mouseovers<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        self.wireframe_mouseovers
+            .drain(..)
             .filter(|o| self.object_tree.selected_id != *o)
             .filter_map(|o| gg_err::log_err_then(object_handler.get_collision_shape_mut(o)))
             .for_each(|mut c| c.hide_wireframe());
@@ -862,12 +954,14 @@ impl DebugGui {
     pub fn on_mouseovers<O: ObjectTypeEnum>(
         &mut self,
         object_handler: &ObjectHandler<O>,
-        collisions: NonemptyVec<Collision<O>>
+        collisions: NonemptyVec<Collision<O>>,
     ) {
-        self.wireframe_mouseovers = collisions.into_iter()
+        self.wireframe_mouseovers = collisions
+            .into_iter()
             .map(|c| c.other.object_id)
             .inspect(|&o| {
-                if let Some(mut c) = gg_err::log_err_then(object_handler.get_collision_shape_mut(o)) {
+                if let Some(mut c) = gg_err::log_err_then(object_handler.get_collision_shape_mut(o))
+                {
                     c.show_wireframe();
                 }
             })
@@ -878,19 +972,28 @@ impl DebugGui {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &mut ObjectHandler<O>,
-        gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>
+        gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
     ) -> Box<GuiClosure> {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {
                 self.object_tree.selected_id = ObjectId::root();
-                gg_err::log_err(self.object_view.update_selection(object_handler, ObjectId::root()));
+                gg_err::log_err(
+                    self.object_view
+                        .update_selection(object_handler, ObjectId::root()),
+                );
             }
-            self.object_tree.on_input(input_handler, object_handler, &self.wireframe_mouseovers);
+            self.object_tree
+                .on_input(input_handler, object_handler, &self.wireframe_mouseovers);
             self.scene_control.on_input(input_handler);
         }
         if !self.object_tree.selected_id.is_root() {
-            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id)).is_some() {
-                gg_err::log_err(self.object_view.update_selection(object_handler, self.object_tree.selected_id));
+            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id))
+                .is_some()
+            {
+                gg_err::log_err(
+                    self.object_view
+                        .update_selection(object_handler, self.object_tree.selected_id),
+                );
             } else {
                 self.object_tree.selected_id = ObjectId::root();
                 self.object_view.clear_selection();
@@ -898,9 +1001,12 @@ impl DebugGui {
         }
 
         let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
-        let build_object_view = gg_err::log_and_ok(
-            self.object_view.build_closure(object_handler, gui_cmds, self.frame, self.enabled)
-        );
+        let build_object_view = gg_err::log_and_ok(self.object_view.build_closure(
+            object_handler,
+            gui_cmds,
+            self.frame,
+            self.enabled,
+        ));
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
         let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
         self.last_update = Instant::now();
@@ -914,18 +1020,22 @@ impl DebugGui {
         })
     }
 
-    pub fn on_end_step(
-        &mut self,
-        input_handler: &InputHandler,
-        viewport: &mut AdjustedViewport
-    ) {
+    pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {
         let mut viewport_moved = false;
         if self.enabled && input_handler.mod_super() {
             let mut direction = Vec2::zero();
-            if input_handler.down(KeyCode::ArrowLeft) { direction += Vec2::left(); }
-            if input_handler.down(KeyCode::ArrowRight) { direction += Vec2::right(); }
-            if input_handler.down(KeyCode::ArrowUp) { direction += Vec2::up(); }
-            if input_handler.down(KeyCode::ArrowDown) { direction += Vec2::down(); }
+            if input_handler.down(KeyCode::ArrowLeft) {
+                direction += Vec2::left();
+            }
+            if input_handler.down(KeyCode::ArrowRight) {
+                direction += Vec2::right();
+            }
+            if input_handler.down(KeyCode::ArrowUp) {
+                direction += Vec2::up();
+            }
+            if input_handler.down(KeyCode::ArrowDown) {
+                direction += Vec2::down();
+            }
             direction *= gg_float::micros(self.last_update.elapsed()) * 128.;
             let dx = if input_handler.mod_shift() {
                 direction * 5.
@@ -941,9 +1051,13 @@ impl DebugGui {
             self.last_viewport = viewport.clone();
         }
     }
-    
-    pub fn toggle(&mut self) { self.enabled = !self.enabled; }
-    pub fn enabled(&self) -> bool { self.enabled }
+
+    pub fn toggle(&mut self) {
+        self.enabled = !self.enabled;
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
     pub fn selected_object(&self) -> Option<ObjectId> {
         if self.object_tree.selected_id.is_root() {
             None

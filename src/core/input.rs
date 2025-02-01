@@ -1,15 +1,15 @@
+use egui::PointerButton;
+use egui_winit::winit::event::ElementState;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
-use egui::PointerButton;
-use egui_winit::winit::event::ElementState;
 
-pub use egui_winit::winit::keyboard::KeyCode as KeyCode;
-use num_traits::Zero;
 use crate::core::prelude::*;
 use crate::core::vk::AdjustedViewport;
 use crate::gui::GuiContext;
+pub use egui_winit::winit::keyboard::KeyCode;
+use num_traits::Zero;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
@@ -126,7 +126,9 @@ impl InputHandler {
             MouseButton::Primary => self.primary_mouse,
             MouseButton::Secondary => self.secondary_mouse,
             MouseButton::Middle => self.middle_mouse,
-        }.inner.is_some()
+        }
+        .inner
+        .is_some()
     }
     pub fn mouse_double_clicked(&self, button: MouseButton) -> bool {
         match button {
@@ -136,46 +138,80 @@ impl InputHandler {
         }
     }
 
-    pub fn mod_shift(&self) -> bool { self.mod_shift }
-    pub fn mod_alt(&self) -> bool { self.mod_alt }
-    pub fn mod_ctrl(&self) -> bool { self.mod_ctrl }
-    pub fn mod_super(&self) -> bool { self.mod_super }
+    pub fn mod_shift(&self) -> bool {
+        self.mod_shift
+    }
+    pub fn mod_alt(&self) -> bool {
+        self.mod_alt
+    }
+    pub fn mod_ctrl(&self) -> bool {
+        self.mod_ctrl
+    }
+    pub fn mod_super(&self) -> bool {
+        self.mod_super
+    }
 
     pub(crate) fn update_mouse(&mut self, ctx: &GuiContext) {
-        self.mouse_pos = ctx.pointer_latest_pos()
-            .map(|p| Vec2 { x: p.x, y: p.y });
+        self.mouse_pos = ctx.pointer_latest_pos().map(|p| Vec2 { x: p.x, y: p.y });
         ctx.input(|input| {
             if input.pointer.primary_pressed() {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Primary, ElementState::Pressed));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Primary,
+                    ElementState::Pressed,
+                ));
             } else if input.pointer.primary_released() {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Primary, ElementState::Released));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Primary,
+                    ElementState::Released,
+                ));
             }
             if input.pointer.button_double_clicked(PointerButton::Primary) {
-                self.queued_events.push(InputEvent::MouseDoubleClick(MouseButton::Primary));
+                self.queued_events
+                    .push(InputEvent::MouseDoubleClick(MouseButton::Primary));
             }
 
             if input.pointer.secondary_pressed() {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Secondary, ElementState::Pressed));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Secondary,
+                    ElementState::Pressed,
+                ));
             } else if input.pointer.secondary_released() {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Secondary, ElementState::Released));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Secondary,
+                    ElementState::Released,
+                ));
             }
-            if input.pointer.button_double_clicked(PointerButton::Secondary) {
-                self.queued_events.push(InputEvent::MouseDoubleClick(MouseButton::Secondary));
+            if input
+                .pointer
+                .button_double_clicked(PointerButton::Secondary)
+            {
+                self.queued_events
+                    .push(InputEvent::MouseDoubleClick(MouseButton::Secondary));
             }
 
             if input.pointer.button_pressed(PointerButton::Middle) {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Middle, ElementState::Pressed));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Middle,
+                    ElementState::Pressed,
+                ));
             } else if input.pointer.button_released(PointerButton::Middle) {
-                self.queued_events.push(InputEvent::Mouse(MouseButton::Middle, ElementState::Released));
+                self.queued_events.push(InputEvent::Mouse(
+                    MouseButton::Middle,
+                    ElementState::Released,
+                ));
             }
             if input.pointer.button_double_clicked(PointerButton::Middle) {
-                self.queued_events.push(InputEvent::MouseDoubleClick(MouseButton::Middle));
+                self.queued_events
+                    .push(InputEvent::MouseDoubleClick(MouseButton::Middle));
             }
         });
     }
-    pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) { self.viewport = viewport; }
+    pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) {
+        self.viewport = viewport;
+    }
     pub fn screen_mouse_pos(&self) -> Option<Vec2> {
-        self.mouse_pos.map(|p| p / self.viewport.global_scale_factor())
+        self.mouse_pos
+            .map(|p| p / self.viewport.global_scale_factor())
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {
@@ -195,13 +231,19 @@ impl InputHandler {
     }
 
     pub(crate) fn update_step(&mut self) {
-        self.data = self.data.iter()
+        self.data = self
+            .data
+            .iter()
             .filter_map(|(key, state)| match state {
                 InputState::Pressed | InputState::Held => Some((*key, InputState::Held)),
                 InputState::Released => None,
             })
             .collect();
-        for state in [&mut self.primary_mouse, &mut self.secondary_mouse, &mut self.middle_mouse] {
+        for state in [
+            &mut self.primary_mouse,
+            &mut self.secondary_mouse,
+            &mut self.middle_mouse,
+        ] {
             state.inner = match state.inner {
                 Some(InputState::Pressed | InputState::Held) => Some(InputState::Held),
                 Some(InputState::Released) | None => None,
@@ -215,27 +257,26 @@ impl InputHandler {
                         None => {
                             // I don't really understand this, but some OS stuff can cause a Released state
                             // here.
-                            self.data.insert(key, match state {
-                                ElementState::Pressed => InputState::Pressed,
-                                ElementState::Released => InputState::Released,
-                            });
-                        }
-                        Some(InputState::Pressed | InputState::Held) => {
-                            match state {
-                                ElementState::Pressed => {},
-                                ElementState::Released => {
-                                    self.data.insert(key, InputState::Released);
-                                }
-                            }
-                        }
-                        Some(InputState::Released) => {
-                            match state {
-                                ElementState::Pressed => {
-                                    self.data.insert(key, InputState::Pressed);
+                            self.data.insert(
+                                key,
+                                match state {
+                                    ElementState::Pressed => InputState::Pressed,
+                                    ElementState::Released => InputState::Released,
                                 },
-                                ElementState::Released => {}
-                            }
+                            );
                         }
+                        Some(InputState::Pressed | InputState::Held) => match state {
+                            ElementState::Pressed => {}
+                            ElementState::Released => {
+                                self.data.insert(key, InputState::Released);
+                            }
+                        },
+                        Some(InputState::Released) => match state {
+                            ElementState::Pressed => {
+                                self.data.insert(key, InputState::Pressed);
+                            }
+                            ElementState::Released => {}
+                        },
                     }
                 }
                 InputEvent::Mouse(button, state) => {

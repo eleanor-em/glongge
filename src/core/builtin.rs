@@ -1,12 +1,12 @@
-use std::ffi::OsStr;
-use std::path::Path;
+use crate::core::prelude::*;
+use crate::core::{AnySceneObject, ObjectTypeEnum};
+use crate::resource::sprite::Sprite;
+use crate::resource::ResourceHandler;
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use itertools::Itertools;
 use num_traits::Zero;
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use crate::core::{AnySceneObject, ObjectTypeEnum};
-use crate::core::prelude::*;
-use crate::resource::ResourceHandler;
-use crate::resource::sprite::Sprite;
+use std::ffi::OsStr;
+use std::path::Path;
 
 #[register_scene_object]
 pub struct GgInternalContainer<ObjectType> {
@@ -15,17 +15,31 @@ pub struct GgInternalContainer<ObjectType> {
 }
 
 impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
-    pub fn create(label: impl AsRef<str>, children: Vec<AnySceneObject<ObjectType>>) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self { label: label.as_ref().to_string(), children })
+    pub fn create(
+        label: impl AsRef<str>,
+        children: Vec<AnySceneObject<ObjectType>>,
+    ) -> AnySceneObject<ObjectType> {
+        AnySceneObject::new(Self {
+            label: label.as_ref().to_string(),
+            children,
+        })
     }
 }
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer<ObjectType> {
-    fn name(&self) -> String { self.label.clone() }
-    fn get_type(&self) -> ObjectType { ObjectType::gg_container() }
+    fn name(&self) -> String {
+        self.label.clone()
+    }
+    fn get_type(&self) -> ObjectType {
+        ObjectType::gg_container()
+    }
 
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, _resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        _resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
         object_ctx.add_vec(self.children.drain(..).collect_vec());
         Ok(None)
     }
@@ -77,12 +91,20 @@ impl GgInternalStaticSprite {
         self
     }
     #[must_use]
-    pub fn with_single_coords(mut self, top_left: impl Into<Vec2>, bottom_right: impl Into<Vec2>) -> Self {
+    pub fn with_single_coords(
+        mut self,
+        top_left: impl Into<Vec2>,
+        bottom_right: impl Into<Vec2>,
+    ) -> Self {
         self.tex_segment = Some(Rect::from_coords(top_left.into(), bottom_right.into()));
         self
     }
     #[must_use]
-    pub fn with_single_extent(mut self, top_left: impl Into<Vec2>, extent: impl Into<Vec2>) -> Self {
+    pub fn with_single_extent(
+        mut self,
+        top_left: impl Into<Vec2>,
+        extent: impl Into<Vec2>,
+    ) -> Self {
         let top_left = top_left.into();
         self.tex_segment = Some(Rect::from_coords(top_left, top_left + extent.into()));
         self
@@ -98,10 +120,12 @@ impl GgInternalStaticSprite {
     pub fn build_colliding<ObjectType: ObjectTypeEnum>(
         self,
         emitting_tags: Vec<&'static str>,
-        listening_tags: Vec<&'static str>
+        listening_tags: Vec<&'static str>,
     ) -> AnySceneObject<ObjectType> {
         AnySceneObject::new(GgInternalCollidingSprite {
-            inner: self, emitting_tags, listening_tags
+            inner: self,
+            emitting_tags,
+            listening_tags,
         })
     }
 }
@@ -111,25 +135,42 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
     fn name(&self) -> String {
         if let Some(name) = &self.name.as_ref() {
             format!("StaticSprite [{name}]")
-        } else if let Some(filename) = Path::new(&self.filename).file_stem().and_then(OsStr::to_str) {
+        } else if let Some(filename) = Path::new(&self.filename)
+            .file_stem()
+            .and_then(OsStr::to_str)
+        {
             format!("StaticSprite [{filename}]")
         } else {
             "StaticSprite".to_string()
         }
     }
-    fn get_type(&self) -> ObjectType { ObjectType::gg_static_sprite() }
+    fn get_type(&self) -> ObjectType {
+        ObjectType::gg_static_sprite()
+    }
 
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
         let sprite = if let Some(tex_segment) = self.tex_segment {
             Sprite::from_single_coords(
                 object_ctx,
                 resource_handler,
-                resource_handler.texture.wait_load_file(self.filename.clone())?,
+                resource_handler
+                    .texture
+                    .wait_load_file(self.filename.clone())?,
                 tex_segment.top_left().as_vec2int_lossy(),
                 tex_segment.bottom_right().as_vec2int_lossy(),
             )
         } else {
-            Sprite::from_texture(object_ctx, resource_handler, resource_handler.texture.wait_load_file(self.filename.clone())?)
+            Sprite::from_texture(
+                object_ctx,
+                resource_handler,
+                resource_handler
+                    .texture
+                    .wait_load_file(self.filename.clone())?,
+            )
         };
         if let Some(depth) = self.depth {
             self.sprite = sprite.with_depth(depth);
@@ -159,9 +200,15 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalColliding
         <GgInternalStaticSprite as SceneObject<ObjectType>>::name(&self.inner)
             .replace("Static", "Colliding")
     }
-    fn get_type(&self) -> ObjectType { ObjectType::gg_colliding_sprite() }
+    fn get_type(&self) -> ObjectType {
+        ObjectType::gg_colliding_sprite()
+    }
 
-    fn on_load(&mut self, object_ctx: &mut ObjectContext<ObjectType>, resource_handler: &mut ResourceHandler) -> Result<Option<RenderItem>> {
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext<ObjectType>,
+        resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
         self.inner.on_load(object_ctx, resource_handler)
     }
 
