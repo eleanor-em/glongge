@@ -10,7 +10,7 @@ use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{
-    Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextBuffer, TextFormat,
+    Align, Button, Color32, FontSelection, Frame, Id, Layout, Sense, Style, TextBuffer, TextFormat,
     TextStyle, Ui,
 };
 use itertools::Itertools;
@@ -214,11 +214,15 @@ struct GuiObjectTreeNode {
     open: bool,
     open_tx: Sender<bool>,
     open_rx: Receiver<bool>,
+    expand_all_children: bool,
+    expand_all_children_tx: Sender<bool>,
+    expand_all_children_rx: Receiver<bool>,
 }
 
 impl GuiObjectTreeNode {
     fn new() -> Self {
         let (open_tx, open_rx) = std::sync::mpsc::channel();
+        let (expand_all_children_tx, expand_all_children_rx) = std::sync::mpsc::channel();
         Self {
             label: ObjectLabel::Root,
             object_id: ObjectId::root(),
@@ -228,6 +232,9 @@ impl GuiObjectTreeNode {
             open: false,
             open_tx,
             open_rx,
+            expand_all_children: false,
+            expand_all_children_tx,
+            expand_all_children_rx,
         }
     }
 
@@ -256,6 +263,7 @@ impl GuiObjectTreeNode {
             .and_modify(|count| *count += 1)
             .or_default();
         let (open_tx, open_rx) = mpsc::channel();
+        let (expand_all_children_tx, expand_all_children_rx) = std::sync::mpsc::channel();
         Self {
             label: if count > 0 {
                 ObjectLabel::Disambiguated(name, String::new(), count)
@@ -269,6 +277,9 @@ impl GuiObjectTreeNode {
             open: false,
             open_tx,
             open_rx,
+            expand_all_children: false,
+            expand_all_children_tx,
+            expand_all_children_rx,
         }
     }
 
@@ -294,6 +305,12 @@ impl GuiObjectTreeNode {
     ) -> GuiObjectTreeBuilder {
         if let Some(next) = self.open_rx.try_iter().last() {
             self.open = next;
+            if !self.open {
+                self.expand_all_children = false;
+            }
+        }
+        if let Some(next) = self.expand_all_children_rx.try_iter().last() {
+            self.expand_all_children = next;
         }
         let selected = selected_id == self.object_id;
         GuiObjectTreeBuilder {
@@ -314,6 +331,8 @@ impl GuiObjectTreeNode {
             selected_changed,
             selected,
             selected_tx,
+            expand_all_children: self.expand_all_children,
+            expand_all_children_tx: self.expand_all_children_tx.clone(),
         }
     }
 }
@@ -521,6 +540,8 @@ struct GuiObjectTreeBuilder {
     selected_changed: bool,
     selected: bool,
     selected_tx: Sender<ObjectId>,
+    expand_all_children: bool,
+    expand_all_children_tx: Sender<bool>,
 }
 impl GuiObjectTreeBuilder {
     fn build(&mut self, ui: &mut GuiUi) {
@@ -555,9 +576,15 @@ impl GuiObjectTreeBuilder {
                                 .iter_mut()
                                 .take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
-                            if child_group.len() > max_displayed {
-                                // TODO: click to expand here?
-                                ui.label(format!("[..{}]", child_group.len()));
+                            if !self.expand_all_children && child_group.len() > max_displayed {
+                                let expander_label =
+                                    egui::Label::new(format!("[..{}]", child_group.len()))
+                                        .extend()
+                                        .sense(Sense::click())
+                                        .selectable(false);
+                                if ui.add(expander_label).clicked() {
+                                    self.expand_all_children_tx.send(true).unwrap();
+                                }
                                 ui.end_row();
                             }
                         }
