@@ -688,8 +688,7 @@ fn setup_log() -> Result<()> {
         .event_format(
             tracing_subscriber::fmt::format()
                 .with_target(false)
-                .with_file(true)
-                .with_line_number(true)
+                .with_source_location(true)
                 .with_timer(timer),
         )
         .with_writer(logfile)

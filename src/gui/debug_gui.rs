@@ -615,10 +615,15 @@ impl GuiConsoleLog {
         self.render_perf_stats = stats;
     }
 
+    fn transform_log_line(line: &str) -> String {
+        let re = Regex::new("((?:INFO|WARN|ERROR)\x1b\\[0m \x1b\\[2m).*?(glongge(?:\\/|\\\\)src(?:\\/|\\\\))").unwrap();
+        re.replace_all(line, "$1$2").take()
+    }
+
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
         let mut line = String::new();
         if self.log_file.read_line(&mut line).unwrap() > 0 {
-            self.log_output.push(line);
+            self.log_output.push(Self::transform_log_line(line));
             if self.log_output.len() > Self::MAX_LOG_LINES {
                 self.log_output.remove(0);
             }
