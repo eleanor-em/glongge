@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
 use anyhow::{Context, Result};
-use egui::{ClippedPrimitive, Mesh, TextureId};
+use egui::{ClippedPrimitive, Color32, Mesh, TextureId};
 use egui::epaint::Primitive;
 use itertools::Itertools;
 use vulkano::{buffer::Buffer, buffer::BufferContents, buffer::BufferCreateInfo, buffer::BufferUsage, descriptor_set::layout::DescriptorSetLayoutCreateFlags, descriptor_set::WriteDescriptorSet, image::sampler::SamplerCreateInfo, memory::allocator::AllocationCreateInfo, memory::allocator::MemoryTypeFilter, pipeline::graphics::viewport::ViewportState, pipeline::graphics::vertex_input::VertexDefinition, pipeline::graphics::rasterization::RasterizationState, pipeline::graphics::multisample::MultisampleState, pipeline::graphics::input_assembly::InputAssemblyState, pipeline::graphics::GraphicsPipelineCreateInfo, pipeline::graphics::color_blend::AttachmentBlend, pipeline::graphics::color_blend::ColorBlendAttachmentState, pipeline::graphics::color_blend::ColorBlendState, pipeline::GraphicsPipeline, pipeline::Pipeline, pipeline::PipelineBindPoint, pipeline::PipelineLayout, pipeline::PipelineShaderStageCreateInfo, pipeline::layout::PipelineDescriptorSetLayoutCreateInfo, shader::ShaderModule, Validated, image::sampler::Sampler, image::view::ImageView, NonZeroDeviceSize, DeviceSize};
@@ -427,9 +427,6 @@ impl GuiRenderer {
         tcx: &mut TaskContext,
     ) -> Result<()> {
         let writer = tcx.write_buffer::<[u8]>(self.staging_buffer, range)?;
-        // egui has a small oversight: Color32::to_array() takes &self not self, so we can't
-        // eliminate the "redundant" closure.
-        #[allow(clippy::redundant_closure_for_method_calls)]
         match &delta.image {
             egui::ImageData::Color(image) => {
                 assert_eq!(
@@ -437,7 +434,7 @@ impl GuiRenderer {
                     image.pixels.len(),
                     "Mismatch between texture size and texel count"
                 );
-                let bytes = image.pixels.iter().flat_map(|color| color.to_array());
+                let bytes = image.pixels.iter().flat_map(Color32::to_array);
                 writer.iter_mut().zip(bytes).for_each(|(into, from)| *into = from);
             }
             egui::ImageData::Font(image) => {

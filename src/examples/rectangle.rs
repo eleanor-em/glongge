@@ -19,7 +19,7 @@ impl Scene<ObjectType> for RectangleScene {
     fn name(&self) -> SceneName { SceneName::new("rectangle") }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        const N: usize = 5;
+        const N: usize = 50;
         let mut objects = Uniform::new(0., 256.)
             .sample_iter(rand::thread_rng())
             .zip(Uniform::new(0., 256.)

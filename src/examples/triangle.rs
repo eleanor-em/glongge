@@ -17,11 +17,11 @@ impl Scene<ObjectType> for TriangleScene {
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
         const N: usize = 1;
         let mut rng = rand::thread_rng();
-        let xs: Vec<f32> = Uniform::new(0., 1024.)
+        let xs: Vec<f32> = Uniform::new(0., 200.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let ys: Vec<f32> = Uniform::new(0., 768.)
+        let ys: Vec<f32> = Uniform::new(0., 200.)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
