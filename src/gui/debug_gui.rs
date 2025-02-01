@@ -10,10 +10,12 @@ use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{
-    Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextFormat, TextStyle, Ui,
+    Align, Button, Color32, FontSelection, Frame, Id, Layout, Style, TextBuffer, TextFormat,
+    TextStyle, Ui,
 };
 use itertools::Itertools;
 use num_traits::Zero;
+use regex::Regex;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -554,6 +556,7 @@ impl GuiObjectTreeBuilder {
                                 .take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
                             if child_group.len() > max_displayed {
+                                // TODO: click to expand here?
                                 ui.label(format!("[..{}]", child_group.len()));
                                 ui.end_row();
                             }
@@ -623,7 +626,7 @@ impl GuiConsoleLog {
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
         let mut line = String::new();
         if self.log_file.read_line(&mut line).unwrap() > 0 {
-            self.log_output.push(Self::transform_log_line(line));
+            self.log_output.push(Self::transform_log_line(&line));
             if self.log_output.len() > Self::MAX_LOG_LINES {
                 self.log_output.remove(0);
             }

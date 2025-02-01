@@ -316,7 +316,10 @@ impl SpriteShader {
         resource_handler: ResourceHandler,
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
-        let vertex_buffer = UniqueShared::new(CachedVertexBuffer::new(ctx.clone(), 10_000)?);
+        let vertex_buffer = UniqueShared::new(CachedVertexBuffer::new(
+            ctx.clone(),
+            INITIAL_VERTEX_BUFFER_SIZE,
+        )?);
         // Create materials:
         let material_data = sprite::vertex_shader::MaterialData {
             data: [sprite::vertex_shader::Material {
@@ -664,7 +667,8 @@ impl WireframeShader {
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
         let pipeline = Self::create_pipeline(&ctx)?;
-        let vertex_buffer = UniqueShared::new(CachedVertexBuffer::new(ctx, 10_000)?);
+        let vertex_buffer =
+            UniqueShared::new(CachedVertexBuffer::new(ctx, INITIAL_VERTEX_BUFFER_SIZE)?);
         // Create pipeline:
         Ok(UniqueShared::new(Box::new(Self {
             viewport,
@@ -858,7 +862,8 @@ impl crate::shader::BasicShader {
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
         let pipeline = Self::create_pipeline(&ctx)?;
-        let vertex_buffer = UniqueShared::new(CachedVertexBuffer::new(ctx, 10_000)?);
+        let vertex_buffer =
+            UniqueShared::new(CachedVertexBuffer::new(ctx, INITIAL_VERTEX_BUFFER_SIZE)?);
         // Create pipeline:
         Ok(UniqueShared::new(Box::new(Self {
             viewport,

@@ -3,9 +3,9 @@ use crate::core::scene::{GuiInsideClosure, GuiObject};
 use crate::core::{prelude::*, ObjectTypeEnum};
 use crate::util::canvas::Canvas;
 use egui::{Align, Layout};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use rand::thread_rng;
 use rand::Rng;
-use std::iter;
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 #[derive(Clone, Default)]
 pub struct GgInternalSpline {
@@ -16,8 +16,16 @@ impl GgInternalSpline {
     pub fn new(control_points: Vec<Vec2>) -> Self {
         Self { control_points }
     }
+    pub fn new_joined(&self) -> Option<Self> {
+        let p = self.get(self.len() - 2)?;
+        let s = self.last()?;
+        let q = 2 * s - p;
+        Some(Self {
+            control_points: vec![s, q]
+        })
+    }
 
-    pub fn point(&self, t: f32) -> Vec2 {
+    pub fn point(&self, t: f32) -> Option<Vec2> {
         let mut points = self.control_points.clone();
         while points.len() > 1 {
             points = points
@@ -26,7 +34,7 @@ impl GgInternalSpline {
                 .map(|(u, v)| u.lerp(v, t))
                 .collect_vec();
         }
-        *points.first().unwrap()
+        points.first().copied()
     }
 
     pub fn keep_last_n(&mut self, n: usize) {
@@ -40,6 +48,33 @@ impl GgInternalSpline {
     pub fn push_front(&mut self, point: Vec2) {
         self.control_points.insert(0, point);
     }
+
+    pub fn get(&self, i: usize) -> Option<Vec2> { self.control_points.get(i).copied() }
+    pub fn last(&self) -> Option<Vec2> {
+        self.control_points.last().copied()
+    }
+
+    pub fn closest_to(&self, point: Vec2) -> Option<f32> {
+        let mut t = 0.;
+        let mut rv = 0.;
+        let mut best_distance = f32::MAX;
+        while t <= 1. {
+            let x = self.point(t)?;
+            if x.dist(point) < best_distance {
+                best_distance = x.dist(point);
+                rv = t;
+            }
+            t += 0.001;
+        }
+        Some(rv)
+    }
+
+    pub fn len(&self) -> usize {
+        self.control_points.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.control_points.is_empty()
+    }
 }
 
 #[register_scene_object]
@@ -48,6 +83,8 @@ pub struct GgInternalInteractiveSpline {
     line_points: Vec<Vec2>,
     gui_selected: bool,
     selected_control_point: Option<usize>,
+    force_visible: bool,
+    colour: Colour,
 }
 
 impl GgInternalInteractiveSpline {
@@ -60,11 +97,19 @@ impl GgInternalInteractiveSpline {
         &mut self.spline
     }
     pub fn recalculate(&mut self) {
-        const N: u32 = 1000;
-        self.line_points = vec![self.spline.control_points[0]];
-        for i in 1..=N {
-            let next = self.spline.point(i as f32 / N as f32);
-            self.line_points.push(next);
+        if !self.gui_selected {
+            warn!("called recalculate() but not shown; skipping to save processing");
+            return;
+        }
+        if self.spline.is_empty() {
+            self.line_points = Vec::new();
+        } else {
+            const N: u32 = 100;
+            self.line_points = vec![self.spline.control_points[0]];
+            for i in 1..=N {
+                let next = self.spline.point(i as f32 / N as f32).unwrap();
+                self.line_points.push(next);
+            }
         }
     }
 
@@ -72,6 +117,11 @@ impl GgInternalInteractiveSpline {
         for (&u, &v) in self.line_points.iter().tuple_windows() {
             canvas.line(u, v, width, colour);
         }
+    }
+
+    pub fn force_visible(&mut self) {
+        self.gui_selected = true;
+        self.force_visible = true;
     }
 }
 
@@ -84,25 +134,19 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
         ObjectType::gg_interactive_spline()
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
-        let mut rng = rand::thread_rng();
-        self.spline = GgInternalSpline::new(
-            iter::from_fn(|| {
-                Some(
-                    Vec2::from([rng.gen_range(0.0..200.0), rng.gen_range(0.0..200.0)])
-                        + 200. * Vec2::one(),
-                )
-            })
-            .take(3)
-            .collect_vec(),
-        );
-        self.recalculate();
+        self.colour = match thread_rng().gen_range(0..6) {
+            0 => Colour::red(),
+            1 => Colour::green(),
+            2 => Colour::blue(),
+            3 => Colour::cyan(),
+            4 => Colour::magenta(),
+            5 => Colour::yellow(),
+            _ => panic!()
+        }
     }
 
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        if ctx.input().pressed(KeyCode::KeyG) {
-            ctx.viewport_mut().set_global_scale_factor(1.);
-        }
-
+        self.gui_selected |= self.force_visible;
         if self.gui_selected {
             if let Some(mouse_pos) = ctx.input().screen_mouse_pos() {
                 let mouse_pressed = ctx.input().mouse_pressed(MouseButton::Primary);
@@ -131,7 +175,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
                 }
 
                 let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
-                self.draw_to_canvas(&mut canvas, 1., Colour::green());
+                self.draw_to_canvas(&mut canvas, 1., self.colour);
                 for (&u, &v) in self.spline.control_points.iter().tuple_windows() {
                     canvas.line(
                         u,
@@ -169,7 +213,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractive
         _ctx: &UpdateContext<ObjectType>,
         selected: bool,
     ) -> Box<GuiInsideClosure> {
-        self.gui_selected = selected;
+        self.gui_selected = selected || self.force_visible;
         let string_desc = self
             .spline
             .control_points
