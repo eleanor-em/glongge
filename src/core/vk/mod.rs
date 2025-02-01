@@ -402,14 +402,21 @@ where
     F: FnOnce(SceneHandlerBuilder<ObjectType>),
     ObjectType: ObjectTypeEnum,
 {
-    fn acquire_and_handle_image(&mut self, ) -> Result<(), gg_err::CatchOutOfDate> {
+    fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
+        self.render_stats.start();
+
+        self.render_stats.synchronise.start();
         let vk_ctx = self.expect_inner().vk_ctx.clone();
         vk_ctx.resources()
             .flight(vk_ctx.flight_id()).map_err(gg_err::CatchOutOfDate::from)?
             .wait(None).map_err(gg_err::CatchOutOfDate::from)?;
-        let _full_output = self.handle_egui();
-        self.render_stats.start();
+        self.render_stats.synchronise.stop();
 
+        self.render_stats.update_gui.start();
+        let _full_output = self.update_gui();
+        self.render_stats.update_gui.stop();
+
+        self.render_stats.execute.start();
         let inner = self.expect_inner();
         let resource_map = resource_map!(
             &inner.task_graph,
@@ -421,12 +428,13 @@ where
                 inner.window.inner.pre_present_notify();
             }).map_err(gg_err::CatchOutOfDate::from)?;
         }
+        self.render_stats.execute.stop();
 
         self.last_render_stats = self.render_stats.end();
         Ok(())
     }
 
-    fn handle_egui(&mut self) -> FullOutput {
+    fn update_gui(&mut self) -> FullOutput {
         let window = self.expect_inner().window.clone();
         egui_winit::update_viewport_info(
             &mut ViewportInfo::default(),
@@ -457,10 +465,9 @@ where
 
 #[derive(Clone)]
 pub(crate) struct RenderPerfStats {
-    handle_swapchain: TimeIt,
     synchronise: TimeIt,
-    do_render: TimeIt,
-    submit_command_buffers: TimeIt,
+    update_gui: TimeIt,
+    execute: TimeIt,
     between_renders: TimeIt,
     extra_debug: TimeIt,
 
@@ -478,10 +485,9 @@ pub(crate) struct RenderPerfStats {
 impl RenderPerfStats {
     fn new() -> Self {
         Self {
-            handle_swapchain: TimeIt::new("handle swapchain"),
             synchronise: TimeIt::new("synchronise"),
-            do_render: TimeIt::new("do_render"),
-            submit_command_buffers: TimeIt::new("submit cmdbufs"),
+            update_gui: TimeIt::new("update_gui"),
+            execute: TimeIt::new("execute"),
             between_renders: TimeIt::new("between renders"),
             extra_debug: TimeIt::new("extra_debug"),
             total: TimeIt::new("total"),
@@ -539,10 +545,9 @@ impl RenderPerfStats {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {
-                handle_swapchain: self.handle_swapchain.report_take(),
                 synchronise: self.synchronise.report_take(),
-                do_render: self.do_render.report_take(),
-                submit_command_buffers: self.submit_command_buffers.report_take(),
+                update_gui: self.update_gui.report_take(),
+                execute: self.execute.report_take(),
                 between_renders: self.between_renders.report_take(),
                 extra_debug: self.extra_debug.report_take(),
                 total: self.total.report_take(),
@@ -566,10 +571,9 @@ impl RenderPerfStats {
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
-            self.handle_swapchain.as_tuple_ms(),
             self.synchronise.as_tuple_ms(),
-            self.do_render.as_tuple_ms(),
-            self.submit_command_buffers.as_tuple_ms(),
+            self.update_gui.as_tuple_ms(),
+            self.execute.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
         ];
         if self.extra_debug.last_ms() != 0. {
