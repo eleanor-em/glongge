@@ -43,7 +43,7 @@ impl GgInternalSprite {
         resource_handler: &mut ResourceHandler,
         textures: Vec<Texture>,
     ) -> Sprite {
-        let areas = textures.iter().map(|_| Rect::default()).collect_vec();
+        let areas = textures.iter().map(Texture::as_rect).collect_vec();
         let frame_time_ms = textures
             .iter()
             .map(|tex| {

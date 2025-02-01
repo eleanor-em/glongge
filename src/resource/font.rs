@@ -97,6 +97,7 @@ impl Font {
             object_ctx,
             resource_handler,
             resource_handler.texture.wait_load_reader_rgba(
+                "[font]".to_string(),
                 &mut reader,
                 width,
                 height,

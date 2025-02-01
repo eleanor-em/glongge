@@ -410,7 +410,6 @@ impl GuiRenderer {
 
     fn get_or_create_pipeline(&self) -> Result<Arc<GraphicsPipeline>> {
         if self.pipeline.get().is_none() {
-            info!("create pipeline");
             let vs = self
                 .vs
                 .entry_point("main")
@@ -474,7 +473,6 @@ impl GuiRenderer {
         cbf: &mut RecordingCommandBuffer,
         tcx: &mut TaskContext,
     ) -> Result<()> {
-        info!("create_image_view(): {id:?}");
         unsafe {
             cbf.copy_buffer_to_image(&CopyBufferToImageInfo {
                 src_buffer: self.staging_buffer,
@@ -542,7 +540,6 @@ impl GuiRenderer {
 
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
-            info!("upload to GUI image: {id:?}");
             let texture_images = self.texture_images.get();
             let existing_image = *texture_images
                 .get(&id)
@@ -568,7 +565,6 @@ impl GuiRenderer {
                 })?;
             }
         } else {
-            info!("create new GUI image: {id:?}");
             let extent = [delta.image.width() as u32, delta.image.height() as u32, 1];
             let img = self
                 .vk_ctx
@@ -631,7 +627,6 @@ impl GuiRenderer {
             .sum::<u64>()
             * 4;
         if total_size_bytes != 0 {
-            info!("uploading GUI images");
             check_lt!(total_size_bytes, Self::MAX_STAGING_SIZE_BYTES);
             let mut past_buffer_end = 0;
 

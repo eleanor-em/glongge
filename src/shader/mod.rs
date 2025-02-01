@@ -401,7 +401,6 @@ impl SpriteShader {
             return Ok(());
         }
 
-        info!("create descriptor sets for SpriteShader");
         let sampler_create_info = SamplerCreateInfo::default();
         let mut textures = self
             .resource_handler
@@ -430,7 +429,11 @@ impl SpriteShader {
         check_eq!(extended_samplers.len(), textures.len());
 
         if let Some(materials) = maybe_materials {
-            info!("updating materials: {}", materials.len());
+            info!(
+                "updating materials: materials.len() = {}, textures.len() = {}",
+                materials.len(),
+                MAX_TEXTURE_COUNT - num_blank_copies
+            );
             self.update_materials(tcx, materials)?;
         }
         let desc_set = RawDescriptorSet::new(

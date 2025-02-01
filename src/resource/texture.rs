@@ -111,6 +111,7 @@ impl Drop for Texture {
 
 #[derive(Clone)]
 pub(crate) struct InternalTexture {
+    filename: String,
     raw: Arc<RawLoadedTexture>,
     buf: Id<Buffer>,
     image: Id<Image>,
@@ -199,8 +200,8 @@ impl TextureHandlerInner {
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
-                DeviceLayout::for_value(&[0u8; 4])
-                    .context("failed to create layout for [0, 0, 0, 0]")?,
+                DeviceLayout::for_value(&[255u8; 4])
+                    .context("failed to create layout for blank texture")?,
             )
             .map_err(Validated::unwrap)?;
 
@@ -215,6 +216,7 @@ impl TextureHandlerInner {
             )
             .map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
+            filename: "[blank]".to_string(),
             raw: Arc::new(RawLoadedTexture {
                 buf: Colour::white().as_bytes().to_vec(),
                 info,
@@ -237,6 +239,7 @@ impl TextureHandlerInner {
     fn create_texture(
         &mut self,
         ctx: &VulkanoContext,
+        filename: String,
         loaded: RawLoadedTexture,
     ) -> Result<Texture> {
         // Free up unused textures first.
@@ -283,6 +286,7 @@ impl TextureHandlerInner {
             )
             .map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
+            filename,
             raw: Arc::new(loaded),
             buf,
             image,
@@ -420,7 +424,7 @@ impl TextureHandler {
         }
         let loaded = Self::load_file_inner(&filename)?;
         let mut inner = self.inner.lock().unwrap();
-        let texture = inner.create_texture(&self.ctx, loaded)?;
+        let texture = inner.create_texture(&self.ctx, filename.to_string(), loaded)?;
         info!("loaded texture: {} = {:?}", filename, texture.id());
         inner.loaded_files.insert(filename, vec![texture.clone()]);
         Ok(texture)
@@ -497,7 +501,7 @@ impl TextureHandler {
         let mut inner = self.inner.lock().unwrap();
         let textures = results
             .into_iter()
-            .map(|loaded| inner.create_texture(&self.ctx, loaded))
+            .map(|loaded| inner.create_texture(&self.ctx, filename.to_string(), loaded))
             .collect::<Result<Vec<_>>>()?;
         inner.loaded_files.insert(filename, textures.clone());
         Ok(textures)
@@ -535,6 +539,7 @@ impl TextureHandler {
 
     pub(crate) fn wait_load_reader_rgba<R: Read>(
         &self,
+        filename: String,
         reader: &mut R,
         width: u32,
         height: u32,
@@ -542,7 +547,7 @@ impl TextureHandler {
     ) -> Result<Texture> {
         let loaded = Self::load_reader_rgba_inner(reader, width, height, format)?;
         let mut inner = self.inner.lock().unwrap();
-        inner.create_texture(&self.ctx, loaded)
+        inner.create_texture(&self.ctx, filename, loaded)
     }
     fn load_reader_rgba_inner<R: Read>(
         reader: &mut R,
@@ -689,7 +694,11 @@ impl Task for UploadTexturesTask {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
-            info!("created image view for: {:?}", id);
+            info!(
+                "created image view for: {} (id {id:?}, {:.1} KiB)",
+                tex.filename,
+                (tex.raw.buf.len() as f32) / 1024.
+            );
         }
         Ok(())
     }
