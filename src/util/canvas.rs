@@ -2,7 +2,7 @@ use num_traits::Zero;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
-use crate::shader::vertex;
+use crate::shader::{get_shader, vertex, BasicShader, Shader};
 
 #[register_scene_object]
 pub struct GgInternalCanvas {
@@ -16,7 +16,7 @@ impl GgInternalCanvas {
         self.render_items.push(vertex::line(start, end, width));
         self.render_infos.push(RenderInfo {
             col: col.into(),
-            // shader_id: get_shader(BasicShader::name()),
+            shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         });
     }
@@ -48,7 +48,7 @@ impl GgInternalCanvas {
         self.render_items.push(vertex::circle(centre, radius, steps));
         self.render_infos.push(RenderInfo {
             col: col.into(),
-            // shader_id: get_shader(BasicShader::name()),
+            shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         });
     }

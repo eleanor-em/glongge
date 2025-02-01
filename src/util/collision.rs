@@ -1392,8 +1392,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         check!(self.show_wireframe);
         vec![RenderInfo {
             col: Colour::cyan().with_alpha(0.2).into(),
-            // TODO: removing BasicShader broke this... some sort of blending issue?
-            // shader_id: get_shader(BasicShader::name()),
+            shader_id: get_shader(BasicShader::name()),
             ..Default::default()
         }, RenderInfo {
             col: Colour::green().into(),
@@ -1416,5 +1415,5 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 pub use GgInternalCollisionShape as CollisionShape;
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
-use crate::shader::{get_shader, Shader, WireframeShader};
+use crate::shader::{get_shader, BasicShader, Shader, WireframeShader};
 use crate::util::canvas::Canvas;
