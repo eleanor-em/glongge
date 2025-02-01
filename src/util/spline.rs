@@ -3,9 +3,9 @@ use crate::core::scene::{GuiInsideClosure, GuiObject};
 use crate::core::{prelude::*, ObjectTypeEnum};
 use crate::util::canvas::Canvas;
 use egui::{Align, Layout};
+use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use rand::thread_rng;
 use rand::Rng;
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 #[derive(Clone, Default)]
 pub struct GgInternalSpline {
@@ -21,7 +21,7 @@ impl GgInternalSpline {
         let s = self.last()?;
         let q = 2 * s - p;
         Some(Self {
-            control_points: vec![s, q]
+            control_points: vec![s, q],
         })
     }
 
@@ -49,7 +49,9 @@ impl GgInternalSpline {
         self.control_points.insert(0, point);
     }
 
-    pub fn get(&self, i: usize) -> Option<Vec2> { self.control_points.get(i).copied() }
+    pub fn get(&self, i: usize) -> Option<Vec2> {
+        self.control_points.get(i).copied()
+    }
     pub fn last(&self) -> Option<Vec2> {
         self.control_points.last().copied()
     }
@@ -141,7 +143,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
             3 => Colour::cyan(),
             4 => Colour::magenta(),
             5 => Colour::yellow(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 

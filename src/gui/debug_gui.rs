@@ -646,7 +646,10 @@ impl GuiConsoleLog {
     }
 
     fn transform_log_line(line: &str) -> String {
-        let re = Regex::new("((?:INFO|WARN|ERROR)\x1b\\[0m \x1b\\[2m).*?(glongge(?:\\/|\\\\)src(?:\\/|\\\\))").unwrap();
+        let re = Regex::new(
+            "((?:INFO|WARN|ERROR)\x1b\\[0m \x1b\\[2m).*?(glongge(?:\\/|\\\\)src(?:\\/|\\\\))",
+        )
+        .unwrap();
         re.replace_all(line, "$1$2").take()
     }
 

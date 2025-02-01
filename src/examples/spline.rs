@@ -1,5 +1,3 @@
-use std::iter;
-use rand::Rng;
 use crate::object_type::ObjectType;
 use glongge::core::{
     prelude::*,
@@ -7,6 +5,8 @@ use glongge::core::{
 };
 use glongge::util::canvas::Canvas;
 use glongge::util::spline::InteractiveSpline;
+use rand::Rng;
+use std::iter;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
@@ -27,7 +27,8 @@ impl Scene<ObjectType> for SplineScene {
                         + 200. * Vec2::one(),
                 )
             })
-                .take(3) {
+            .take(3)
+            {
                 spline_inner.spline_mut().push(point);
             }
             spline_inner.force_visible();
