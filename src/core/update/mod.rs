@@ -1338,6 +1338,12 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn children(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.children.iter().map(SceneObjectWithId::clone).collect()
     }
+    pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<SceneObjectWithId<ObjectType>> {
+        self.children
+            .iter()
+            .find(|obj| obj.downcast::<T>().is_some())
+            .cloned()
+    }
     fn others_inner(&self) -> impl Iterator<Item = (ObjectId, &AnySceneObject<ObjectType>)> {
         self.object_tracker
             .last

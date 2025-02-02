@@ -126,10 +126,10 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
     pub(crate) fn name(&self) -> String {
         self.inner.borrow().name()
     }
-    pub(crate) fn transform(&self) -> Transform {
+    pub fn transform(&self) -> Transform {
         *self.transform.borrow()
     }
-    pub(crate) fn transform_mut(&mut self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<Transform> {
         self.transform.borrow_mut()
     }
 }
@@ -165,6 +165,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
 
     pub fn transform(&self) -> Transform {
         self.inner.transform()
+    }
+    pub fn transform_mut(&self) -> RefMut<Transform> {
+        self.inner.transform_mut()
     }
     pub fn emitting_tags(&self) -> Vec<&'static str> {
         self.inner.borrow().emitting_tags()

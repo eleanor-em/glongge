@@ -13,7 +13,6 @@ use std::{
         Arc, Mutex,
     },
 };
-
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     format::Format,
@@ -359,9 +358,18 @@ struct MaterialHandler {
 
 impl MaterialHandler {
     fn new() -> Self {
+        let blank_material = Material {
+            texture_id: 0,
+            area: Rect::empty(),
+            texture_extent: Vec2::zero(),
+        };
+        let mut materials = BTreeMap::new();
+        let mut materials_inverse = HashMap::new();
+        materials.insert(0, blank_material.clone());
+        materials_inverse.insert(blank_material, 0);
         Self {
-            materials: BTreeMap::new(),
-            materials_inverse: HashMap::new(),
+            materials,
+            materials_inverse,
             dirty: false,
         }
     }

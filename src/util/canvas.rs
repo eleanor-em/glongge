@@ -1,6 +1,7 @@
 use crate::core::prelude::*;
+use crate::core::render::VertexDepth;
 use crate::core::ObjectTypeEnum;
-use crate::shader::{get_shader, vertex, BasicShader, Shader};
+use crate::shader::{get_shader, vertex, BasicShader, Shader, SpriteShader};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use num_traits::Zero;
 
@@ -73,9 +74,14 @@ impl GgInternalCanvas {
             .push(vertex::circle(centre, radius, steps));
         self.render_infos.push(RenderInfo {
             col: col.into(),
-            shader_id: get_shader(BasicShader::name()),
+            shader_id: get_shader(SpriteShader::name()),
             ..Default::default()
         });
+    }
+
+    // TODO: hacky.
+    pub fn set_last_depth(&mut self, depth: VertexDepth) {
+        self.render_items.last_mut().unwrap().depth = depth;
     }
 }
 
