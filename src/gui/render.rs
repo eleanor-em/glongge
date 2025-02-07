@@ -50,7 +50,7 @@ use vulkano_taskgraph::command_buffer::{
     BufferImageCopy, CopyBufferToImageInfo, RecordingCommandBuffer,
 };
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
-use vulkano_taskgraph::resource::{AccessType, ImageLayoutType};
+use vulkano_taskgraph::resource::{AccessTypes, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 pub mod vs {
@@ -657,22 +657,22 @@ impl GuiRenderer {
             task_graph.create_task_node("gui_handler", QueueFamilyType::Graphics, self.clone());
         node.image_access(
             virtual_swapchain_id.current_image_id(),
-            AccessType::ColorAttachmentWrite,
+            AccessTypes::COLOR_ATTACHMENT_WRITE,
             ImageLayoutType::Optimal,
         );
-        node.buffer_access(self.staging_buffer, AccessType::CopyTransferRead);
+        node.buffer_access(self.staging_buffer, AccessTypes::COPY_TRANSFER_READ);
         node.buffer_access(
             self.draw_buffer.get().vertices,
-            AccessType::VertexAttributeRead,
+            AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.buffer_access(
             self.draw_buffer.get().indices,
-            AccessType::VertexAttributeRead,
+            AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         for &image in self.texture_images.get().values() {
             node.image_access(
                 image,
-                AccessType::FragmentShaderSampledRead,
+                AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
                 ImageLayoutType::Optimal,
             );
         }

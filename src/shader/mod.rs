@@ -49,7 +49,7 @@ use vulkano::{
 };
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
-use vulkano_taskgraph::resource::{AccessType, ImageLayoutType};
+use vulkano_taskgraph::resource::{AccessTypes, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 pub mod glsl;
@@ -570,21 +570,21 @@ impl Shader for SpriteShader {
         );
         node.image_access(
             virtual_swapchain_id.current_image_id(),
-            AccessType::ColorAttachmentWrite,
+            AccessTypes::COLOR_ATTACHMENT_WRITE,
             ImageLayoutType::Optimal,
         );
         for tex in textures {
             node.image_access(
                 *tex,
-                AccessType::FragmentShaderSampledRead,
+                AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
                 ImageLayoutType::Optimal,
             );
         }
         node.buffer_access(
             self.vertex_buffer.get().inner,
-            AccessType::VertexAttributeRead,
+            AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
-        node.buffer_access(self.materials, AccessType::VertexShaderUniformRead);
+        node.buffer_access(self.materials, AccessTypes::VERTEX_ATTRIBUTE_READ);
         node.build()
     }
 }
@@ -781,12 +781,12 @@ impl Shader for WireframeShader {
         );
         node.image_access(
             virtual_swapchain_id.current_image_id(),
-            AccessType::ColorAttachmentWrite,
+            AccessTypes::COLOR_ATTACHMENT_WRITE,
             ImageLayoutType::Optimal,
         );
         node.buffer_access(
             self.vertex_buffer.get().inner,
-            AccessType::VertexAttributeRead,
+            AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.build()
     }
@@ -973,12 +973,12 @@ impl Shader for BasicShader {
         );
         node.image_access(
             virtual_swapchain_id.current_image_id(),
-            AccessType::ColorAttachmentWrite,
+            AccessTypes::COLOR_ATTACHMENT_WRITE,
             ImageLayoutType::Optimal,
         );
         node.buffer_access(
             self.vertex_buffer.get().inner,
-            AccessType::VertexAttributeRead,
+            AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.build()
     }

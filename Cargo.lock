@@ -2770,8 +2770,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4403d52f9284e3e74b99ec9000bd99cbb8a3d0b98a0125fc840df2cb23dbfd20"
 dependencies = [
  "ash",
  "bytemuck",
@@ -2801,8 +2802,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano-macros"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dc929c42c9336fd082079ac3ea30126e4a0dfe36fd2e2b3581303f7d140d20f"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2812,8 +2814,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano-shaders"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bf501461be7cef2893c0e62c50945add9763cc482051d29053f6157089d5ea9"
 dependencies = [
  "foldhash",
  "heck 0.4.1",
@@ -2826,8 +2829,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano-taskgraph"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano/?rev=938de01#938de018ed170704e696fa18fd5b0113eed88a6e"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "057048949263b1a7bd6ee1e974fac4ddc43b87a0dbdf997c13f1104786b14dfa"
 dependencies = [
  "ash",
  "concurrent-slotmap",

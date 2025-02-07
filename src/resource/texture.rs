@@ -29,7 +29,7 @@ use vulkano::memory::allocator::{DeviceLayout, MemoryAllocatePreference};
 use vulkano::memory::DeviceAlignment;
 use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandBuffer};
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
-use vulkano_taskgraph::resource::{AccessType, HostAccessType, ImageLayoutType};
+use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone)]
@@ -657,10 +657,10 @@ impl TextureHandler {
         );
         let mut images = Vec::new();
         for tex in inner.textures.values() {
-            upload_node.buffer_access(tex.buf, AccessType::CopyTransferRead);
+            upload_node.buffer_access(tex.buf, AccessTypes::COPY_TRANSFER_READ);
             upload_node.image_access(
                 tex.image,
-                AccessType::CopyTransferWrite,
+                AccessTypes::COPY_TRANSFER_WRITE,
                 ImageLayoutType::Optimal,
             );
             images.push(tex.image);

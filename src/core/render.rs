@@ -22,7 +22,7 @@ use vulkano::render_pass::AttachmentStoreOp::Store;
 use vulkano::swapchain::Swapchain;
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
-use vulkano_taskgraph::resource::{AccessType, HostAccessType, ImageLayoutType};
+use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone, Debug)]
@@ -260,7 +260,7 @@ impl RenderHandler {
         for image in self.gui_shader.image_writes() {
             pre_render_node.image_access(
                 image,
-                AccessType::CopyTransferWrite,
+                AccessTypes::COPY_TRANSFER_WRITE,
                 ImageLayoutType::Optimal,
             );
         }
@@ -276,7 +276,7 @@ impl RenderHandler {
             )
             .image_access(
                 virtual_swapchain_id.current_image_id(),
-                AccessType::ColorAttachmentWrite,
+                AccessTypes::COLOR_ATTACHMENT_WRITE,
                 ImageLayoutType::Optimal,
             )
             .build();
