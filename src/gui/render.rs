@@ -667,7 +667,7 @@ impl GuiRenderer {
         );
         node.buffer_access(
             self.draw_buffer.get().indices,
-            AccessTypes::VERTEX_ATTRIBUTE_READ,
+            AccessTypes::INDEX_READ,
         );
         for &image in self.texture_images.get().values() {
             node.image_access(
