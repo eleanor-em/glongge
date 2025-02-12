@@ -536,7 +536,7 @@ impl GuiRenderer {
                     .zip(bytes)
                     .for_each(|(into, from)| *into = from);
             }
-        };
+        }
 
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
@@ -582,7 +582,7 @@ impl GuiRenderer {
                 .unwrap();
             self.texture_images.get().insert(id, img);
             *self.texture_images_dirty.get() = true;
-        };
+        }
         Ok(())
     }
     pub fn pre_render_update(
@@ -665,10 +665,7 @@ impl GuiRenderer {
             self.draw_buffer.get().vertices,
             AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
-        node.buffer_access(
-            self.draw_buffer.get().indices,
-            AccessTypes::INDEX_READ,
-        );
+        node.buffer_access(self.draw_buffer.get().indices, AccessTypes::INDEX_READ);
         for &image in self.texture_images.get().values() {
             node.image_access(
                 image,

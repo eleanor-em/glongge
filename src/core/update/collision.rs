@@ -203,7 +203,7 @@ impl CollisionHandler {
                 other: other.clone(),
                 mtv,
             });
-        };
+        }
         if !other_listening
             .into_iter()
             .chain(this_emitting)

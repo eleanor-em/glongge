@@ -922,7 +922,7 @@ impl GuiSceneControl {
                             .clicked()
                         {
                             cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
-                        };
+                        }
                         if ui
                             .add(Button::new("⟳").min_size([size, size].into()))
                             .clicked()
@@ -932,7 +932,7 @@ impl GuiSceneControl {
                             } else {
                                 cmd_tx.send(SceneControlCommand::Step).unwrap();
                             }
-                        };
+                        }
                     });
                 });
         })

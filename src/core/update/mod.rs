@@ -636,7 +636,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 .on_load(&mut object_ctx, &mut self.resource_handler)?
             {
                 self.vertex_map.insert(new_id, new_vertices);
-            };
+            }
             self.debug_gui
                 .object_tree
                 .on_add_object(&self.object_handler, &new_obj);
