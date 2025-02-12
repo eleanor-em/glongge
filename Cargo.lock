@@ -2770,9 +2770,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano"
-version = "0.35.0"
+version = "0.35.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4403d52f9284e3e74b99ec9000bd99cbb8a3d0b98a0125fc840df2cb23dbfd20"
+checksum = "08840c2b51759a6f88f26f5ea378bc8b5c199a5b4760ddda292304be087249c4"
 dependencies = [
  "ash",
  "bytemuck",
@@ -2829,9 +2829,9 @@ dependencies = [
 
 [[package]]
 name = "vulkano-taskgraph"
-version = "0.35.0"
+version = "0.35.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057048949263b1a7bd6ee1e974fac4ddc43b87a0dbdf997c13f1104786b14dfa"
+checksum = "316480b7b02d8a98a3965e4d2f21129e6f1749eb1e126db108daa8bede994957"
 dependencies = [
  "ash",
  "concurrent-slotmap",
