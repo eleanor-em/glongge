@@ -219,21 +219,20 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
     }
 
     fn write(&mut self, image_idx: usize, vertices: &[T], tcx: &mut TaskContext) -> Result<()> {
-        if vertices.is_empty() {
-            return Ok(());
-        }
         self.next_vertex_idx = image_idx * self.single_len();
         self.vertex_count = vertices.len();
-        // Reallocate if needed:
-        while self.next_vertex_idx + vertices.len() > self.len() {
-            self.realloc()?;
-        }
 
-        let start = (self.next_vertex_idx * std::mem::size_of::<T>()) as DeviceSize;
-        let end =
-            ((self.next_vertex_idx + vertices.len()) * std::mem::size_of::<T>()) as DeviceSize;
-        tcx.write_buffer::<[T]>(self.inner, start..end)?
-            .copy_from_slice(vertices);
+        if !vertices.is_empty() {
+            // Reallocate if needed:
+            while self.next_vertex_idx + vertices.len() > self.len() {
+                self.realloc()?;
+            }
+            let start = (self.next_vertex_idx * std::mem::size_of::<T>()) as DeviceSize;
+            let end =
+                ((self.next_vertex_idx + vertices.len()) * std::mem::size_of::<T>()) as DeviceSize;
+            tcx.write_buffer::<[T]>(self.inner, start..end)?
+                .copy_from_slice(vertices);
+        }
         Ok(())
     }
 
