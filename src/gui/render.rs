@@ -22,17 +22,21 @@ use vulkano::image::view::ImageViewCreateInfo;
 use vulkano::image::{
     Image, ImageAspects, ImageCreateInfo, ImageSubresourceLayers, ImageType, ImageUsage,
 };
-use vulkano::memory::allocator::DeviceLayout;
 use vulkano::memory::DeviceAlignment;
+use vulkano::memory::allocator::DeviceLayout;
 use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
 use vulkano::render_pass::AttachmentLoadOp::Load;
 use vulkano::render_pass::AttachmentStoreOp::Store;
 use vulkano::swapchain::Swapchain;
 use vulkano::{
-    buffer::Buffer, buffer::BufferContents, buffer::BufferCreateInfo, buffer::BufferUsage,
-    descriptor_set::layout::DescriptorSetLayoutCreateFlags, descriptor_set::WriteDescriptorSet,
-    image::sampler::Sampler, image::sampler::SamplerCreateInfo, image::view::ImageView,
+    DeviceSize, NonZeroDeviceSize, Validated, buffer::Buffer, buffer::BufferContents,
+    buffer::BufferCreateInfo, buffer::BufferUsage, descriptor_set::WriteDescriptorSet,
+    descriptor_set::layout::DescriptorSetLayoutCreateFlags, image::sampler::Sampler,
+    image::sampler::SamplerCreateInfo, image::view::ImageView,
     memory::allocator::AllocationCreateInfo, memory::allocator::MemoryTypeFilter,
+    pipeline::GraphicsPipeline, pipeline::Pipeline, pipeline::PipelineBindPoint,
+    pipeline::PipelineLayout, pipeline::PipelineShaderStageCreateInfo,
+    pipeline::graphics::GraphicsPipelineCreateInfo,
     pipeline::graphics::color_blend::AttachmentBlend,
     pipeline::graphics::color_blend::ColorBlendAttachmentState,
     pipeline::graphics::color_blend::ColorBlendState,
@@ -40,11 +44,8 @@ use vulkano::{
     pipeline::graphics::multisample::MultisampleState,
     pipeline::graphics::rasterization::RasterizationState,
     pipeline::graphics::vertex_input::VertexDefinition,
-    pipeline::graphics::viewport::ViewportState, pipeline::graphics::GraphicsPipelineCreateInfo,
-    pipeline::layout::PipelineDescriptorSetLayoutCreateInfo, pipeline::GraphicsPipeline,
-    pipeline::Pipeline, pipeline::PipelineBindPoint, pipeline::PipelineLayout,
-    pipeline::PipelineShaderStageCreateInfo, shader::ShaderModule, DeviceSize, NonZeroDeviceSize,
-    Validated,
+    pipeline::graphics::viewport::ViewportState,
+    pipeline::layout::PipelineDescriptorSetLayoutCreateInfo, shader::ShaderModule,
 };
 use vulkano_taskgraph::command_buffer::{
     BufferImageCopy, CopyBufferToImageInfo, RecordingCommandBuffer,
@@ -303,29 +304,31 @@ impl GuiVertexIndexBuffers {
         Ok(())
     }
 
-    unsafe fn bind(&self, cbf: &mut RecordingCommandBuffer) -> Result<()> {
+    fn bind(&self, cbf: &mut RecordingCommandBuffer) -> Result<()> {
         let start = (self.last_image_idx
             * self.elements_per_set
             * std::mem::size_of::<egui::epaint::Vertex>()) as DeviceSize;
         let end = start
             + (self.last_vertex_count * std::mem::size_of::<egui::epaint::Vertex>()) as DeviceSize;
-        cbf.bind_vertex_buffers(
-            0,
-            &[self.vertices],
-            &[start],
-            &[DeviceSize::from(end - start)],
-            &[],
-        )?;
+        unsafe {
+            cbf.bind_vertex_buffers(
+                0,
+                &[self.vertices],
+                &[start],
+                &[DeviceSize::from(end - start)],
+                &[],
+            )?;
 
-        let start = (self.last_image_idx * self.elements_per_set * std::mem::size_of::<u32>())
-            as DeviceSize;
-        let end = start + (self.last_index_count * std::mem::size_of::<u32>()) as DeviceSize;
-        cbf.bind_index_buffer(
-            self.indices,
-            start,
-            DeviceSize::from(end - start),
-            IndexType::U32,
-        )?;
+            let start = (self.last_image_idx * self.elements_per_set * std::mem::size_of::<u32>())
+                as DeviceSize;
+            let end = start + (self.last_index_count * std::mem::size_of::<u32>()) as DeviceSize;
+            cbf.bind_index_buffer(
+                self.indices,
+                start,
+                DeviceSize::from(end - start),
+                IndexType::U32,
+            )?;
+        }
         Ok(())
     }
 }
@@ -734,27 +737,29 @@ impl Task for GuiRenderer {
             .current_image_index()
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
-        cbf.as_raw()
-            .begin_rendering(&RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    load_op: Load,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
-                })],
-                render_area_extent: [
-                    viewport.inner().extent[0] as u32,
-                    viewport.inner().extent[1] as u32,
-                ],
-                layer_count: 1,
-                ..Default::default()
-            })
-            .unwrap();
         let pipeline = self.get_or_create_pipeline().unwrap();
-        cbf.bind_pipeline_graphics(&pipeline)?.push_constants(
-            pipeline.layout(),
-            0,
-            &push_constants,
-        )?;
+        unsafe {
+            cbf.as_raw()
+                .begin_rendering(&RenderingInfo {
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        load_op: Load,
+                        store_op: Store,
+                        ..RenderingAttachmentInfo::image_view(image_view)
+                    })],
+                    render_area_extent: [
+                        viewport.inner().extent[0] as u32,
+                        viewport.inner().extent[1] as u32,
+                    ],
+                    layer_count: 1,
+                    ..Default::default()
+                })
+                .unwrap();
+            cbf.bind_pipeline_graphics(&pipeline)?.push_constants(
+                pipeline.layout(),
+                0,
+                &push_constants,
+            )?;
+        }
         self.draw_buffer.get().bind(cbf).unwrap();
 
         let mut vertex_cursor = 0;
@@ -772,7 +777,9 @@ impl Task for GuiRenderer {
                 .with_context(|| format!("overflowed vertex_cursor: {}", mesh.vertices.len()))
                 .unwrap();
         }
-        cbf.as_raw().end_rendering()?;
+        unsafe {
+            cbf.as_raw().end_rendering()?;
+        }
         Ok(())
     }
 }

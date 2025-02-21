@@ -10,8 +10,8 @@ use glongge::{
 use glongge_derive::*;
 use num_traits::{FloatConst, Zero};
 use rand::{
-    distributions::{Distribution, Uniform},
     Rng,
+    distributions::{Distribution, Uniform},
 };
 use std::time::Instant;
 

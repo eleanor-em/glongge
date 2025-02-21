@@ -1,7 +1,7 @@
+use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
-use crate::core::ObjectTypeEnum;
-use crate::shader::{get_shader, vertex, BasicShader, Shader, SpriteShader};
+use crate::shader::{BasicShader, Shader, SpriteShader, get_shader, vertex};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use num_traits::Zero;
 

@@ -98,7 +98,9 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
                         .iter()
                         .any(|line| line.starts_with("#[register_scene_object]"))
                     {
-                        println!("cargo::warning=file {path}: contains `#[register_scene_object]` but not `#[partially_derive_scene_object]`");
+                        println!(
+                            "cargo::warning=file {path}: contains `#[register_scene_object]` but not `#[partially_derive_scene_object]`"
+                        );
                     }
                     continue;
                 }
@@ -118,14 +120,20 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
                                 .iter()
                                 .any(|line| line.starts_with("use crate::object_type::ObjectType;"))
                             {
-                                println!("cargo::warning=file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`");
+                                println!(
+                                    "cargo::warning=file {path}: contains `#[partially_derive_scene_object]`, but does not import `crate::object_type::ObjectType`"
+                                );
                             }
                             if !lines
                                 .iter()
                                 .any(|line| line.starts_with("#[partially_derive_scene_object]"))
                             {
-                                assert!(lines.iter().any(|line| line.starts_with("impl SceneObject<ObjectType>")),
-                                        "file {path}: contains `#[partially_derive_scene_object]`, but does not contain an implementation of SceneObject<ObjectType>");
+                                assert!(
+                                    lines.iter().any(
+                                        |line| line.starts_with("impl SceneObject<ObjectType>")
+                                    ),
+                                    "file {path}: contains `#[partially_derive_scene_object]`, but does not contain an implementation of SceneObject<ObjectType>"
+                                );
                             }
                             warned = true;
                         }

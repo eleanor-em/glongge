@@ -1,8 +1,8 @@
 use crate::examples::mario::{
+    AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG,
+    MarioOverworldScene, PIPE_COLLISION_TAG, PLAYER_COLLISION_TAG, WinTextDisplay,
     block::downcast_bumpable_mut, block::pipe::Pipe, enemy::downcast_stompable_mut, from_nes,
-    from_nes_accel, AliveEnemyMap, MarioOverworldScene, WinTextDisplay, BASE_GRAVITY,
-    BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, FLAG_COLLISION_TAG, PIPE_COLLISION_TAG,
-    PLAYER_COLLISION_TAG,
+    from_nes_accel,
 };
 use crate::object_type::ObjectType;
 use glongge::{
@@ -340,7 +340,7 @@ impl Player {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     match last_state {
                         CoroutineState::Starting => {
-                            return CoroutineResponse::Wait(Duration::from_millis(500))
+                            return CoroutineResponse::Wait(Duration::from_millis(500));
                         }
                         CoroutineState::Waiting => {
                             this.pipe_sound.play();

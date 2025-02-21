@@ -1,10 +1,10 @@
 use crate::core::{
-    prelude::*, update::PendingAddObject, AnySceneObject, ObjectId, ObjectTypeEnum,
-    SceneObjectWithId,
+    AnySceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId, prelude::*,
+    update::PendingAddObject,
 };
 use crate::util::{
-    collision::{Collider, GgInternalCollisionShape},
     UnorderedPair,
+    collision::{Collider, GgInternalCollisionShape},
 };
 use itertools::Itertools;
 use std::{

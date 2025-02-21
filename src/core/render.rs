@@ -1,12 +1,12 @@
 use crate::core::scene::GuiClosure;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::core::vk::{GgWindow, RenderPerfStats};
-use crate::core::{prelude::*, vk::AdjustedViewport, ObjectId};
-use crate::gui::render::GuiRenderer;
+use crate::core::{ObjectId, prelude::*, vk::AdjustedViewport};
 use crate::gui::GuiContext;
+use crate::gui::render::GuiRenderer;
 use crate::resource::texture::MaterialId;
 use crate::shader::{Shader, ShaderId};
-use crate::util::{gg_err, UniqueShared};
+use crate::util::{UniqueShared, gg_err};
 use egui::FullOutput;
 use std::{
     cmp,
@@ -396,28 +396,30 @@ impl Task for ClearTask {
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
         let viewport_extent = self.handler.viewport.get().inner().extent;
-        cbf.as_raw()
-            .begin_rendering(&RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    clear_value: Some(
-                        self.handler
-                            .render_data_channel
-                            .lock()
-                            .unwrap()
-                            .clear_col
-                            .as_f32()
-                            .into(),
-                    ),
-                    load_op: Clear,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
-                })],
-                render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
-                layer_count: 1,
-                ..Default::default()
-            })
-            .unwrap();
-        cbf.as_raw().end_rendering().unwrap();
+        unsafe {
+            cbf.as_raw()
+                .begin_rendering(&RenderingInfo {
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        clear_value: Some(
+                            self.handler
+                                .render_data_channel
+                                .lock()
+                                .unwrap()
+                                .clear_col
+                                .as_f32()
+                                .into(),
+                        ),
+                        load_op: Clear,
+                        store_op: Store,
+                        ..RenderingAttachmentInfo::image_view(image_view)
+                    })],
+                    render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
+                    layer_count: 1,
+                    ..Default::default()
+                })
+                .unwrap();
+            cbf.as_raw().end_rendering().unwrap();
+        }
 
         Ok(())
     }

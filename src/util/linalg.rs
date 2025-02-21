@@ -3,7 +3,7 @@ use crate::core::prelude::*;
 
 use crate::util::gg_float;
 use itertools::Product;
-use num_traits::{float::Float, One, Zero};
+use num_traits::{One, Zero, float::Float};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};

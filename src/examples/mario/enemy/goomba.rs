@@ -1,5 +1,5 @@
 use crate::examples::mario::{
-    enemy::Stompable, AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG,
+    AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, enemy::Stompable,
 };
 use crate::object_type::ObjectType;
 use glongge::{core::prelude::*, resource::sprite::Sprite};

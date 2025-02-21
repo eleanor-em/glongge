@@ -1,9 +1,9 @@
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
-use crate::shader::{get_shader, vertex, Shader, SpriteShader};
+use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
 use crate::{
-    core::{prelude::*, AnySceneObject, ObjectTypeEnum},
+    core::{AnySceneObject, ObjectTypeEnum, prelude::*},
     resource::texture::{MaterialId, Texture},
 };
 use glongge_derive::{partially_derive_scene_object, register_scene_object};

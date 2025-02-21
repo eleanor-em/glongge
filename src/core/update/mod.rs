@@ -7,6 +7,7 @@ use crate::{
     core::scene::GuiClosure,
     core::vk::RenderPerfStats,
     core::{
+        AnySceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId,
         config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
         coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
         input::InputHandler,
@@ -14,25 +15,24 @@ use crate::{
         render::{RenderDataChannel, RenderInfoFull, RenderItem, VertexMap},
         scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
         vk::AdjustedViewport,
-        AnySceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId,
     },
     gui::debug_gui::DebugGui,
-    resource::sprite::GgInternalSprite,
     resource::ResourceHandler,
-    shader::{get_shader, Shader},
+    resource::sprite::GgInternalSprite,
+    shader::{Shader, get_shader},
     util::collision::BoxCollider,
     util::{
+        NonemptyVec,
         collision::{Collider, GenericCollider, GgInternalCollisionShape},
         colour::Colour,
         gg_time::TimeIt,
         linalg::Transform,
         linalg::{AxisAlignedExtent, Vec2},
-        NonemptyVec,
     },
     util::{gg_err, gg_iter},
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
@@ -40,9 +40,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     ops::RangeInclusive,
     sync::{
-        mpsc,
+        Arc, Mutex, mpsc,
         mpsc::{Receiver, Sender},
-        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -545,8 +544,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 .drain(..)
                 .map(|obj| (ObjectId::next(), obj))
                 .collect_vec();
-            let first_new_id = pending_add[0].0 .0;
-            let last_new_id = pending_add.last().unwrap().0 .0;
+            let first_new_id = pending_add[0].0.0;
+            let last_new_id = pending_add.last().unwrap().0.0;
 
             let mut object_tracker = ObjectTracker::new(&self.object_handler);
             self.object_handler

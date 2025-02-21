@@ -6,12 +6,12 @@ use std::{
     time::Instant,
 };
 
+use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
-use crate::core::ObjectTypeEnum;
 use crate::gui::GuiContext;
-use crate::shader::{ensure_shaders_locked, BasicShader, Shader, SpriteShader, WireframeShader};
-use crate::util::{gg_err, gg_float, SceneHandlerBuilder, UniqueShared};
+use crate::shader::{BasicShader, Shader, SpriteShader, WireframeShader, ensure_shaders_locked};
+use crate::util::{SceneHandlerBuilder, UniqueShared, gg_err, gg_float};
 use crate::{
     core::{input::InputHandler, prelude::*},
     info_every_seconds,
@@ -32,12 +32,12 @@ use vulkano::{
     pipeline::graphics::viewport::Viewport,
     swapchain::{PresentFuture, SwapchainAcquireFuture},
     sync::{
-        future::{FenceSignalFuture, JoinFuture},
         GpuFuture,
+        future::{FenceSignalFuture, JoinFuture},
     },
 };
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
-use vulkano_taskgraph::{resource_map, Id};
+use vulkano_taskgraph::{Id, resource_map};
 
 pub mod vk_ctx;
 

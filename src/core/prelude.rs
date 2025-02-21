@@ -4,20 +4,20 @@ pub use itertools::Itertools;
 pub use num_traits;
 
 #[allow(unused_imports)]
-pub use anyhow::{anyhow, bail, Context, Result};
+pub use anyhow::{Context, Result, anyhow, bail};
 #[allow(unused_imports)]
 pub use tracing::{error, info, warn};
 
 #[allow(unused_imports)]
 pub use crate::{
     core::{
+        AnySceneObject, DowncastRef, SceneObjectWithId,
         config::*,
         coroutine::{CoroutineId, CoroutineResponse, CoroutineState},
         input::KeyCode,
         render::{RenderInfo, RenderItem},
         scene::{RenderableObject, SceneObject},
-        update::{collision::CollisionResponse, FixedUpdateContext, ObjectContext, UpdateContext},
-        AnySceneObject, DowncastRef, SceneObjectWithId,
+        update::{FixedUpdateContext, ObjectContext, UpdateContext, collision::CollisionResponse},
     },
     resource::{Loader, ResourceHandler},
     util::{

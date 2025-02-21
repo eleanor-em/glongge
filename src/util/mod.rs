@@ -1,10 +1,10 @@
 use crate::core::prelude::*;
 
+use crate::core::ObjectTypeEnum;
 use crate::core::input::InputHandler;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
 use crate::core::vk::WindowEventHandler;
-use crate::core::ObjectTypeEnum;
 use crate::gui::GuiContext;
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
@@ -225,8 +225,8 @@ pub mod gg_err {
     use tracing::{error, warn};
     use vulkano::command_buffer::CommandBufferExecError;
     use vulkano::{Validated, ValidationError, VulkanError};
-    use vulkano_taskgraph::graph::ExecuteError;
     use vulkano_taskgraph::InvalidSlotError;
+    use vulkano_taskgraph::graph::ExecuteError;
 
     pub fn is_some_and_warn<T>(result: Result<Option<T>>) -> bool {
         match result {
@@ -387,7 +387,7 @@ pub mod gg_err {
 
 pub mod gg_float {
     use crate::util::linalg::{Transform, Vec2};
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use num_traits::{FromPrimitive, Zero};
     use std::num::FpCategory;
     use std::time::Duration;
@@ -470,18 +470,10 @@ pub mod gg_range {
 pub struct UnorderedPair<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq>(T, T);
 impl<T: Copy + Clone + Ord + PartialOrd + Eq + PartialEq> UnorderedPair<T> {
     pub fn new(a: T, b: T) -> Self {
-        if a < b {
-            Self(a, b)
-        } else {
-            Self(b, a)
-        }
+        if a < b { Self(a, b) } else { Self(b, a) }
     }
     pub fn new_distinct(a: T, b: T) -> Option<Self> {
-        if a == b {
-            None
-        } else {
-            Some(Self::new(a, b))
-        }
+        if a == b { None } else { Some(Self::new(a, b)) }
     }
 
     pub fn fst(&self) -> T {

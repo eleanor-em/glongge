@@ -1,11 +1,11 @@
 use crate::core::input::MouseButton;
 use crate::core::scene::{GuiInsideClosure, GuiObject};
-use crate::core::{prelude::*, ObjectTypeEnum};
+use crate::core::{ObjectTypeEnum, prelude::*};
 use crate::util::canvas::Canvas;
 use egui::{Align, Layout};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use rand::thread_rng;
 use rand::Rng;
+use rand::thread_rng;
 
 #[derive(Clone, Default)]
 pub struct GgInternalSpline {

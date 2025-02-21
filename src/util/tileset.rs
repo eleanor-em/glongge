@@ -1,6 +1,6 @@
+use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
-use crate::core::ObjectTypeEnum;
 use crate::resource::texture::{MaterialId, Texture};
 use crate::util::collision::CompoundCollider;
 use crate::util::linalg::{Edge2i, Vec2i};
@@ -385,5 +385,5 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalTile
 }
 
 use crate::core::builtin::Container;
-use crate::shader::{get_shader, vertex, Shader, SpriteShader};
+use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 pub use GgInternalTileset as Tileset;

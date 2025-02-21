@@ -6,7 +6,7 @@ use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
 use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
 use crate::gui::{GuiUi, TransformCell};
-use crate::util::{gg_err, gg_float, gg_iter, NonemptyVec};
+use crate::util::{NonemptyVec, gg_err, gg_float, gg_iter};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{

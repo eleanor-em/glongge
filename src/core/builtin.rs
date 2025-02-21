@@ -1,7 +1,7 @@
 use crate::core::prelude::*;
 use crate::core::{AnySceneObject, ObjectTypeEnum};
-use crate::resource::sprite::Sprite;
 use crate::resource::ResourceHandler;
+use crate::resource::sprite::Sprite;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use itertools::Itertools;
 use num_traits::Zero;

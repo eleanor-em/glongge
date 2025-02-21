@@ -1,4 +1,4 @@
-use crate::core::{update::UpdateContext, ObjectTypeEnum, SceneObjectWithId};
+use crate::core::{ObjectTypeEnum, SceneObjectWithId, update::UpdateContext};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant},

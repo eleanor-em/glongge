@@ -3,7 +3,7 @@
 use crate::check_eq;
 use crate::core::prelude::*;
 use crate::core::vk::GgWindow;
-use crate::util::{gg_float, UniqueShared};
+use crate::util::{UniqueShared, gg_float};
 use anyhow::{Context, Result};
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use std::env;
@@ -30,8 +30,8 @@ use vulkano::swapchain::{
     ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo,
 };
 use vulkano::{Validated, Version, VulkanLibrary};
-use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
 use vulkano_taskgraph::Id;
+use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
@@ -99,7 +99,10 @@ impl VulkanoContext {
         let supported_formats =
             physical_device.surface_formats(&surface, SurfaceInfo::default())?;
         if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
-            error!("supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}", supported_formats);
+            error!(
+                "supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}",
+                supported_formats
+            );
         }
         info!("surface capabilities: {caps:?}");
         let (min_image_count, present_mode) = if has_mailbox {
@@ -114,7 +117,9 @@ impl VulkanoContext {
         if let Some(max_image_count) = caps.max_image_count {
             check_le!(min_image_count, max_image_count);
         }
-        info!("swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}");
+        info!(
+            "swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}"
+        );
 
         let flight_id = resources.create_flight(min_image_count)?;
 
@@ -292,8 +297,10 @@ fn create_instance(
         let var = match env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
             Ok(var) => var,
             Err(e) => {
-                panic!("on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
-                        do you have .cargo/config.toml set up correctly? got: {e:?}");
+                panic!(
+                    "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
+                        do you have .cargo/config.toml set up correctly? got: {e:?}"
+                );
             }
         };
         check_eq!(var, "1");

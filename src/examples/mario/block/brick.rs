@@ -2,7 +2,7 @@ use glongge::{core::prelude::*, resource::sprite::Sprite};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
 use crate::examples::mario::{
-    block::Bumpable, from_nes, from_nes_accel, player::Player, BLOCK_COLLISION_TAG,
+    BLOCK_COLLISION_TAG, block::Bumpable, from_nes, from_nes_accel, player::Player,
 };
 use crate::object_type::ObjectType;
 

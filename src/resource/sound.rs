@@ -4,11 +4,11 @@ use std::{
     thread::JoinHandle,
 };
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 use crate::core::prelude::*;
 use fyrox_sound::{
-    buffer::{loader::FsResourceIo, DataSource, SoundBufferResource, SoundBufferResourceExtension},
+    buffer::{DataSource, SoundBufferResource, SoundBufferResourceExtension, loader::FsResourceIo},
     context::SoundContext,
     engine::SoundEngine,
     pool::Handle,

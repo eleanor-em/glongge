@@ -4,8 +4,8 @@ use crate::{
     resource::{sound::SoundHandler, texture::TextureHandler},
 };
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 pub mod font;

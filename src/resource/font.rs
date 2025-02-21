@@ -5,10 +5,10 @@ use num_traits::ToPrimitive;
 use vulkano::format::Format;
 
 use crate::{
-    core::{prelude::*, ObjectTypeEnum},
+    core::{ObjectTypeEnum, prelude::*},
     resource::sprite::Sprite,
 };
-use ab_glyph::{point, FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont};
+use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 
 const SAMPLE_RATIO: f32 = 8.;
 

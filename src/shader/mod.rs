@@ -17,35 +17,35 @@ use std::sync::{Arc, LazyLock, Mutex};
 use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
 use vulkano::descriptor_set::sys::RawDescriptorSet;
 use vulkano::image::Image;
-use vulkano::memory::allocator::DeviceLayout;
 use vulkano::memory::DeviceAlignment;
+use vulkano::memory::allocator::DeviceLayout;
+use vulkano::pipeline::DynamicState;
 use vulkano::pipeline::graphics::rasterization::PolygonMode;
 use vulkano::pipeline::graphics::subpass::PipelineRenderingCreateInfo;
 pub use vulkano::pipeline::graphics::vertex_input::Vertex as VkVertex;
-use vulkano::pipeline::DynamicState;
 use vulkano::render_pass::AttachmentLoadOp::Load;
 use vulkano::render_pass::AttachmentStoreOp::Store;
 use vulkano::swapchain::Swapchain;
 use vulkano::{
+    DeviceSize, NonZeroDeviceSize, Validated,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
-    descriptor_set::{layout::DescriptorSetLayoutCreateFlags, WriteDescriptorSet},
+    descriptor_set::{WriteDescriptorSet, layout::DescriptorSetLayoutCreateFlags},
     image::sampler::{Sampler, SamplerCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
+        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        PipelineShaderStageCreateInfo,
         graphics::{
+            GraphicsPipelineCreateInfo,
             color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
             vertex_input::VertexDefinition,
             viewport::ViewportState,
-            GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
-        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
-        PipelineShaderStageCreateInfo,
     },
-    DeviceSize, NonZeroDeviceSize, Validated,
 };
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
@@ -258,7 +258,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             .map_err(Validated::unwrap)?)
     }
 
-    unsafe fn draw(&self, builder: &mut RecordingCommandBuffer) -> Result<()> {
+    fn draw(&self, builder: &mut RecordingCommandBuffer) -> Result<()> {
         if self.next_vertex_idx + self.vertex_count >= self.len() {
             bail!(
                 "too many vertices: {} + {} = {} >= {}",
@@ -273,14 +273,14 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             ((self.next_vertex_idx + self.vertex_count) * std::mem::size_of::<T>()) as DeviceSize;
         let vertex_count = u32::try_from(self.vertex_count)
             .with_context(|| format!("tried to draw too many vertices: {}", self.vertex_count))?;
-        builder.bind_vertex_buffers(
-            0,
-            &[self.inner],
-            &[start],
-            &[DeviceSize::from(end - start)],
-            &[],
-        )?;
         unsafe {
+            builder.bind_vertex_buffers(
+                0,
+                &[self.inner],
+                &[start],
+                &[DeviceSize::from(end - start)],
+                &[],
+            )?;
             builder.draw(vertex_count, 1, 0, 0)?;
         }
         Ok(())
@@ -611,41 +611,47 @@ impl Task for SpriteShader {
         };
 
         let viewport = viewport.inner();
-        cbf.set_viewport(0, std::slice::from_ref(&viewport))
-            .unwrap();
+        unsafe {
+            cbf.set_viewport(0, std::slice::from_ref(&viewport))
+                .unwrap();
+        }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()
             .current_image_index()
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
-        cbf.as_raw()
-            .begin_rendering(&RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    load_op: Load,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
-                })],
-                render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
-                layer_count: 1,
-                ..Default::default()
-            })
-            .unwrap();
+        unsafe {
+            cbf.as_raw()
+                .begin_rendering(&RenderingInfo {
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        load_op: Load,
+                        store_op: Store,
+                        ..RenderingAttachmentInfo::image_view(image_view)
+                    })],
+                    render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
+                    layer_count: 1,
+                    ..Default::default()
+                })
+                .unwrap();
 
-        cbf.bind_pipeline_graphics(&self.pipeline)?
-            .as_raw()
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                &layout.clone(),
-                0,
-                &[&self.descriptor_set.get().clone().unwrap().desc],
-                &[],
-            )?
-            .push_constants(&layout, 0, &pc)?;
+            cbf.bind_pipeline_graphics(&self.pipeline)?
+                .as_raw()
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    &layout.clone(),
+                    0,
+                    &[&self.descriptor_set.get().clone().unwrap().desc],
+                    &[],
+                )?
+                .push_constants(&layout, 0, &pc)?;
+        }
 
         self.vertex_buffer.get().draw(cbf).unwrap();
 
-        cbf.as_raw().end_rendering().unwrap();
+        unsafe {
+            cbf.as_raw().end_rendering().unwrap();
+        }
 
         Ok(())
     }
@@ -814,33 +820,39 @@ impl Task for WireframeShader {
         };
 
         let viewport = viewport.inner();
-        cbf.set_viewport(0, std::slice::from_ref(&viewport))
-            .unwrap();
+        unsafe {
+            cbf.set_viewport(0, std::slice::from_ref(&viewport))
+                .unwrap();
+        }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()
             .current_image_index()
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
-        cbf.as_raw()
-            .begin_rendering(&RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    load_op: Load,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
-                })],
-                render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
-                layer_count: 1,
-                ..Default::default()
-            })
-            .unwrap();
+        unsafe {
+            cbf.as_raw()
+                .begin_rendering(&RenderingInfo {
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        load_op: Load,
+                        store_op: Store,
+                        ..RenderingAttachmentInfo::image_view(image_view)
+                    })],
+                    render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
+                    layer_count: 1,
+                    ..Default::default()
+                })
+                .unwrap();
 
-        cbf.bind_pipeline_graphics(&self.pipeline)?
-            .push_constants(&layout, 0, &pc)?;
+            cbf.bind_pipeline_graphics(&self.pipeline)?
+                .push_constants(&layout, 0, &pc)?;
+        }
 
         self.vertex_buffer.get().draw(cbf).unwrap();
 
-        cbf.as_raw().end_rendering().unwrap();
+        unsafe {
+            cbf.as_raw().end_rendering().unwrap();
+        }
 
         Ok(())
     }
@@ -1006,33 +1018,39 @@ impl Task for BasicShader {
         };
 
         let viewport = viewport.inner();
-        cbf.set_viewport(0, std::slice::from_ref(&viewport))
-            .unwrap();
+        unsafe {
+            cbf.set_viewport(0, std::slice::from_ref(&viewport))
+                .unwrap();
+        }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()
             .current_image_index()
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
-        cbf.as_raw()
-            .begin_rendering(&RenderingInfo {
-                color_attachments: vec![Some(RenderingAttachmentInfo {
-                    load_op: Load,
-                    store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
-                })],
-                render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
-                layer_count: 1,
-                ..Default::default()
-            })
-            .unwrap();
+        unsafe {
+            cbf.as_raw()
+                .begin_rendering(&RenderingInfo {
+                    color_attachments: vec![Some(RenderingAttachmentInfo {
+                        load_op: Load,
+                        store_op: Store,
+                        ..RenderingAttachmentInfo::image_view(image_view)
+                    })],
+                    render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
+                    layer_count: 1,
+                    ..Default::default()
+                })
+                .unwrap();
 
-        cbf.bind_pipeline_graphics(&self.pipeline)?
-            .push_constants(&layout, 0, &pc)?;
+            cbf.bind_pipeline_graphics(&self.pipeline)?
+                .push_constants(&layout, 0, &pc)?;
+        }
 
         self.vertex_buffer.get().draw(cbf).unwrap();
 
-        cbf.as_raw().end_rendering().unwrap();
+        unsafe {
+            cbf.as_raw().end_rendering().unwrap();
+        }
 
         Ok(())
     }

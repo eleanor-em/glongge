@@ -1,7 +1,7 @@
 use crate::core::scene::{GuiInsideClosure, GuiObject};
-use crate::util::{gg_iter, UnorderedPair};
+use crate::util::{UnorderedPair, gg_iter};
 use crate::{
-    core::{prelude::*, scene::SceneObject, ObjectTypeEnum},
+    core::{ObjectTypeEnum, prelude::*, scene::SceneObject},
     resource::sprite::Sprite,
     util::{
         gg_range,
@@ -885,10 +885,9 @@ impl CompoundCollider {
 
     fn decompose_inner(vertices: &[Vec2]) -> Option<CompoundCollider> {
         if polygon::is_convex(vertices) {
-            return Some(Self::new(vec![ConvexCollider::convex_hull_of(
-                vertices.to_vec(),
-            )
-            .ok()?]));
+            return Some(Self::new(vec![
+                ConvexCollider::convex_hull_of(vertices.to_vec()).ok()?,
+            ]));
         }
 
         let cycled_vertices = vertices
@@ -1705,6 +1704,6 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
-use crate::shader::{get_shader, BasicShader, Shader, WireframeShader};
+use crate::shader::{BasicShader, Shader, WireframeShader, get_shader};
 use crate::util::canvas::Canvas;
 pub use GgInternalCollisionShape as CollisionShape;

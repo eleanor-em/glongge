@@ -4,11 +4,11 @@ use crate::gui::{GuiContext, GuiUi};
 use crate::shader::ensure_shaders_locked;
 use crate::{
     core::{
+        AnySceneObject, ObjectTypeEnum, SceneObjectWithId,
         input::InputHandler,
         prelude::*,
         render::{RenderDataChannel, RenderInfo, RenderItem},
-        update::{collision::CollisionResponse, ObjectContext, UpdateContext, UpdateHandler},
-        AnySceneObject, ObjectTypeEnum, SceneObjectWithId,
+        update::{ObjectContext, UpdateContext, UpdateHandler, collision::CollisionResponse},
     },
     resource::ResourceHandler,
 };
@@ -16,9 +16,8 @@ use std::{
     any::Any,
     collections::BTreeMap,
     sync::{
-        mpsc,
+        Arc, Mutex, mpsc,
         mpsc::{Receiver, Sender},
-        Arc, Mutex,
     },
 };
 

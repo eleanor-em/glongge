@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 pub mod debug_gui;
 pub mod render;
@@ -123,11 +123,7 @@ impl EditCellSender<f32> {
                 delta = i.raw_scroll_delta.y;
             });
         }
-        if delta.is_zero() {
-            None
-        } else {
-            Some(delta)
-        }
+        if delta.is_zero() { None } else { Some(delta) }
     }
 
     pub fn singleline_with_drag(
