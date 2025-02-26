@@ -1,4 +1,5 @@
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
+use std::ops::Mul;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Colour {
@@ -153,5 +154,18 @@ impl From<Colour> for [f32; 4] {
 impl From<&Colour> for [f32; 4] {
     fn from(value: &Colour) -> Self {
         (*value).into()
+    }
+}
+
+impl Mul for Colour {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self {
+            r: self.r * rhs.r,
+            g: self.g * rhs.g,
+            b: self.b * rhs.b,
+            a: self.a * rhs.a,
+        }
     }
 }

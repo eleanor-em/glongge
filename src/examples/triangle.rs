@@ -116,7 +116,9 @@ impl SceneObject<ObjectType> for SpinningTriangle {
             x: 0.,
             y: tri_height / 2. - centre_correction,
         };
-        Ok(Some(RenderItem::new(vec![vertex1, vertex2, vertex3])))
+        Ok(Some(RenderItem::from_raw_vertices(vec![
+            vertex1, vertex2, vertex3,
+        ])))
     }
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if ctx.input().pressed(KeyCode::Space)
@@ -186,7 +188,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
 impl RenderableObject<ObjectType> for SpinningTriangle {
     fn render_info(&self) -> Vec<RenderInfo> {
         vec![RenderInfo {
-            col: Colour::red().into(),
+            blend_col: Colour::red(),
             ..Default::default()
         }]
     }

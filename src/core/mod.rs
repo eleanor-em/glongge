@@ -26,7 +26,6 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn gg_sprite() -> Self;
     fn gg_collider() -> Self;
     fn gg_canvas() -> Self;
-    fn gg_canvas_item() -> Self;
     fn gg_container() -> Self;
     fn gg_static_sprite() -> Self;
     fn gg_colliding_sprite() -> Self;

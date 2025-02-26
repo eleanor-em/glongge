@@ -1559,7 +1559,7 @@ impl GgInternalCollisionShape {
     }
 
     fn triangles(&self) -> RenderItem {
-        RenderItem::new(self.collider.as_triangles().into_flattened())
+        RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
             .with_depth(VertexDepth::max_value())
     }
 
@@ -1676,12 +1676,12 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         check!(self.show_wireframe);
         vec![
             RenderInfo {
-                col: Colour::cyan().with_alpha(0.2).into(),
+                blend_col: Colour::cyan().with_alpha(0.2),
                 shader_id: get_shader(BasicShader::name()),
                 ..Default::default()
             },
             RenderInfo {
-                col: Colour::green().into(),
+                blend_col: Colour::green(),
                 shader_id: get_shader(WireframeShader::name()),
                 ..Default::default()
             },

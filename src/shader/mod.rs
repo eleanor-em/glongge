@@ -535,14 +535,15 @@ impl Shader for SpriteShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.get().single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
+                let vertex = render_frame.vertices[vertex_index as usize];
                 for ri in &render_info.inner {
                     vertices.push(sprite::Vertex {
-                        position: render_frame.vertices[vertex_index as usize].into(),
+                        position: vertex.inner.into(),
                         material_id: ri.material_id,
                         translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
                         scale: render_info.transform.scale.into(),
-                        blend_col: ri.col,
+                        blend_col: (vertex.blend_col * ri.blend_col).into(),
                     });
                 }
             }
@@ -753,13 +754,14 @@ impl Shader for WireframeShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.get().single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
+                let vertex = render_frame.vertices[vertex_index as usize];
                 for ri in &render_info.inner {
                     vertices.push(basic::Vertex {
-                        position: render_frame.vertices[vertex_index as usize].into(),
+                        position: vertex.inner.into(),
                         translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
                         scale: render_info.transform.scale.into(),
-                        blend_col: ri.col,
+                        blend_col: (vertex.blend_col * ri.blend_col).into(),
                     });
                 }
             }
@@ -951,13 +953,14 @@ impl Shader for BasicShader {
         let mut vertices = Vec::with_capacity(self.vertex_buffer.get().single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
+                let vertex = render_frame.vertices[vertex_index as usize];
                 for ri in &render_info.inner {
                     vertices.push(basic::Vertex {
-                        position: render_frame.vertices[vertex_index as usize].into(),
+                        position: vertex.inner.into(),
                         translation: render_info.transform.centre.into(),
                         rotation: render_info.transform.rotation,
                         scale: render_info.transform.scale.into(),
-                        blend_col: ri.col,
+                        blend_col: (vertex.blend_col * ri.blend_col).into(),
                     });
                 }
             }

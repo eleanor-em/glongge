@@ -5,7 +5,7 @@ use crate::core::{ObjectId, prelude::*, vk::AdjustedViewport};
 use crate::gui::GuiContext;
 use crate::gui::render::GuiRenderer;
 use crate::resource::texture::MaterialId;
-use crate::shader::{Shader, ShaderId};
+use crate::shader::{Shader, ShaderId, vertex};
 use crate::util::{UniqueShared, gg_err};
 use egui::FullOutput;
 use std::{
@@ -27,7 +27,7 @@ use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone, Debug)]
 pub struct RenderInfo {
-    pub col: [f32; 4],
+    pub blend_col: Colour,
     pub material_id: MaterialId,
     pub shader_id: ShaderId,
 }
@@ -35,7 +35,7 @@ pub struct RenderInfo {
 impl Default for RenderInfo {
     fn default() -> Self {
         Self {
-            col: Colour::white().into(),
+            blend_col: Colour::white(),
             material_id: 0,
             shader_id: ShaderId::default(),
         }
@@ -51,7 +51,7 @@ pub struct RenderInfoFull {
 }
 
 pub struct RenderDataChannel {
-    pub(crate) vertices: Vec<Vec2>,
+    pub(crate) vertices: Vec<VertexWithCol>,
     pub(crate) render_infos: Vec<RenderInfoFull>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     pub(crate) gui_enabled: bool,
@@ -118,7 +118,7 @@ impl RenderDataChannel {
 
 #[derive(Clone)]
 pub struct RenderFrame {
-    pub vertices: Vec<Vec2>,
+    pub vertices: Vec<VertexWithCol>,
     pub render_infos: Vec<RenderInfoFull>,
     pub clear_col: Colour,
 }
@@ -145,8 +145,23 @@ impl RenderFrame {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct VertexWithCol {
+    pub inner: Vec2,
+    pub blend_col: Colour,
+}
+
+impl VertexWithCol {
+    pub fn white(inner: Vec2) -> Self {
+        Self {
+            inner,
+            blend_col: Colour::white(),
+        }
+    }
+}
+
 pub struct ShaderRenderFrame<'a> {
-    pub vertices: &'a [Vec2],
+    pub vertices: &'a [VertexWithCol],
     pub render_infos: Vec<RenderInfoFull>,
 }
 
@@ -471,19 +486,29 @@ impl Ord for VertexDepth {
 #[derive(Clone, Debug, Default)]
 pub struct RenderItem {
     pub depth: VertexDepth,
-    pub vertices: Vec<Vec2>,
+    pub vertices: Vec<VertexWithCol>,
 }
 
 impl RenderItem {
-    pub fn new(vertices: Vec<Vec2>) -> Self {
+    pub fn new(vertices: Vec<VertexWithCol>) -> Self {
         Self {
             depth: VertexDepth::Middle,
             vertices,
         }
     }
+    pub fn from_raw_vertices(vertices: Vec<Vec2>) -> Self {
+        Self::new(vertex::map_raw_vertices(vertices))
+    }
     #[must_use]
     pub fn with_depth(mut self, depth: VertexDepth) -> Self {
         self.depth = depth;
+        self
+    }
+    #[must_use]
+    pub fn with_blend_col(mut self, col: Colour) -> Self {
+        for vertex in &mut self.vertices {
+            vertex.blend_col = col;
+        }
         self
     }
 
@@ -558,7 +583,7 @@ pub(crate) struct StoredRenderItem {
 }
 
 impl StoredRenderItem {
-    pub(crate) fn vertices(&self) -> &[Vec2] {
+    pub(crate) fn vertices(&self) -> &[VertexWithCol] {
         &self.render_item.vertices
     }
     pub(crate) fn len(&self) -> usize {

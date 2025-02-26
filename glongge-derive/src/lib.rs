@@ -30,7 +30,6 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
             fn gg_sprite() -> Self { Self::GgInternalSprite }
             fn gg_collider() -> Self { Self::GgInternalCollisionShape }
             fn gg_canvas() -> Self { Self::GgInternalCanvas }
-            fn gg_canvas_item() -> Self { Self::GgInternalCanvasItem }
             fn gg_container() -> Self { Self::GgInternalContainer }
             fn gg_static_sprite() -> Self { Self::GgInternalStaticSprite }
             fn gg_colliding_sprite() -> Self { Self::GgInternalCollidingSprite }

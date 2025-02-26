@@ -1,35 +1,26 @@
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
-use crate::shader::{BasicShader, Shader, SpriteShader, get_shader, vertex};
+use crate::shader::{BasicShader, Shader, get_shader, vertex};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use num_traits::Zero;
 
 #[register_scene_object]
 pub struct GgInternalCanvas {
     render_items: Vec<RenderItem>,
-    render_infos: Vec<RenderInfo>,
     viewport: AdjustedViewport,
 }
 
 impl GgInternalCanvas {
     pub fn line(&mut self, start: Vec2, end: Vec2, width: f32, col: Colour) {
-        self.render_items.push(vertex::line(start, end, width));
-        self.render_infos.push(RenderInfo {
-            col: col.into(),
-            shader_id: get_shader(BasicShader::name()),
-            ..Default::default()
-        });
+        self.render_items
+            .push(vertex::line(start, end, width).with_blend_col(col));
     }
     pub fn rect(&mut self, top_left: Vec2, bottom_right: Vec2, col: Colour) {
         let half_widths = (bottom_right - top_left) / 2;
         let centre = top_left + half_widths;
         self.render_items
-            .push(vertex::rectangle(centre, half_widths));
-        self.render_infos.push(RenderInfo {
-            col: col.into(),
-            ..Default::default()
-        });
+            .push(vertex::rectangle(centre, half_widths).with_blend_col(col));
     }
     pub fn rect_transformed(
         &mut self,
@@ -58,25 +49,14 @@ impl GgInternalCanvas {
             }
             .rotated(transform.rotation);
 
-        self.render_items.push(vertex::quadrilateral(
-            top_left,
-            top_right,
-            bottom_left,
-            bottom_right,
-        ));
-        self.render_infos.push(RenderInfo {
-            col: col.into(),
-            ..Default::default()
-        });
+        self.render_items.push(
+            vertex::quadrilateral(top_left, top_right, bottom_left, bottom_right)
+                .with_blend_col(col),
+        );
     }
     pub fn circle(&mut self, centre: Vec2, radius: f32, steps: u32, col: Colour) {
         self.render_items
-            .push(vertex::circle(centre, radius, steps));
-        self.render_infos.push(RenderInfo {
-            col: col.into(),
-            shader_id: get_shader(SpriteShader::name()),
-            ..Default::default()
-        });
+            .push(vertex::circle(centre, radius, steps).with_blend_col(col));
     }
 
     // TODO: hacky.
@@ -94,69 +74,51 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
         ObjectType::gg_canvas()
     }
 
-    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object_mut().remove_children();
-        // XXX: if there is nothing but the canvas, the game won't even start, because it has to
-        // render something.
-        self.line(Vec2::zero(), Vec2::zero(), 0., Colour::empty());
-    }
-
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        for (render_item, render_info) in self
-            .render_items
-            .drain(..)
-            .zip(self.render_infos.drain(..))
-            .rev()
-        // objects drawn later should appear on top
-        {
-            ctx.object_mut()
-                .add_child(GgInternalCanvasItem::create(render_item, render_info));
-        }
-        self.viewport = ctx.viewport().inner();
-    }
-}
-
-#[register_scene_object]
-pub struct GgInternalCanvasItem {
-    render_item: RenderItem,
-    render_info: RenderInfo,
-}
-
-impl GgInternalCanvasItem {
-    pub fn create<ObjectType: ObjectTypeEnum>(
-        render_item: RenderItem,
-        render_info: RenderInfo,
-    ) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
-            render_item,
-            render_info,
-        })
-    }
-}
-
-#[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvasItem {
-    fn get_type(&self) -> ObjectType {
-        ObjectType::gg_canvas_item()
-    }
-
     fn on_load(
         &mut self,
         _object_ctx: &mut ObjectContext<ObjectType>,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
-        Ok(Some(self.render_item.clone()))
+        Ok(Some(RenderItem::default()))
     }
+
+    fn on_update_begin(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+        self.render_items.clear();
+    }
+
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+        self.viewport = ctx.viewport().inner();
+        if self.render_items.is_empty() {
+            // XXX: if there is nothing but the canvas, the game won't even start, because it has to
+            // render something.
+            self.line(Vec2::zero(), Vec2::zero(), 0., Colour::empty());
+        }
+    }
+
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         Some(self)
     }
 }
-
-impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanvasItem {
+impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanvas {
+    fn on_render(&mut self, render_ctx: &mut RenderContext) {
+        if let Some(ri) = self
+            .render_items
+            .clone()
+            .into_iter()
+            .rev()
+            .reduce(RenderItem::concat)
+        {
+            render_ctx.update_render_item(&ri);
+        }
+    }
     fn render_info(&self) -> Vec<RenderInfo> {
-        vec![self.render_info.clone()]
+        vec![RenderInfo {
+            shader_id: get_shader(BasicShader::name()),
+            ..Default::default()
+        }]
     }
 }
 
+use crate::core::update::RenderContext;
 use crate::core::vk::AdjustedViewport;
 pub use GgInternalCanvas as Canvas;
