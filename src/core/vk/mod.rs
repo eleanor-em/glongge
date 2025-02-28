@@ -10,7 +10,7 @@ use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
-use crate::shader::{BasicShader, Shader, SpriteShader, WireframeShader, ensure_shaders_locked};
+use crate::shader::{Shader, SpriteShader, WireframeShader, ensure_shaders_locked};
 use crate::util::{SceneHandlerBuilder, UniqueShared, gg_err, gg_float};
 use crate::{
     core::{input::InputHandler, prelude::*},
@@ -290,7 +290,6 @@ where
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
             WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
-            BasicShader::create(vk_ctx.clone(), viewport.clone())?,
             // TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
         ];
 

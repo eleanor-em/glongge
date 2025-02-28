@@ -1,7 +1,7 @@
 use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
-use crate::shader::{BasicShader, Shader, get_shader, vertex};
+use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
 use num_traits::Zero;
 
@@ -113,7 +113,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanv
     }
     fn render_info(&self) -> Vec<RenderInfo> {
         vec![RenderInfo {
-            shader_id: get_shader(BasicShader::name()),
+            shader_id: get_shader(SpriteShader::name()),
             ..Default::default()
         }]
     }

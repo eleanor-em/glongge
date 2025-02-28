@@ -1677,7 +1677,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         vec![
             RenderInfo {
                 blend_col: Colour::cyan().with_alpha(0.2),
-                shader_id: get_shader(BasicShader::name()),
+                shader_id: get_shader(SpriteShader::name()),
                 ..Default::default()
             },
             RenderInfo {
@@ -1704,6 +1704,6 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
-use crate::shader::{BasicShader, Shader, WireframeShader, get_shader};
+use crate::shader::{Shader, SpriteShader, WireframeShader, get_shader};
 use crate::util::canvas::Canvas;
 pub use GgInternalCollisionShape as CollisionShape;
