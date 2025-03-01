@@ -214,12 +214,12 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
         }
         self.last_state = self.state;
     }
-    fn render_info(&self) -> Vec<RenderInfo> {
+    fn shader_execs(&self) -> Vec<ShaderExec> {
         check_eq!(self.state, SpriteState::Show);
         check_lt!(self.frame, self.material_indices.len());
         let material_index = self.material_indices[self.frame];
         let material_id = self.materials[material_index];
-        vec![RenderInfo {
+        vec![ShaderExec {
             shader_id: get_shader(SpriteShader::name()),
             material_id,
             ..Default::default()

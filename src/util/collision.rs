@@ -1672,15 +1672,15 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
         }
         self.last_show_wireframe = self.show_wireframe;
     }
-    fn render_info(&self) -> Vec<RenderInfo> {
+    fn shader_execs(&self) -> Vec<ShaderExec> {
         check!(self.show_wireframe);
         vec![
-            RenderInfo {
+            ShaderExec {
                 blend_col: Colour::cyan().with_alpha(0.2),
                 shader_id: get_shader(SpriteShader::name()),
                 ..Default::default()
             },
-            RenderInfo {
+            ShaderExec {
                 blend_col: Colour::green(),
                 shader_id: get_shader(WireframeShader::name()),
                 ..Default::default()

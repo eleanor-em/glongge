@@ -15,7 +15,7 @@ pub use crate::{
         config::*,
         coroutine::{CoroutineId, CoroutineResponse, CoroutineState},
         input::KeyCode,
-        render::{RenderInfo, RenderItem},
+        render::{RenderItem, ShaderExec},
         scene::{RenderableObject, SceneObject},
         update::{FixedUpdateContext, ObjectContext, UpdateContext, collision::CollisionResponse},
     },

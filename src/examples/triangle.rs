@@ -186,8 +186,8 @@ impl SceneObject<ObjectType> for SpinningTriangle {
 }
 
 impl RenderableObject<ObjectType> for SpinningTriangle {
-    fn render_info(&self) -> Vec<RenderInfo> {
-        vec![RenderInfo {
+    fn shader_execs(&self) -> Vec<ShaderExec> {
+        vec![ShaderExec {
             blend_col: Colour::red(),
             ..Default::default()
         }]

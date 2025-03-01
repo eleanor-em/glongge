@@ -26,13 +26,13 @@ use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone, Debug)]
-pub struct RenderInfo {
+pub struct ShaderExec {
     pub blend_col: Colour,
     pub material_id: MaterialId,
     pub shader_id: ShaderId,
 }
 
-impl Default for RenderInfo {
+impl Default for ShaderExec {
     fn default() -> Self {
         Self {
             blend_col: Colour::white(),
@@ -43,8 +43,8 @@ impl Default for RenderInfo {
 }
 
 #[derive(Clone, Debug)]
-pub struct RenderInfoFull {
-    pub inner: Vec<RenderInfo>,
+pub struct ShaderExecWithVertexData {
+    pub inner: Vec<ShaderExec>,
     pub transform: Transform,
     pub vertex_indices: Range<u32>,
     pub depth: VertexDepth,
@@ -52,7 +52,7 @@ pub struct RenderInfoFull {
 
 pub struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithCol>,
-    pub(crate) render_infos: Vec<RenderInfoFull>,
+    pub(crate) shader_execs: Vec<ShaderExecWithVertexData>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     pub(crate) gui_enabled: bool,
     viewport: AdjustedViewport,
@@ -65,7 +65,7 @@ impl RenderDataChannel {
     fn new(viewport: AdjustedViewport) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             vertices: Vec::new(),
-            render_infos: Vec::new(),
+            shader_execs: Vec::new(),
             gui_commands: Vec::new(),
             gui_enabled: false,
             viewport,
@@ -78,7 +78,7 @@ impl RenderDataChannel {
     pub(crate) fn next_frame(&self) -> RenderFrame {
         RenderFrame {
             vertices: self.vertices.clone(),
-            render_infos: self.render_infos.clone(),
+            shader_execs: self.shader_execs.clone(),
             clear_col: self.clear_col,
         }
     }
@@ -119,14 +119,14 @@ impl RenderDataChannel {
 #[derive(Clone)]
 pub struct RenderFrame {
     pub vertices: Vec<VertexWithCol>,
-    pub render_infos: Vec<RenderInfoFull>,
+    pub shader_execs: Vec<ShaderExecWithVertexData>,
     pub clear_col: Colour,
 }
 
 impl RenderFrame {
     fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame {
-        let render_infos = self
-            .render_infos
+        let shader_execs = self
+            .shader_execs
             .clone()
             .into_iter()
             .map(move |mut ri| {
@@ -140,7 +140,7 @@ impl RenderFrame {
             .collect_vec();
         ShaderRenderFrame {
             vertices: &self.vertices,
-            render_infos,
+            render_infos: shader_execs,
         }
     }
 }
@@ -162,7 +162,7 @@ impl VertexWithCol {
 
 pub struct ShaderRenderFrame<'a> {
     pub vertices: &'a [VertexWithCol],
-    pub render_infos: Vec<RenderInfoFull>,
+    pub render_infos: Vec<ShaderExecWithVertexData>,
 }
 
 #[derive(Clone)]

@@ -375,8 +375,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalTileset {
-    fn render_info(&self) -> Vec<RenderInfo> {
-        vec![RenderInfo {
+    fn shader_execs(&self) -> Vec<ShaderExec> {
+        vec![ShaderExec {
             shader_id: get_shader(SpriteShader::name()),
             material_id: self.material_id,
             ..Default::default()

@@ -7,7 +7,7 @@ use crate::{
         AnySceneObject, ObjectTypeEnum, SceneObjectWithId,
         input::InputHandler,
         prelude::*,
-        render::{RenderDataChannel, RenderInfo, RenderItem},
+        render::{RenderDataChannel, RenderItem, ShaderExec},
         update::{ObjectContext, UpdateContext, UpdateHandler, collision::CollisionResponse},
     },
     resource::ResourceHandler,
@@ -294,7 +294,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
 pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     #[allow(unused_variables)]
     fn on_render(&mut self, render_ctx: &mut RenderContext) {}
-    fn render_info(&self) -> Vec<RenderInfo>;
+    fn shader_execs(&self) -> Vec<ShaderExec>;
 }
 
 pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;

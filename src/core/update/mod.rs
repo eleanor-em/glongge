@@ -12,7 +12,7 @@ use crate::{
         coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
         input::InputHandler,
         prelude::*,
-        render::{RenderDataChannel, RenderInfoFull, RenderItem, VertexMap},
+        render::{RenderDataChannel, RenderItem, ShaderExecWithVertexData, VertexMap},
         scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
         vk::AdjustedViewport,
     },
@@ -302,14 +302,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         }
     }
 
-    #[cold]
-    fn maybe_replace_invalid_shader_id(render_info: &mut RenderInfo) {
-        if !render_info.shader_id.is_valid() {
-            render_info.shader_id = get_shader(SpriteShader::name());
+    fn maybe_replace_invalid_shader_id(shader_exec: &mut ShaderExec) {
+        if !shader_exec.shader_id.is_valid() {
+            shader_exec.shader_id = get_shader(SpriteShader::name());
         }
     }
 
-    fn create_render_infos(&mut self, vertex_map: &mut VertexMap) -> Vec<RenderInfoFull> {
+    fn create_shader_execs(&mut self, vertex_map: &mut VertexMap) -> Vec<ShaderExecWithVertexData> {
         self.update_all_transforms();
         for (this_id, mut this) in self.objects.iter().filter_map(|(this_id, this)| {
             RefMut::filter_map(this.borrow_mut(), SceneObject::as_renderable_object)
@@ -319,14 +318,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             let mut render_ctx = RenderContext::new(*this_id, vertex_map);
             this.on_render(&mut render_ctx);
         }
-        let mut render_infos = Vec::with_capacity(vertex_map.len());
+        let mut shader_execs = Vec::with_capacity(vertex_map.len());
         let mut start = 0;
         for item in vertex_map.render_items() {
-            let mut render_info = if let Some(o) =
+            let mut shader_exec_inner = if let Some(o) =
                 gg_err::log_err_then(self.get_object(item.object_id)).and_then(|o| {
                     RefMut::filter_map(o.borrow_mut(), SceneObject::as_renderable_object).ok()
                 }) {
-                o.render_info()
+                o.shader_execs()
             } else {
                 error!(
                     "object in vertex_map not renderable: {:?} [{:?}]",
@@ -335,7 +334,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                 );
                 continue;
             };
-            for render_info in &mut render_info {
+            for render_info in &mut shader_exec_inner {
                 Self::maybe_replace_invalid_shader_id(render_info);
             }
             let transform = match self.absolute_transforms.get(&item.object_id) {
@@ -354,15 +353,15 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             };
 
             let end = start + item.len() as u32;
-            render_infos.push(RenderInfoFull {
+            shader_execs.push(ShaderExecWithVertexData {
                 vertex_indices: start..end,
-                inner: render_info,
+                inner: shader_exec_inner,
                 transform: *transform,
                 depth: item.render_item.depth,
             });
             start = end;
         }
-        render_infos
+        shader_execs
     }
 }
 
@@ -867,12 +866,12 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         self.perf_stats.render_infos.start();
         let render_infos = self
             .object_handler
-            .create_render_infos(&mut self.vertex_map);
-        self.send_render_infos(render_infos);
+            .create_shader_execs(&mut self.vertex_map);
+        self.send_shader_execs(render_infos);
         self.perf_stats.render_infos.stop();
     }
 
-    fn send_render_infos(&mut self, render_infos: Vec<RenderInfoFull>) {
+    fn send_shader_execs(&mut self, shader_execs: Vec<ShaderExecWithVertexData>) {
         let maybe_vertices = if self.vertex_map.consume_vertices_changed() {
             Some(
                 self.vertex_map
@@ -891,7 +890,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;
         }
-        render_data_channel.render_infos = render_infos;
+        render_data_channel.shader_execs = shader_execs;
         render_data_channel.set_global_scale_factor(self.viewport.global_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
         render_data_channel.set_translation(self.viewport.translation);

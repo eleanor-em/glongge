@@ -111,8 +111,8 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanv
             render_ctx.update_render_item(&ri);
         }
     }
-    fn render_info(&self) -> Vec<RenderInfo> {
-        vec![RenderInfo {
+    fn shader_execs(&self) -> Vec<ShaderExec> {
+        vec![ShaderExec {
             shader_id: get_shader(SpriteShader::name()),
             ..Default::default()
         }]
