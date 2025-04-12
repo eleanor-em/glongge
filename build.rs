@@ -105,7 +105,7 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
 
                 let mut warned = false;
                 for line in lines_with_decls {
-                    let parts = line.split("for").collect::<Vec<_>>();
+                    let parts = line.split(" for ").collect::<Vec<_>>();
                     assert!(parts.len() >= 2, "could not parse impl line: `{line}`");
                     let parts = parts[1].trim().split(' ').collect::<Vec<_>>();
                     let parts = parts[0].trim().split('<').collect::<Vec<_>>();
