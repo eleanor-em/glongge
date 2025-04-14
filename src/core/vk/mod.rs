@@ -520,9 +520,11 @@ where
         let mut render_handler = self.expect_inner().render_handler.clone();
         let input = self.expect_inner().input_handler.clone();
         let full_output = self.gui_ctx.run(raw_input, |ctx| {
-            let mut input = input.lock().unwrap();
-            input.set_viewport(render_handler.viewport());
-            input.update_mouse(ctx);
+            {
+                let mut input = input.lock().unwrap();
+                input.set_viewport(render_handler.viewport());
+                input.update_mouse(ctx);
+            }
             render_handler.do_gui(ctx, stats.clone());
         });
         // TODO: messy.

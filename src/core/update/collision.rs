@@ -157,14 +157,9 @@ impl CollisionHandler {
             .filter_map(|ids| {
                 let o1 = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>();
                 let o2 = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>();
-                o1.collider().collides_with(o2.collider()).map(|mtv| {
-                    if ids.fst().0 == 852 {
-                        info!("player collide with {:?}", ids.snd());
-                    } else if ids.snd().0 == 852 {
-                        info!("player collide with {:?}", ids.fst());
-                    }
-                    (*ids, mtv)
-                })
+                o1.collider()
+                    .collides_with(o2.collider())
+                    .map(|mtv| (*ids, mtv))
             })
             .collect()
     }

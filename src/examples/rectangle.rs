@@ -24,10 +24,10 @@ impl Scene<ObjectType> for RectangleScene {
     }
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
-        const N: usize = 50;
-        let mut objects = Uniform::new(0., 256.)
+        const N: usize = 10;
+        let mut objects = Uniform::new(50., 350.)
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(0., 256.).sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(50., 350.).sample_iter(rand::thread_rng()))
             .zip(Uniform::new(-1., 1.).sample_iter(rand::thread_rng()))
             .zip(Uniform::new(-1., 1.).sample_iter(rand::thread_rng()))
             .take(N)
@@ -95,11 +95,9 @@ impl SceneObject<ObjectType> for RectanglePlayer {
             direction += Vec2::down();
         }
         self.vel = Self::SPEED * direction.normed();
+        self.pos += self.vel * ctx.delta_60fps();
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext<ObjectType>) {
-        self.pos += self.vel;
-    }
     fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         ctx.object().transform_mut().centre = self.pos;
     }
@@ -137,12 +135,18 @@ impl SpinningRectangle {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             col,
+            alive_since: Instant::now(),
             ..Default::default()
         })
     }
 
     fn rotation(&self) -> f32 {
-        Self::ANGULAR_VELOCITY * f32::PI() * self.t
+        // let mut rv = Self::ANGULAR_VELOCITY * f32::PI() * self.t;
+        // while rv > 2. * f32::PI() {
+        //     rv -= 2. * f32::PI();
+        // }
+        // rv
+        0.
     }
 }
 #[partially_derive_scene_object]
@@ -162,8 +166,9 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             Vec2i { x: 0, y: 0 },
             Vec2i { x: 2, y: 0 },
         )
-        .with_fixed_ms_per_frame(500);
-
+        .with_fixed_ms_per_frame(500)
+        .with_blend_col(self.col);
+        object_ctx.transform_mut().centre = self.pos;
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
@@ -180,44 +185,38 @@ impl SceneObject<ObjectType> for SpinningRectangle {
             ));
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);
         }
-    }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
-        let next_pos = self.pos + self.velocity;
+
+        let next_pos = ctx.object().transform().centre + self.velocity;
         if !(0.0..ctx.viewport().right()).contains(&next_pos.x) {
             self.velocity.x = -self.velocity.x;
         }
         if !(0.0..ctx.viewport().bottom()).contains(&next_pos.y) {
             self.velocity.y = -self.velocity.y;
         }
-        self.t += 0.01;
-        self.pos += self.velocity;
+        self.t += 0.01 * ctx.delta_60fps();
+        let mut transform = ctx.object().transform_mut();
+        transform.centre += self.velocity * ctx.delta_60fps();
+        transform.rotation = self.rotation();
     }
+
     fn on_collision(
         &mut self,
-        _ctx: &mut UpdateContext<ObjectType>,
+        ctx: &mut UpdateContext<ObjectType>,
         other: SceneObjectWithId<ObjectType>,
         mtv: Vec2,
     ) -> CollisionResponse {
-        self.pos += mtv;
-
-        if let Some(mut rect) = other.downcast_mut::<SpinningRectangle>() {
+        if let Some(rect) = other.downcast_mut::<SpinningRectangle>() {
             if self.alive_since.elapsed().as_secs_f32() > 0.5
                 && rect.alive_since.elapsed().as_secs_f32() > 0.5
             {
+                ctx.transform_mut().centre += mtv;
                 self.velocity = self.velocity.reflect(mtv.normed());
-                rect.col = self.col;
+                rect.sprite.set_blend_col(self.col);
             }
-        } else {
-            self.velocity = self.velocity.reflect(mtv.normed());
         }
-        CollisionResponse::Continue
+        CollisionResponse::Done
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let mut transform = ctx.object().transform_mut();
-        transform.centre = self.pos;
-        transform.rotation = self.rotation();
-    }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [RECTANGLE_COLL_TAG].into()
     }

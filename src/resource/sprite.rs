@@ -141,6 +141,9 @@ impl GgInternalSprite {
             self.state = SpriteState::ShouldUpdate;
         }
     }
+    fn set_blend_col(&mut self, col: Colour) {
+        self.render_item = self.render_item.clone().with_blend_col(col);
+    }
 }
 
 #[partially_derive_scene_object]
@@ -333,6 +336,11 @@ impl Sprite {
         self
     }
     #[must_use]
+    pub fn with_blend_col(self, col: Colour) -> Self {
+        self.inner.borrow_mut().set_blend_col(col);
+        self
+    }
+    #[must_use]
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
             let mut inner = self.inner.borrow_mut();
@@ -404,6 +412,10 @@ impl Sprite {
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
         self.inner.borrow_mut().set_depth(depth);
+    }
+
+    pub fn set_blend_col(&self, col: Colour) {
+        self.inner.borrow_mut().set_blend_col(col);
     }
 }
 

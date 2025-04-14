@@ -992,9 +992,7 @@ impl UpdatePerfStats {
     }
 
     pub fn fps(&self) -> f32 {
-        self.totals_s.iter()
-            .map(|t| 1. / t)
-            .sum::<f32>() / self.totals_s.len() as f32
+        self.totals_s.iter().map(|t| 1. / t).sum::<f32>() / self.totals_s.len() as f32
     }
 }
 
@@ -1082,11 +1080,15 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         self.object.transform_mut()
     }
 
-    pub fn delta(&self) -> Duration { self.delta }
+    pub fn delta(&self) -> Duration {
+        self.delta
+    }
     pub fn delta_60fps(&self) -> f32 {
         self.delta.as_secs_f32() * 60.0
     }
-    pub fn fps(&self) -> f32 { self.fps }
+    pub fn fps(&self) -> f32 {
+        self.fps
+    }
     pub fn frame_counter(&self) -> usize {
         self.frame_counter
     }
