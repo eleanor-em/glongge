@@ -173,6 +173,7 @@ pub struct RenderHandler {
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: GuiRenderer,
+    last_gui_commands_was_empty: UniqueShared<bool>,
     last_full_output: UniqueShared<Option<FullOutput>>,
 }
 
@@ -199,6 +200,7 @@ impl RenderHandler {
             window: UniqueShared::new(window),
             viewport,
             shaders,
+            last_gui_commands_was_empty: UniqueShared::new(true),
             last_full_output: UniqueShared::new(None),
             gui_shader,
         })
@@ -242,6 +244,7 @@ impl RenderHandler {
             channel.last_render_stats = last_render_stats;
             channel.gui_commands.drain(..).collect_vec()
         };
+        *self.last_gui_commands_was_empty.get() = gui_commands.is_empty();
         gui_commands.into_iter().for_each(|cmd| cmd(ctx));
     }
 
@@ -324,7 +327,9 @@ impl RenderHandler {
     }
 
     pub(crate) fn update_full_output(&self, full_output: FullOutput) {
-        *self.last_full_output.get() = Some(full_output);
+        if !*self.last_gui_commands_was_empty.get() {
+            *self.last_full_output.get() = Some(full_output);
+        }
     }
 
     pub(crate) fn is_dirty(&self) -> bool {

@@ -215,6 +215,7 @@ impl InputHandler {
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {
+        // TODO: fix modifiers (InputEvent should store modifiers when created)
         if key == KeyCode::ShiftLeft || key == KeyCode::ShiftRight {
             self.mod_shift = state == ElementState::Pressed;
         }
@@ -250,6 +251,9 @@ impl InputHandler {
             };
             state.double_clicked = false;
         }
+        // TODO: drain queued_events more intelligently -- a press and release within a single
+        //  frame, e.g. when update() is very far behind, should still register as a press and
+        //  (on the next frame) a release.
         for event in self.queued_events.drain(..) {
             match event {
                 InputEvent::Key(key, state) => {
