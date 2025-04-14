@@ -386,6 +386,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
 
     perf_stats: UpdatePerfStats,
     last_render_perf_stats: Option<RenderPerfStats>,
+    delta: Duration,
     frame_counter: usize,
     fixed_frame_counter: usize,
 }
@@ -422,6 +423,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
             last_render_perf_stats: None,
+            delta: Duration::from_secs(0),
             frame_counter: 0,
             fixed_frame_counter: 0,
         };
@@ -444,7 +446,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     }
 
     pub(crate) fn consume(mut self) -> Result<SceneHandlerInstruction> {
-        let mut delta = Duration::from_secs(0);
         let mut is_running = true;
         let mut fixed_update_us = 0;
 
@@ -452,7 +453,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             if is_running {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
-                fixed_update_us += delta.as_micros();
+                fixed_update_us += self.delta.as_micros();
                 let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
                 if fixed_updates > 0 {
                     fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
@@ -497,7 +498,12 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     .console_log
                     .render_perf_stats(self.last_render_perf_stats.clone());
                 self.frame_counter += 1;
-                delta = now.elapsed();
+
+                if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
+                    self.perf_stats.totals_s.remove(0);
+                }
+                self.perf_stats.totals_s.push(now.elapsed().as_secs_f32());
+                self.delta = now.elapsed();
             }
 
             match self.scene_instruction_rx.try_iter().next() {
@@ -915,6 +921,7 @@ pub(crate) struct UpdatePerfStats {
     extra_debug: TimeIt,
     last_perf_stats: Option<Box<UpdatePerfStats>>,
     last_report: Instant,
+    totals_s: Vec<f32>,
 }
 
 impl UpdatePerfStats {
@@ -935,6 +942,7 @@ impl UpdatePerfStats {
             extra_debug: TimeIt::new("extra_debug"),
             last_perf_stats: None,
             last_report: Instant::now(),
+            totals_s: Vec::with_capacity(10),
         }
     }
 
@@ -956,6 +964,7 @@ impl UpdatePerfStats {
                 extra_debug: self.extra_debug.report_take(),
                 last_perf_stats: None,
                 last_report: Instant::now(),
+                totals_s: self.totals_s.clone(),
             }));
             self.last_report = Instant::now();
         }
@@ -981,6 +990,12 @@ impl UpdatePerfStats {
         }
         default
     }
+
+    pub fn fps(&self) -> f32 {
+        self.totals_s.iter()
+            .map(|t| 1. / t)
+            .sum::<f32>() / self.totals_s.len() as f32
+    }
 }
 
 pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
@@ -988,6 +1003,8 @@ pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     scene: SceneContext<'a, ObjectType>,
     object: ObjectContext<'a, ObjectType>,
     viewport: ViewportContext<'a>,
+    delta: Duration,
+    fps: f32,
     frame_counter: usize,
     fixed_frame_counter: usize,
 }
@@ -999,6 +1016,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         this_id: ObjectId,
         object_tracker: &'a mut ObjectTracker<ObjectType>,
     ) -> Result<Self> {
+        let fps = caller.perf_stats.fps();
         let parent = caller.object_handler.get_parent(this_id)?;
         let children = caller.object_handler.get_children_owned(this_id)?;
         Ok(Self {
@@ -1025,6 +1043,8 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
                 viewport: &mut caller.viewport,
                 clear_col: &mut caller.clear_col,
             },
+            delta: caller.delta,
+            fps,
             frame_counter: caller.frame_counter,
             fixed_frame_counter: caller.fixed_frame_counter,
         })
@@ -1062,6 +1082,11 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         self.object.transform_mut()
     }
 
+    pub fn delta(&self) -> Duration { self.delta }
+    pub fn delta_60fps(&self) -> f32 {
+        self.delta.as_secs_f32() * 60.0
+    }
+    pub fn fps(&self) -> f32 { self.fps }
     pub fn frame_counter(&self) -> usize {
         self.frame_counter
     }

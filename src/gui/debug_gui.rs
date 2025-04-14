@@ -747,6 +747,9 @@ impl GuiConsoleLog {
                                     ui.end_row();
                                 }
                             }
+                            ui.add(egui::Label::new("FPS").selectable(false));
+                            ui.add(egui::Label::new(format!("{:.1}", perf_stats.fps())).selectable(false));
+                            ui.end_row();
                         });
                 }
             });

@@ -167,11 +167,11 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         })
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         if self.paused {
             return;
         }
-        self.elapsed_us += FIXED_UPDATE_INTERVAL_US;
+        self.elapsed_us += ctx.delta().as_micros();
         let elapsed_ms = self.elapsed_us / 1000;
         let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
         let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
