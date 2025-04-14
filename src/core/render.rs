@@ -327,7 +327,7 @@ impl RenderHandler {
     }
 
     pub(crate) fn update_full_output(&self, full_output: FullOutput) {
-        if !*self.last_gui_commands_was_empty.get() {
+        if self.last_full_output.get().is_none() || !*self.last_gui_commands_was_empty.get() {
             *self.last_full_output.get() = Some(full_output);
         }
     }
