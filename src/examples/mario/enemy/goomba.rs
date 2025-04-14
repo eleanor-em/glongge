@@ -26,7 +26,7 @@ impl Goomba {
             dead: false,
             started_death: false,
             top_left: top_left.into(),
-            vel: Vec2 { x: -0.5, y: 0. },
+            vel: Vec2 { x: -1., y: 0. },
             ..Default::default()
         })
     }
