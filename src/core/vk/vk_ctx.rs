@@ -121,7 +121,8 @@ impl VulkanoContext {
             "swapchain properties: min_image_count={min_image_count}, present_mode={present_mode:?}"
         );
 
-        let flight_id = resources.create_flight(min_image_count)?;
+        // Using more than 2 frames in flight just adds latency for no gain.
+        let flight_id = resources.create_flight(2)?;
 
         let dimensions = window.inner_size();
         let composite_alpha = caps
@@ -133,7 +134,7 @@ impl VulkanoContext {
             flight_id,
             surface,
             SwapchainCreateInfo {
-                min_image_count: resources.flight(flight_id)?.frame_count(),
+                min_image_count,
                 image_format: Format::B8G8R8A8_SRGB,
                 image_color_space: ColorSpace::SrgbNonLinear,
                 image_extent: dimensions.into(),
