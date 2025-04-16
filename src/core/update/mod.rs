@@ -17,6 +17,7 @@ use crate::{
         vk::AdjustedViewport,
     },
     gui::debug_gui::DebugGui,
+    info_every_seconds,
     resource::ResourceHandler,
     resource::sprite::GgInternalSprite,
     shader::{Shader, get_shader},
@@ -992,7 +993,12 @@ impl UpdatePerfStats {
     }
 
     pub fn fps(&self) -> f32 {
-        self.totals_s.iter().map(|t| 1. / t).sum::<f32>() / self.totals_s.len() as f32
+        let rv = self.totals_s.iter().map(|t| 1. / t).sum::<f32>() / self.totals_s.len() as f32;
+        #[cfg(debug_assertions)]
+        {
+            info_every_seconds!(1, "fps: {rv:.2}");
+        }
+        rv
     }
 }
 
