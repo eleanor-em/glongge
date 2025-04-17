@@ -78,8 +78,11 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
             let parts = path.split(&format!("src{sep}")).collect::<Vec<_>>();
             if parts.len() == 2 {
                 let rest = parts[1].to_string();
-                let import = rest.replace(".rs", "").replace(sep, "::");
-                if import.contains("mod") || import == "main" || import == "lib" {
+                let import = rest
+                    .replace(".rs", "")
+                    .replace(sep, "::")
+                    .replace("::mod", "");
+                if import == "main" || import == "lib" {
                     continue;
                 }
 
