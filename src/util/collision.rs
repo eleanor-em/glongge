@@ -523,7 +523,7 @@ impl BoxCollider {
     #[must_use]
     pub fn transformed(&self, by: Transform) -> Self {
         Self {
-            centre: self.centre + by.centre - self.half_widths(),
+            centre: self.centre + by.centre,
             extent: self.extent.component_wise(by.scale.abs()),
         }
     }

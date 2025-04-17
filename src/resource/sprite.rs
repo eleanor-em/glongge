@@ -230,6 +230,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
     }
 }
 
+#[derive(Clone)]
 pub struct Sprite {
     inner: Rc<RefCell<GgInternalSprite>>,
     extent: Vec2,
@@ -329,7 +330,34 @@ impl Sprite {
         let extent = texture.aa_extent().as_vec2int_lossy();
         Self::from_single_extent(object_ctx, resource_handler, texture, Vec2i::zero(), extent)
     }
-
+    #[must_use]
+    pub fn with_collider_half_widths(mut self, half_widths: Vec2) -> Self {
+        self.collider = self.collider.transformed(Transform::with_scale(
+            half_widths.component_wise(self.collider.half_widths().reciprocal()),
+        ));
+        self
+    }
+    #[must_use]
+    pub fn with_collider_extent(mut self, extent: Vec2) -> Self {
+        self.collider = self.collider.transformed(Transform::with_scale(
+            extent.component_wise(self.collider.aa_extent().reciprocal()),
+        ));
+        self
+    }
+    #[must_use]
+    pub fn with_collider_centre(mut self, centre: Vec2) -> Self {
+        self.collider = self
+            .collider
+            .transformed(Transform::with_centre(centre + self.centre()));
+        self
+    }
+    #[must_use]
+    pub fn with_collider_top_left(mut self, top_left: Vec2) -> Self {
+        self.collider = self
+            .collider
+            .transformed(Transform::with_centre(top_left - self.centre()));
+        self
+    }
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
         self.inner.borrow_mut().render_item.depth = depth;
