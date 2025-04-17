@@ -210,7 +210,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             .or(self
                 .get_children(id)?
                 .iter()
-                .find_map(SceneObjectWithId::downcast_mut::<CollisionShape>)))
+                .find_map(|o| self.get_collision_shape_mut(o.object_id).ok().flatten())))
     }
 
     fn remove_object(&mut self, remove_id: ObjectId) {
