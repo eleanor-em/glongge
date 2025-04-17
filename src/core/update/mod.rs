@@ -1478,6 +1478,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         gg_err::log_err_then(self.collider_of_inner(other.object_id))
     }
     fn collider_of_inner(&self, object_id: ObjectId) -> Result<Option<GenericCollider>> {
+        // TODO: some more sensible way to handle objects with multiple child colliders.
         let children = if object_id == self.this_id {
             &self.children
         } else {
@@ -1496,7 +1497,8 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                         Ok(o)
                     }))
             })
-            .map(|o| o.collider().clone()))
+            .map(|o| o.collider().clone())
+            .or(children.iter().find_map(|o| self.collider_of_inner(o.object_id).ok().flatten())))
     }
 
     pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
