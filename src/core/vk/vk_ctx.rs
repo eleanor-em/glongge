@@ -6,7 +6,6 @@ use crate::core::vk::GgWindow;
 use crate::util::{UniqueShared, gg_float};
 use anyhow::{Context, Result};
 use egui_winit::winit::event_loop::ActiveEventLoop;
-use std::env;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Instant;
 use tracing::info;
@@ -282,7 +281,7 @@ fn device_extensions() -> DeviceExtensions {
 fn device_features() -> DeviceFeatures {
     DeviceFeatures {
         // Required for extra texture samplers on macOS:
-        descriptor_indexing: true,
+        // descriptor_indexing: true,
         fill_mode_non_solid: true,
         // Required to fix sampler cross-talk with AMD drivers:
         shader_sampled_image_array_non_uniform_indexing: true,
@@ -294,18 +293,19 @@ fn create_instance(
     event_loop: &ActiveEventLoop,
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
-    if env::consts::OS == "macos" {
-        let var = match env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
-            Ok(var) => var,
-            Err(e) => {
-                panic!(
-                    "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
-                        do you have .cargo/config.toml set up correctly? got: {e:?}"
-                );
-            }
-        };
-        check_eq!(var, "1");
-    }
+    // TODO: this was required at one point. Does not seem to be required any more?
+    // if std::env::consts::OS == "macos" {
+    //     let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
+    //         Ok(var) => var,
+    //         Err(e) => {
+    //             panic!(
+    //                 "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
+    //                     do you have .cargo/config.toml set up correctly? got: {e:?}"
+    //             );
+    //         }
+    //     };
+    //     check_eq!(var, "1");
+    // }
     let enabled_extensions = instance_extensions(event_loop)?;
     let instance_create_info = InstanceCreateInfo {
         flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,

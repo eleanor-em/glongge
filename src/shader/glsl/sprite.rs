@@ -125,7 +125,7 @@ pub mod fragment_shader {
             layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
-                const vec4 tex_col = texture(tex[nonuniformEXT(f_texture_id)], f_uv);
+                const vec4 tex_col = texture(nonuniformEXT(tex[f_texture_id]), f_uv);
                 f_col = tex_col * f_blend_col;
             }
         ",

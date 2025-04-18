@@ -431,9 +431,6 @@ impl Vec2 {
             y: self.y.round() as i32,
         }
     }
-    pub fn as_f32_lossy(&self) -> [f32; 2] {
-        (*self).into()
-    }
 
     pub fn is_normal_or_zero(&self) -> bool {
         gg_float::is_normal_or_zero(self.x) || gg_float::is_normal_or_zero(self.y)
