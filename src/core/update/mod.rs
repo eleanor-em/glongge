@@ -1719,9 +1719,8 @@ impl<'a> RenderContext<'a> {
         }
     }
     pub fn remove_render_item(&mut self) {
-        check_is_some!(
-            self.vertex_map.remove(self.this_id),
-            format!("removed nonexistent vertices: {:?}", self.this_id)
-        );
+        if self.vertex_map.remove(self.this_id).is_none() {
+            error!("removed nonexistent vertices: {:?}", self.this_id);
+        }
     }
 }

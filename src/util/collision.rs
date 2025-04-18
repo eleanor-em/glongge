@@ -1570,10 +1570,11 @@ pub struct GgInternalCollisionShape {
     emitting_tags: Vec<&'static str>,
     listening_tags: Vec<&'static str>,
 
+    // For GUI:
+    // <RenderItem, should_be_updated>
     wireframe: RenderItem,
     show_wireframe: bool,
     last_show_wireframe: bool,
-
     extent_cell_receiver_x: EditCellReceiver<f32>,
     extent_cell_receiver_y: EditCellReceiver<f32>,
     centre_cell_receiver_x: EditCellReceiver<f32>,
@@ -1599,7 +1600,7 @@ impl GgInternalCollisionShape {
             centre_cell_receiver_x: EditCellReceiver::new(),
             centre_cell_receiver_y: EditCellReceiver::new(),
         };
-        rv.wireframe = rv.triangles();
+        rv.regenerate_wireframe();
         AnySceneObject::new(rv)
     }
 
@@ -1624,9 +1625,9 @@ impl GgInternalCollisionShape {
         &self.collider
     }
 
-    fn triangles(&self) -> RenderItem {
-        RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
-            .with_depth(VertexDepth::max_value())
+    fn regenerate_wireframe(&mut self) {
+        self.wireframe = RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
+            .with_depth(VertexDepth::max_value());
     }
 
     pub fn show_wireframe(&mut self) {
@@ -1730,8 +1731,12 @@ impl GgInternalCollisionShape {
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
-        if self.show_wireframe && !self.last_show_wireframe {
-            render_ctx.insert_render_item(&self.wireframe);
+        if self.show_wireframe {
+            if !self.last_show_wireframe {
+                render_ctx.insert_render_item(&self.wireframe);
+            } else {
+                render_ctx.update_render_item(&self.wireframe);
+            }
         }
         if !self.show_wireframe && self.last_show_wireframe {
             render_ctx.remove_render_item();
@@ -1771,6 +1776,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
                 x: next_x.unwrap_or(extent.x),
                 y: next_y.unwrap_or(extent.y),
             });
+            self.regenerate_wireframe();
         }
         self.extent_cell_receiver_x.update_live(extent.x);
         self.extent_cell_receiver_y.update_live(extent.y);
@@ -1788,6 +1794,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
                 x: next_x.unwrap_or(centre.x),
                 y: next_y.unwrap_or(centre.y),
             });
+            self.regenerate_wireframe();
         }
         self.centre_cell_receiver_x.update_live(centre.x);
         self.centre_cell_receiver_y.update_live(centre.y);
