@@ -337,11 +337,17 @@ impl Vec2 {
         }
         rv
     }
-
     pub fn component_wise(&self, other: Vec2) -> Vec2 {
         Vec2 {
             x: self.x * other.x,
             y: self.y * other.y,
+        }
+    }
+
+    pub fn component_wise_div(&self, other: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x / other.x,
+            y: self.y / other.y,
         }
     }
 

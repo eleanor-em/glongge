@@ -85,6 +85,28 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
             .scaled(by.scale)
             .rotated(by.rotation)
     }
+    #[must_use]
+    fn with_half_widths(&self, half_widths: Vec2) -> Self
+    where
+        Self: Sized,
+    {
+        self.scaled(half_widths.component_wise_div(self.half_widths()))
+    }
+    #[must_use]
+    fn with_extent(&self, extent: Vec2) -> Self
+    where
+        Self: Sized,
+    {
+        self.scaled(extent.component_wise_div(self.aa_extent()))
+    }
+
+    #[must_use]
+    fn with_centre(&self, centre: Vec2) -> Self
+    where
+        Self: Sized,
+    {
+        self.translated(centre - self.centre())
+    }
 
     fn as_polygon(&self) -> Vec<Vec2>;
     fn as_triangles(&self) -> Vec<[Vec2; 3]>;
@@ -1517,21 +1539,10 @@ impl Display for GenericCollider {
                 write!(f, "<null>")
             }
             GenericCollider::Box(_) => {
-                write!(
-                    f,
-                    "Box: extent ({:.1}, {:.1})",
-                    self.aa_extent().x,
-                    self.aa_extent().y
-                )
+                write!(f, "Box")
             }
             GenericCollider::OrientedBox(inner) => {
-                write!(
-                    f,
-                    "OrientedBox: extent ({:.1}, {:.1}) at {} deg.",
-                    inner.extent.x,
-                    inner.extent.y,
-                    inner.rotation.to_degrees()
-                )
+                write!(f, "OrientedBox: {} deg.", inner.rotation.to_degrees())
             }
             GenericCollider::Convex(inner) => {
                 write!(f, "Convex: {} edges", inner.normals_cached.len())
@@ -1562,6 +1573,11 @@ pub struct GgInternalCollisionShape {
     wireframe: RenderItem,
     show_wireframe: bool,
     last_show_wireframe: bool,
+
+    extent_cell_receiver_x: EditCellReceiver<f32>,
+    extent_cell_receiver_y: EditCellReceiver<f32>,
+    centre_cell_receiver_x: EditCellReceiver<f32>,
+    centre_cell_receiver_y: EditCellReceiver<f32>,
 }
 
 impl GgInternalCollisionShape {
@@ -1578,6 +1594,10 @@ impl GgInternalCollisionShape {
             wireframe: RenderItem::default(),
             show_wireframe: false,
             last_show_wireframe: false,
+            extent_cell_receiver_x: EditCellReceiver::new(),
+            extent_cell_receiver_y: EditCellReceiver::new(),
+            centre_cell_receiver_x: EditCellReceiver::new(),
+            centre_cell_receiver_y: EditCellReceiver::new(),
         };
         rv.wireframe = rv.triangles();
         AnySceneObject::new(rv)
@@ -1741,15 +1761,56 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
         _ctx: &UpdateContext<ObjectType>,
         _selected: bool,
     ) -> Box<GuiInsideClosure> {
-        let collider = self.collider().clone();
+        let extent = self.collider.aa_extent();
+        let (next_x, next_y) = (
+            self.extent_cell_receiver_x.try_recv(),
+            self.extent_cell_receiver_y.try_recv(),
+        );
+        if next_x.is_some() || next_y.is_some() {
+            self.collider = self.collider.with_extent(Vec2 {
+                x: next_x.unwrap_or(extent.x),
+                y: next_y.unwrap_or(extent.y),
+            });
+        }
+        self.extent_cell_receiver_x.update_live(extent.x);
+        self.extent_cell_receiver_y.update_live(extent.y);
+
+        let extent_cell_sender_x = self.extent_cell_receiver_x.sender();
+        let extent_cell_sender_y = self.extent_cell_receiver_y.sender();
+
+        let centre = self.collider.centre();
+        let (next_x, next_y) = (
+            self.centre_cell_receiver_x.try_recv(),
+            self.centre_cell_receiver_y.try_recv(),
+        );
+        if next_x.is_some() || next_y.is_some() {
+            self.collider = self.collider.with_centre(Vec2 {
+                x: next_x.unwrap_or(centre.x),
+                y: next_y.unwrap_or(centre.y),
+            });
+        }
+        self.centre_cell_receiver_x.update_live(centre.x);
+        self.centre_cell_receiver_y.update_live(centre.y);
+
+        let centre_cell_sender_x = self.centre_cell_receiver_x.sender();
+        let centre_cell_sender_y = self.centre_cell_receiver_y.sender();
+
+        let collider = self.collider.clone();
         Box::new(move |ui| {
             ui.label(collider.to_string());
+            collider
+                .aa_extent()
+                .build_gui(ui, 0.1, extent_cell_sender_x, extent_cell_sender_y);
+            collider
+                .centre()
+                .build_gui(ui, 0.1, centre_cell_sender_x, centre_cell_sender_y);
         })
     }
 }
 
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
+use crate::gui::EditCellReceiver;
 use crate::shader::{Shader, SpriteShader, WireframeShader, get_shader};
 use crate::util::canvas::Canvas;
 pub use GgInternalCollisionShape as CollisionShape;

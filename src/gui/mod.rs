@@ -24,6 +24,7 @@ pub struct EditCellReceiver<T> {
     rx: Receiver<String>,
 }
 
+#[derive(Clone)]
 pub struct EditCellSender<T> {
     text: Arc<Mutex<String>>,
     editing: Arc<AtomicBool>,
@@ -56,9 +57,12 @@ impl<T: Clone + Default + Display + FromStr> EditCellReceiver<T> {
     pub fn reset(&mut self) {
         self.editing.store(false, Ordering::Relaxed);
     }
+    pub fn try_recv(&mut self) -> Option<T> {
+        self.rx.try_iter().last().and_then(|s| s.parse().ok())
+    }
 
     pub fn recv(&mut self) -> T {
-        if let Some(next) = self.rx.try_iter().last().and_then(|s| s.parse().ok()) {
+        if let Some(next) = self.try_recv() {
             self.last_value = next;
         }
         self.last_value.clone()
