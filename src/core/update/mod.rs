@@ -21,6 +21,7 @@ use crate::{
     resource::sprite::GgInternalSprite,
     shader::{Shader, get_shader},
     util::collision::BoxCollider,
+    util::gg_err,
     util::{
         NonemptyVec,
         collision::{Collider, GenericCollider, GgInternalCollisionShape},
@@ -29,7 +30,6 @@ use crate::{
         linalg::Transform,
         linalg::{AxisAlignedExtent, Vec2},
     },
-    util::{gg_err, gg_iter},
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use serde::{Serialize, de::DeserializeOwned};
@@ -78,14 +78,6 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     pub(crate) fn get_first_object_id(&self) -> Option<ObjectId> {
         self.objects.first_key_value().map(|o| o.0).copied()
     }
-    pub(crate) fn get_next_object_id(&self, source: ObjectId) -> Option<ObjectId> {
-        let object_ids = self.objects.keys().copied().collect_vec();
-        let i = gg_iter::index_of(&object_ids, &source)?;
-        Some(object_ids[(i + 1) % object_ids.len()])
-    }
-    // fn get_first_object(&self) -> Option<&AnySceneObject<ObjectType>> {
-    //     self.objects.first_key_value().map(|o| o.1)
-    // }
     pub(crate) fn get_object(&self, id: ObjectId) -> Result<Option<&AnySceneObject<ObjectType>>> {
         if id.is_root() {
             Ok(None)

@@ -450,6 +450,9 @@ impl GuiObjectTree {
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyS) {
             self.select_next_sibling(object_handler);
         }
+        if !input_handler.mod_super() && input_handler.mod_shift() && input_handler.pressed(KeyCode::KeyS) {
+            self.select_prev_sibling(object_handler);
+        }
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
             if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
             {
@@ -460,24 +463,38 @@ impl GuiObjectTree {
             self.show = !self.show;
         }
     }
-
     fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
-        if let Some(sibling_id) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
-            .and_then(|parent| {
-                let siblings = gg_err::log_unwrap_or(
-                    &Vec::new(),
-                    object_handler.get_children(parent.object_id),
-                )
-                .iter()
-                .map(|o| o.object_id)
-                .collect_vec();
-                gg_iter::index_of(&siblings, &self.selected_id)
-                    .map(|i| siblings[(i + 1) % siblings.len()])
+        self.select_nth_sibling(object_handler, 1);
+    }
+    fn select_prev_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        self.select_nth_sibling(object_handler, -1);
+    }
+
+    fn select_nth_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, n: isize) {
+        let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
+            .map_or(ObjectId::root(), |parent| parent.object_id);
+        let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
+            .iter()
+            .map(|o| o.object_id)
+            .collect_vec();
+        if let Some(sibling_id) = gg_iter::index_of(&siblings, &self.selected_id)
+            .map(|i| {
+                let ix = i as isize + n;
+                let ix = ix.rem_euclid(siblings.len() as isize);
+                siblings[ix as usize]
+            })
+            .or_else(|| {
+                check_eq!(self.selected_id, ObjectId::root());
+                siblings.first().copied()
             })
         {
             self.selected_tx.send(sibling_id).unwrap();
-        } else if let Some(sibling_id) = object_handler.get_next_object_id(self.selected_id) {
-            self.selected_tx.send(sibling_id).unwrap();
+        } else {
+            error!(
+                "select_next_sibling(): no sibling found for {:?} (parent={:?})",
+                self.selected_id,
+                object_handler.get_parent(self.selected_id)
+            );
         }
     }
 
