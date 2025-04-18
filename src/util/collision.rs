@@ -13,7 +13,6 @@ use num_traits::{Float, Zero};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use std::{any::Any, fmt::Debug, ops::Range};
 
 #[derive(Debug)]
@@ -71,10 +70,17 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     where
         Self: Sized + 'static;
 
-    fn translated(&self, by: Vec2) -> GenericCollider;
-    fn scaled(&self, by: Vec2) -> GenericCollider;
-    fn rotated(&self, by: f32) -> GenericCollider;
-    fn transformed(&self, by: &Transform) -> GenericCollider {
+    #[must_use]
+    fn translated(&self, by: Vec2) -> Self;
+    #[must_use]
+    fn scaled(&self, by: Vec2) -> Self;
+    #[must_use]
+    fn rotated(&self, by: f32) -> Self;
+    #[must_use]
+    fn transformed(&self, by: &Transform) -> Self
+    where
+        Self: Sized,
+    {
         self.translated(by.centre)
             .scaled(by.scale)
             .rotated(by.rotation)
@@ -120,14 +126,14 @@ impl Collider for NullCollider {
         GenericCollider::Null
     }
 
-    fn translated(&self, _by: Vec2) -> GenericCollider {
-        Self.into_generic()
+    fn translated(&self, _by: Vec2) -> Self {
+        NullCollider
     }
-    fn scaled(&self, _by: Vec2) -> GenericCollider {
-        Self.into_generic()
+    fn scaled(&self, _by: Vec2) -> Self {
+        NullCollider
     }
-    fn rotated(&self, _by: f32) -> GenericCollider {
-        Self.into_generic()
+    fn rotated(&self, _by: f32) -> Self {
+        NullCollider
     }
 
     // By convention, clockwise edges starting from the top-leftmost vertex.
@@ -450,22 +456,22 @@ impl Collider for OrientedBoxCollider {
         GenericCollider::OrientedBox(self)
     }
 
-    fn translated(&self, by: Vec2) -> GenericCollider {
+    fn translated(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         rv.centre += by.rotated(self.rotation);
-        rv.into_generic()
+        rv
     }
 
-    fn scaled(&self, by: Vec2) -> GenericCollider {
+    fn scaled(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         rv.axis_aligned_half_widths = self.axis_aligned_half_widths.component_wise(by).abs();
-        rv.into_generic()
+        rv
     }
 
-    fn rotated(&self, by: f32) -> GenericCollider {
+    fn rotated(&self, by: f32) -> Self {
         let mut rv = self.clone();
         rv.rotation += by;
-        rv.into_generic()
+        rv
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -519,13 +525,6 @@ impl BoxCollider {
     #[must_use]
     pub fn square(transform: Transform, width: f32) -> Self {
         Self::from_transform(transform, width.abs() * Vec2::one())
-    }
-    #[must_use]
-    pub fn transformed(&self, by: Transform) -> Self {
-        Self {
-            centre: self.centre + by.centre,
-            extent: self.extent.component_wise(by.scale.abs()),
-        }
     }
 
     pub fn as_convex(&self) -> ConvexCollider {
@@ -619,26 +618,21 @@ impl Collider for BoxCollider {
         GenericCollider::Box(self)
     }
 
-    fn translated(&self, by: Vec2) -> GenericCollider {
+    fn translated(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         rv.centre += by;
-        rv.into_generic()
+        rv
     }
 
-    fn scaled(&self, by: Vec2) -> GenericCollider {
+    fn scaled(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         rv.extent = self.extent.component_wise(by).abs();
-        rv.into_generic()
+        rv
     }
 
-    fn rotated(&self, by: f32) -> GenericCollider {
-        if by.is_zero() {
-            self.as_generic()
-        } else {
-            // OrientedBoxCollider is much more expensive than BoxCollider,
-            // so only use it if we have to.
-            OrientedBoxCollider::from_centre(self.centre, self.extent / 2).rotated(by)
-        }
+    fn rotated(&self, by: f32) -> Self {
+        check_eq!(by, 0., "cannot rotate BoxCollider");
+        self.clone()
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -779,29 +773,29 @@ impl Collider for ConvexCollider {
         GenericCollider::Convex(self)
     }
 
-    fn translated(&self, by: Vec2) -> GenericCollider {
+    fn translated(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         for vertex in &mut rv.vertices {
             *vertex += by;
         }
         rv.centre_cached = polygon::centre_of(rv.vertices.clone());
-        rv.into_generic()
+        rv
     }
-    fn scaled(&self, by: Vec2) -> GenericCollider {
+    fn scaled(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
         for vertex in &mut rv.vertices {
             *vertex = vertex.component_wise(by).abs();
         }
         rv.extent_cached = polygon::extent_of(rv.vertices.clone());
-        rv.into_generic()
+        rv
     }
-    fn rotated(&self, by: f32) -> GenericCollider {
+    fn rotated(&self, by: f32) -> Self {
         let mut rv = self.clone();
         for vertex in &mut rv.vertices {
             *vertex = vertex.rotated(by);
         }
         rv.normals_cached = polygon::normals_of(rv.vertices.clone());
-        rv.into_generic()
+        rv
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -964,7 +958,7 @@ impl CompoundCollider {
         ConvexCollider::convex_hull_of(vertices)
     }
 
-    pub fn pixel_perfect(data: &[Vec<Colour>]) -> Result<GenericCollider> {
+    pub fn pixel_perfect(data: &[Vec<Colour>]) -> Result<CompoundCollider> {
         let (w, h, vertices) = Self::pixel_perfect_vertices(data)?;
         let mut collider = Self::decompose(vertices);
         collider.override_normals = vec![Vec2::up(), Vec2::right(), Vec2::down(), Vec2::left()];
@@ -1023,6 +1017,8 @@ impl CompoundCollider {
         Ok((w, h, vertices))
     }
 
+    // TODO
+    #[allow(clippy::too_many_lines)]
     fn extract_pixel_outline(
         data: &[Vec<Colour>],
         w: i32,
@@ -1313,27 +1309,20 @@ impl Collider for CompoundCollider {
         GenericCollider::Compound(self)
     }
 
-    fn translated(&self, by: Vec2) -> GenericCollider {
+    fn translated(&self, by: Vec2) -> Self {
         let new_inner = self
             .inner
             .clone()
             .into_iter()
-            .map(|c| {
-                if let GenericCollider::Convex(c) = c.translated(by) {
-                    c
-                } else {
-                    unreachable!()
-                }
-            })
+            .map(|c| c.translated(by))
             .collect_vec();
         Self {
             inner: new_inner,
             override_normals: self.override_normals.clone(),
         }
-        .into_generic()
     }
 
-    fn scaled(&self, by: Vec2) -> GenericCollider {
+    fn scaled(&self, by: Vec2) -> Self {
         let centre = self.centre();
         let new_inner = self
             .inner
@@ -1352,13 +1341,12 @@ impl Collider for CompoundCollider {
             inner: new_inner,
             override_normals: self.override_normals.clone(),
         }
-        .into_generic()
     }
 
-    fn rotated(&self, _by: f32) -> GenericCollider {
+    fn rotated(&self, _by: f32) -> Self {
         // TODO: implement
         warn!("CompoundCollider::rotated(): not implemented");
-        self.as_generic()
+        self.clone()
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -1385,20 +1373,6 @@ pub enum GenericCollider {
     Compound(CompoundCollider),
 }
 
-impl Deref for GenericCollider {
-    type Target = dyn Collider;
-
-    fn deref(&self) -> &dyn Collider {
-        match self {
-            GenericCollider::Null => &NullCollider,
-            GenericCollider::Box(c) => c,
-            GenericCollider::OrientedBox(c) => c,
-            GenericCollider::Convex(c) => c,
-            GenericCollider::Compound(c) => c,
-        }
-    }
-}
-
 impl Default for GenericCollider {
     fn default() -> Self {
         Self::Null
@@ -1407,33 +1381,75 @@ impl Default for GenericCollider {
 
 impl AxisAlignedExtent for GenericCollider {
     fn aa_extent(&self) -> Vec2 {
-        self.deref().aa_extent()
+        match self {
+            GenericCollider::Null => NullCollider.aa_extent(),
+            GenericCollider::Box(c) => c.aa_extent(),
+            GenericCollider::OrientedBox(c) => c.aa_extent(),
+            GenericCollider::Convex(c) => c.aa_extent(),
+            GenericCollider::Compound(c) => c.aa_extent(),
+        }
     }
 
     fn centre(&self) -> Vec2 {
-        self.deref().centre()
+        match self {
+            GenericCollider::Null => NullCollider.centre(),
+            GenericCollider::Box(c) => c.centre(),
+            GenericCollider::OrientedBox(c) => c.centre(),
+            GenericCollider::Convex(c) => c.centre(),
+            GenericCollider::Compound(c) => c.centre(),
+        }
     }
 }
 
 impl Collider for GenericCollider {
     fn as_any(&self) -> &dyn Any {
-        self.deref().as_any()
+        match self {
+            GenericCollider::Null => NullCollider.as_any(),
+            GenericCollider::Box(c) => c.as_any(),
+            GenericCollider::OrientedBox(c) => c.as_any(),
+            GenericCollider::Convex(c) => c.as_any(),
+            GenericCollider::Compound(c) => c.as_any(),
+        }
     }
 
     fn get_type(&self) -> ColliderType {
-        self.deref().get_type()
+        match self {
+            GenericCollider::Null => NullCollider.get_type(),
+            GenericCollider::Box(c) => c.get_type(),
+            GenericCollider::OrientedBox(c) => c.get_type(),
+            GenericCollider::Convex(c) => c.get_type(),
+            GenericCollider::Compound(c) => c.get_type(),
+        }
     }
 
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
-        self.deref().collides_with_box(other)
+        match self {
+            GenericCollider::Null => NullCollider.collides_with_box(other),
+            GenericCollider::Box(c) => c.collides_with_box(other),
+            GenericCollider::OrientedBox(c) => c.collides_with_box(other),
+            GenericCollider::Convex(c) => c.collides_with_box(other),
+            GenericCollider::Compound(c) => c.collides_with_box(other),
+        }
     }
 
     fn collides_with_oriented_box(&self, other: &OrientedBoxCollider) -> Option<Vec2> {
-        self.deref().collides_with_oriented_box(other)
+        match self {
+            GenericCollider::Null => NullCollider.collides_with_oriented_box(other),
+            GenericCollider::Box(c) => c.collides_with_oriented_box(other),
+            GenericCollider::OrientedBox(c) => c.collides_with_oriented_box(other),
+            GenericCollider::Convex(c) => c.collides_with_oriented_box(other),
+            GenericCollider::Compound(c) => c.collides_with_oriented_box(other),
+        }
     }
 
     fn collides_with_convex(&self, other: &ConvexCollider) -> Option<Vec2> {
-        self.deref().collides_with_convex(other)
+        match self {
+            GenericCollider::Null => NullCollider.collides_with_convex(other),
+            GenericCollider::Box(c) => c.collides_with_convex(other),
+            GenericCollider::OrientedBox(c) => c.collides_with_convex(other),
+            GenericCollider::Convex(c) => c.collides_with_convex(other),
+            GenericCollider::Compound(c) => c.collides_with_convex(other),
+        }
     }
 
     fn into_generic(self) -> GenericCollider
@@ -1444,23 +1460,53 @@ impl Collider for GenericCollider {
     }
 
     fn translated(&self, by: Vec2) -> GenericCollider {
-        self.deref().translated(by)
+        match self {
+            GenericCollider::Null => NullCollider.translated(by).into_generic(),
+            GenericCollider::Box(c) => c.translated(by).into_generic(),
+            GenericCollider::OrientedBox(c) => c.translated(by).into_generic(),
+            GenericCollider::Convex(c) => c.translated(by).into_generic(),
+            GenericCollider::Compound(c) => c.translated(by).into_generic(),
+        }
     }
 
     fn scaled(&self, by: Vec2) -> GenericCollider {
-        self.deref().scaled(by)
+        match self {
+            GenericCollider::Null => NullCollider.scaled(by).into_generic(),
+            GenericCollider::Box(c) => c.scaled(by).into_generic(),
+            GenericCollider::OrientedBox(c) => c.scaled(by).into_generic(),
+            GenericCollider::Convex(c) => c.scaled(by).into_generic(),
+            GenericCollider::Compound(c) => c.scaled(by).into_generic(),
+        }
     }
 
     fn rotated(&self, by: f32) -> GenericCollider {
-        self.deref().rotated(by)
+        match self {
+            GenericCollider::Null => NullCollider.rotated(by).into_generic(),
+            GenericCollider::Box(c) => c.rotated(by).into_generic(),
+            GenericCollider::OrientedBox(c) => c.rotated(by).into_generic(),
+            GenericCollider::Convex(c) => c.rotated(by).into_generic(),
+            GenericCollider::Compound(c) => c.rotated(by).into_generic(),
+        }
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
-        self.deref().as_polygon()
+        match self {
+            GenericCollider::Null => NullCollider.as_polygon(),
+            GenericCollider::Box(c) => c.as_polygon(),
+            GenericCollider::OrientedBox(c) => c.as_polygon(),
+            GenericCollider::Convex(c) => c.as_polygon(),
+            GenericCollider::Compound(c) => c.as_polygon(),
+        }
     }
 
     fn as_triangles(&self) -> Vec<[Vec2; 3]> {
-        self.deref().as_triangles()
+        match self {
+            GenericCollider::Null => NullCollider.as_triangles(),
+            GenericCollider::Box(c) => c.as_triangles(),
+            GenericCollider::OrientedBox(c) => c.as_triangles(),
+            GenericCollider::Convex(c) => c.as_triangles(),
+            GenericCollider::Compound(c) => c.as_triangles(),
+        }
     }
 }
 

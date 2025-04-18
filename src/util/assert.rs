@@ -317,6 +317,7 @@ macro_rules! check_eq {
         let rhs = $rhs;
         $crate::util::assert::assert_same_type(&lhs, &rhs);
         $crate::util::assert::assert_partial_eq(&lhs);
+        #[allow(clippy::float_cmp)]
         if lhs != rhs {
             panic!(
                 "check failed: {}: {} == {}: {:?} vs. {:?}: {}",

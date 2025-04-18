@@ -531,6 +531,9 @@ impl GuiObjectTree {
         self.root.refresh_label(object_handler);
     }
 }
+
+// TODO
+#[allow(clippy::struct_excessive_bools)]
 struct GuiObjectTreeBuilder {
     label: ObjectLabel,
     object_id: ObjectId,

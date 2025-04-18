@@ -118,7 +118,7 @@ pub struct SpinningRectangle {
 
 impl SpinningRectangle {
     const VELOCITY: f32 = 2.;
-    const ANGULAR_VELOCITY: f32 = 2.;
+    // const ANGULAR_VELOCITY: f32 = 2.;
 
     pub fn create(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
         let mut rng = rand::thread_rng();
