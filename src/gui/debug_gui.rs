@@ -450,7 +450,10 @@ impl GuiObjectTree {
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyS) {
             self.select_next_sibling(object_handler);
         }
-        if !input_handler.mod_super() && input_handler.mod_shift() && input_handler.pressed(KeyCode::KeyS) {
+        if !input_handler.mod_super()
+            && input_handler.mod_shift()
+            && input_handler.pressed(KeyCode::KeyS)
+        {
             self.select_prev_sibling(object_handler);
         }
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
@@ -470,7 +473,11 @@ impl GuiObjectTree {
         self.select_nth_sibling(object_handler, -1);
     }
 
-    fn select_nth_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>, n: isize) {
+    fn select_nth_sibling<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        n: isize,
+    ) {
         let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
             .map_or(ObjectId::root(), |parent| parent.object_id);
         let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
@@ -479,8 +486,8 @@ impl GuiObjectTree {
             .collect_vec();
         if let Some(sibling_id) = gg_iter::index_of(&siblings, &self.selected_id)
             .map(|i| {
-                let ix = i as isize + n;
-                let ix = ix.rem_euclid(siblings.len() as isize);
+                let ix = isize::try_from(i).unwrap() + n;
+                let ix = ix.rem_euclid(isize::try_from(siblings.len()).unwrap());
                 siblings[ix as usize]
             })
             .or_else(|| {

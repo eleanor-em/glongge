@@ -1626,8 +1626,9 @@ impl GgInternalCollisionShape {
     }
 
     fn regenerate_wireframe(&mut self) {
-        self.wireframe = RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
-            .with_depth(VertexDepth::max_value());
+        self.wireframe =
+            RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
+                .with_depth(VertexDepth::max_value());
     }
 
     pub fn show_wireframe(&mut self) {
@@ -1730,6 +1731,7 @@ impl GgInternalCollisionShape {
 }
 
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
+    #[allow(clippy::if_not_else)] // clearer as written
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
         if self.show_wireframe {
             if !self.last_show_wireframe {
@@ -1805,9 +1807,12 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
         let collider = self.collider.clone();
         Box::new(move |ui| {
             ui.label(collider.to_string());
+            ui.add(egui::Label::new("Extent").selectable(false));
             collider
                 .aa_extent()
                 .build_gui(ui, 0.1, extent_cell_sender_x, extent_cell_sender_y);
+            ui.end_row();
+            ui.add(egui::Label::new("Centre").selectable(false));
             collider
                 .centre()
                 .build_gui(ui, 0.1, centre_cell_sender_x, centre_cell_sender_y);
