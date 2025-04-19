@@ -173,31 +173,37 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             )
         }
     }
-    pub(crate) fn get_sprite(&self, id: ObjectId) -> Result<Option<Ref<GgInternalSprite>>> {
+    pub(crate) fn get_sprite(
+        &self,
+        id: ObjectId,
+    ) -> Result<Option<(ObjectId, Ref<GgInternalSprite>)>> {
         Ok(self
             .get_object(id)?
-            .and_then(AnySceneObject::downcast::<GgInternalSprite>)
+            .and_then(|o| o.downcast::<GgInternalSprite>().map(|c| (id, c)))
             .or(self
                 .get_children(id)?
                 .iter()
-                .find_map(SceneObjectWithId::downcast::<GgInternalSprite>)))
+                .find_map(|o| self.get_sprite(o.object_id).ok().flatten())))
     }
-    pub(crate) fn get_collision_shape(&self, id: ObjectId) -> Result<Option<Ref<CollisionShape>>> {
+    pub(crate) fn get_collision_shape(
+        &self,
+        id: ObjectId,
+    ) -> Result<Option<(ObjectId, Ref<CollisionShape>)>> {
         Ok(self
             .get_object(id)?
-            .and_then(AnySceneObject::downcast::<CollisionShape>)
+            .and_then(|o| o.downcast::<CollisionShape>().map(|c| (id, c)))
             .or(self
                 .get_children(id)?
                 .iter()
-                .find_map(SceneObjectWithId::downcast::<CollisionShape>)))
+                .find_map(|o| self.get_collision_shape(o.object_id).ok().flatten())))
     }
     pub(crate) fn get_collision_shape_mut(
         &self,
         id: ObjectId,
-    ) -> Result<Option<RefMut<CollisionShape>>> {
+    ) -> Result<Option<(ObjectId, RefMut<CollisionShape>)>> {
         Ok(self
             .get_object(id)?
-            .and_then(AnySceneObject::downcast_mut::<CollisionShape>)
+            .and_then(|o| o.downcast_mut::<CollisionShape>().map(|c| (id, c)))
             .or(self
                 .get_children(id)?
                 .iter()

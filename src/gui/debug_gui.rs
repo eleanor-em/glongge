@@ -93,13 +93,13 @@ impl GuiObjectView {
         selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
-            if let Some(mut c) = object_handler.get_collision_shape_mut(self.object_id)? {
+            if let Some((_, mut c)) = object_handler.get_collision_shape_mut(self.object_id)? {
                 c.hide_wireframe();
             }
             self.absolute_cell.reset();
             self.relative_cell.reset();
             self.object_id = selected_id;
-            if let Some(mut c) = object_handler.get_collision_shape_mut(selected_id)? {
+            if let Some((_, mut c)) = object_handler.get_collision_shape_mut(selected_id)? {
                 c.show_wireframe();
             }
         }
@@ -1017,9 +1017,14 @@ impl DebugGui {
     pub fn clear_mouseovers<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         self.wireframe_mouseovers
             .drain(..)
-            .filter(|o| self.object_tree.selected_id != *o)
+            .filter(|o| {
+                object_handler
+                    .get_parent_chain(*o)
+                    .ok()
+                    .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id))
+            })
             .filter_map(|o| gg_err::log_err_then(object_handler.get_collision_shape_mut(o)))
-            .for_each(|mut c| c.hide_wireframe());
+            .for_each(|(_, mut c)| c.hide_wireframe());
     }
 
     pub fn on_mouseovers<O: ObjectTypeEnum>(
@@ -1029,13 +1034,17 @@ impl DebugGui {
     ) {
         self.wireframe_mouseovers = collisions
             .into_iter()
-            .map(|c| c.other.object_id)
-            .inspect(|&o| {
-                if let Some(mut c) = gg_err::log_err_then(object_handler.get_collision_shape_mut(o))
-                {
-                    c.show_wireframe();
+            .filter_map(|c| {
+                let result = object_handler.get_collision_shape_mut(c.other.object_id);
+                match gg_err::log_err_then(result) {
+                    Some((o, mut c)) => {
+                        c.show_wireframe();
+                        Some(o)
+                    }
+                    None => None,
                 }
             })
+            .unique()
             .collect_vec();
     }
 
