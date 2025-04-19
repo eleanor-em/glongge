@@ -329,14 +329,17 @@ pub trait Polygonal {
             })
         {
             canvas.line(start, end, 1., col);
+            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
             canvas.rect(
                 self.polygon_centre() - Vec2::one(),
                 self.polygon_centre() + Vec2::one(),
                 col,
             );
+            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
         }
         for (a, b) in vertices.into_iter().circular_tuple_windows() {
             canvas.line(a, b, 1., col);
+            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
         }
     }
 }
@@ -1600,7 +1603,7 @@ impl GgInternalCollisionShape {
             centre_cell_receiver_x: EditCellReceiver::new(),
             centre_cell_receiver_y: EditCellReceiver::new(),
         };
-        rv.regenerate_wireframe();
+        rv.regenerate_wireframe(&Transform::default());
         AnySceneObject::new(rv)
     }
 
@@ -1625,10 +1628,16 @@ impl GgInternalCollisionShape {
         &self.collider
     }
 
-    fn regenerate_wireframe(&mut self) {
-        self.wireframe =
-            RenderItem::from_raw_vertices(self.collider.as_triangles().into_flattened())
-                .with_depth(VertexDepth::max_value());
+    fn regenerate_wireframe(&mut self, absolute_transform: &Transform) {
+        self.wireframe = RenderItem::from_raw_vertices(
+            self.collider
+                .as_triangles()
+                .into_flattened()
+                .into_iter()
+                .map(|v| v - absolute_transform.centre)
+                .collect(),
+        )
+        .with_depth(VertexDepth::max_value());
     }
 
     pub fn show_wireframe(&mut self) {
@@ -1765,7 +1774,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
     fn on_gui(
         &mut self,
-        _ctx: &UpdateContext<ObjectType>,
+        ctx: &UpdateContext<ObjectType>,
         _selected: bool,
     ) -> Box<GuiInsideClosure> {
         let extent = self.collider.aa_extent();
@@ -1775,10 +1784,10 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
         );
         if next_x.is_some() || next_y.is_some() {
             self.collider = self.collider.with_extent(Vec2 {
-                x: next_x.unwrap_or(extent.x),
-                y: next_y.unwrap_or(extent.y),
+                x: next_x.unwrap_or(extent.x).max(0.1),
+                y: next_y.unwrap_or(extent.y).max(0.1),
             });
-            self.regenerate_wireframe();
+            self.regenerate_wireframe(&ctx.absolute_transform());
         }
         self.extent_cell_receiver_x.update_live(extent.x);
         self.extent_cell_receiver_y.update_live(extent.y);
@@ -1796,7 +1805,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
                 x: next_x.unwrap_or(centre.x),
                 y: next_y.unwrap_or(centre.y),
             });
-            self.regenerate_wireframe();
+            self.regenerate_wireframe(&ctx.absolute_transform());
         }
         self.centre_cell_receiver_x.update_live(centre.x);
         self.centre_cell_receiver_y.update_live(centre.y);
