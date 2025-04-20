@@ -105,6 +105,7 @@ impl ObjectId {
 pub struct AnySceneObject<ObjectType> {
     transform: Rc<RefCell<Transform>>,
     inner: Rc<RefCell<dyn SceneObject<ObjectType>>>,
+    type_id: TypeId,
 }
 
 impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
@@ -112,6 +113,7 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
         Self {
             transform: Rc::new(RefCell::new(Transform::default())),
             inner: Rc::new(RefCell::new(inner)),
+            type_id: TypeId::of::<O>(),
         }
     }
 
@@ -119,9 +121,13 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
         Self {
             transform: Rc::new(RefCell::new(Transform::default())),
             inner: rc,
+            type_id: TypeId::of::<O>(),
         }
     }
 
+    pub(crate) fn inner_type_id(&self) -> TypeId {
+        self.type_id
+    }
     pub(crate) fn name(&self) -> String {
         self.inner.borrow().name()
     }
@@ -155,6 +161,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
         }
     }
 
+    pub(crate) fn inner_type_id(&self) -> TypeId {
+        self.inner.type_id
+    }
     pub fn get_type(&self) -> ObjectType {
         self.inner.borrow().get_type()
     }

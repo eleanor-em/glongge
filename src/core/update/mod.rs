@@ -33,6 +33,7 @@ use crate::{
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use serde::{Serialize, de::DeserializeOwned};
+use std::any::TypeId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
@@ -1365,14 +1366,16 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<SceneObjectWithId<ObjectType>> {
         self.children
             .iter()
-            .find(|obj| obj.downcast::<T>().is_some())
+            .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
             .cloned()
     }
     pub fn first_child_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
         self.children.iter().find_map(DowncastRef::downcast::<T>)
     }
     pub fn first_child_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
-        self.children.iter().find_map(DowncastRef::downcast_mut::<T>)
+        self.children
+            .iter()
+            .find_map(DowncastRef::downcast_mut::<T>)
     }
     pub fn first_child_of<T: SceneObject<ObjectType>>(
         &self,
@@ -1381,7 +1384,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.all_children
             .get(&id)?
             .iter()
-            .find(|obj| obj.downcast::<T>().is_some())
+            .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
             .cloned()
     }
     pub fn first_child_of_as_ref<T: SceneObject<ObjectType>>(
@@ -1428,7 +1431,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     }
     pub fn first_other<T: SceneObject<ObjectType>>(&self) -> Option<SceneObjectWithId<ObjectType>> {
         self.others_inner()
-            .find(|(_, obj)| obj.downcast::<T>().is_some())
+            .find(|(_, obj)| obj.inner_type_id() == TypeId::of::<T>())
             .map(|(obj_id, obj)| SceneObjectWithId::new(obj_id, obj.clone()))
     }
     pub fn first_other_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
