@@ -215,19 +215,6 @@ impl InputHandler {
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {
-        // TODO: fix modifiers (InputEvent should store modifiers when created)
-        if key == KeyCode::ShiftLeft || key == KeyCode::ShiftRight {
-            self.mod_shift = state == ElementState::Pressed;
-        }
-        if key == KeyCode::AltLeft || key == KeyCode::AltRight {
-            self.mod_alt = state == ElementState::Pressed;
-        }
-        if key == KeyCode::ControlLeft || key == KeyCode::ControlRight {
-            self.mod_ctrl = state == ElementState::Pressed;
-        }
-        if key == KeyCode::SuperLeft || key == KeyCode::SuperRight {
-            self.mod_super = state == ElementState::Pressed;
-        }
         self.queued_events.push(InputEvent::Key(key, state));
     }
 
@@ -254,17 +241,19 @@ impl InputHandler {
         // TODO: drain queued_events more intelligently -- a press and release within a single
         //  frame, e.g. when update() is very far behind, should still register as a press and
         //  (on the next frame) a release.
-        for event in self.queued_events.drain(..) {
+        let events = self.queued_events.drain(..).collect::<Vec<_>>();
+        for event in events {
             match event {
                 InputEvent::Key(key, state) => {
+                    self.update_modifiers(key, state);
                     match self.data.get(&key) {
                         None => {
-                            // I don't really understand this, but some OS stuff can cause a Released state
-                            // here.
                             self.data.insert(
                                 key,
                                 match state {
                                     ElementState::Pressed => InputState::Pressed,
+                                    // I don't really understand this, but some OS stuff can cause
+                                    // a Released state here.
                                     ElementState::Released => InputState::Released,
                                 },
                             );
@@ -303,6 +292,21 @@ impl InputHandler {
                     stored_button.double_clicked = true;
                 }
             }
+        }
+    }
+
+    fn update_modifiers(&mut self, key: KeyCode, state: ElementState) {
+        if key == KeyCode::ShiftLeft || key == KeyCode::ShiftRight {
+            self.mod_shift = state == ElementState::Pressed;
+        }
+        if key == KeyCode::AltLeft || key == KeyCode::AltRight {
+            self.mod_alt = state == ElementState::Pressed;
+        }
+        if key == KeyCode::ControlLeft || key == KeyCode::ControlRight {
+            self.mod_ctrl = state == ElementState::Pressed;
+        }
+        if key == KeyCode::SuperLeft || key == KeyCode::SuperRight {
+            self.mod_super = state == ElementState::Pressed;
         }
     }
 }
