@@ -18,13 +18,13 @@ pub struct QuestionBlock {
 }
 
 impl QuestionBlock {
-    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(top_left: Vec2i) -> Self {
+        Self {
             top_left: top_left.into(),
             is_empty: false,
             initial_y: top_left.y as f32,
             ..Default::default()
-        })
+        }
     }
 }
 
@@ -38,7 +38,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         let texture = resource_handler
             .texture
             .wait_load_file("res/world_sheet.png")?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = Sprite::add_from_tileset(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -49,7 +49,7 @@ impl SceneObject<ObjectType> for QuestionBlock {
         )
         .with_frame_orders(vec![0, 1, 2, 1])
         .with_frame_time_ms(vec![600, 100, 100, 100]);
-        self.empty_sprite = Sprite::from_single_extent(
+        self.empty_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture,

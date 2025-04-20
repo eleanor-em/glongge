@@ -4,7 +4,6 @@ use std::{
     any::TypeId,
     cell::{Ref, RefCell, RefMut},
     fmt::{Debug, Formatter},
-    ops::Deref,
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -20,7 +19,7 @@ pub mod update;
 pub mod vk;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static + Send {
-    fn as_default(self) -> ConcreteSceneObject<Self>;
+    fn as_default(self) -> SceneObjectWrapper<Self>;
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
     fn gg_sprite() -> Self;
@@ -36,6 +35,7 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
         for value in Self::all_values() {
             value
                 .as_default()
+                .wrapped
                 .borrow_mut()
                 .on_preload(resource_handler)?;
         }
@@ -43,19 +43,23 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
         Ok(())
     }
     fn checked_downcast<T: SceneObject<Self> + 'static>(obj: &dyn SceneObject<Self>) -> &T {
-        let actual = obj.get_type().as_typeid();
+        let actual = obj.gg_type_enum().as_typeid();
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
                 check_ne!(
                     value.as_typeid(),
                     actual,
-                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                    format!(
+                        "attempt to downcast {:?} -> {:?}",
+                        obj.gg_type_enum(),
+                        value
+                    )
                 );
             }
             panic!(
                 "attempt to downcast {:?}: type missing? {:?}",
-                obj.get_type(),
+                obj.gg_type_enum(),
                 Self::all_values()
             );
         }
@@ -64,19 +68,23 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     fn checked_downcast_mut<T: SceneObject<Self> + 'static>(
         obj: &mut dyn SceneObject<Self>,
     ) -> &mut T {
-        let actual = obj.get_type().as_typeid();
+        let actual = obj.gg_type_enum().as_typeid();
         let expected = obj.as_any().type_id();
         if actual != expected {
             for value in Self::all_values() {
                 check_ne!(
                     value.as_typeid(),
                     actual,
-                    format!("attempt to downcast {:?} -> {:?}", obj.get_type(), value)
+                    format!(
+                        "attempt to downcast {:?} -> {:?}",
+                        obj.gg_type_enum(),
+                        value
+                    )
                 );
             }
             panic!(
                 "attempt to downcast {:?}: type missing? {:?}",
-                obj.get_type(),
+                obj.gg_type_enum(),
                 Self::all_values()
             );
         }
@@ -102,95 +110,86 @@ impl ObjectId {
 }
 
 #[derive(Clone)]
-pub struct ConcreteSceneObject<ObjectType> {
+pub struct SceneObjectWrapper<ObjectType> {
     transform: Rc<RefCell<Transform>>,
-    inner: Rc<RefCell<dyn SceneObject<ObjectType>>>,
-    type_id: TypeId,
+    pub(crate) wrapped: Rc<RefCell<dyn SceneObject<ObjectType>>>,
+    type_id: TypeId, // = TypeId::of::<O: SceneObject<ObjectType>>()
 }
 
-impl<ObjectType: ObjectTypeEnum> ConcreteSceneObject<ObjectType> {
-    pub fn new<O: SceneObject<ObjectType>>(inner: O) -> Self {
-        Self {
-            transform: Rc::new(RefCell::new(Transform::default())),
-            inner: Rc::new(RefCell::new(inner)),
-            type_id: TypeId::of::<O>(),
-        }
-    }
-
-    pub(crate) fn from_rc<O: SceneObject<ObjectType>>(rc: Rc<RefCell<O>>) -> Self {
-        Self {
-            transform: Rc::new(RefCell::new(Transform::default())),
-            inner: rc,
-            type_id: TypeId::of::<O>(),
-        }
-    }
-
-    pub(crate) fn inner_type_id(&self) -> TypeId {
+impl<ObjectType: ObjectTypeEnum> SceneObjectWrapper<ObjectType> {
+    pub(crate) fn gg_type_id(&self) -> TypeId {
         self.type_id
     }
-    pub(crate) fn name(&self) -> String {
-        self.inner.borrow().name()
-    }
-    pub fn transform(&self) -> Transform {
+    pub(crate) fn transform(&self) -> Transform {
         *self.transform.borrow()
     }
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub(crate) fn transform_mut(&self) -> RefMut<Transform> {
         self.transform.borrow_mut()
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> Deref for ConcreteSceneObject<ObjectType> {
-    type Target = Rc<RefCell<dyn SceneObject<ObjectType>>>;
+pub trait IntoSceneObjectWrapper<ObjectType: ObjectTypeEnum> {
+    fn into_wrapper(self) -> SceneObjectWrapper<ObjectType>;
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>> IntoSceneObjectWrapper<ObjectType>
+    for O
+{
+    fn into_wrapper(self) -> SceneObjectWrapper<ObjectType> {
+        SceneObjectWrapper {
+            transform: Rc::new(RefCell::new(Transform::default())),
+            wrapped: Rc::new(RefCell::new(self)),
+            type_id: TypeId::of::<O>(),
+        }
     }
 }
 
 #[derive(Clone)]
-pub struct SceneObjectWithId<ObjectType> {
+pub struct TreeSceneObject<ObjectType> {
+    pub(crate) scene_object: SceneObjectWrapper<ObjectType>,
     pub(crate) object_id: ObjectId,
-    pub(crate) inner: ConcreteSceneObject<ObjectType>,
+    parent_id: ObjectId,
 }
 
-impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
-    fn new(object_id: ObjectId, obj: ConcreteSceneObject<ObjectType>) -> Self {
-        Self {
-            object_id,
-            inner: obj,
-        }
-    }
-
+impl<ObjectType: ObjectTypeEnum> TreeSceneObject<ObjectType> {
     pub(crate) fn inner_type_id(&self) -> TypeId {
-        self.inner.type_id
+        self.scene_object.type_id
     }
-    pub fn get_type(&self) -> ObjectType {
-        self.inner.borrow().get_type()
+    /// NOTE: Borrows!
+    pub fn gg_type_enum(&self) -> ObjectType {
+        self.scene_object.wrapped.borrow().gg_type_enum()
     }
+    pub fn gg_type_id(&self) -> TypeId {
+        self.scene_object.gg_type_id()
+    }
+    /// NOTE: Borrows!
     pub fn name(&self) -> String {
-        self.inner.borrow().name()
+        self.scene_object.wrapped.borrow().name()
     }
     pub fn object_id(&self) -> ObjectId {
         self.object_id
     }
-
+    /// NOTE: Borrows!
     pub fn transform(&self) -> Transform {
-        self.inner.transform()
+        self.scene_object.transform()
     }
+    /// NOTE: Borrows!
     pub fn transform_mut(&self) -> RefMut<Transform> {
-        self.inner.transform_mut()
+        self.scene_object.transform_mut()
     }
+    /// NOTE: Borrows!
     pub fn emitting_tags(&self) -> Vec<&'static str> {
-        self.inner.borrow().emitting_tags()
+        self.scene_object.wrapped.borrow().emitting_tags()
     }
+    /// NOTE: Borrows!
     pub fn listening_tags(&self) -> Vec<&'static str> {
-        self.inner.borrow().listening_tags()
+        self.scene_object.wrapped.borrow().listening_tags()
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> Debug for SceneObjectWithId<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> Debug for TreeSceneObject<ObjectType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} ({:?})", self.object_id, self.get_type())
+        write!(f, "{:?} ({:?})", self.object_id, self.gg_type_id())
     }
 }
 
@@ -201,40 +200,45 @@ pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T>;
 }
 
-impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for ConcreteSceneObject<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWrapper<ObjectType> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
-        Ref::filter_map(self.borrow(), |obj| obj.as_any().downcast_ref::<T>()).ok()
+        Ref::filter_map(self.wrapped.borrow(), |obj| {
+            obj.as_any().downcast_ref::<T>()
+        })
+        .ok()
     }
 
     fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
-        RefMut::filter_map(self.borrow_mut(), |obj| {
+        RefMut::filter_map(self.wrapped.borrow_mut(), |obj| {
             obj.as_any_mut().downcast_mut::<T>()
         })
         .ok()
     }
 
     fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
-        Ref::map(self.borrow(), |obj| ObjectType::checked_downcast::<T>(obj))
+        Ref::map(self.wrapped.borrow(), |obj| {
+            ObjectType::checked_downcast::<T>(obj)
+        })
     }
 
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
-        RefMut::map(self.borrow_mut(), |obj| {
+        RefMut::map(self.wrapped.borrow_mut(), |obj| {
             ObjectType::checked_downcast_mut::<T>(obj)
         })
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWithId<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for TreeSceneObject<ObjectType> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
-        self.inner.downcast()
+        self.scene_object.downcast()
     }
     fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
-        self.inner.downcast_mut()
+        self.scene_object.downcast_mut()
     }
     fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
-        self.inner.checked_downcast()
+        self.scene_object.checked_downcast()
     }
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
-        self.inner.checked_downcast_mut()
+        self.scene_object.checked_downcast_mut()
     }
 }

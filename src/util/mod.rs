@@ -773,3 +773,13 @@ where
         )
     }
 }
+
+// Just to avoid having to write .into_wrapper() at the end of each line.
+#[macro_export]
+macro_rules! scene_object_vec {
+    ($($x:expr),* $(,)?) => {
+        vec![$(
+           $x.into_wrapper()
+        ),*]
+    };
+}

@@ -151,5 +151,6 @@ fn build_imports_and_decls(sep: char) -> Result<(Vec<String>, Vec<String>)> {
             }
         }
     }
+    imports.push("use glongge::core::IntoSceneObjectWrapper;".to_string());
     Ok((imports, decls))
 }

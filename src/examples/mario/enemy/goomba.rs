@@ -20,15 +20,16 @@ pub struct Goomba {
 }
 
 impl Goomba {
-    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn create(top_left: Vec2i) -> SceneObjectWrapper<ObjectType> {
+        Self {
             initial_coord: top_left,
             dead: false,
             started_death: false,
             top_left: top_left.into(),
             vel: Vec2 { x: -1., y: 0. },
             ..Default::default()
-        })
+        }
+        .into_wrapper()
     }
 }
 
@@ -51,7 +52,7 @@ impl SceneObject<ObjectType> for Goomba {
         let texture = resource_handler
             .texture
             .wait_load_file("res/enemies_sheet.png")?;
-        self.sprite = Sprite::from_tileset(
+        self.sprite = Sprite::add_from_tileset(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -61,7 +62,7 @@ impl SceneObject<ObjectType> for Goomba {
             Vec2i { x: 2, y: 0 },
         )
         .with_fixed_ms_per_frame(200);
-        self.die_sprite = Sprite::from_single_extent(
+        self.die_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -107,7 +108,7 @@ impl SceneObject<ObjectType> for Goomba {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext<ObjectType>,
-        other: SceneObjectWithId<ObjectType>,
+        other: TreeSceneObject<ObjectType>,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {

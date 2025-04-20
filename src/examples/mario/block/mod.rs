@@ -19,9 +19,9 @@ pub trait Bumpable: SceneObject<ObjectType> {
 }
 
 pub fn downcast_bumpable_mut(
-    obj: &mut SceneObjectWithId<ObjectType>,
+    obj: &mut TreeSceneObject<ObjectType>,
 ) -> Option<RefMut<dyn Bumpable>> {
-    match obj.get_type() {
+    match obj.gg_type_enum() {
         ObjectType::QuestionBlock => {
             Some(obj.checked_downcast_mut::<QuestionBlock>() as RefMut<dyn Bumpable>)
         }

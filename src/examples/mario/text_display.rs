@@ -16,11 +16,11 @@ pub struct WinTextDisplay {
 }
 
 impl WinTextDisplay {
-    pub fn create(centre: Vec2) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(centre: Vec2) -> Self {
+        Self {
             centre,
             ..Default::default()
-        })
+        }
     }
 }
 

@@ -10,11 +10,11 @@ pub struct DecorativePipe {
 }
 
 impl DecorativePipe {
-    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(top_left: Vec2i) -> Self {
+        Self {
             top_left: top_left.into(),
             ..Default::default()
-        })
+        }
     }
 }
 
@@ -28,7 +28,7 @@ impl SceneObject<ObjectType> for DecorativePipe {
         let texture = resource_handler
             .texture
             .wait_load_file("res/world_sheet.png")?;
-        self.sprite = Sprite::from_single_coords(
+        self.sprite = Sprite::add_from_single_coords(
             object_ctx,
             resource_handler,
             texture,

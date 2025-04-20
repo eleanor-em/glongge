@@ -3,6 +3,7 @@ use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
 };
+use glongge::scene_object_vec;
 use glongge::util::canvas::Canvas;
 use glongge::util::spline::InteractiveSpline;
 use rand::Rng;
@@ -16,10 +17,9 @@ impl Scene<ObjectType> for SplineScene {
         SceneName::new("spline")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
-        let spline = InteractiveSpline::create();
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+        let mut spline = InteractiveSpline::default();
         {
-            let mut spline_inner = spline.downcast_mut::<InteractiveSpline>().unwrap();
             let mut rng = rand::thread_rng();
             for point in iter::from_fn(|| {
                 Some(
@@ -29,12 +29,12 @@ impl Scene<ObjectType> for SplineScene {
             })
             .take(3)
             {
-                spline_inner.spline_mut().push(point);
+                spline.spline_mut().push(point);
             }
-            spline_inner.force_visible();
-            spline_inner.recalculate();
+            spline.force_visible();
+            spline.recalculate();
         }
 
-        vec![Canvas::create(), spline]
+        scene_object_vec![Canvas::default(), spline]
     }
 }

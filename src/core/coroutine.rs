@@ -1,4 +1,4 @@
-use crate::core::{ObjectTypeEnum, SceneObjectWithId, update::UpdateContext};
+use crate::core::{ObjectTypeEnum, TreeSceneObject, update::UpdateContext};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant},
@@ -27,7 +27,7 @@ pub enum CoroutineResponse {
 }
 
 pub type CoroutineFunc<ObjectType> = dyn FnMut(
-    SceneObjectWithId<ObjectType>,
+    TreeSceneObject<ObjectType>,
     &mut UpdateContext<ObjectType>,
     CoroutineState,
 ) -> CoroutineResponse;
@@ -43,7 +43,7 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
     pub(crate) fn new<F>(func: F) -> Self
     where
         F: FnMut(
-                SceneObjectWithId<ObjectType>,
+                TreeSceneObject<ObjectType>,
                 &mut UpdateContext<ObjectType>,
                 CoroutineState,
             ) -> CoroutineResponse
@@ -59,7 +59,7 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
 
     pub(crate) fn resume(
         mut self,
-        this: SceneObjectWithId<ObjectType>,
+        this: TreeSceneObject<ObjectType>,
         ctx: &mut UpdateContext<ObjectType>,
     ) -> Option<Self> {
         if self.wait_since.elapsed() < self.wait_duration {

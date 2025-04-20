@@ -4,7 +4,7 @@ use crate::core::scene::{GuiClosure, GuiInsideClosure};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
-use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWithId};
+use crate::core::{ObjectId, ObjectTypeEnum, TreeSceneObject};
 use crate::gui::{GuiUi, TransformCell};
 use crate::util::{NonemptyVec, gg_err, gg_float, gg_iter};
 use egui::style::ScrollStyle;
@@ -128,7 +128,7 @@ impl GuiObjectView {
                 self.clear_selection();
                 format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
             })?;
-        let name = object.name();
+        let name = object.wrapped.borrow().name();
         let gui_cmd = gui_cmds.remove(&object_id);
 
         self.absolute_cell.update_live(absolute_transform);
@@ -254,8 +254,8 @@ impl GuiObjectTreeNode {
         }
     }
 
-    fn child<O: ObjectTypeEnum>(&self, object: &SceneObjectWithId<O>) -> Self {
-        let name = object.inner.borrow().name();
+    fn child<O: ObjectTypeEnum>(&self, object: &TreeSceneObject<O>) -> Self {
+        let name = object.scene_object.wrapped.borrow().name();
         let count = *self
             .disambiguation
             .borrow_mut()
@@ -508,7 +508,7 @@ impl GuiObjectTree {
     pub fn on_add_object<O: ObjectTypeEnum>(
         &mut self,
         object_handler: &ObjectHandler<O>,
-        object: &SceneObjectWithId<O>,
+        object: &TreeSceneObject<O>,
     ) {
         let mut tree = &mut self.root;
         match object_handler.get_parent_chain(object.object_id) {

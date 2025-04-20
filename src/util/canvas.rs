@@ -71,7 +71,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
     fn name(&self) -> String {
         "Canvas".to_string()
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_canvas()
     }
 

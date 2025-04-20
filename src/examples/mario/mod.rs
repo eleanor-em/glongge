@@ -22,6 +22,7 @@ use block::underground_brick::*;
 use enemy::goomba::*;
 use glongge::core::builtin::{Container, StaticSprite};
 use glongge::core::render::VertexDepth;
+use glongge::scene_object_vec;
 use glongge::util::canvas::Canvas;
 use glongge::util::tileset::TilesetBuilder;
 use player::*;
@@ -66,45 +67,40 @@ impl AliveEnemyMap {
     }
 }
 
-fn create_hill1(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
+fn create_hill1(top_left: impl Into<Vec2>) -> StaticSprite {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 112, y: 716 }, Vec2i { x: 192, y: 764 })
         .with_depth(VertexDepth::Back(0))
-        .named("Hill1")
-        .build()
+        .with_name("Hill1")
 }
-fn create_hill2(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
+fn create_hill2(top_left: impl Into<Vec2>) -> StaticSprite {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 112, y: 692 }, Vec2i { x: 192, y: 708 })
         .with_depth(VertexDepth::Back(0))
-        .named("Hill2")
-        .build()
+        .with_name("Hill2")
 }
-fn create_hill3(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
+fn create_hill3(top_left: impl Into<Vec2>) -> StaticSprite {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 200, y: 732 }, Vec2i { x: 248, y: 764 })
         .with_depth(VertexDepth::Back(0))
-        .named("Hill3")
-        .build()
+        .with_name("Hill3")
 }
-fn create_hill4(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
+fn create_hill4(top_left: impl Into<Vec2>) -> StaticSprite {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 200, y: 692 }, Vec2i { x: 248, y: 708 })
         .with_depth(VertexDepth::Back(0))
-        .named("Hill4")
-        .build()
+        .with_name("Hill4")
 }
-fn create_castle(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
+fn create_castle(top_left: impl Into<Vec2>) -> StaticSprite {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 24, y: 684 }, Vec2i { x: 104, y: 764 })
         .with_depth(VertexDepth::Back(0))
-        .named("Castle")
-        .build()
+        .with_name("Castle")
 }
 
 #[derive(Copy, Clone)]
@@ -119,7 +115,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
         bincode::serialize(&AliveEnemyMap::default()).unwrap()
     }
 
-    fn create_objects(&self, entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
+    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
         let mut ts = TilesetBuilder::new("res/world_sheet.png", 16).named("Doughnut");
         let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);
         let crumble = ts.create_tile_collision([0, 50], &vec![BLOCK_COLLISION_TAG]);
@@ -152,19 +148,19 @@ impl Scene<ObjectType> for MarioOverworldScene {
             floor_ts.insert(&floor, [tile_x + 155, 25 - (tile_y + 1)]);
         });
         let floor_ts = floor_ts.build();
-        vec![
-            Canvas::create(),
+        scene_object_vec![
+            Canvas::default(),
             ts,
             floor_ts,
             match entrance_id {
-                1 => Player::create(
+                1 => Player::new(
                     Vec2i {
                         x: 164 * 16,
                         y: 384 - 2 * 16 - 8,
                     },
                     true,
                 ),
-                _ => Player::create(
+                _ => Player::new(
                     Vec2i {
                         x: 8 * 16 + 8,
                         y: 384 - 3 * 16 + 8,
@@ -172,9 +168,9 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     false,
                 ),
             },
-            Container::create(
+            Container::new(
                 "background",
-                vec![
+                scene_object_vec![
                     create_hill1(Vec2i {
                         x: 16,
                         y: 384 - 2 * 16 - 48,
@@ -209,38 +205,38 @@ impl Scene<ObjectType> for MarioOverworldScene {
                     }),
                 ],
             ),
-            Container::create(
+            Container::new(
                 "level",
-                vec![
-                    QuestionBlock::create(Vec2i {
+                scene_object_vec![
+                    QuestionBlock::new(Vec2i {
                         x: 17 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 21 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 22 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 23 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 24 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 25 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 23 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 29 * 16,
                             y: 384 - 4 * 16,
@@ -248,7 +244,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                         Vec2::up(),
                         None,
                     ),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 39 * 16,
                             y: 384 - 5 * 16,
@@ -256,7 +252,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                         Vec2::up(),
                         None,
                     ),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 47 * 16,
                             y: 384 - 6 * 16,
@@ -264,7 +260,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                         Vec2::up(),
                         None,
                     ),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 58 * 16,
                             y: 384 - 6 * 16,
@@ -272,479 +268,479 @@ impl Scene<ObjectType> for MarioOverworldScene {
                         Vec2::up(),
                         Some(MarioUndergroundScene.at_entrance(0)),
                     ),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 181 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 182 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 183 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 184 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 185 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 182 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 183 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 184 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 185 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 183 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 184 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 185 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 184 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 185 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 185 * 16,
                         y: 384 - 7 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 7 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 7 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 7 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 7 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 186 * 16,
                         y: 384 - 8 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 8 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 8 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 8 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 187 * 16,
                         y: 384 - 9 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 9 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 9 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 188 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 189 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 198 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Flagpole::create(Vec2i {
+                    Flagpole::new(Vec2i {
                         x: 198 * 16,
                         y: 384 - 13 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 92 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 93 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 94 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 95 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 95 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 101 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 102 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 107 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 110 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 110 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 113 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 119 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 122 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 123 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 124 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 128 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 129 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 130 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 131 * 16,
                         y: 384 - 10 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 129 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 130 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 134 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 135 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 136 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 137 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 140 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 141 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 142 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 143 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 135 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 136 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 137 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 140 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 141 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 142 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 136 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 137 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 140 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 141 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 137 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 140 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 148 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 149 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 150 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 151 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 152 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 149 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 150 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 151 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 152 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 150 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 151 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 152 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 151 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 152 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 155 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 156 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 157 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 158 * 16,
                         y: 384 - 3 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 155 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 156 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 157 * 16,
                         y: 384 - 4 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 155 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 156 * 16,
                         y: 384 - 5 * 16,
                     }),
-                    Block::create(Vec2i {
+                    Block::new(Vec2i {
                         x: 155 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 168 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 169 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 170 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 171 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 78 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    QuestionBlock::create(Vec2i {
+                    QuestionBlock::new(Vec2i {
                         x: 79 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: 80 * 16,
                         y: 384 - 6 * 16,
                     }),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 179 * 16,
                             y: 384 - 4 * 16,
@@ -752,7 +748,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
                         Vec2::up(),
                         None,
                     ),
-                    Pipe::create(
+                    Pipe::new(
                         Vec2i {
                             x: 163 * 16,
                             y: 384 - 4 * 16,
@@ -763,14 +759,15 @@ impl Scene<ObjectType> for MarioOverworldScene {
                 ]
                 .into_iter()
                 .chain(Vec2i::range_from_zero([8, 1]).map(|(tile_x, _tile_y)| {
-                    Brick::create(Vec2i {
+                    Brick::new(Vec2i {
                         x: (tile_x + 81) * 16,
                         y: 384 - 10 * 16,
                     })
+                    .into_wrapper()
                 }))
                 .collect_vec(),
             ),
-            Container::create(
+            Container::new(
                 "enemy",
                 vec![
                     Goomba::create(Vec2i {
@@ -818,20 +815,20 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         SceneName::new("mario-underground")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
-        vec![
-            Canvas::create(),
-            Player::create(
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+        scene_object_vec![
+            Canvas::default(),
+            Player::new(
                 Vec2i {
                     x: 2 * 16 + 8,
                     y: 8,
                 },
                 false,
             ),
-            Container::create(
+            Container::new(
                 "level",
-                vec![
-                    Pipe::create(
+                scene_object_vec![
+                    Pipe::new(
                         Vec2i {
                             x: 14 * 16,
                             y: 384 - 4 * 16,
@@ -839,32 +836,36 @@ impl Scene<ObjectType> for MarioUndergroundScene {
                         Vec2::left(),
                         Some(MarioOverworldScene.at_entrance(1)),
                     ),
-                    DecorativePipe::create(Vec2i { x: 16 * 16, y: 0 }),
+                    DecorativePipe::new(Vec2i { x: 16 * 16, y: 0 }),
                 ]
                 .into_iter()
                 .chain(Vec2i::range_from_zero([1, 25]).map(|(tile_x, tile_y)| {
-                    UndergroundFloor::create(Vec2i {
+                    UndergroundFloor::new(Vec2i {
                         x: tile_x * 16,
                         y: tile_y * 16,
                     })
+                    .into_wrapper()
                 }))
                 .chain(Vec2i::range_from_zero([17, 3]).map(|(tile_x, tile_y)| {
-                    UndergroundFloor::create(Vec2i {
+                    UndergroundFloor::new(Vec2i {
                         x: (tile_x + 1) * 16,
                         y: 400 - (tile_y + 1) * 16,
                     })
+                    .into_wrapper()
                 }))
                 .chain(Vec2i::range_from_zero([7, 3]).map(|(tile_x, tile_y)| {
-                    UndergroundBrick::create(Vec2i {
+                    UndergroundBrick::new(Vec2i {
                         x: (tile_x + 4) * 16,
                         y: 384 - (tile_y + 3) * 16,
                     })
+                    .into_wrapper()
                 }))
                 .chain(Vec2i::range_from_zero([7, 1]).map(|(tile_x, _tile_y)| {
-                    UndergroundBrick::create(Vec2i {
+                    UndergroundBrick::new(Vec2i {
                         x: (tile_x + 4) * 16,
                         y: 0,
                     })
+                    .into_wrapper()
                 }))
                 .collect_vec(),
             ),

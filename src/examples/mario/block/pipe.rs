@@ -16,17 +16,13 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub fn create(
-        top_left: Vec2i,
-        orientation: Vec2,
-        destination: Option<SceneDestination>,
-    ) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(top_left: Vec2i, orientation: Vec2, destination: Option<SceneDestination>) -> Self {
+        Self {
             top_left: top_left.into(),
             orientation,
             destination,
             ..Default::default()
-        })
+        }
     }
 
     pub fn orientation(&self) -> Vec2 {
@@ -48,7 +44,7 @@ impl SceneObject<ObjectType> for Pipe {
             .texture
             .wait_load_file("res/world_sheet.png")?;
         self.sprite = if self.orientation.x.is_zero() {
-            Sprite::from_single_coords(
+            Sprite::add_from_single_coords(
                 object_ctx,
                 resource_handler,
                 texture,
@@ -56,7 +52,7 @@ impl SceneObject<ObjectType> for Pipe {
                 Vec2i { x: 144, y: 676 },
             )
         } else {
-            Sprite::from_single_coords(
+            Sprite::add_from_single_coords(
                 object_ctx,
                 resource_handler,
                 texture,

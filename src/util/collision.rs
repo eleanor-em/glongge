@@ -1582,11 +1582,11 @@ pub struct GgInternalCollisionShape {
 }
 
 impl GgInternalCollisionShape {
-    pub fn from_collider<C: Collider, O: ObjectTypeEnum>(
+    pub fn from_collider<C: Collider>(
         collider: C,
         emitting_tags: &[&'static str],
         listening_tags: &[&'static str],
-    ) -> ConcreteSceneObject<O> {
+    ) -> Self {
         let mut rv = Self {
             last_transform: Transform::default(),
             collider: collider.into_generic(),
@@ -1601,19 +1601,19 @@ impl GgInternalCollisionShape {
             centre_cell_receiver_y: EditCellReceiver::new(),
         };
         rv.regenerate_wireframe(&Transform::default());
-        ConcreteSceneObject::new(rv)
+        rv
     }
 
     pub fn from_object<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>, C: Collider>(
         object: &O,
         collider: C,
-    ) -> ConcreteSceneObject<ObjectType> {
+    ) -> Self {
         Self::from_collider(collider, &object.emitting_tags(), &object.listening_tags())
     }
     pub fn from_object_sprite<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>>(
         object: &O,
         sprite: &Sprite,
-    ) -> ConcreteSceneObject<ObjectType> {
+    ) -> Self {
         Self::from_collider(
             sprite.as_box_collider(),
             &object.emitting_tags(),
@@ -1703,7 +1703,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         self.update_transform(ctx.absolute_transform());
     }
 
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_collider()
     }
 

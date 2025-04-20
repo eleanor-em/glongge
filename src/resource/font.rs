@@ -93,7 +93,7 @@ impl Font {
         let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        Ok(Sprite::from_texture(
+        Ok(Sprite::add_from_texture(
             object_ctx,
             resource_handler,
             resource_handler.texture.wait_load_reader_rgba(

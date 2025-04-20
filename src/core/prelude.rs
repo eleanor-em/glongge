@@ -11,7 +11,7 @@ pub use tracing::{error, info, warn};
 #[allow(unused_imports)]
 pub use crate::{
     core::{
-        ConcreteSceneObject, DowncastRef, SceneObjectWithId,
+        DowncastRef, IntoSceneObjectWrapper, SceneObjectWrapper, TreeSceneObject,
         config::*,
         coroutine::{CoroutineId, CoroutineResponse, CoroutineState},
         input::KeyCode,

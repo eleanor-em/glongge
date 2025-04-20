@@ -210,7 +210,7 @@ impl TilesetBuilder {
         rv
     }
 
-    pub fn build<O: ObjectTypeEnum>(self) -> ConcreteSceneObject<O> {
+    pub fn build<O: ObjectTypeEnum>(self) -> Container<O> {
         let texture_areas: BTreeMap<_, _> = self
             .all_tiles
             .iter()
@@ -264,7 +264,7 @@ impl TilesetBuilder {
                     .reduce(CompoundCollider::combined)
                     .map(CompoundCollider::into_generic)
                     .unwrap_or_default();
-                ConcreteSceneObject::new(GgInternalTileset {
+                GgInternalTileset {
                     tile_size: self.tile_size,
                     filename: self.filename.clone(),
                     texture: Texture::default(),
@@ -282,10 +282,11 @@ impl TilesetBuilder {
                         .collect_vec(),
                     collider,
                     emitting_tags,
-                })
+                }
+                .into_wrapper()
             })
             .collect_vec();
-        Container::create(self.name, colliders)
+        Container::new(self.name, colliders)
     }
 }
 
@@ -331,7 +332,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
     fn name(&self) -> String {
         "TilesetSegment".to_string()
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_tileset()
     }
 

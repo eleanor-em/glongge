@@ -17,12 +17,12 @@ pub struct Brick {
 }
 
 impl Brick {
-    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(top_left: Vec2i) -> Self {
+        Self {
             top_left: top_left.into(),
             initial_y: top_left.y as f32,
             ..Default::default()
-        })
+        }
     }
 }
 
@@ -36,7 +36,7 @@ impl SceneObject<ObjectType> for Brick {
         let texture = resource_handler
             .texture
             .wait_load_file("res/world_sheet.png")?;
-        self.sprite = Sprite::from_single_extent(
+        self.sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture,

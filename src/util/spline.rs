@@ -132,7 +132,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
     fn name(&self) -> String {
         "InteractiveSpline".to_string()
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_interactive_spline()
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {

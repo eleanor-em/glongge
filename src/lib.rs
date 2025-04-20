@@ -1,7 +1,3 @@
-// due to be stabilised soon(tm)
-// https://github.com/rust-lang/rust/issues/65991
-// #![feature(trait_upcasting)]
-
 pub use bincode;
 
 pub mod core;

@@ -105,8 +105,8 @@ impl Player {
     const SKID_TURNAROUND: f32 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f32 = from_nes(4, 8, 0, 0);
 
-    pub fn create(centre: Vec2i, exiting_pipe: bool) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(centre: Vec2i, exiting_pipe: bool) -> Self {
+        Self {
             centre: centre.into(),
             // Prevents player getting "stuck" on ground when level starts in air.
             last_ground_state: PlayerState::Walking,
@@ -116,7 +116,7 @@ impl Player {
                 PlayerState::Idle
             },
             ..Default::default()
-        })
+        }
     }
 
     fn initial_vspeed(&self) -> f32 {
@@ -546,7 +546,7 @@ impl SceneObject<ObjectType> for Player {
         let texture = resource_handler
             .texture
             .wait_load_file("res/mario_sheet.png")?;
-        self.idle_sprite = Sprite::from_single_extent(
+        self.idle_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -554,7 +554,7 @@ impl SceneObject<ObjectType> for Player {
             Vec2i { x: 16, y: 16 },
         )
         .with_name("Sprite[Idle]");
-        self.walk_sprite = Sprite::from_tileset(
+        self.walk_sprite = Sprite::add_from_tileset(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -566,7 +566,7 @@ impl SceneObject<ObjectType> for Player {
         .with_fixed_ms_per_frame(110)
         .with_hidden()
         .with_name("Sprite[Walk]");
-        self.run_sprite = Sprite::from_tileset(
+        self.run_sprite = Sprite::add_from_tileset(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -578,7 +578,7 @@ impl SceneObject<ObjectType> for Player {
         .with_fixed_ms_per_frame(60)
         .with_hidden()
         .with_name("Sprite[Run]");
-        self.skid_sprite = Sprite::from_single_extent(
+        self.skid_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -587,7 +587,7 @@ impl SceneObject<ObjectType> for Player {
         )
         .with_hidden()
         .with_name("Sprite[Skid]");
-        self.fall_sprite = Sprite::from_single_extent(
+        self.fall_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -596,7 +596,7 @@ impl SceneObject<ObjectType> for Player {
         )
         .with_hidden()
         .with_name("Sprite[Fall]");
-        self.die_sprite = Sprite::from_single_extent(
+        self.die_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -605,7 +605,7 @@ impl SceneObject<ObjectType> for Player {
         )
         .with_hidden()
         .with_name("Sprite[Die]");
-        self.flagpole_sprite = Sprite::from_single_extent(
+        self.flagpole_sprite = Sprite::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture.clone(),
@@ -775,7 +775,7 @@ impl SceneObject<ObjectType> for Player {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext<ObjectType>,
-        mut other: SceneObjectWithId<ObjectType>,
+        mut other: TreeSceneObject<ObjectType>,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !self.has_control() {
@@ -796,7 +796,7 @@ impl SceneObject<ObjectType> for Player {
                 }
             }
         }
-        if other.get_type() == ObjectType::Flagpole {
+        if other.gg_type_enum() == ObjectType::Flagpole {
             self.state = PlayerState::RidingFlagpole;
             self.music.stop();
             self.flagpole_sound.play();
@@ -812,7 +812,7 @@ impl SceneObject<ObjectType> for Player {
                         this.v_speed = 0.;
                         this.centre += collisions.first().mtv;
                         ctx.object_mut()
-                            .add_child(WinTextDisplay::create(Vec2 { x: 8., y: -200. }));
+                            .add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
                         this.clear_sound.play();
                         CoroutineResponse::Complete
                     } else {

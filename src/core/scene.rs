@@ -4,7 +4,7 @@ use crate::gui::{GuiContext, GuiUi};
 use crate::shader::ensure_shaders_locked;
 use crate::{
     core::{
-        ConcreteSceneObject, ObjectTypeEnum, SceneObjectWithId,
+        ObjectTypeEnum, SceneObjectWrapper, TreeSceneObject,
         input::InputHandler,
         prelude::*,
         render::{RenderDataChannel, RenderItem, ShaderExec},
@@ -126,7 +126,7 @@ impl SceneDestination {
 
 pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     fn name(&self) -> SceneName;
-    fn create_objects(&self, entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>>;
+    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>>;
 
     #[allow(unused_variables)]
     fn load(&mut self, data: &[u8]) -> Result<()> {
@@ -228,20 +228,12 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
 }
 
 pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
-    fn get_type(&self) -> ObjectType;
+    fn gg_type_enum(&self) -> ObjectType;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn name(&self) -> String {
-        format!("{:?}", self.get_type())
-    }
-
-    #[allow(clippy::new_ret_no_self)]
-    fn create() -> ConcreteSceneObject<ObjectType>
-    where
-        Self: Default,
-    {
-        ConcreteSceneObject::new(Self::default())
+        format!("{:?}", self.gg_type_enum())
     }
 
     #[allow(unused_variables)]
@@ -271,7 +263,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext<ObjectType>,
-        other: SceneObjectWithId<ObjectType>,
+        other: TreeSceneObject<ObjectType>,
         mtv: Vec2,
     ) -> CollisionResponse {
         CollisionResponse::Done
@@ -301,6 +293,20 @@ pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;
 pub type GuiInsideClosure = dyn FnOnce(&mut GuiUi) + Send;
 pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiInsideClosure>;
+}
+
+impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for Box<dyn SceneObject<ObjectType>> {
+    fn gg_type_enum(&self) -> ObjectType {
+        self.as_ref().gg_type_enum()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self.as_ref().as_any()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self.as_mut().as_any_mut()
+    }
 }
 
 impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>

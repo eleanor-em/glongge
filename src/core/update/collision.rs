@@ -1,7 +1,4 @@
-use crate::core::{
-    ConcreteSceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId, prelude::*,
-    update::PendingAddObject,
-};
+use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWrapper, TreeSceneObject, prelude::*};
 use crate::util::{
     UnorderedPair,
     collision::{Collider, GgInternalCollisionShape},
@@ -20,13 +17,13 @@ pub enum CollisionResponse {
 
 #[derive(Debug)]
 pub(crate) struct CollisionNotification<ObjectType: ObjectTypeEnum> {
-    pub(crate) this: SceneObjectWithId<ObjectType>,
-    pub(crate) other: SceneObjectWithId<ObjectType>,
+    pub(crate) this: TreeSceneObject<ObjectType>,
+    pub(crate) other: TreeSceneObject<ObjectType>,
     pub(crate) mtv: Vec2,
 }
 
 pub struct Collision<ObjectType: ObjectTypeEnum> {
-    pub other: SceneObjectWithId<ObjectType>,
+    pub other: TreeSceneObject<ObjectType>,
     pub mtv: Vec2,
 }
 
@@ -58,25 +55,26 @@ impl CollisionHandler {
     }
     pub(crate) fn add_objects<'a, ObjectType: ObjectTypeEnum, I>(&'a mut self, added_objects: I)
     where
-        I: Iterator<Item = &'a (ObjectId, PendingAddObject<ObjectType>)>,
+        I: Iterator<Item = &'a TreeSceneObject<ObjectType>>,
     {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
-        for (id, obj) in added_objects
-            .filter(|(_, obj)| obj.inner.borrow().get_type() == ObjectTypeEnum::gg_collider())
-        {
-            let obj = obj.inner.borrow();
+        for obj in added_objects.filter(|obj| {
+            obj.scene_object.wrapped.borrow().gg_type_enum() == ObjectTypeEnum::gg_collider()
+        }) {
+            let id = obj.object_id();
+            let obj = obj.scene_object.wrapped.borrow();
             for tag in obj.emitting_tags() {
                 new_object_ids_by_emitting_tag
                     .entry(tag)
                     .or_default()
-                    .push(*id);
+                    .push(id);
             }
             for tag in obj.listening_tags() {
                 new_object_ids_by_listening_tag
                     .entry(tag)
                     .or_default()
-                    .push(*id);
+                    .push(id);
             }
         }
 
@@ -136,7 +134,7 @@ impl CollisionHandler {
     pub(crate) fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
     ) -> Vec<CollisionNotification<ObjectType>> {
         let collisions = self.get_collisions_inner(objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
@@ -150,7 +148,7 @@ impl CollisionHandler {
 
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
-        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions
             .iter()
@@ -166,7 +164,7 @@ impl CollisionHandler {
 
     fn process_collision_inner<ObjectType: ObjectTypeEnum>(
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
         rv: &mut Vec<CollisionNotification<ObjectType>>,
         ids: &UnorderedPair<ObjectId>,
         mtv: Vec2,
@@ -178,14 +176,22 @@ impl CollisionHandler {
             .get(&ids.snd())
             .with_context(|| format!("missing object_id in parents: {:?}", ids.snd()))?;
 
-        let this = SceneObjectWithId::new(*this_id, objects[this_id].clone());
+        let this = TreeSceneObject {
+            object_id: *this_id,
+            parent_id: *parents.get(this_id).unwrap_or(&ObjectId::root()),
+            scene_object: objects[this_id].clone(),
+        };
         let (this_listening, this_emitting) = {
-            let this = this.inner.borrow();
+            let this = this.scene_object.wrapped.borrow();
             (this.listening_tags(), this.emitting_tags())
         };
-        let other = SceneObjectWithId::new(*other_id, objects[other_id].clone());
+        let other = TreeSceneObject {
+            object_id: *other_id,
+            parent_id: *parents.get(other_id).unwrap_or(&ObjectId::root()),
+            scene_object: objects[other_id].clone(),
+        };
         let (other_listening, other_emitting) = {
-            let other = other.inner.borrow();
+            let other = other.scene_object.wrapped.borrow();
             (other.listening_tags(), other.emitting_tags())
         };
         if !this_listening

@@ -1,5 +1,5 @@
 use crate::core::prelude::*;
-use crate::core::{ConcreteSceneObject, ObjectTypeEnum};
+use crate::core::{ObjectTypeEnum, SceneObjectWrapper};
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -11,18 +11,15 @@ use std::path::Path;
 #[register_scene_object]
 pub struct GgInternalContainer<ObjectType> {
     label: String,
-    children: Vec<ConcreteSceneObject<ObjectType>>,
+    children: Vec<SceneObjectWrapper<ObjectType>>,
 }
 
 impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
-    pub fn create(
-        label: impl AsRef<str>,
-        children: Vec<ConcreteSceneObject<ObjectType>>,
-    ) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(Self {
+    pub fn new(label: impl AsRef<str>, children: Vec<SceneObjectWrapper<ObjectType>>) -> Self {
+        Self {
             label: label.as_ref().to_string(),
             children,
-        })
+        }
     }
 }
 
@@ -31,7 +28,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer
     fn name(&self) -> String {
         self.label.clone()
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_container()
     }
 
@@ -76,7 +73,7 @@ impl GgInternalStaticSprite {
         }
     }
     #[must_use]
-    pub fn named(mut self, name: impl AsRef<str>) -> Self {
+    pub fn with_name(mut self, name: impl AsRef<str>) -> Self {
         self.name = Some(name.as_ref().to_string());
         self
     }
@@ -114,19 +111,16 @@ impl GgInternalStaticSprite {
         self.depth = Some(depth);
         self
     }
-    pub fn build<ObjectType: ObjectTypeEnum>(self) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(self)
-    }
     pub fn build_colliding<ObjectType: ObjectTypeEnum>(
         self,
         emitting_tags: Vec<&'static str>,
         listening_tags: Vec<&'static str>,
-    ) -> ConcreteSceneObject<ObjectType> {
-        ConcreteSceneObject::new(GgInternalCollidingSprite {
+    ) -> GgInternalCollidingSprite {
+        GgInternalCollidingSprite {
             inner: self,
             emitting_tags,
             listening_tags,
-        })
+        }
     }
 }
 
@@ -144,7 +138,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
             "StaticSprite".to_string()
         }
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_static_sprite()
     }
 
@@ -154,7 +148,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let sprite = if let Some(tex_segment) = self.tex_segment {
-            Sprite::from_single_coords(
+            Sprite::add_from_single_coords(
                 object_ctx,
                 resource_handler,
                 resource_handler
@@ -164,7 +158,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
                 tex_segment.bottom_right().as_vec2int_lossy(),
             )
         } else {
-            Sprite::from_texture(
+            Sprite::add_from_texture(
                 object_ctx,
                 resource_handler,
                 resource_handler
@@ -200,7 +194,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalColliding
         <GgInternalStaticSprite as SceneObject<ObjectType>>::name(&self.inner)
             .replace("Static", "Colliding")
     }
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_colliding_sprite()
     }
 

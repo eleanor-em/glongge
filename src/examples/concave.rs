@@ -15,20 +15,20 @@ impl Scene<ObjectType> for ConcaveScene {
         SceneName::new("concave")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
         vec![
-            Canvas::create(),
-            ConvexHull::create(),
-            Compound::create(),
-            TrivialDecomposed::create(),
-            Decomposed::create(),
-            DecomposedCorner::create(),
-            DecomposedTee::create(),
-            DecomposedU::create(),
-            DecomposedBigU::create(),
-            DecomposedCompound::create(),
-            PixelPerfect::create(),
-            PixelPerfectConvex::create(),
+            Canvas::default().into_wrapper(),
+            ConvexHull::default().into_wrapper(),
+            Compound::default().into_wrapper(),
+            TrivialDecomposed::default().into_wrapper(),
+            Decomposed::default().into_wrapper(),
+            DecomposedCorner::default().into_wrapper(),
+            DecomposedTee::default().into_wrapper(),
+            DecomposedU::default().into_wrapper(),
+            DecomposedBigU::default().into_wrapper(),
+            DecomposedCompound::default().into_wrapper(),
+            PixelPerfect::default().into_wrapper(),
+            PixelPerfectConvex::default().into_wrapper(),
         ]
     }
 }
@@ -39,7 +39,7 @@ pub struct ConvexHull {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for ConvexHull {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let collider = CollisionShape::from_collider(
+        let mut collider = CollisionShape::from_collider(
             ConvexCollider::convex_hull_of(vec![
                 Vec2 { x: -16., y: -16. } * 2,
                 Vec2 { x: 16., y: -18. } * 2,
@@ -52,9 +52,7 @@ impl SceneObject<ObjectType> for ConvexHull {
             &[],
         );
         ctx.object().transform_mut().centre = [100., 100.].into();
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
     }
 }
@@ -65,7 +63,7 @@ pub struct Compound {}
 #[partially_derive_scene_object]
 impl SceneObject<ObjectType> for Compound {
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        let collider = CollisionShape::from_collider(
+        let mut collider = CollisionShape::from_collider(
             CompoundCollider::new(vec![
                 BoxCollider::from_top_left(Vec2 { x: 0., y: 8. }, 32 * Vec2::one()).as_convex(),
                 ConvexCollider::convex_hull_of(vec![
@@ -84,9 +82,7 @@ impl SceneObject<ObjectType> for Compound {
             &[],
             &[],
         );
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [200., 100.].into();
     }
@@ -155,10 +151,8 @@ impl SceneObject<ObjectType> for TrivialDecomposed {
             .unwrap()
             .vertices(),
         );
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [100., 200.].into();
     }
@@ -178,10 +172,8 @@ impl SceneObject<ObjectType> for Decomposed {
             Vec2 { x: -8., y: 14. } * 2,
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [300., 100.].into();
     }
@@ -202,10 +194,8 @@ impl SceneObject<ObjectType> for DecomposedCorner {
             Vec2 { x: 2., y: 2. } * size,
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [200., 300.].into();
     }
@@ -228,10 +218,8 @@ impl SceneObject<ObjectType> for DecomposedTee {
             Vec2 { x: 3., y: 1. } * size,
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [200., 200.].into();
     }
@@ -254,10 +242,8 @@ impl SceneObject<ObjectType> for DecomposedU {
             Vec2 { x: 0., y: 2. } * size,
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [300., 200.].into();
     }
@@ -280,10 +266,8 @@ impl SceneObject<ObjectType> for DecomposedCompound {
             Vec2 { x: 0., y: 40. },
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [200., 250.].into();
     }
@@ -306,10 +290,8 @@ impl SceneObject<ObjectType> for DecomposedBigU {
             Vec2 { x: 0., y: 2. } * size,
         ]);
         println!("pieces: {}", compound.len());
-        let collider = CollisionShape::from_collider(compound, &[], &[]);
-        collider
-            .checked_downcast_mut::<CollisionShape>()
-            .show_wireframe();
+        let mut collider = CollisionShape::from_collider(compound, &[], &[]);
+        collider.show_wireframe();
         ctx.object_mut().add_child(collider);
         ctx.object().transform_mut().centre = [300., 300.].into();
     }

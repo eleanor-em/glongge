@@ -3,7 +3,7 @@ use crate::core::update::RenderContext;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
 use crate::{
-    core::{ConcreteSceneObject, ObjectTypeEnum, prelude::*},
+    core::{ObjectTypeEnum, prelude::*},
     resource::texture::{MaterialId, Texture},
 };
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -38,7 +38,7 @@ pub struct GgInternalSprite {
 }
 
 impl GgInternalSprite {
-    fn from_textures<ObjectType: ObjectTypeEnum>(
+    fn add_from_textures<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         textures: Vec<Texture>,
@@ -59,6 +59,8 @@ impl GgInternalSprite {
             .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
             .collect_vec();
         let material_indices = (0..areas.len()).collect_vec();
+        // We do some shenanigans here to allow us to get an Rc<RefCell<GgInternalSprite>>,
+        // such that we don't have to depend on ObjectType in Sprite.
         let inner = Rc::new(RefCell::new(Self {
             materials,
             material_indices,
@@ -71,7 +73,7 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child(ConcreteSceneObject::from_rc(inner.clone()));
+        object_ctx.add_child_from_rc(inner.clone());
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {
             inner,
@@ -80,7 +82,7 @@ impl GgInternalSprite {
         }
     }
 
-    fn from_tileset<ObjectType: ObjectTypeEnum>(
+    fn add_from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
@@ -118,7 +120,7 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child(ConcreteSceneObject::from_rc(inner.clone()));
+        object_ctx.add_child_from_rc(inner.clone());
         let extent = tile_size.into();
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {
@@ -148,7 +150,7 @@ impl GgInternalSprite {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
-    fn get_type(&self) -> ObjectType {
+    fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_sprite()
     }
     fn name(&self) -> String {
@@ -248,29 +250,29 @@ impl Default for Sprite {
 }
 
 impl Sprite {
-    pub fn from_file<ObjectType: ObjectTypeEnum>(
+    pub fn add_from_file<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         filename: impl AsRef<str>,
     ) -> Result<Sprite> {
-        Ok(GgInternalSprite::from_textures(
+        Ok(GgInternalSprite::add_from_textures(
             object_ctx,
             resource_handler,
             vec![resource_handler.texture.wait_load_file(filename)?],
         ))
     }
-    pub fn from_file_animated<ObjectType: ObjectTypeEnum>(
+    pub fn add_from_file_animated<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         filename: impl AsRef<str>,
     ) -> Result<Sprite> {
-        Ok(GgInternalSprite::from_textures(
+        Ok(GgInternalSprite::add_from_textures(
             object_ctx,
             resource_handler,
             resource_handler.texture.wait_load_file_animated(filename)?,
         ))
     }
-    pub fn from_tileset<ObjectType: ObjectTypeEnum>(
+    pub fn add_from_tileset<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
@@ -279,7 +281,7 @@ impl Sprite {
         offset: Vec2i,
         margin: Vec2i,
     ) -> Sprite {
-        GgInternalSprite::from_tileset(
+        GgInternalSprite::add_from_tileset(
             object_ctx,
             resource_handler,
             texture,
@@ -289,14 +291,14 @@ impl Sprite {
             margin,
         )
     }
-    pub fn from_single_extent<ObjectType: ObjectTypeEnum>(
+    pub fn add_from_single_extent<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         extent: Vec2i,
     ) -> Sprite {
-        Self::from_tileset(
+        Self::add_from_tileset(
             object_ctx,
             resource_handler,
             texture,
@@ -306,14 +308,14 @@ impl Sprite {
             Vec2i::zero(),
         )
     }
-    pub fn from_single_coords<ObjectType: ObjectTypeEnum>(
+    pub fn add_from_single_coords<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         bottom_right: Vec2i,
     ) -> Sprite {
-        Self::from_single_extent(
+        Self::add_from_single_extent(
             object_ctx,
             resource_handler,
             texture,
@@ -322,13 +324,13 @@ impl Sprite {
         )
     }
 
-    pub(crate) fn from_texture<ObjectType: ObjectTypeEnum>(
+    pub(crate) fn add_from_texture<ObjectType: ObjectTypeEnum>(
         object_ctx: &mut ObjectContext<ObjectType>,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
     ) -> Sprite {
         let extent = texture.aa_extent().as_vec2int_lossy();
-        Self::from_single_extent(object_ctx, resource_handler, texture, Vec2i::zero(), extent)
+        Self::add_from_single_extent(object_ctx, resource_handler, texture, Vec2i::zero(), extent)
     }
     #[must_use]
     pub fn with_collider_half_widths(mut self, half_widths: Vec2) -> Self {
