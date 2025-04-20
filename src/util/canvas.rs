@@ -9,6 +9,7 @@ use num_traits::Zero;
 pub struct GgInternalCanvas {
     render_items: Vec<RenderItem>,
     viewport: AdjustedViewport,
+    depth: VertexDepth,
 }
 
 impl GgInternalCanvas {
@@ -60,8 +61,8 @@ impl GgInternalCanvas {
     }
 
     // TODO: hacky.
-    pub fn set_last_depth(&mut self, depth: VertexDepth) {
-        self.render_items.last_mut().unwrap().depth = depth;
+    pub fn set_depth(&mut self, depth: VertexDepth) {
+        self.depth = depth;
     }
 }
 
@@ -79,6 +80,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
         _object_ctx: &mut ObjectContext<ObjectType>,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
+        self.depth = VertexDepth::Front(u16::MAX);
         Ok(Some(RenderItem::default()))
     }
 
@@ -101,13 +103,14 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
 }
 impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanvas {
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
-        if let Some(ri) = self
+        if let Some(mut ri) = self
             .render_items
             .clone()
             .into_iter()
             .rev()
             .reduce(RenderItem::concat)
         {
+            ri.depth = self.depth;
             render_ctx.update_render_item(&ri);
         }
     }

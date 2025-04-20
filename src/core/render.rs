@@ -460,6 +460,25 @@ impl VertexDepth {
     pub fn max_value() -> Self {
         Self::Front(u16::MAX)
     }
+
+    #[must_use]
+    pub fn next_smaller(self) -> Self {
+        match self {
+            VertexDepth::Back(depth) => VertexDepth::Back(depth.saturating_sub(1)),
+            VertexDepth::Middle => VertexDepth::Back(u16::MAX),
+            VertexDepth::Front(0) => VertexDepth::Middle,
+            VertexDepth::Front(depth) => VertexDepth::Front(depth.saturating_sub(1)),
+        }
+    }
+    #[must_use]
+    pub fn next_larger(self) -> Self {
+        match self {
+            VertexDepth::Back(u16::MAX) => VertexDepth::Middle,
+            VertexDepth::Back(depth) => VertexDepth::Back(depth.saturating_add(1)),
+            VertexDepth::Middle => VertexDepth::Front(0),
+            VertexDepth::Front(depth) => VertexDepth::Front(depth.saturating_add(1)),
+        }
+    }
 }
 
 impl PartialOrd for VertexDepth {

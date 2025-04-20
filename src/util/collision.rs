@@ -329,17 +329,14 @@ pub trait Polygonal {
             })
         {
             canvas.line(start, end, 1., col);
-            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
             canvas.rect(
                 self.polygon_centre() - Vec2::one(),
                 self.polygon_centre() + Vec2::one(),
                 col,
             );
-            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
         }
         for (a, b) in vertices.into_iter().circular_tuple_windows() {
             canvas.line(a, b, 1., col);
-            canvas.set_last_depth(VertexDepth::Front(u16::MAX));
         }
     }
 }
