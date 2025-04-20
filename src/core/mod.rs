@@ -161,6 +161,9 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
     pub fn name(&self) -> String {
         self.inner.borrow().name()
     }
+    pub fn object_id(&self) -> ObjectId {
+        self.object_id
+    }
 
     pub fn transform(&self) -> Transform {
         self.inner.transform()

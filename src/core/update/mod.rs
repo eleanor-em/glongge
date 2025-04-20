@@ -1361,12 +1361,48 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn children(&self) -> Vec<SceneObjectWithId<ObjectType>> {
         self.children.iter().map(SceneObjectWithId::clone).collect()
     }
+
     pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<SceneObjectWithId<ObjectType>> {
         self.children
             .iter()
             .find(|obj| obj.downcast::<T>().is_some())
             .cloned()
     }
+    pub fn first_child_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
+        self.children.iter().find_map(DowncastRef::downcast::<T>)
+    }
+    pub fn first_child_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
+        self.children.iter().find_map(DowncastRef::downcast_mut::<T>)
+    }
+    pub fn first_child_of<T: SceneObject<ObjectType>>(
+        &self,
+        id: ObjectId,
+    ) -> Option<SceneObjectWithId<ObjectType>> {
+        self.all_children
+            .get(&id)?
+            .iter()
+            .find(|obj| obj.downcast::<T>().is_some())
+            .cloned()
+    }
+    pub fn first_child_of_as_ref<T: SceneObject<ObjectType>>(
+        &self,
+        id: ObjectId,
+    ) -> Option<Ref<T>> {
+        self.all_children
+            .get(&id)?
+            .iter()
+            .find_map(DowncastRef::downcast::<T>)
+    }
+    pub fn first_child_of_as_mut<T: SceneObject<ObjectType>>(
+        &self,
+        id: ObjectId,
+    ) -> Option<RefMut<T>> {
+        self.all_children
+            .get(&id)?
+            .iter()
+            .find_map(DowncastRef::downcast_mut::<T>)
+    }
+
     fn others_inner(&self) -> impl Iterator<Item = (ObjectId, &AnySceneObject<ObjectType>)> {
         self.object_tracker
             .last
@@ -1394,6 +1430,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.others_inner()
             .find(|(_, obj)| obj.downcast::<T>().is_some())
             .map(|(obj_id, obj)| SceneObjectWithId::new(obj_id, obj.clone()))
+    }
+    pub fn first_other_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
+        self.others_inner().find_map(|(_, obj)| obj.downcast())
     }
     pub fn first_other_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         self.others_inner().find_map(|(_, obj)| obj.downcast_mut())
