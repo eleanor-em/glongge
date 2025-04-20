@@ -16,7 +16,7 @@ impl Scene<ObjectType> for SplineScene {
         SceneName::new("spline")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         let spline = InteractiveSpline::create();
         {
             let mut spline_inner = spline.downcast_mut::<InteractiveSpline>().unwrap();

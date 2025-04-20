@@ -105,8 +105,8 @@ impl Player {
     const SKID_TURNAROUND: f32 = from_nes(0, 9, 0, 0);
     const MAX_VSPEED: f32 = from_nes(4, 8, 0, 0);
 
-    pub fn create(centre: Vec2i, exiting_pipe: bool) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    pub fn create(centre: Vec2i, exiting_pipe: bool) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             centre: centre.into(),
             // Prevents player getting "stuck" on ground when level starts in air.
             last_ground_state: PlayerState::Walking,

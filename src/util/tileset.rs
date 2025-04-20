@@ -210,7 +210,7 @@ impl TilesetBuilder {
         rv
     }
 
-    pub fn build<O: ObjectTypeEnum>(self) -> AnySceneObject<O> {
+    pub fn build<O: ObjectTypeEnum>(self) -> ConcreteSceneObject<O> {
         let texture_areas: BTreeMap<_, _> = self
             .all_tiles
             .iter()
@@ -264,7 +264,7 @@ impl TilesetBuilder {
                     .reduce(CompoundCollider::combined)
                     .map(CompoundCollider::into_generic)
                     .unwrap_or_default();
-                AnySceneObject::new(GgInternalTileset {
+                ConcreteSceneObject::new(GgInternalTileset {
                     tile_size: self.tile_size,
                     filename: self.filename.clone(),
                     texture: Texture::default(),

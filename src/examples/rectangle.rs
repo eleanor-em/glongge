@@ -23,7 +23,7 @@ impl Scene<ObjectType> for RectangleScene {
         SceneName::new("rectangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         const N: usize = 10;
         let mut objects = Uniform::new(50., 350.)
             .sample_iter(rand::thread_rng())
@@ -120,7 +120,7 @@ impl SpinningRectangle {
     const VELOCITY: f32 = 2.;
     // const ANGULAR_VELOCITY: f32 = 2.;
 
-    pub fn create(pos: Vec2, vel_normed: Vec2) -> AnySceneObject<ObjectType> {
+    pub fn create(pos: Vec2, vel_normed: Vec2) -> ConcreteSceneObject<ObjectType> {
         let mut rng = rand::thread_rng();
         let col = match rng.gen_range(0..6) {
             0 => Colour::red(),
@@ -131,7 +131,7 @@ impl SpinningRectangle {
             5 => Colour::yellow(),
             _ => unreachable!(),
         };
-        AnySceneObject::new(Self {
+        ConcreteSceneObject::new(Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             col,

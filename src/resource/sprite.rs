@@ -3,7 +3,7 @@ use crate::core::update::RenderContext;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
 use crate::{
-    core::{AnySceneObject, ObjectTypeEnum, prelude::*},
+    core::{ConcreteSceneObject, ObjectTypeEnum, prelude::*},
     resource::texture::{MaterialId, Texture},
 };
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -71,7 +71,7 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
+        object_ctx.add_child(ConcreteSceneObject::from_rc(inner.clone()));
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {
             inner,
@@ -118,7 +118,7 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child(AnySceneObject::from_rc(inner.clone()));
+        object_ctx.add_child(ConcreteSceneObject::from_rc(inner.clone()));
         let extent = tile_size.into();
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {

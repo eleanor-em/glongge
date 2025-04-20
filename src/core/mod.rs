@@ -20,7 +20,7 @@ pub mod update;
 pub mod vk;
 
 pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'static + Send {
-    fn as_default(self) -> AnySceneObject<Self>;
+    fn as_default(self) -> ConcreteSceneObject<Self>;
     fn as_typeid(self) -> TypeId;
     fn all_values() -> Vec<Self>;
     fn gg_sprite() -> Self;
@@ -102,13 +102,13 @@ impl ObjectId {
 }
 
 #[derive(Clone)]
-pub struct AnySceneObject<ObjectType> {
+pub struct ConcreteSceneObject<ObjectType> {
     transform: Rc<RefCell<Transform>>,
     inner: Rc<RefCell<dyn SceneObject<ObjectType>>>,
     type_id: TypeId,
 }
 
-impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> ConcreteSceneObject<ObjectType> {
     pub fn new<O: SceneObject<ObjectType>>(inner: O) -> Self {
         Self {
             transform: Rc::new(RefCell::new(Transform::default())),
@@ -139,7 +139,7 @@ impl<ObjectType: ObjectTypeEnum> AnySceneObject<ObjectType> {
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> Deref for ConcreteSceneObject<ObjectType> {
     type Target = Rc<RefCell<dyn SceneObject<ObjectType>>>;
 
     fn deref(&self) -> &Self::Target {
@@ -150,11 +150,11 @@ impl<ObjectType: ObjectTypeEnum> Deref for AnySceneObject<ObjectType> {
 #[derive(Clone)]
 pub struct SceneObjectWithId<ObjectType> {
     pub(crate) object_id: ObjectId,
-    pub(crate) inner: AnySceneObject<ObjectType>,
+    pub(crate) inner: ConcreteSceneObject<ObjectType>,
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWithId<ObjectType> {
-    fn new(object_id: ObjectId, obj: AnySceneObject<ObjectType>) -> Self {
+    fn new(object_id: ObjectId, obj: ConcreteSceneObject<ObjectType>) -> Self {
         Self {
             object_id,
             inner: obj,
@@ -201,7 +201,7 @@ pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T>;
 }
 
-impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for AnySceneObject<ObjectType> {
+impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for ConcreteSceneObject<ObjectType> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
         Ref::filter_map(self.borrow(), |obj| obj.as_any().downcast_ref::<T>()).ok()
     }

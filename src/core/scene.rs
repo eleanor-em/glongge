@@ -4,7 +4,7 @@ use crate::gui::{GuiContext, GuiUi};
 use crate::shader::ensure_shaders_locked;
 use crate::{
     core::{
-        AnySceneObject, ObjectTypeEnum, SceneObjectWithId,
+        ConcreteSceneObject, ObjectTypeEnum, SceneObjectWithId,
         input::InputHandler,
         prelude::*,
         render::{RenderDataChannel, RenderItem, ShaderExec},
@@ -126,7 +126,7 @@ impl SceneDestination {
 
 pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     fn name(&self) -> SceneName;
-    fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>>;
+    fn create_objects(&self, entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>>;
 
     #[allow(unused_variables)]
     fn load(&mut self, data: &[u8]) -> Result<()> {
@@ -237,11 +237,11 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     }
 
     #[allow(clippy::new_ret_no_self)]
-    fn create() -> AnySceneObject<ObjectType>
+    fn create() -> ConcreteSceneObject<ObjectType>
     where
         Self: Default,
     {
-        AnySceneObject::new(Self::default())
+        ConcreteSceneObject::new(Self::default())
     }
 
     #[allow(unused_variables)]

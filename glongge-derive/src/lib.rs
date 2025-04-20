@@ -24,7 +24,7 @@ pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::T
         #input
 
         impl glongge::core::ObjectTypeEnum for #name {
-            fn as_default(self) -> glongge::core::AnySceneObject<Self> { #as_default_code }
+            fn as_default(self) -> glongge::core::ConcreteSceneObject<Self> { #as_default_code }
             fn as_typeid(self) -> std::any::TypeId { #as_typeid_code }
             fn all_values() -> Vec<Self> { #all_values_code }
             fn gg_sprite() -> Self { Self::GgInternalSprite }
@@ -168,11 +168,11 @@ fn as_default_impl(data: &Data) -> proc_macro2::TokenStream {
                 let name = &variant.ident;
                 if has_object_type_param(name) {
                     quote_spanned! {variant.span()=>
-                        Self::#name => glongge::core::AnySceneObject::new(#name::<Self>::default())
+                        Self::#name => glongge::core::ConcreteSceneObject::new(#name::<Self>::default())
                     }
                 } else {
                     quote_spanned! {variant.span()=>
-                        Self::#name => glongge::core::AnySceneObject::new(#name::default())
+                        Self::#name => glongge::core::ConcreteSceneObject::new(#name::default())
                     }
                 }
             });

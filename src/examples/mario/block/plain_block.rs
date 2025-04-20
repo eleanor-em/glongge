@@ -14,8 +14,8 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             top_left: top_left.into(),
             initial_y: top_left.y as f32,
             ..Default::default()

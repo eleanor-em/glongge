@@ -18,8 +18,8 @@ pub struct QuestionBlock {
 }
 
 impl QuestionBlock {
-    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             top_left: top_left.into(),
             is_empty: false,
             initial_y: top_left.y as f32,

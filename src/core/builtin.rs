@@ -1,5 +1,5 @@
 use crate::core::prelude::*;
-use crate::core::{AnySceneObject, ObjectTypeEnum};
+use crate::core::{ConcreteSceneObject, ObjectTypeEnum};
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
@@ -11,15 +11,15 @@ use std::path::Path;
 #[register_scene_object]
 pub struct GgInternalContainer<ObjectType> {
     label: String,
-    children: Vec<AnySceneObject<ObjectType>>,
+    children: Vec<ConcreteSceneObject<ObjectType>>,
 }
 
 impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
     pub fn create(
         label: impl AsRef<str>,
-        children: Vec<AnySceneObject<ObjectType>>,
-    ) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+        children: Vec<ConcreteSceneObject<ObjectType>>,
+    ) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             label: label.as_ref().to_string(),
             children,
         })
@@ -114,15 +114,15 @@ impl GgInternalStaticSprite {
         self.depth = Some(depth);
         self
     }
-    pub fn build<ObjectType: ObjectTypeEnum>(self) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(self)
+    pub fn build<ObjectType: ObjectTypeEnum>(self) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(self)
     }
     pub fn build_colliding<ObjectType: ObjectTypeEnum>(
         self,
         emitting_tags: Vec<&'static str>,
         listening_tags: Vec<&'static str>,
-    ) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(GgInternalCollidingSprite {
+    ) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(GgInternalCollidingSprite {
             inner: self,
             emitting_tags,
             listening_tags,

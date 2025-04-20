@@ -15,7 +15,7 @@ impl Scene<ObjectType> for ConcaveScene {
         SceneName::new("concave")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         vec![
             Canvas::create(),
             ConvexHull::create(),

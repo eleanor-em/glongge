@@ -16,8 +16,8 @@ pub struct WinTextDisplay {
 }
 
 impl WinTextDisplay {
-    pub fn create(centre: Vec2) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    pub fn create(centre: Vec2) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             centre,
             ..Default::default()
         })

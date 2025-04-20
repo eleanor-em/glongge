@@ -1,5 +1,5 @@
 use crate::core::{
-    AnySceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId, prelude::*,
+    ConcreteSceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId, prelude::*,
     update::PendingAddObject,
 };
 use crate::util::{
@@ -136,7 +136,7 @@ impl CollisionHandler {
     pub(crate) fn get_collisions<ObjectType: ObjectTypeEnum>(
         &self,
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
     ) -> Vec<CollisionNotification<ObjectType>> {
         let collisions = self.get_collisions_inner(objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
@@ -150,7 +150,7 @@ impl CollisionHandler {
 
     fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
         &self,
-        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions
             .iter()
@@ -166,7 +166,7 @@ impl CollisionHandler {
 
     fn process_collision_inner<ObjectType: ObjectTypeEnum>(
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+        objects: &BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
         rv: &mut Vec<CollisionNotification<ObjectType>>,
         ids: &UnorderedPair<ObjectId>,
         mtv: Vec2,

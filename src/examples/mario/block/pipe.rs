@@ -20,8 +20,8 @@ impl Pipe {
         top_left: Vec2i,
         orientation: Vec2,
         destination: Option<SceneDestination>,
-    ) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    ) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             top_left: top_left.into(),
             orientation,
             destination,

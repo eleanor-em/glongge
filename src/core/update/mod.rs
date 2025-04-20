@@ -7,7 +7,7 @@ use crate::{
     core::scene::GuiClosure,
     core::vk::RenderPerfStats,
     core::{
-        AnySceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId,
+        ConcreteSceneObject, ObjectId, ObjectTypeEnum, SceneObjectWithId,
         config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
         coroutine::{Coroutine, CoroutineId, CoroutineResponse, CoroutineState},
         input::InputHandler,
@@ -49,7 +49,7 @@ use std::{
 use tracing::warn;
 
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
-    objects: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+    objects: BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
     parents: BTreeMap<ObjectId, ObjectId>,
     pub(crate) absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<SceneObjectWithId<ObjectType>>>,
@@ -79,7 +79,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     pub(crate) fn get_first_object_id(&self) -> Option<ObjectId> {
         self.objects.first_key_value().map(|o| o.0).copied()
     }
-    pub(crate) fn get_object(&self, id: ObjectId) -> Result<Option<&AnySceneObject<ObjectType>>> {
+    pub(crate) fn get_object(&self, id: ObjectId) -> Result<Option<&ConcreteSceneObject<ObjectType>>> {
         if id.is_root() {
             Ok(None)
         } else if let Some(object) = self.objects.get(&id) {
@@ -95,7 +95,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     pub(crate) fn get_object_mut(
         &mut self,
         id: ObjectId,
-    ) -> Result<Option<&mut AnySceneObject<ObjectType>>> {
+    ) -> Result<Option<&mut ConcreteSceneObject<ObjectType>>> {
         if id.is_root() {
             Ok(None)
         } else if let Some(object) = self.objects.get_mut(&id) {
@@ -392,7 +392,7 @@ pub(crate) struct UpdateHandler<ObjectType: ObjectTypeEnum> {
 
 impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
     pub(crate) fn new(
-        objects: Vec<AnySceneObject<ObjectType>>,
+        objects: Vec<ConcreteSceneObject<ObjectType>>,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
@@ -1309,12 +1309,12 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
 
 #[derive(Clone)]
 pub(crate) struct PendingAddObject<ObjectType: ObjectTypeEnum> {
-    inner: AnySceneObject<ObjectType>,
+    inner: ConcreteSceneObject<ObjectType>,
     parent_id: ObjectId,
 }
 
 struct ObjectTracker<ObjectType: ObjectTypeEnum> {
-    last: BTreeMap<ObjectId, AnySceneObject<ObjectType>>,
+    last: BTreeMap<ObjectId, ConcreteSceneObject<ObjectType>>,
     pending_add: Vec<PendingAddObject<ObjectType>>,
     pending_remove: BTreeSet<ObjectId>,
 }
@@ -1328,10 +1328,10 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
         }
     }
 
-    fn get(&self, object_id: ObjectId) -> Option<&AnySceneObject<ObjectType>> {
+    fn get(&self, object_id: ObjectId) -> Option<&ConcreteSceneObject<ObjectType>> {
         self.last.get(&object_id)
     }
-    // fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut AnySceneObject<ObjectType>> {
+    // fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut ConcreteSceneObject<ObjectType>> {
     //     self.last.get_mut(&object_id)
     // }
 }
@@ -1406,7 +1406,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .find_map(DowncastRef::downcast_mut::<T>)
     }
 
-    fn others_inner(&self) -> impl Iterator<Item = (ObjectId, &AnySceneObject<ObjectType>)> {
+    fn others_inner(&self) -> impl Iterator<Item = (ObjectId, &ConcreteSceneObject<ObjectType>)> {
         self.object_tracker
             .last
             .iter()
@@ -1535,26 +1535,26 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .or(children.iter().find_map(|o| self.collider_of_inner(o.object_id).ok().flatten())))
     }
 
-    pub fn add_vec(&mut self, objects: Vec<AnySceneObject<ObjectType>>) {
+    pub fn add_vec(&mut self, objects: Vec<ConcreteSceneObject<ObjectType>>) {
         let pending_add = &mut self.object_tracker.pending_add;
         pending_add.extend(objects.into_iter().map(|inner| PendingAddObject {
             inner: inner.clone(),
             parent_id: self.this_id,
         }));
     }
-    pub fn add_sibling(&mut self, object: AnySceneObject<ObjectType>) {
+    pub fn add_sibling(&mut self, object: ConcreteSceneObject<ObjectType>) {
         self.object_tracker.pending_add.push(PendingAddObject {
             inner: object,
             parent_id: self.parent().map_or(ObjectId(0), |obj| obj.object_id),
         });
     }
-    pub fn add_child(&mut self, object: AnySceneObject<ObjectType>) {
+    pub fn add_child(&mut self, object: ConcreteSceneObject<ObjectType>) {
         self.object_tracker.pending_add.push(PendingAddObject {
             inner: object,
             parent_id: self.this_id,
         });
     }
-    pub fn add_child_at(&mut self, object: AnySceneObject<ObjectType>, transform: Transform) {
+    pub fn add_child_at(&mut self, object: ConcreteSceneObject<ObjectType>, transform: Transform) {
         *object.transform.borrow_mut() = transform;
         self.object_tracker.pending_add.push(PendingAddObject {
             inner: object,

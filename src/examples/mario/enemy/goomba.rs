@@ -20,8 +20,8 @@ pub struct Goomba {
 }
 
 impl Goomba {
-    pub fn create(top_left: Vec2i) -> AnySceneObject<ObjectType> {
-        AnySceneObject::new(Self {
+    pub fn create(top_left: Vec2i) -> ConcreteSceneObject<ObjectType> {
+        ConcreteSceneObject::new(Self {
             initial_coord: top_left,
             dead: false,
             started_death: false,

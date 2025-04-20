@@ -19,7 +19,7 @@ impl Scene<ObjectType> for TriangleScene {
         SceneName::new("triangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         const N: usize = 1;
         let mut rng = rand::thread_rng();
         let xs: Vec<f32> = Uniform::new(0., 200.)
@@ -45,7 +45,7 @@ impl Scene<ObjectType> for TriangleScene {
                     x: vxs[i],
                     y: vys[i],
                 };
-                AnySceneObject::new(SpinningTriangle {
+                ConcreteSceneObject::new(SpinningTriangle {
                     pos,
                     velocity: vel.normed(),
                     t: 0.,
@@ -132,12 +132,12 @@ impl SceneObject<ObjectType> for SpinningTriangle {
                     y: rng.gen_range(-1.0..1.0),
                 };
                 ctx.object_mut()
-                    .add_sibling(AnySceneObject::new(SpinningTriangle::new(
+                    .add_sibling(ConcreteSceneObject::new(SpinningTriangle::new(
                         self.pos,
                         (self.velocity - vel).normed(),
                     )));
                 ctx.object_mut()
-                    .add_sibling(AnySceneObject::new(SpinningTriangle::new(
+                    .add_sibling(ConcreteSceneObject::new(SpinningTriangle::new(
                         self.pos,
                         (self.velocity + vel).normed(),
                     )));

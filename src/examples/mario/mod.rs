@@ -66,7 +66,7 @@ impl AliveEnemyMap {
     }
 }
 
-fn create_hill1(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+fn create_hill1(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 112, y: 716 }, Vec2i { x: 192, y: 764 })
@@ -74,7 +74,7 @@ fn create_hill1(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
         .named("Hill1")
         .build()
 }
-fn create_hill2(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+fn create_hill2(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 112, y: 692 }, Vec2i { x: 192, y: 708 })
@@ -82,7 +82,7 @@ fn create_hill2(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
         .named("Hill2")
         .build()
 }
-fn create_hill3(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+fn create_hill3(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 200, y: 732 }, Vec2i { x: 248, y: 764 })
@@ -90,7 +90,7 @@ fn create_hill3(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
         .named("Hill3")
         .build()
 }
-fn create_hill4(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+fn create_hill4(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 200, y: 692 }, Vec2i { x: 248, y: 708 })
@@ -98,7 +98,7 @@ fn create_hill4(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
         .named("Hill4")
         .build()
 }
-fn create_castle(top_left: impl Into<Vec2>) -> AnySceneObject<ObjectType> {
+fn create_castle(top_left: impl Into<Vec2>) -> ConcreteSceneObject<ObjectType> {
     StaticSprite::new("res/world_sheet.png")
         .at_top_left(top_left)
         .with_single_coords(Vec2i { x: 24, y: 684 }, Vec2i { x: 104, y: 764 })
@@ -119,7 +119,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
         bincode::serialize(&AliveEnemyMap::default()).unwrap()
     }
 
-    fn create_objects(&self, entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         let mut ts = TilesetBuilder::new("res/world_sheet.png", 16).named("Doughnut");
         let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);
         let crumble = ts.create_tile_collision([0, 50], &vec![BLOCK_COLLISION_TAG]);
@@ -818,7 +818,7 @@ impl Scene<ObjectType> for MarioUndergroundScene {
         SceneName::new("mario-underground")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<AnySceneObject<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<ConcreteSceneObject<ObjectType>> {
         vec![
             Canvas::create(),
             Player::create(
