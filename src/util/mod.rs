@@ -284,9 +284,13 @@ pub mod gg_err {
         }
     }
 
-    pub fn log_err(result: Result<()>) {
-        if let Err(e) = result {
-            error!("{}", e.root_cause());
+    pub fn log_err<T>(result: Result<T>) -> Option<T> {
+        match result {
+            Ok(v) => Some(v),
+            Err(e) => {
+                error!("{}", e.root_cause());
+                None
+            }
         }
     }
     pub fn log_err_then<T>(result: Result<Option<T>>) -> Option<T> {

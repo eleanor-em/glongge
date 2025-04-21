@@ -190,29 +190,37 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
                 .iter()
                 .find_map(|o| self.get_sprite(o.object_id).ok().flatten())))
     }
-    pub(crate) fn get_collision_shape(
+    pub(crate) fn get_collision_shapes(
         &self,
         id: ObjectId,
-    ) -> Result<Option<(ObjectId, Ref<CollisionShape>)>> {
+    ) -> Result<Vec<(ObjectId, Ref<CollisionShape>)>> {
         Ok(self
             .get_object(id)?
             .and_then(|o| o.downcast::<CollisionShape>().map(|c| (id, c)))
-            .or(self
-                .get_children(id)?
-                .iter()
-                .find_map(|o| self.get_collision_shape(o.object_id).ok().flatten())))
+            .map(|c| vec![c])
+            .unwrap_or(
+                self.get_children(id)?
+                    .iter()
+                    .filter_map(|o| gg_err::log_err(self.get_collision_shapes(o.object_id)))
+                    .flatten()
+                    .collect(),
+            ))
     }
-    pub(crate) fn get_collision_shape_mut(
+    pub(crate) fn get_collision_shapes_mut(
         &self,
         id: ObjectId,
-    ) -> Result<Option<(ObjectId, RefMut<CollisionShape>)>> {
+    ) -> Result<Vec<(ObjectId, RefMut<CollisionShape>)>> {
         Ok(self
             .get_object(id)?
             .and_then(|o| o.downcast_mut::<CollisionShape>().map(|c| (id, c)))
-            .or(self
-                .get_children(id)?
-                .iter()
-                .find_map(|o| self.get_collision_shape_mut(o.object_id).ok().flatten())))
+            .map(|c| vec![c])
+            .unwrap_or(
+                self.get_children(id)?
+                    .iter()
+                    .filter_map(|o| gg_err::log_err(self.get_collision_shapes_mut(o.object_id)))
+                    .flatten()
+                    .collect(),
+            ))
     }
 
     fn remove_object(&mut self, remove_id: ObjectId) {
@@ -1575,7 +1583,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                     }))
             })
             .map(|o| o.collider().clone())
-            .or(children.iter().find_map(|o| self.collider_of_inner(o.object_id).ok().flatten())))
+            .or(children.iter().find_map(|o| gg_err::log_err(self.collider_of_inner(o.object_id)).flatten())))
     }
 
     pub fn add_vec(&mut self, objects: Vec<SceneObjectWrapper<ObjectType>>) {

@@ -93,14 +93,16 @@ impl GuiObjectView {
         selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
-            if let Some((_, mut c)) = object_handler.get_collision_shape_mut(self.object_id)? {
+            for (_, mut c) in object_handler.get_collision_shapes_mut(self.object_id)? {
                 c.hide_wireframe();
             }
             self.absolute_cell.reset();
             self.relative_cell.reset();
             self.object_id = selected_id;
-            if let Some((_, mut c)) = object_handler.get_collision_shape_mut(selected_id)? {
-                c.show_wireframe();
+            if !selected_id.is_root() {
+                for (_, mut c) in object_handler.get_collision_shapes_mut(selected_id)? {
+                    c.show_wireframe();
+                }
             }
         }
         Ok(())
@@ -241,7 +243,12 @@ impl GuiObjectTreeNode {
     fn refresh_label<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         if !self.object_id.is_root() {
             let mut tags = String::new();
-            if gg_err::is_some_and_log(object_handler.get_collision_shape(self.object_id)) {
+            if !gg_err::log_unwrap_or(
+                Vec::new(),
+                object_handler.get_collision_shapes(self.object_id),
+            )
+            .is_empty()
+            {
                 tags += "▣ ";
             }
             if gg_err::is_some_and_log(object_handler.get_sprite(self.object_id)) {
@@ -1018,12 +1025,12 @@ impl DebugGui {
         self.wireframe_mouseovers
             .drain(..)
             .filter(|o| {
-                object_handler
-                    .get_parent_chain(*o)
-                    .ok()
+                gg_err::log_err(object_handler.get_parent_chain(*o))
                     .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id))
             })
-            .filter_map(|o| gg_err::log_err_then(object_handler.get_collision_shape_mut(o)))
+            .flat_map(|o| {
+                gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes_mut(o))
+            })
             .for_each(|(_, mut c)| c.hide_wireframe());
     }
 
@@ -1034,15 +1041,14 @@ impl DebugGui {
     ) {
         self.wireframe_mouseovers = collisions
             .into_iter()
-            .filter_map(|c| {
-                let result = object_handler.get_collision_shape_mut(c.other.object_id);
-                match gg_err::log_err_then(result) {
-                    Some((o, mut c)) => {
+            .flat_map(|c| {
+                let result = object_handler.get_collision_shapes_mut(c.other.object_id);
+                gg_err::log_unwrap_or(Vec::new(), result)
+                    .into_iter()
+                    .map(|(o, mut c)| {
                         c.show_wireframe();
-                        Some(o)
-                    }
-                    None => None,
-                }
+                        o
+                    })
             })
             .unique()
             .collect_vec();
