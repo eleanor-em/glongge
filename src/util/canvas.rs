@@ -68,7 +68,7 @@ impl GgInternalCanvas {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         "Canvas".to_string()
     }
     fn gg_type_enum(&self) -> ObjectType {

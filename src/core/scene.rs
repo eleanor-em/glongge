@@ -232,7 +232,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         format!("{:?}", self.gg_type_enum())
     }
 

@@ -114,6 +114,7 @@ pub struct SceneObjectWrapper<ObjectType> {
     transform: Rc<RefCell<Transform>>,
     pub(crate) wrapped: Rc<RefCell<dyn SceneObject<ObjectType>>>,
     type_id: TypeId, // = TypeId::of::<O: SceneObject<ObjectType>>()
+    nickname: Rc<RefCell<Option<String>>>,
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObjectWrapper<ObjectType> {
@@ -125,6 +126,15 @@ impl<ObjectType: ObjectTypeEnum> SceneObjectWrapper<ObjectType> {
     }
     pub(crate) fn transform_mut(&self) -> RefMut<Transform> {
         self.transform.borrow_mut()
+    }
+    pub(crate) fn nickname_or_type_name(&self) -> String {
+        self.nickname
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| self.wrapped.borrow().type_name())
+    }
+    pub(crate) fn set_nickname(&mut self, name: impl Into<String>) {
+        *self.nickname.borrow_mut() = Some(name.into());
     }
 }
 
@@ -140,6 +150,7 @@ impl<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>> IntoSceneObjectWrap
             transform: Rc::new(RefCell::new(Transform::default())),
             wrapped: Rc::new(RefCell::new(self)),
             type_id: TypeId::of::<O>(),
+            nickname: Rc::new(RefCell::new(None)),
         }
     }
 }
@@ -162,10 +173,6 @@ impl<ObjectType: ObjectTypeEnum> TreeSceneObject<ObjectType> {
     pub fn gg_type_id(&self) -> TypeId {
         self.scene_object.gg_type_id()
     }
-    /// NOTE: Borrows!
-    pub fn name(&self) -> String {
-        self.scene_object.wrapped.borrow().name()
-    }
     pub fn object_id(&self) -> ObjectId {
         self.object_id
     }
@@ -184,6 +191,16 @@ impl<ObjectType: ObjectTypeEnum> TreeSceneObject<ObjectType> {
     /// NOTE: Borrows!
     pub fn listening_tags(&self) -> Vec<&'static str> {
         self.scene_object.wrapped.borrow().listening_tags()
+    }
+
+    pub fn nickname_or_type_name(&self) -> String {
+        self.scene_object.nickname_or_type_name()
+    }
+    pub fn nickname(&self) -> Option<String> {
+        self.scene_object.nickname.borrow().clone()
+    }
+    pub fn set_nickname(&mut self, name: impl Into<String>) {
+        self.scene_object.set_nickname(name);
     }
 }
 

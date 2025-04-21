@@ -329,7 +329,7 @@ impl GgInternalTileset {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         "TilesetSegment".to_string()
     }
     fn gg_type_enum(&self) -> ObjectType {

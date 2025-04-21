@@ -1626,6 +1626,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                 transform: Rc::new(RefCell::new(Transform::default())),
                 wrapped: object,
                 type_id: TypeId::of::<O>(),
+                nickname: Rc::new(RefCell::new(None)),
             },
         };
         self.object_tracker.pending_add.push(rv.clone());

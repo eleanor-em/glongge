@@ -1647,7 +1647,7 @@ impl GgInternalCollisionShape {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape {
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         format!("CollisionShape [{:?}]", self.collider.get_type()).to_string()
     }
 

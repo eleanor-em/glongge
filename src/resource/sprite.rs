@@ -153,7 +153,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
     fn gg_type_enum(&self) -> ObjectType {
         ObjectType::gg_sprite()
     }
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         self.name.clone()
     }
 

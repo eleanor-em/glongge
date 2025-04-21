@@ -130,7 +130,7 @@ impl GuiObjectView {
                 self.clear_selection();
                 format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
             })?;
-        let name = object.wrapped.borrow().name();
+        let name = object.nickname_or_type_name();
         let gui_cmd = gui_cmds.remove(&object_id);
 
         self.absolute_cell.update_live(absolute_transform);
@@ -262,7 +262,7 @@ impl GuiObjectTreeNode {
     }
 
     fn child<O: ObjectTypeEnum>(&self, object: &TreeSceneObject<O>) -> Self {
-        let name = object.scene_object.wrapped.borrow().name();
+        let name = object.nickname_or_type_name();
         let count = *self
             .disambiguation
             .borrow_mut()

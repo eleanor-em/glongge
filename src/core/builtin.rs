@@ -25,7 +25,7 @@ impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer<ObjectType> {
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         self.label.clone()
     }
     fn gg_type_enum(&self) -> ObjectType {
@@ -126,7 +126,7 @@ impl GgInternalStaticSprite {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSprite {
-    fn name(&self) -> String {
+    fn type_name(&self) -> String {
         if let Some(name) = &self.name.as_ref() {
             format!("StaticSprite [{name}]")
         } else if let Some(filename) = Path::new(&self.filename)
@@ -190,8 +190,8 @@ pub struct GgInternalCollidingSprite {
 
 #[partially_derive_scene_object]
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollidingSprite {
-    fn name(&self) -> String {
-        <GgInternalStaticSprite as SceneObject<ObjectType>>::name(&self.inner)
+    fn type_name(&self) -> String {
+        <GgInternalStaticSprite as SceneObject<ObjectType>>::type_name(&self.inner)
             .replace("Static", "Colliding")
     }
     fn gg_type_enum(&self) -> ObjectType {
