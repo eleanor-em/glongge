@@ -217,6 +217,28 @@ pub mod gg_iter {
     }
 
     impl<T> GgIter for T where T: Iterator + ?Sized {}
+
+    pub trait GgFloatIter: Iterator<Item = f32> {
+        /// Returns the "obvious" max, with the following caveats:
+        /// - if any input is NaN, returns the first NaN encountered;
+        /// - +0.0 vs. -0.0 is handled nondeterministically, see `f32::max()`.
+        fn max_f32(self) -> Option<f32>
+        where
+            Self: Sized,
+        {
+            self.fold(None, |max, x| {
+                if x.is_nan() {
+                    return Some(x)
+                }
+                match max {
+                    None => Some(x),
+                    Some(m) => Some(m.max(x)),
+                }
+            })
+        }
+    }
+
+    impl<T: Iterator<Item = f32>> GgFloatIter for T {}
 }
 
 #[allow(dead_code)]
@@ -574,6 +596,33 @@ impl<T> Nonempty for NonemptyVec<T> {
 
     fn iter(&self) -> impl Iterator<Item = &<Self::Inner as IntoIterator>::Item> {
         self.inner.iter()
+    }
+}
+
+pub trait IntoVec<T> {
+    fn into_vec(self) -> Vec<T>;
+}
+
+impl<T> IntoVec<T> for Option<NonemptyVec<T>> {
+    fn into_vec(self) -> Vec<T> {
+        match self {
+            None => Vec::new(),
+            Some(v) => v.inner,
+        }
+    }
+}
+
+pub trait IntoFlatIter<T> {
+    fn into_flat_iter(self) -> IntoIter<T>;
+}
+
+impl<T> IntoFlatIter<T> for Option<NonemptyVec<T>> {
+    fn into_flat_iter(self) -> IntoIter<T> {
+        match self {
+            None => Vec::new(),
+            Some(v) => v.inner,
+        }
+        .into_iter()
     }
 }
 
