@@ -501,7 +501,16 @@ impl From<Vec2> for [f32; 2] {
 
 impl fmt::Display for Vec2 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "vec({}, {})", self.x, self.y)
+        let precision = f.precision();
+
+        write!(f, "vec(")?;
+        if let Some(p) = precision {
+            write!(f, "{0:.1$}", self.x, p)?;
+            write!(f, ", {0:.1$}", self.y, p)?;
+        } else {
+            write!(f, "{}, {}", self.x, self.y)?;
+        }
+        write!(f, ")")
     }
 }
 
