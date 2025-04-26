@@ -228,7 +228,7 @@ pub mod gg_iter {
         {
             self.fold(None, |max, x| {
                 if x.is_nan() {
-                    return Some(x)
+                    return Some(x);
                 }
                 match max {
                     None => Some(x),

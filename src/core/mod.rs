@@ -219,6 +219,9 @@ pub trait DowncastRef<ObjectType: ObjectTypeEnum> {
 
 impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWrapper<ObjectType> {
     fn downcast<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
+        if self.type_id != TypeId::of::<T>() {
+            return None;
+        }
         Ref::filter_map(self.wrapped.borrow(), |obj| {
             obj.as_any().downcast_ref::<T>()
         })
@@ -226,6 +229,9 @@ impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWrapper<
     }
 
     fn downcast_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
+        if self.type_id != TypeId::of::<T>() {
+            return None;
+        }
         RefMut::filter_map(self.wrapped.borrow_mut(), |obj| {
             obj.as_any_mut().downcast_mut::<T>()
         })
@@ -233,12 +239,14 @@ impl<ObjectType: ObjectTypeEnum> DowncastRef<ObjectType> for SceneObjectWrapper<
     }
 
     fn checked_downcast<T: SceneObject<ObjectType>>(&self) -> Ref<T> {
+        check_eq!(self.type_id, TypeId::of::<T>());
         Ref::map(self.wrapped.borrow(), |obj| {
             ObjectType::checked_downcast::<T>(obj)
         })
     }
 
     fn checked_downcast_mut<T: SceneObject<ObjectType>>(&self) -> RefMut<T> {
+        check_eq!(self.type_id, TypeId::of::<T>());
         RefMut::map(self.wrapped.borrow_mut(), |obj| {
             ObjectType::checked_downcast_mut::<T>(obj)
         })
