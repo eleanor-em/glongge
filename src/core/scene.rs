@@ -240,6 +240,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
         Ok(())
     }
+    /// Called when the object is first added to the object handler. Other objects added in the
+    /// same update may not yet be available.
     #[allow(unused_variables)]
     fn on_load(
         &mut self,
@@ -248,6 +250,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     ) -> Result<Option<RenderItem>> {
         Ok(None)
     }
+    /// Called after all objects for this update are added to the object handler.
     #[allow(unused_variables)]
     fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
 
@@ -255,10 +258,10 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
-    #[allow(unused_variables)]
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    /// Called after `on_update()`, but before `on_collision()` and `on_update_end()`.
     #[allow(unused_variables)]
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {}
+    /// Called after `on_fixed_update()`, but before `on_update_end()`.
     #[allow(unused_variables)]
     fn on_collision(
         &mut self,
@@ -268,6 +271,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     ) -> CollisionResponse {
         CollisionResponse::Done
     }
+    #[allow(unused_variables)]
+    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
         None
