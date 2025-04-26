@@ -1396,6 +1396,9 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn parent(&self) -> Option<&TreeSceneObject<ObjectType>> {
         self.parent.as_ref()
     }
+    pub fn parent_id(&self) -> Option<ObjectId> {
+        self.parent.as_ref().map(|p| p.object_id())
+    }
     pub fn children(&self) -> Vec<TreeSceneObject<ObjectType>> {
         self.children.iter().map(TreeSceneObject::clone).collect()
     }
