@@ -685,7 +685,7 @@ impl AxisAlignedExtent for BoxCollider3d {
 }
 
 impl BoxCollider3d {
-    pub fn from_2d(collider: BoxCollider, back: f32, front: f32) -> Self {
+    pub fn from_2d(collider: &BoxCollider, back: f32, front: f32) -> Self {
         check_le!(back, front);
         Self {
             centre: collider.centre,
@@ -733,10 +733,12 @@ impl BoxCollider3d {
                 Some((mtv, 0.))
             }
         } else {
+            // Collision along third axis.
+            let dh = depth_dist;
             if (self.front - self.back) / 2. < (other.front - other.back) / 2. {
-                Some((Vec2::zero(), -depth_dist))
+                Some((Vec2::zero(), -dh))
             } else {
-                Some((Vec2::zero(), depth_dist))
+                Some((Vec2::zero(), dh))
             }
         }
     }

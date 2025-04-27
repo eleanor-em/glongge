@@ -656,7 +656,7 @@ pub(crate) struct GuiConsoleLog {
     render_perf_stats: Option<RenderPerfStats>,
 }
 impl GuiConsoleLog {
-    const MAX_LOG_LINES: usize = 40;
+    const MAX_LOG_LINES: usize = 1000;
 
     fn new() -> Result<Self> {
         let log_file = BufReader::new(std::fs::OpenOptions::new().read(true).open("run.log")?);
@@ -681,7 +681,10 @@ impl GuiConsoleLog {
 
     fn transform_log_line(line: &str) -> String {
         let re = Regex::new(
-            "((?:INFO|WARN|ERROR)\x1b\\[0m \x1b\\[2m).*?(glongge(?:\\/|\\\\)src(?:\\/|\\\\))",
+            "((?:INFO|WARN|ERROR)\x1b\\[0m \
+                 (?:\x1b\\[1mupdate.*\x1b\\[1m\\}\x1b\\[0m\x1b\\[2m:\x1b\\[0m )?\
+                 \x1b\\[2m).*?\
+                 (glongge(?:\\/|\\\\)src(?:\\/|\\\\))",
         )
         .unwrap();
         re.replace_all(line, "$1$2").take()

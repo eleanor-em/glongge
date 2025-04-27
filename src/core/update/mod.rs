@@ -1401,6 +1401,15 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn parent(&self) -> Option<&TreeSceneObject<ObjectType>> {
         self.parent.as_ref()
     }
+    pub fn parent_chain(&self) -> Vec<TreeSceneObject<ObjectType>> {
+        let mut object_id = self.this_id;
+        let mut parent_chain = Vec::new();
+        while let Some(p) = self.lookup_parent(object_id) {
+            object_id = p.object_id;
+            parent_chain.push(p);
+        }
+        parent_chain
+    }
     pub fn parent_id(&self) -> Option<ObjectId> {
         self.parent.as_ref().map(TreeSceneObject::object_id)
     }
@@ -1409,6 +1418,25 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     }
     pub fn this_id(&self) -> ObjectId {
         self.this_id
+    }
+    pub fn fully_qualified_name(&self) -> String {
+        self.object_tracker.get(self.this_id).map_or_else(
+            || {
+                error!("missing object_id in objects: this={:?}", self.this_id);
+                "MISSING".to_string()
+            },
+            |o| {
+                let mut chain = self
+                    .parent_chain()
+                    .into_iter()
+                    .map(|o| o.nickname_or_type_name())
+                    .rev()
+                    .collect_vec();
+                chain.insert(0, String::new()); // root
+                chain.push(o.nickname_or_type_name());
+                chain.join("/")
+            },
+        )
     }
 
     pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<TreeSceneObject<ObjectType>> {
