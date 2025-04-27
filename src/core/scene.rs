@@ -258,6 +258,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
     #[allow(unused_variables)]
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    /// Use mostly for things that have a higher-order dependency on time, e.g. acceleration.
     /// Called after `on_update()`, but before `on_collision()` and `on_update_end()`.
     #[allow(unused_variables)]
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {}

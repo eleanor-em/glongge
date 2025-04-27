@@ -1810,6 +1810,9 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
         let centre_cell_sender_x = self.centre_cell_receiver_x.sender();
         let centre_cell_sender_y = self.centre_cell_receiver_y.sender();
 
+        let emitting_tags = self.emitting_tags.join(", ");
+        let listening_tags = self.listening_tags.join(", ");
+
         let collider = self.collider.clone();
         Box::new(move |ui| {
             ui.label(collider.to_string());
@@ -1822,6 +1825,11 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
             collider
                 .centre()
                 .build_gui(ui, 0.1, centre_cell_sender_x, centre_cell_sender_y);
+            ui.end_row();
+            ui.add(egui::Label::new(format!("Emitting: {emitting_tags}")).selectable(false));
+            ui.end_row();
+            ui.add(egui::Label::new(format!("Listening: {listening_tags}")).selectable(false));
+            ui.end_row();
         })
     }
 }

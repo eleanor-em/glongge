@@ -46,7 +46,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tracing::warn;
+use tracing::{span, warn};
 
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
@@ -683,6 +683,13 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         input_handler: &InputHandler,
         mut fixed_updates: u128,
     ) -> ObjectTracker<ObjectType> {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "update",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
         let mut object_tracker = ObjectTracker {
             last: self.object_handler.objects.clone(),
             pending_add: Vec::new(),
@@ -742,16 +749,14 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             }
             self.object_handler.update_all_transforms();
             fixed_updates -= 1;
-            // Detect collisions after each fixed update: important to prevent glitching through walls etc.
-            self.perf_stats.fixed_update.pause();
-            self.perf_stats.detect_collision.start();
-            self.handle_collisions(input_handler, &mut object_tracker);
-            self.object_handler.update_all_transforms();
-            self.perf_stats.on_collision.stop();
-            self.perf_stats.fixed_update.unpause();
             self.fixed_frame_counter += 1;
         }
         self.perf_stats.fixed_update.stop();
+
+        self.perf_stats.detect_collision.start();
+        self.handle_collisions(input_handler, &mut object_tracker);
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(input_handler, &mut object_tracker, |mut obj, ctx| {
@@ -1400,7 +1405,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.parent.as_ref().map(TreeSceneObject::object_id)
     }
     pub fn children(&self) -> Vec<TreeSceneObject<ObjectType>> {
-        self.children.iter().cloned().collect()
+        self.children.clone()
     }
     pub fn this_id(&self) -> ObjectId {
         self.this_id
