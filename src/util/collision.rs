@@ -593,34 +593,31 @@ impl Collider for BoxCollider {
     fn collides_with_box(&self, other: &BoxCollider) -> Option<Vec2> {
         let self_proj = self.left()..self.right();
         let other_proj = other.left()..other.right();
-        let right_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
+        let horizontal_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
             None | Some(0.) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
-
         let self_proj = self.top()..self.bottom();
         let other_proj = other.top()..other.bottom();
-        match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => None,
-            Some(mut dist) => {
-                dist += polygon::adjust_for_containment(&self_proj, &other_proj);
-                if dist < right_dist {
-                    // Collision along vertical axis.
-                    let mtv = dist * Vec2::down();
-                    if self.centre.y < other.centre.y {
-                        Some(-mtv)
-                    } else {
-                        Some(mtv)
-                    }
-                } else {
-                    // Collision along horizontal axis.
-                    let mtv = right_dist * Vec2::right();
-                    if self.centre.x < other.centre.x {
-                        Some(-mtv)
-                    } else {
-                        Some(mtv)
-                    }
-                }
+        let vertical_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
+            None | Some(0.) => return None,
+            Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
+        };
+        if vertical_dist < horizontal_dist {
+            // Collision along vertical axis.
+            let mtv = vertical_dist * Vec2::down();
+            if self.centre.y < other.centre.y {
+                Some(-mtv)
+            } else {
+                Some(mtv)
+            }
+        } else {
+            // Collision along horizontal axis.
+            let mtv = horizontal_dist * Vec2::right();
+            if self.centre.x < other.centre.x {
+                Some(-mtv)
+            } else {
+                Some(mtv)
             }
         }
     }
@@ -666,6 +663,82 @@ impl Collider for BoxCollider {
             [self.top_left(), self.top_right(), self.bottom_left()],
             [self.top_right(), self.bottom_right(), self.bottom_left()],
         ]
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct BoxCollider3d {
+    centre: Vec2,
+    extent: Vec2,
+    front: f32,
+    back: f32,
+}
+
+impl AxisAlignedExtent for BoxCollider3d {
+    fn aa_extent(&self) -> Vec2 {
+        self.extent
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.centre
+    }
+}
+
+impl BoxCollider3d {
+    pub fn from_2d(collider: BoxCollider, back: f32, front: f32) -> Self {
+        check_le!(back, front);
+        Self {
+            centre: collider.centre,
+            extent: collider.extent,
+            front,
+            back,
+        }
+    }
+
+    pub fn collides_with(&self, other: &BoxCollider3d) -> Option<(Vec2, f32)> {
+        let self_proj = self.left()..self.right();
+        let other_proj = other.left()..other.right();
+        let horizontal_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
+            None | Some(0.) => return None,
+            Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
+        };
+        let self_proj = self.top()..self.bottom();
+        let other_proj = other.top()..other.bottom();
+        let vertical_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
+            None | Some(0.) => return None,
+            Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
+        };
+        let self_proj = self.back..self.front;
+        let other_proj = other.back..other.front;
+        let depth_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
+            None | Some(0.) => return None,
+            Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
+        };
+
+        // Find the minimum distance to determine collision axis
+        if vertical_dist <= horizontal_dist && vertical_dist <= depth_dist {
+            // Collision along vertical axis.
+            let mtv = vertical_dist * Vec2::down();
+            if self.centre.y < other.centre.y {
+                Some((-mtv, 0.))
+            } else {
+                Some((mtv, 0.))
+            }
+        } else if horizontal_dist <= vertical_dist && horizontal_dist <= depth_dist {
+            // Collision along horizontal axis.
+            let mtv = horizontal_dist * Vec2::right();
+            if self.centre.x < other.centre.x {
+                Some((-mtv, 0.))
+            } else {
+                Some((mtv, 0.))
+            }
+        } else {
+            if (self.front - self.back) / 2. < (other.front - other.back) / 2. {
+                Some((Vec2::zero(), -depth_dist))
+            } else {
+                Some((Vec2::zero(), depth_dist))
+            }
+        }
     }
 }
 
