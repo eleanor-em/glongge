@@ -863,26 +863,33 @@ impl GuiConsoleLog {
                                     2,
                                 );
                                 let text = &segment[sep + 1..];
-                                egui::RichText::new(text)
+                                let mut rich_text = egui::RichText::new(text)
                                     .color(match col {
                                         2 => Color32::from_gray(120),
                                         31 => Color32::from_rgb(197, 15, 31),
                                         32 => Color32::from_rgb(19, 161, 14),
                                         33 => Color32::from_rgb(193, 156, 0),
                                         34 => Color32::from_rgb(0, 55, 218),
-                                        0 => Color32::from_gray(240),
+                                        0 | 1 | 3 => Color32::from_gray(240),
                                         _ => {
                                             warn!("unrecognised colour code: {col}");
                                             Color32::from_gray(240)
                                         }
                                     })
-                                    .monospace()
-                                    .append_to(
-                                        &mut layout_job,
-                                        &style,
-                                        FontSelection::Default,
-                                        Align::Center,
-                                    );
+                                    .monospace();
+                                if col == 1 {
+                                    // XXX: doesn't seem to do anything.
+                                    rich_text = rich_text.strong();
+                                }
+                                if col == 3 {
+                                    rich_text = rich_text.italics();
+                                }
+                                rich_text.append_to(
+                                    &mut layout_job,
+                                    &style,
+                                    FontSelection::Default,
+                                    Align::Center,
+                                );
                             }
                         }
                     }
