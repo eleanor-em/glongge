@@ -1,6 +1,6 @@
 use crate::core::input::InputHandler;
 use crate::core::prelude::*;
-use crate::core::scene::{GuiClosure, GuiInsideClosure};
+use crate::core::scene::{GuiClosure, GuiCommand};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
@@ -108,95 +108,41 @@ impl GuiObjectView {
         Ok(())
     }
 
+    fn get_object<'a, O: ObjectTypeEnum>(
+        &self,
+        object_handler: &'a ObjectHandler<O>,
+    ) -> Result<&'a SceneObjectWrapper<O>> {
+        gg_err::log_err_then(object_handler.get_object(self.object_id)).with_context(|| {
+            format!(
+                "!object_id.is_root() but object_handler.get_object(object_id) returned None: {:?}",
+                self.object_id
+            )
+        })
+    }
+
     fn build_closure<O: ObjectTypeEnum>(
         &mut self,
         object_handler: &mut ObjectHandler<O>,
-        mut gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
+        mut gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
         frame: Frame,
         enabled: bool,
     ) -> Result<Box<GuiClosure>> {
-        let object_id = self.object_id;
-        if object_id.is_root() {
+        let is_root = self.object_id.is_root();
+        if is_root {
             return Ok(Box::new(|_| {}));
         }
 
-        let mut absolute_transform = object_handler
-            .absolute_transforms
-            .get(&object_id)
-            .copied()
-            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
-        let object = gg_err::log_err_then(object_handler.get_object_mut(object_id))
-            .with_context(|| {
-                self.clear_selection();
-                format!("!object_id.is_root() but object_handler.get_object(object_id) returned None: {object_id:?}")
-            })?;
-        let name = object.nickname_or_type_name();
-        let gui_cmd = gui_cmds.remove(&object_id);
-
-        self.absolute_cell.update_live(absolute_transform);
-        {
-            let next = self.absolute_cell.recv();
-            let dx = next.centre - absolute_transform.centre;
-            let dt = next.rotation - absolute_transform.rotation;
-            let ds = next.scale - absolute_transform.scale;
-            let mut transform = object.transform_mut();
-            transform.centre += dx;
-            transform.rotation += dt;
-            transform.scale += ds;
-            absolute_transform = next;
-        }
-
-        let relative_transform = object.transform();
-        self.relative_cell.update_live(relative_transform);
-        let next = self.relative_cell.recv();
-        *object.transform_mut() = next;
-
-        let absolute_sender = self.absolute_cell.sender();
-        let relative_sender = self.relative_cell.sender();
+        let name_cmd = self.create_name_cmd(object_handler)?;
+        let transform_cmd = self.create_transform_cmd(object_handler)?;
+        let gui_cmd = gui_cmds.remove(&self.object_id);
 
         Ok(Box::new(move |ctx| {
             egui::SidePanel::right(Id::new("object-view"))
                 .frame(frame)
-                .show_animated(ctx, enabled && !object_id.is_root(), |ui| {
+                .show_animated(ctx, enabled && !is_root, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.vertical_centered(|ui| {
-                            let mut layout_job = LayoutJob::default();
-                            layout_job.append(
-                                format!("{name} [{}]", object_id.0).as_str(),
-                                0.,
-                                TextFormat {
-                                    color: Color32::from_white_alpha(255),
-                                    ..Default::default()
-                                },
-                            );
-                            ui.add(egui::Label::new(layout_job).selectable(false));
-                            ui.separator();
-                        });
-
-                        let mut layout_job = LayoutJob::default();
-                        layout_job.append(
-                            "Absolute transform:",
-                            0.,
-                            TextFormat {
-                                color: Color32::from_white_alpha(255),
-                                ..Default::default()
-                            },
-                        );
-                        ui.add(egui::Label::new(layout_job).selectable(false));
-                        absolute_transform.build_gui(ui, absolute_sender);
-                        ui.separator();
-                        let mut layout_job = LayoutJob::default();
-                        layout_job.append(
-                            "Relative transform:",
-                            0.,
-                            TextFormat {
-                                color: Color32::from_white_alpha(255),
-                                ..Default::default()
-                            },
-                        );
-                        ui.add(egui::Label::new(layout_job).selectable(false));
-                        relative_transform.build_gui(ui, relative_sender);
-
+                        name_cmd(ui);
+                        transform_cmd(ui);
                         if let Some(gui_cmd) = gui_cmd {
                             ui.separator();
                             gui_cmd(ui);
@@ -204,6 +150,102 @@ impl GuiObjectView {
                     });
                 });
         }))
+    }
+
+    fn create_name_cmd<O: ObjectTypeEnum>(
+        &self,
+        object_handler: &mut ObjectHandler<O>,
+    ) -> Result<Box<GuiCommand>> {
+        let name = format!(
+            "{} [{}]",
+            self.get_object(object_handler)?.nickname_or_type_name(),
+            self.object_id.0
+        );
+        Ok(Box::new(move |ui: &mut Ui| {
+            ui.vertical_centered(|ui| {
+                let mut layout_job = LayoutJob::default();
+                layout_job.append(
+                    &name,
+                    0.,
+                    TextFormat {
+                        color: Color32::from_white_alpha(255),
+                        ..Default::default()
+                    },
+                );
+                ui.add(egui::Label::new(layout_job).selectable(false));
+                ui.separator();
+            });
+        }))
+    }
+
+    fn create_transform_cmd<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+    ) -> Result<Box<GuiCommand>> {
+        let object_id = self.object_id;
+        let object = self.get_object(object_handler)?;
+
+        let mut absolute_transform = object_handler
+            .absolute_transforms
+            .get(&object_id)
+            .copied()
+            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+        let mut relative_transform = object.transform();
+        self.absolute_cell.update_live(absolute_transform);
+        self.relative_cell.update_live(relative_transform);
+
+        match (self.absolute_cell.try_recv(), self.relative_cell.try_recv()) {
+            (None, None) => {}
+            (Some(_), Some(_)) => {
+                check!(
+                    false,
+                    "absolute_cell and relative_cell should not both be received"
+                );
+            }
+            (Some(next), None) => {
+                let mut transform = object.transform_mut();
+                transform.centre += next.centre - absolute_transform.centre;
+                transform.rotation += next.rotation - absolute_transform.rotation;
+                transform.scale += next.scale - absolute_transform.scale;
+                absolute_transform = next;
+            }
+            (None, Some(next)) => {
+                let mut transform = object.transform_mut();
+                transform.centre += next.centre - relative_transform.centre;
+                transform.rotation += next.rotation - relative_transform.rotation;
+                transform.scale += next.scale - relative_transform.scale;
+                relative_transform = next;
+            }
+        }
+
+        let absolute_sender = self.absolute_cell.sender();
+        let relative_sender = self.relative_cell.sender();
+        let transform_cmd = move |ui: &mut Ui| {
+            let mut layout_job = LayoutJob::default();
+            layout_job.append(
+                "Absolute transform:",
+                0.,
+                TextFormat {
+                    color: Color32::from_white_alpha(255),
+                    ..Default::default()
+                },
+            );
+            ui.add(egui::Label::new(layout_job).selectable(false));
+            absolute_transform.build_gui(ui, absolute_sender);
+            ui.separator();
+            let mut layout_job = LayoutJob::default();
+            layout_job.append(
+                "Relative transform:",
+                0.,
+                TextFormat {
+                    color: Color32::from_white_alpha(255),
+                    ..Default::default()
+                },
+            );
+            ui.add(egui::Label::new(layout_job).selectable(false));
+            relative_transform.build_gui(ui, relative_sender);
+        };
+        Ok(Box::new(transform_cmd))
     }
 }
 
@@ -1068,7 +1110,7 @@ impl DebugGui {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &mut ObjectHandler<O>,
-        gui_cmds: BTreeMap<ObjectId, Box<GuiInsideClosure>>,
+        gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
     ) -> Box<GuiClosure> {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {

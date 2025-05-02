@@ -1,4 +1,4 @@
-use crate::core::scene::{GuiInsideClosure, GuiObject};
+use crate::core::scene::{GuiCommand, GuiObject};
 use crate::util::{UnorderedPair, gg_iter};
 use crate::{
     core::{ObjectTypeEnum, prelude::*, scene::SceneObject},
@@ -1844,11 +1844,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 }
 
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
-    fn on_gui(
-        &mut self,
-        ctx: &UpdateContext<ObjectType>,
-        _selected: bool,
-    ) -> Box<GuiInsideClosure> {
+    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiCommand> {
         let extent = self.collider.aa_extent();
         let (next_x, next_y) = (
             self.extent_cell_receiver_x.try_recv(),

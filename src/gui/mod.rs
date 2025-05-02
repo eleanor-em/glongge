@@ -54,17 +54,15 @@ impl<T: Clone + Default + Display + FromStr> EditCellReceiver<T> {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.editing.store(false, Ordering::Relaxed);
-    }
     pub fn try_recv(&mut self) -> Option<T> {
         self.rx.try_iter().last().and_then(|s| s.parse().ok())
     }
 
-    pub fn recv(&mut self) -> T {
-        if let Some(next) = self.try_recv() {
-            self.last_value = next;
-        }
+    pub fn reset(&mut self) {
+        self.editing.store(false, Ordering::Relaxed);
+    }
+
+    pub fn last_value(&self) -> T {
         self.last_value.clone()
     }
 
@@ -187,19 +185,7 @@ impl TransformCell {
             scale_y: EditCellReceiver::new(),
         }
     }
-    pub fn recv(&mut self) -> Transform {
-        Transform {
-            centre: Vec2 {
-                x: self.centre_x.recv(),
-                y: self.centre_y.recv(),
-            },
-            rotation: self.rotation.recv().to_radians(),
-            scale: Vec2 {
-                x: self.scale_x.recv(),
-                y: self.scale_y.recv(),
-            },
-        }
-    }
+
     pub fn update_live(&mut self, transform: Transform) {
         self.centre_x.update_live(transform.centre.x);
         self.centre_y.update_live(transform.centre.y);
@@ -208,12 +194,52 @@ impl TransformCell {
         self.scale_y.update_live(transform.scale.y);
     }
 
+    pub fn try_recv(&mut self) -> Option<Transform> {
+        let mut rv = self.last_value();
+        let mut changed = false;
+        if let Some(centre_x) = self.centre_x.try_recv() {
+            rv.centre.x = centre_x;
+            changed = true;
+        }
+        if let Some(centre_y) = self.centre_y.try_recv() {
+            rv.centre.y = centre_y;
+            changed = true;
+        }
+        if let Some(rotation) = self.rotation.try_recv() {
+            rv.rotation = rotation.to_radians();
+            changed = true;
+        }
+        if let Some(scale_x) = self.scale_x.try_recv() {
+            rv.scale.x = scale_x;
+            changed = true;
+        }
+        if let Some(scale_y) = self.scale_y.try_recv() {
+            rv.scale.y = scale_y;
+            changed = true;
+        }
+        if changed { Some(rv) } else { None }
+    }
+
     pub fn reset(&mut self) {
         self.centre_x.reset();
         self.centre_y.reset();
         self.rotation.reset();
         self.scale_x.reset();
         self.scale_y.reset();
+    }
+
+    pub fn last_value(&self) -> Transform {
+        Transform {
+            centre: Vec2 {
+                x: self.centre_x.last_value,
+                y: self.centre_y.last_value,
+            },
+            rotation: self.rotation.last_value,
+            scale: Vec2 {
+                x: self.scale_x.last_value,
+                y: self.scale_y.last_value,
+            },
+        }
     }
 
     pub fn sender(&self) -> TransformCellSender {
@@ -252,7 +278,7 @@ impl Transform {
                 cell.rotation.singleline_with_drag(ui, -1.0, "Rotation: ");
                 ui.end_row();
                 ui.add(egui::Label::new("Scale").selectable(false));
-                self.scale.build_gui(ui, 0.1, cell.scale_x, cell.scale_y);
+                self.scale.build_gui(ui, 0.01, cell.scale_x, cell.scale_y);
             });
     }
 }

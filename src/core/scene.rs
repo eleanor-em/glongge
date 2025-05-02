@@ -296,9 +296,9 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
 }
 
 pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;
-pub type GuiInsideClosure = dyn FnOnce(&mut GuiUi) + Send;
+pub type GuiCommand = dyn FnOnce(&mut GuiUi) + Send;
 pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
-    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiInsideClosure>;
+    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand>;
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for Box<dyn SceneObject<ObjectType>> {

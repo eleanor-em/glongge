@@ -96,21 +96,6 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             )
         }
     }
-    pub(crate) fn get_object_mut(
-        &mut self,
-        id: ObjectId,
-    ) -> Result<Option<&mut SceneObjectWrapper<ObjectType>>> {
-        if id.is_root() {
-            Ok(None)
-        } else if let Some(object) = self.objects.get_mut(&id) {
-            Ok(Some(object))
-        } else {
-            bail!(
-                "missing object_id from objects: {:?}",
-                id, /* borrow checker problems: self.get_object_type_string(id)? */
-            )
-        }
-    }
 
     fn get_parent_id(&self, id: ObjectId) -> Result<ObjectId> {
         if let Some(parent) = self.parents.get(&id) {

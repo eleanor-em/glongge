@@ -1,5 +1,5 @@
 use crate::core::input::MouseButton;
-use crate::core::scene::{GuiInsideClosure, GuiObject};
+use crate::core::scene::{GuiCommand, GuiObject};
 use crate::core::{ObjectTypeEnum, prelude::*};
 use crate::util::canvas::Canvas;
 use egui::{Align, Layout};
@@ -210,11 +210,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
 }
 
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractiveSpline {
-    fn on_gui(
-        &mut self,
-        _ctx: &UpdateContext<ObjectType>,
-        selected: bool,
-    ) -> Box<GuiInsideClosure> {
+    fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand> {
         self.gui_selected = selected || self.force_visible;
         let string_desc = self
             .spline
