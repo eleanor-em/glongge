@@ -5,10 +5,12 @@ use crate::core::input::InputHandler;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
 use crate::core::vk::WindowEventHandler;
-use crate::gui::GuiContext;
+use crate::gui::{GuiContext, GuiUi};
+use egui::{Button, WidgetText};
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::{hash::Hash, ops::Deref, vec::IntoIter};
 use tracing_subscriber::fmt::time::OffsetTime;
 
@@ -835,4 +837,78 @@ macro_rules! scene_object_vec {
            $x.into_wrapper()
         ),*]
     };
+}
+
+pub(crate) struct ValueChannel<T: Copy> {
+    value: T,
+    tx: Sender<T>,
+    rx: Receiver<T>,
+}
+
+impl<T: Copy> ValueChannel<T> {
+    pub fn with_value(value: T) -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self { value, tx, rx }
+    }
+
+    pub fn overwrite(&mut self, value: T) {
+        self.value = value;
+    }
+    pub fn get(&self) -> T {
+        self.value
+    }
+
+    pub fn try_recv_and_update(&mut self) -> Option<T> {
+        self.value = self.rx.try_iter().last()?;
+        Some(self.value)
+    }
+
+    pub fn sender(&self) -> ValueChannelSender<T> {
+        ValueChannelSender {
+            value: self.value,
+            tx: self.tx.clone(),
+        }
+    }
+    pub fn send(&self, value: T) {
+        self.tx.send(value).unwrap();
+    }
+}
+
+impl<T: Copy + Default> Default for ValueChannel<T> {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            value: Default::default(),
+            tx,
+            rx,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ValueChannelSender<T: Copy> {
+    value: T,
+    tx: Sender<T>,
+}
+
+impl<T: Copy> ValueChannelSender<T> {
+    pub fn get(&self) -> T {
+        self.value
+    }
+
+    pub fn send(&self, value: T) {
+        self.tx.send(value).unwrap();
+    }
+}
+
+impl ValueChannelSender<bool> {
+    pub fn toggle(&self) {
+        self.send(!self.get());
+    }
+
+    pub fn add_as_button(&self, ui: &mut GuiUi, text: impl Into<WidgetText>) {
+        if ui.add(Button::new(text).selected(self.get())).clicked() {
+            self.toggle();
+        }
+    }
 }

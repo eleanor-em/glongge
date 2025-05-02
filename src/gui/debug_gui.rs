@@ -6,7 +6,7 @@ use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
 use crate::core::{ObjectId, ObjectTypeEnum, TreeSceneObject};
 use crate::gui::{GuiUi, TransformCell};
-use crate::util::{NonemptyVec, gg_err, gg_float, gg_iter};
+use crate::util::{NonemptyVec, ValueChannel, ValueChannelSender, gg_err, gg_float, gg_iter};
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{
@@ -33,6 +33,16 @@ enum ObjectLabel {
     Disambiguated(String, String, usize),
 }
 
+impl std::fmt::Debug for ObjectLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectLabel::Root => write!(f, "<root>"),
+            ObjectLabel::Unique(name, tags) => write!(f, "{name} {tags}"),
+            ObjectLabel::Disambiguated(name, tags, idx) => write!(f, "{name} {tags} #{idx}"),
+        }
+    }
+}
+
 impl ObjectLabel {
     fn name(&self) -> &str {
         match self {
@@ -45,7 +55,7 @@ impl ObjectLabel {
         match self {
             ObjectLabel::Root => "<root>".to_string(),
             ObjectLabel::Unique(name, _) => name.clone(),
-            ObjectLabel::Disambiguated(name, _, count) => format!("{name} {count}"),
+            ObjectLabel::Disambiguated(name, _, count) => format!("{name} #{count}"),
         }
     }
 
@@ -253,32 +263,20 @@ struct GuiObjectTreeNode {
     label: ObjectLabel,
     object_id: ObjectId,
     displayed: BTreeMap<ObjectId, GuiObjectTreeNode>,
-    depth: usize,
-    disambiguation: Rc<RefCell<BTreeMap<String, usize>>>,
-    open: bool,
-    open_tx: Sender<bool>,
-    open_rx: Receiver<bool>,
-    expand_all_children: bool,
-    expand_all_children_tx: Sender<bool>,
-    expand_all_children_rx: Receiver<bool>,
+    disambiguation: Rc<RefCell<BTreeMap<String, usize>>>, // for id_salt()
+    open: ValueChannel<bool>,
+    expand_all_children: ValueChannel<bool>,
 }
 
 impl GuiObjectTreeNode {
     fn new() -> Self {
-        let (open_tx, open_rx) = std::sync::mpsc::channel();
-        let (expand_all_children_tx, expand_all_children_rx) = std::sync::mpsc::channel();
         Self {
             label: ObjectLabel::Root,
             object_id: ObjectId::root(),
             displayed: BTreeMap::new(),
-            depth: 0,
             disambiguation: Rc::new(RefCell::new(BTreeMap::new())),
-            open: false,
-            open_tx,
-            open_rx,
-            expand_all_children: false,
-            expand_all_children_tx,
-            expand_all_children_rx,
+            open: ValueChannel::default(),
+            expand_all_children: ValueChannel::default(),
         }
     }
 
@@ -311,8 +309,6 @@ impl GuiObjectTreeNode {
             .entry(name.clone())
             .and_modify(|count| *count += 1)
             .or_default();
-        let (open_tx, open_rx) = mpsc::channel();
-        let (expand_all_children_tx, expand_all_children_rx) = std::sync::mpsc::channel();
         Self {
             label: if count > 0 {
                 ObjectLabel::Disambiguated(name, String::new(), count)
@@ -321,113 +317,71 @@ impl GuiObjectTreeNode {
             },
             object_id: object.object_id,
             displayed: BTreeMap::new(),
-            depth: self.depth + 1,
             disambiguation: self.disambiguation.clone(),
-            open: false,
-            open_tx,
-            open_rx,
-            expand_all_children: false,
-            expand_all_children_tx,
-            expand_all_children_rx,
+            open: ValueChannel::default(),
+            expand_all_children: ValueChannel::default(),
         }
     }
 
     fn update_open_with_selected(&mut self, selected_id: ObjectId) -> bool {
-        let mut rv = false;
         if self.displayed.contains_key(&selected_id)
             || self
                 .displayed
                 .values_mut()
                 .any(|c| c.update_open_with_selected(selected_id))
         {
-            self.open = true;
-            rv = true;
+            self.open.overwrite(true);
+            true
+        } else {
+            false
         }
-        rv
     }
 
     fn as_builder(
         &mut self,
         selected_changed: bool,
-        selected_id: ObjectId,
-        selected_tx: Sender<ObjectId>,
+        selected: &ValueChannel<ObjectId>,
     ) -> GuiObjectTreeBuilder {
-        if let Some(next) = self.open_rx.try_iter().last() {
-            self.open = next;
-            if !self.open {
-                self.expand_all_children = false;
-            }
+        self.expand_all_children.try_recv_and_update();
+        if let Some(false) = self.open.try_recv_and_update() {
+            self.expand_all_children.overwrite(false);
         }
-        if let Some(next) = self.expand_all_children_rx.try_iter().last() {
-            self.expand_all_children = next;
-        }
-        let selected = selected_id == self.object_id;
         GuiObjectTreeBuilder {
             label: self.label.clone(),
             object_id: self.object_id,
             displayed: self
                 .displayed
                 .iter_mut()
-                .map(|(id, tree)| {
-                    (
-                        *id,
-                        tree.as_builder(selected_changed, selected_id, selected_tx.clone()),
-                    )
-                })
+                .map(|(id, tree)| (*id, tree.as_builder(selected_changed, selected)))
                 .collect(),
-            open: self.open,
-            open_tx: self.open_tx.clone(),
+            open_tx: self.open.sender(),
+            is_selected: selected.get() == self.object_id,
             selected_changed,
-            selected,
-            selected_tx,
-            expand_all_children: self.expand_all_children,
-            expand_all_children_tx: self.expand_all_children_tx.clone(),
+            selected_tx: selected.sender(),
+            expand_all_children_tx: self.expand_all_children.sender(),
         }
     }
 }
 
 pub(crate) struct GuiObjectTree {
     root: GuiObjectTreeNode,
-    show: bool,
-    show_tx: Sender<bool>,
-    show_rx: Receiver<bool>,
-
-    selected_id: ObjectId,
-    selected_tx: Sender<ObjectId>,
-    selected_rx: Receiver<ObjectId>,
+    show: ValueChannel<bool>,
+    selected_id: ValueChannel<ObjectId>,
 }
 
 impl GuiObjectTree {
     fn new() -> Self {
-        let (show_tx, show_rx) = mpsc::channel();
         let selected_id = ObjectId::root();
-        let (selected_tx, selected_rx) = mpsc::channel();
         Self {
             root: GuiObjectTreeNode::new(),
-            show: true,
-            show_tx,
-            show_rx,
-            selected_id,
-            selected_tx,
-            selected_rx,
+            show: ValueChannel::with_value(true),
+            selected_id: ValueChannel::with_value(selected_id),
         }
     }
 
     fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
-        if let Some(next) = self.show_rx.try_iter().last() {
-            self.show = next;
-        }
-        let show = self.show;
-        let show_tx = self.show_tx.clone();
-        let mut selected_changed = false;
-        if let Some(next) = self.selected_rx.try_iter().last() {
-            self.selected_id = next;
-            self.root.update_open_with_selected(self.selected_id);
-            selected_changed = true;
-        }
-        let mut root =
-            self.root
-                .as_builder(selected_changed, self.selected_id, self.selected_tx.clone());
+        self.show.try_recv_and_update();
+        let show_cmd = self.create_show_cmd();
         Box::new(move |ctx| {
             egui::SidePanel::left(Id::new("object-tree"))
                 .resizable(true)
@@ -440,30 +394,40 @@ impl GuiObjectTree {
                         bar_width: 5.,
                         ..Default::default()
                     };
-                    if show {
-                        ui.vertical_centered(|ui| {
-                            if ui.add(Button::new("🌳").selected(show)).clicked() {
-                                show_tx.send(!show).unwrap();
-                            }
-                            egui::ScrollArea::vertical().show(ui, |ui| {
-                                let mut layout_job = LayoutJob::default();
-                                layout_job.append(
-                                    "Object Tree",
-                                    0.,
-                                    TextFormat {
-                                        color: Color32::from_white_alpha(255),
-                                        ..Default::default()
-                                    },
-                                );
-                                ui.add(egui::Label::new(layout_job).selectable(false));
-                                ui.separator();
-                                root.build(ui);
-                            });
-                        });
-                    } else if ui.add(Button::new("🌳").selected(show)).clicked() {
-                        show_tx.send(!show).unwrap();
-                    }
+                    show_cmd(ui);
                 });
+        })
+    }
+
+    fn create_show_cmd(&mut self) -> Box<GuiCommand> {
+        let selected_changed = self
+            .selected_id
+            .try_recv_and_update()
+            .is_some_and(|next| self.root.update_open_with_selected(next));
+        let mut root = self.root.as_builder(selected_changed, &self.selected_id);
+        let show_tx = self.show.sender();
+        Box::new(move |ui| {
+            if show_tx.get() {
+                ui.vertical_centered(|ui| {
+                    show_tx.add_as_button(ui, "🌳");
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        let mut layout_job = LayoutJob::default();
+                        layout_job.append(
+                            "Object Tree",
+                            0.,
+                            TextFormat {
+                                color: Color32::from_white_alpha(255),
+                                ..Default::default()
+                            },
+                        );
+                        ui.add(egui::Label::new(layout_job).selectable(false));
+                        ui.separator();
+                        root.build(ui);
+                    });
+                });
+            } else {
+                show_tx.add_as_button(ui, "🌳");
+            }
         })
     }
 
@@ -474,24 +438,24 @@ impl GuiObjectTree {
         wireframe_mouseovers: &[ObjectId],
     ) {
         if input_handler.pressed(KeyCode::KeyF) {
-            if let Some(i) = gg_iter::index_of(wireframe_mouseovers, &self.selected_id) {
+            if let Some(i) = gg_iter::index_of(wireframe_mouseovers, &self.selected_id.get()) {
                 let i = (i + 1) % wireframe_mouseovers.len();
-                self.selected_tx.send(wireframe_mouseovers[i]).unwrap();
+                self.selected_id.send(wireframe_mouseovers[i]);
             } else if !wireframe_mouseovers.is_empty() {
-                self.selected_tx.send(wireframe_mouseovers[0]).unwrap();
+                self.selected_id.send(wireframe_mouseovers[0]);
             }
         }
         if input_handler.pressed(KeyCode::KeyC) {
-            if self.selected_id.is_root() {
+            if self.selected_id.get().is_root() {
                 if let Some(object_id) = object_handler.get_first_object_id() {
-                    self.selected_tx.send(object_id).unwrap();
+                    self.selected_id.send(object_id);
                 }
             } else if let Some(child) = gg_err::log_err_then(
                 object_handler
-                    .get_children(self.selected_id)
+                    .get_children(self.selected_id.get())
                     .map(|v| v.first()),
             ) {
-                self.selected_tx.send(child.object_id).unwrap();
+                self.selected_id.send(child.object_id);
             } else {
                 self.select_next_sibling(object_handler);
             }
@@ -506,13 +470,14 @@ impl GuiObjectTree {
             self.select_prev_sibling(object_handler);
         }
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
-            if let Some(parent) = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
+            if let Some(parent) =
+                gg_err::log_err_then(object_handler.get_parent(self.selected_id.get()))
             {
-                self.selected_tx.send(parent.object_id).unwrap();
+                self.selected_id.send(parent.object_id);
             }
         }
         if input_handler.pressed(KeyCode::KeyO) {
-            self.show = !self.show;
+            self.show.overwrite(!self.show.get());
         }
     }
     fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
@@ -527,29 +492,29 @@ impl GuiObjectTree {
         object_handler: &ObjectHandler<O>,
         n: isize,
     ) {
-        let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id))
+        let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id.get()))
             .map_or(ObjectId::root(), |parent| parent.object_id);
         let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
             .iter()
             .map(|o| o.object_id)
             .collect_vec();
-        if let Some(sibling_id) = gg_iter::index_of(&siblings, &self.selected_id)
+        if let Some(sibling_id) = gg_iter::index_of(&siblings, &self.selected_id.get())
             .map(|i| {
                 let ix = isize::try_from(i).unwrap() + n;
                 let ix = ix.rem_euclid(isize::try_from(siblings.len()).unwrap());
                 siblings[ix as usize]
             })
             .or_else(|| {
-                check_eq!(self.selected_id, ObjectId::root());
+                check_eq!(self.selected_id.get(), ObjectId::root());
                 siblings.first().copied()
             })
         {
-            self.selected_tx.send(sibling_id).unwrap();
+            self.selected_id.send(sibling_id);
         } else {
             error!(
                 "select_next_sibling(): no sibling found for {:?} (parent={:?})",
-                self.selected_id,
-                object_handler.get_parent(self.selected_id)
+                self.selected_id.get(),
+                object_handler.get_parent(self.selected_id.get())
             );
         }
     }
@@ -605,19 +570,15 @@ impl GuiObjectTree {
     }
 }
 
-// TODO
-#[allow(clippy::struct_excessive_bools)]
 struct GuiObjectTreeBuilder {
     label: ObjectLabel,
     object_id: ObjectId,
     displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
-    open: bool,
-    open_tx: Sender<bool>,
+    open_tx: ValueChannelSender<bool>,
+    is_selected: bool,
     selected_changed: bool,
-    selected: bool,
-    selected_tx: Sender<ObjectId>,
-    expand_all_children: bool,
-    expand_all_children_tx: Sender<bool>,
+    selected_tx: ValueChannelSender<ObjectId>,
+    expand_all_children_tx: ValueChannelSender<bool>,
 }
 impl GuiObjectTreeBuilder {
     fn build(&mut self, ui: &mut GuiUi) {
@@ -637,8 +598,8 @@ impl GuiObjectTreeBuilder {
 
                 let response = egui::CollapsingHeader::new(self.label.name())
                     .id_salt(self.label.id_salt())
-                    .show_background(self.selected)
-                    .open(Some(self.open))
+                    .show_background(self.is_selected)
+                    .open(Some(self.open_tx.get()))
                     .show(ui, |ui| {
                         ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
                         for (_, child_group) in &self
@@ -652,29 +613,31 @@ impl GuiObjectTreeBuilder {
                                 .iter_mut()
                                 .take(max_displayed)
                                 .for_each(|tree| tree.build(ui));
-                            if !self.expand_all_children && child_group.len() > max_displayed {
+                            if !self.expand_all_children_tx.get()
+                                && child_group.len() > max_displayed
+                            {
                                 let expander_label =
                                     egui::Label::new(format!("[..{}]", child_group.len()))
                                         .extend()
                                         .sense(Sense::click())
                                         .selectable(false);
                                 if ui.add(expander_label).clicked() {
-                                    self.expand_all_children_tx.send(true).unwrap();
+                                    self.expand_all_children_tx.send(true);
                                 }
                                 ui.end_row();
                             }
                         }
                     });
-                if self.selected_changed && self.selected {
+                if self.selected_changed && self.is_selected {
                     response.header_response.scroll_to_me(Some(Align::Center));
                 }
                 if response.header_response.double_clicked()
                     || response.header_response.secondary_clicked()
                 {
-                    self.open_tx.send(!self.open).unwrap();
+                    self.open_tx.toggle();
                 }
                 if response.header_response.clicked() {
-                    self.selected_tx.send(self.object_id).unwrap();
+                    self.selected_tx.send(self.object_id);
                 }
             });
         }
@@ -755,9 +718,9 @@ impl GuiConsoleLog {
                 .default_height(180.)
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
-                    ui.with_layout(egui::Layout::right_to_left(Align::TOP), |ui| {
+                    ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                         if ui
-                            .add(egui::Button::new("🖥").selected(view_perf == ViewPerfMode::Update))
+                            .add(Button::new("🖥").selected(view_perf == ViewPerfMode::Update))
                             .clicked()
                         {
                             let next = if view_perf == ViewPerfMode::Update {
@@ -768,9 +731,7 @@ impl GuiConsoleLog {
                             view_perf_tx.send(next).unwrap();
                         }
                         if ui
-                            .add(
-                                egui::Button::new("🎨").selected(view_perf == ViewPerfMode::Render),
-                            )
+                            .add(Button::new("🎨").selected(view_perf == ViewPerfMode::Render))
                             .clicked()
                         {
                             let next = if view_perf == ViewPerfMode::Render {
@@ -1078,7 +1039,7 @@ impl DebugGui {
             .drain(..)
             .filter(|o| {
                 gg_err::log_err(object_handler.get_parent_chain(*o))
-                    .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id))
+                    .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
             })
             .flat_map(|o| {
                 gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes_mut(o))
@@ -1114,7 +1075,7 @@ impl DebugGui {
     ) -> Box<GuiClosure> {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {
-                self.object_tree.selected_id = ObjectId::root();
+                self.object_tree.selected_id.overwrite(ObjectId::root());
                 gg_err::log_err(
                     self.object_view
                         .update_selection(object_handler, ObjectId::root()),
@@ -1124,16 +1085,16 @@ impl DebugGui {
                 .on_input(input_handler, object_handler, &self.wireframe_mouseovers);
             self.scene_control.on_input(input_handler);
         }
-        if !self.object_tree.selected_id.is_root() {
-            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id))
+        if !self.object_tree.selected_id.get().is_root() {
+            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id.get()))
                 .is_some()
             {
                 gg_err::log_err(
                     self.object_view
-                        .update_selection(object_handler, self.object_tree.selected_id),
+                        .update_selection(object_handler, self.object_tree.selected_id.get()),
                 );
             } else {
-                self.object_tree.selected_id = ObjectId::root();
+                self.object_tree.selected_id.overwrite(ObjectId::root());
                 self.object_view.clear_selection();
             }
         }
@@ -1197,10 +1158,10 @@ impl DebugGui {
         self.enabled
     }
     pub fn selected_object(&self) -> Option<ObjectId> {
-        if self.object_tree.selected_id.is_root() {
+        if self.object_tree.selected_id.get().is_root() {
             None
         } else {
-            Some(self.object_tree.selected_id)
+            Some(self.object_tree.selected_id.get())
         }
     }
 }
