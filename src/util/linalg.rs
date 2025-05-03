@@ -154,6 +154,14 @@ impl Vec2 {
     pub fn one() -> Vec2 {
         Vec2 { x: 1., y: 1. }
     }
+    /// Returns a vector with both components set to the given value.
+    ///
+    /// This can be useful for creating vectors with uniform values
+    /// or as a basis for scaling operations.
+    #[must_use]
+    pub fn splat(v: f32) -> Vec2 {
+        Vec2 { x: v, y: v }
+    }
     /// Returns a vector with both components set to 0.0.
     ///
     /// This can be useful for initialisation or as a neutral element

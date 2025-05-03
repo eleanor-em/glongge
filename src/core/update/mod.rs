@@ -990,6 +990,39 @@ impl UpdatePerfStats {
     }
 }
 
+/// A context object that provides access to various subsystems during scene object update events.
+///
+/// `UpdateContext` is passed to scene objects during the events `on_update()`,
+/// `on_collision()`, etc. It provides:
+///
+/// - Access to input state via `input()`
+/// - Scene management (coroutines, scene data) via `scene_mut()`
+/// - Object manipulation (transforms, collisions, hierarchy) via `object_mut()`
+/// - Viewport control via `viewport_mut()`
+/// - Frame timing information like delta time and FPS
+///
+/// # Example
+///
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+///     // Access input
+///     if ctx.input().pressed(KeyCode::Space) {
+///         // Modify object transform
+///         ctx.object_mut().transform_mut().centre += Vec2::up();
+///     }
+///
+///     // Start a coroutine
+///     ctx.scene_mut().start_coroutine(|this, ctx, action| {
+///         // Coroutine logic
+///         CoroutineResponse::Complete
+///     });
+///
+///     // Update viewport
+///     ctx.viewport_mut().centre_at(ctx.object_mut().transform().centre);
+/// }
+/// ```
 pub struct UpdateContext<'a, ObjectType: ObjectTypeEnum> {
     input: &'a InputHandler,
     scene: SceneContext<'a, ObjectType>,
@@ -1042,50 +1075,253 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
         })
     }
 
-    pub fn object_mut(&mut self) -> &mut ObjectContext<'a, ObjectType> {
-        &mut self.object
-    }
+    /// Returns an immutable reference to the [`ObjectContext`] for the current object.
+    ///
+    /// The [`ObjectContext`] provides methods to:
+    /// - Access and modify the object's transform/position
+    /// - Add/remove child objects
+    /// - Check collisions with other objects
+    /// - Access parent/child relationships
+    /// - Query other objects in the scene
+    ///
+    /// Similar to [`object_mut()`](UpdateContext::object_mut), but provides read-only access.
+    /// Should be used in the majority of cases; if you need to add or remove objects, see
+    /// [`object_mut()`](UpdateContext::object_mut).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// // Get parent object
+    /// if let Some(parent) = ctx.object().parent() {
+    ///     // Access parent properties...
+    /// }
+    ///
+    /// // Check collisions
+    /// if let Some(collisions) = ctx.object().test_collision(tags) {
+    ///     // Handle collisions...
+    /// }
+    /// ```
     pub fn object(&self) -> &ObjectContext<'a, ObjectType> {
         &self.object
     }
-    pub fn scene_mut(&mut self) -> &mut SceneContext<'a, ObjectType> {
-        &mut self.scene
+    /// Returns a mutable reference to the [`ObjectContext`] for the current object.
+    ///
+    /// Should usually only be used when you need to add or remove objects. For general use cases,
+    /// see [`object()`](UpdateContext::object).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// // Add a child object
+    /// ctx.object_mut().add_child(MyObject::new());
+    ///
+    /// // Remove a specific object and its children
+    /// ctx.object_mut().remove(other_object);
+    ///
+    /// // Remove this object and its children
+    /// ctx.object_mut().remove_this();
+    /// ```
+    pub fn object_mut(&mut self) -> &mut ObjectContext<'a, ObjectType> {
+        &mut self.object
     }
+    /// Returns an immutable reference to the [`SceneContext`] for managing scene-related
+    /// functionality.
+    ///
+    /// The [`SceneContext`] provides methods to:
+    /// - Access and modify scene-specific persistent data
+    /// - Start, stop and manage coroutines (background tasks)  
+    /// - Control scene flow (stop, pause, resume, transition between scenes)
+    /// - Access scene metadata like the current scene name
+    ///
+    /// Provides read access to scene data, coroutines, and scene control. For write access, use
+    /// [`scene_mut()`](UpdateContext::scene_mut).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// // Access scene data
+    /// if let Some(mut data) = ctx.scene().data::<GameState>() {
+    ///     // Read game state...
+    /// }
+    ///
+    /// // Start a coroutine
+    /// ctx.scene_mut().start_coroutine(|this, ctx, action| {
+    ///     // Coroutine logic...
+    ///     CoroutineResponse::Complete
+    /// });
+    ///
+    /// // Scene flow control
+    /// ctx.scene().goto(SceneDestination::MainMenu);
+    /// ```
     pub fn scene(&self) -> &SceneContext<'a, ObjectType> {
         &self.scene
     }
-    pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> {
-        &mut self.viewport
+
+    /// Returns a mutable reference to the [`SceneContext`] for managing scene-related functionality.
+    ///
+    /// Provides write access to scene data, coroutines, and scene control.
+    /// See [`scene()`](UpdateContext::scene) for more information.
+    pub fn scene_mut(&mut self) -> &mut SceneContext<'a, ObjectType> {
+        &mut self.scene
     }
+
+    /// Returns an immutable reference to the [`ViewportContext`] for viewport operations.
+    ///
+    /// The [`ViewportContext`] provides methods to:
+    /// - Control the viewport's position and scale
+    /// - Set viewport boundaries and perform clamping
+    /// - Change the clear color for rendering
+    /// - Access viewport properties like dimensions and center
+    ///
+    /// Provides read access to viewport properties. For write access, use
+    /// [`viewport_mut()`](UpdateContext::viewport_mut).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Check if point is visible in viewport
+    /// if ctx.viewport().contains_point(pos) {
+    ///     // Point is visible...
+    /// }
+    ///
+    /// // Get viewport dimensions
+    /// let viewport_size = ctx.viewport().aa_extent();
+    ///
+    /// // Get viewport center position
+    /// let center = ctx.viewport().centre();
+    /// ```
     pub fn viewport(&self) -> &ViewportContext<'a> {
         &self.viewport
     }
+
+    /// Returns a mutable reference to the [`ViewportContext`] for viewport operations.
+    ///
+    /// See [`viewport()`](UpdateContext::viewport) for more information.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// // Center viewport on object
+    /// ctx.viewport_mut().centre_at(ctx.transform().centre);
+    ///
+    /// // Translate viewport
+    /// ctx.viewport_mut().translate(Vec2::right() * 10.0);
+    ///
+    /// // Clamp viewport position
+    /// ctx.viewport_mut().clamp_to_left(Some(-100.0), Some(100.0));
+    /// ctx.viewport_mut().clamp_to_right(Some(-100.0), Some(100.0));
+    ///
+    /// // Change clear color
+    /// ctx.viewport_mut().clear_col().set_rgba(1.0, 0.0, 0.0, 1.0);
+    ///
+    /// // Change viewport scale
+    /// ctx.viewport_mut().set_global_scale_factor(2.0);
+    /// ```
+    pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> {
+        &mut self.viewport
+    }
+
+    /// Returns a reference to the [`InputHandler`] for querying input states.
+    ///
+    /// Provides access to keyboard, mouse, and touch input states.
     pub fn input(&self) -> &InputHandler {
         self.input
     }
 
+    /// Returns the absolute transform of this object in world space.
+    ///
+    /// The absolute transform accounts for all parent transforms in the hierarchy chain.
     pub fn absolute_transform(&self) -> Transform {
         self.object.absolute_transform()
     }
+
+    /// Returns the local transform of this object relative to its parent.
     pub fn transform(&self) -> Transform {
         self.object.transform()
     }
+
+    /// Returns a mutable reference to the local transform of this object.
+    ///
+    /// Modifying this transform affects the object's position, rotation, and scale relative to its
+    /// parent.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// // Change position
+    /// ctx.transform_mut().centre += Vec2::right() * 10.0;  // Move right
+    /// ctx.transform_mut().centre = Vec2::new(100.0, 200.0); // Set absolute position
+    ///
+    /// // Rotate object
+    /// ctx.transform_mut().rotation += 0.1;  // Rotate clockwise
+    /// ctx.transform_mut().rotation = std::f32::consts::PI; // Set to 180 degrees
+    ///
+    /// // Scale object
+    /// ctx.transform_mut().scale *= 1.5; // Increase size by 50%
+    /// ctx.transform_mut().scale = Vec2::splat(2.0); // Double size on both axes
+    ///
+    /// // Chain multiple transform changes
+    /// let mut transform = ctx.transform_mut();
+    /// transform.centre += Vec2::up() * 5.0;
+    /// transform.rotation += 0.5;
+    /// transform.scale *= 1.1;
+    /// ```
     pub fn transform_mut(&self) -> RefMut<Transform> {
         self.object.transform_mut()
     }
 
+    /// Returns the time elapsed since the last frame as a [`Duration`].
+    /// See [`delta_60fps()`](UpdateContext::delta_60fps()) for more information.
     pub fn delta(&self) -> Duration {
         self.delta
     }
+
+    /// Returns the time elapsed since the last frame scaled to 60 FPS.
+    /// This is useful for frame-rate independent movement/animations.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Move object at consistent speed regardless of frame rate
+    /// let speed = 5.0;
+    /// ctx.transform_mut().centre += Vec2::right() * speed * ctx.delta_60fps();
+    /// ```
     pub fn delta_60fps(&self) -> f32 {
         self.delta.as_secs_f32() * 60.0
     }
+
+    /// Returns the current frames per second (FPS).
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Check if running at target frame rate
+    /// if ctx.fps() < 60.0 {
+    ///     // Optimize/reduce effects...
+    /// }
+    /// ```
     pub fn fps(&self) -> f32 {
         self.fps
     }
+
+    /// Returns the total number of frames rendered since scene start.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Do something every 60 frames
+    /// if ctx.frame_counter() % 60 == 0 {
+    ///     // Periodic effect...
+    /// }
+    /// ```
     pub fn frame_counter(&self) -> usize {
         self.frame_counter
     }
+
+    /// Returns the total number of fixed update frames processed.
+    /// Fixed updates run at a constant time interval for time-dependent logic. See
+    /// [`on_fixed_update()`](SceneObject::on_fixed_update).
     pub fn fixed_frame_counter(&self) -> usize {
         self.fixed_frame_counter
     }
@@ -1101,6 +1337,8 @@ impl<ObjectType: ObjectTypeEnum> Drop for UpdateContext<'_, ObjectType> {
     }
 }
 
+/// Stripped-down version of [`UpdateContext`](UpdateContext) for use during
+/// [`on_fixed_update()`](SceneObject::on_fixed_update).
 pub struct FixedUpdateContext<'a, ObjectType: ObjectTypeEnum> {
     scene: SceneContext<'a, ObjectType>,
     object: ObjectContext<'a, ObjectType>,
@@ -1182,6 +1420,36 @@ impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
     }
 }
 
+/// Represents persistent scene data that can be serialised/deserialised between scene loads.
+///
+/// This type provides a way to store and access persistent data across scene loads. The data is
+/// automatically serialised when the `SceneData` is dropped.
+///
+/// # Examples
+///
+/// ```ignore
+/// use serde::{Serialize, Deserialize};
+///
+/// // Define your scene data structure
+/// #[derive(Default, Serialize, Deserialize)]
+/// struct AliveEnemyMap {
+///     alive_enemies: HashSet<Vec2i>,
+/// }
+///
+/// // Access the data in scene objects
+/// fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+///     // Get mutable access to scene data
+///     let mut data = ctx.scene_mut().data::<AliveEnemyMap>().unwrap();
+///     
+///     // Read data
+///     if !data.read().alive_enemies.contains(&pos) {
+///         ctx.object_mut().remove_this();
+///     }
+///
+///     // Modify data
+///     data.write().alive_enemies.insert(pos);
+/// }
+/// ```
 pub struct SceneData<T>
 where
     T: Default + Serialize + DeserializeOwned,
@@ -1235,6 +1503,7 @@ where
     }
 }
 
+/// See [`scene()`](UpdateContext::scene) for usage information.
 pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_name: SceneName,
@@ -1331,6 +1600,34 @@ impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
     }
 }
 
+/// Provides access to scene object operations and hierarchy during event callbacks.
+///
+/// `ObjectContext` allows manipulation of a scene object and its relationships during event
+/// callbacks like `on_update()`. It provides methods to:
+///
+/// - Access and modify transforms (position, rotation, scale)
+/// - Add/remove child objects and manage hierarchies
+/// - Check collisions with other objects
+/// - Query scene object relationships (parent/child/siblings)  
+/// - Access and modify object state
+///
+/// Note: The `this_id` field is never set to the root object (ObjectId(0)) in this context.
+///
+/// # Example
+/// ```ignore
+/// fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+///     // Access object transform
+///     let pos = ctx.object().transform().centre;
+///     
+///     // Add a child object
+///     ctx.object_mut().add_child(MyChild::new());
+///     
+///     // Check collisions
+///     if let Some(collisions) = ctx.object().test_collision(tags) {
+///         // Handle collisions...
+///     }
+/// }
+/// ```
 pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
     collision_handler: &'a CollisionHandler,
     this_id: ObjectId,
@@ -1345,9 +1642,28 @@ pub struct ObjectContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
+    /// Returns a reference to the parent scene object if one exists.
+    ///
+    /// Returns [`None`] if this is a root object or if the parent object has been removed.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// if let Some(parent) = ctx.object().parent() {
+    ///     // Access parent properties...
+    ///     let parent_transform = parent.transform();
+    /// }
+    /// ```
     pub fn parent(&self) -> Option<&TreeSceneObject<ObjectType>> {
         self.parent.as_ref()
     }
+    /// Returns the chain of parent objects from this object to the root.
+    ///
+    /// Traverses up the scene hierarchy starting from this object, collecting
+    /// all parent objects until reaching the root.
+    ///
+    /// # Returns
+    /// * A vector containing parent objects in order, starting from the immediate parent.
+    ///   For example, if the hierarchy is `root -> A -> B -> this`, returns `[B, A]`.
     pub fn parent_chain(&self) -> Vec<TreeSceneObject<ObjectType>> {
         let mut object_id = self.this_id;
         let mut parent_chain = Vec::new();
@@ -1357,19 +1673,57 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         }
         parent_chain
     }
-    pub fn parent_id(&self) -> Option<ObjectId> {
-        self.parent.as_ref().map(TreeSceneObject::object_id)
-    }
+    /// Returns a vector containing all child objects of this object.
+    ///
+    /// The returned vector is a clone of the internal children list, so the caller can freely
+    /// modify it.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Get all children
+    /// for child in ctx.object().children() {
+    ///     // Process each child...
+    /// }
+    ///
+    /// // Find specific child objects
+    /// let sprites = ctx.object().children().into_iter()
+    ///     .filter_map(|c| c.downcast::<Enemy>())
+    ///     .collect::<Vec<_>>();
+    /// ```
     pub fn children(&self) -> Vec<TreeSceneObject<ObjectType>> {
         self.children.clone()
     }
+
+    /// Returns the [`ObjectId`] of this object's parent in the scene hierarchy, or [`None`] if
+    /// this is a root object.
+    ///
+    /// Note: You should rarely need to access object IDs directly. Consider using higher-level
+    /// methods like [`parent()`](ObjectContext::parent) instead.
+    pub fn parent_id(&self) -> Option<ObjectId> {
+        self.parent.as_ref().map(TreeSceneObject::object_id)
+    }
+    /// Returns the unique [`ObjectId`] for this object in the scene hierarchy.
+    ///
+    /// Note: You should rarely need to access object IDs directly. Consider using higher-level
+    /// methods like using the context's object references instead.
     pub fn this_id(&self) -> ObjectId {
         self.this_id
     }
+
+    /// Returns the fully qualified name of this object as a path string.
+    ///
+    /// The name consists of parent object names in hierarchical order from root, separated by '/'.
+    /// For example, if the hierarchy is `root -> A -> B -> this`, returns `/A/B/this_name`.
+    /// Each object's name is determined by either its nickname if set, or its type name.
+    ///
+    /// Returns "MISSING" if the object ID is not found in the object tracker.
     pub fn fully_qualified_name(&self) -> String {
         self.object_tracker.get(self.this_id).map_or_else(
             || {
-                error!("missing object_id in objects: this={:?}", self.this_id);
+                error!(
+                    "ObjectContext: missing ObjectId in `object_tracker`: this={:?}",
+                    self.this_id
+                );
                 "MISSING".to_string()
             },
             |o| {
@@ -1386,20 +1740,65 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         )
     }
 
+    /// Returns the first child object of type `T` in this object's children list.
+    /// Note: if you intend to downcast to `T`, consider
+    /// [`first_child_as_ref()`](ObjectContext::first_child_as_ref) or
+    /// [`first_child_as_mut()`](ObjectContext::first_child_as_mut) instead.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Returns
+    /// * `Some(TreeSceneObject)` - The first child matching type T, if found
+    /// * `None` - If no child of type T exists
     pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<TreeSceneObject<ObjectType>> {
         self.children
             .iter()
             .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
             .cloned()
     }
+
+    /// Returns a reference to the first child object of type `T` in this object's children list.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Returns
+    /// * `Some(Ref<T>)` - A reference to the first child matching type T, if found
+    /// * `None` - If no child of type T exists
     pub fn first_child_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
         self.children.iter().find_map(DowncastRef::downcast::<T>)
     }
+
+    /// Returns a mutable reference to the first child object of type `T` in this object's children
+    /// list.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Returns
+    /// * `Some(RefMut<T>)` - A mutable reference to the first child matching type T, if found
+    /// * `None` - If no child of type T exists
     pub fn first_child_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         self.children
             .iter()
             .find_map(DowncastRef::downcast_mut::<T>)
     }
+
+    /// Returns the first child object of type `T` for the given object ID.
+    /// Note: if you intend to downcast to `T`, consider
+    /// [`first_child_of_as_ref()`](ObjectContext::first_child_of_as_ref) or
+    /// [`first_child_of_as_mut()`](ObjectContext::first_child_of_as_mut) instead.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Parameters
+    /// * `id` - The ID of the object whose children to search
+    ///
+    /// # Returns
+    /// * `Some(TreeSceneObject)` - The first child matching type T, if found
+    /// * `None` - If no child of type T exists or if the object ID is invalid
     pub fn first_child_of<T: SceneObject<ObjectType>>(
         &self,
         id: ObjectId,
@@ -1410,6 +1809,18 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
             .cloned()
     }
+
+    /// Returns a reference to the first child object of type `T` for the given object ID.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Parameters
+    /// * `id` - The ID of the object whose children to search
+    ///
+    /// # Returns
+    /// * `Some(Ref<T>)` - A reference to the first child matching type T, if found
+    /// * `None` - If no child of type T exists or if the object ID is invalid
     pub fn first_child_of_as_ref<T: SceneObject<ObjectType>>(
         &self,
         id: ObjectId,
@@ -1419,6 +1830,18 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .iter()
             .find_map(DowncastRef::downcast::<T>)
     }
+
+    /// Returns a mutable reference to the first child object of type `T` for the given object ID.
+    ///
+    /// # Type Parameters
+    /// * `T` - The type of scene object to search for
+    ///
+    /// # Parameters
+    /// * `id` - The ID of the object whose children to search
+    ///
+    /// # Returns
+    /// * `Some(RefMut<T>)` - A mutable reference to the first child matching type T, if found
+    /// * `None` - If no child of type T exists or if the object ID is invalid
     pub fn first_child_of_as_mut<T: SceneObject<ObjectType>>(
         &self,
         id: ObjectId,
@@ -1437,6 +1860,24 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .filter(|(object_id, _)| self.this_id != **object_id)
             .map(|(object_id, obj)| (*object_id, obj))
     }
+    /// Returns a vector of all other objects in the scene, excluding this object.
+    ///
+    /// This includes all objects that:
+    /// - Are not this object
+    /// - Are not pending addition/removal
+    /// - Exist in the object tracker
+    ///
+    /// Objects are returned as [`TreeSceneObject`]s which include their ID, parent ID,
+    /// and the wrapped scene object.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Process all other objects
+    /// for other in ctx.object().others() {
+    ///     // Access other object properties
+    ///     println!("Found object: {:?}", other.scene_object.type_name());
+    /// }
+    /// ```
     pub fn others(&self) -> Vec<TreeSceneObject<ObjectType>> {
         self.others_inner()
             .map(|(object_id, obj)| TreeSceneObject {
@@ -1449,16 +1890,25 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             })
             .collect()
     }
+    /// Returns immutable references to all other objects in the scene that match type `T`.
     pub fn others_as_ref<T: SceneObject<ObjectType>>(&self) -> Vec<Ref<T>> {
         self.others_inner()
             .filter_map(|(_, obj)| obj.downcast())
             .collect()
     }
+
+    /// Returns mutable references to all other objects in the scene that match type `T`.
     pub fn others_as_mut<T: SceneObject<ObjectType>>(&self) -> Vec<RefMut<T>> {
         self.others_inner()
             .filter_map(|(_, obj)| obj.downcast_mut())
             .collect()
     }
+
+    /// Returns the first object in the scene of type `T`, excluding this object.
+    ///
+    /// Note: if you intend to downcast to `T`, consider
+    /// [`first_other_as_ref()`](ObjectContext::first_other_as_ref) or
+    /// [`first_other_as_mut()`](ObjectContext::first_other_as_mut) instead.
     pub fn first_other<T: SceneObject<ObjectType>>(&self) -> Option<TreeSceneObject<ObjectType>> {
         self.others_inner()
             .find(|(_, obj)| obj.gg_type_id() == TypeId::of::<T>())
@@ -1471,13 +1921,24 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                 scene_object: obj.clone(),
             })
     }
+
+    /// Returns a reference to the first object in the scene of type `T`, excluding this object.
     pub fn first_other_as_ref<T: SceneObject<ObjectType>>(&self) -> Option<Ref<T>> {
         self.others_inner().find_map(|(_, obj)| obj.downcast())
     }
+
+    /// Returns a mutable reference to the first object in the scene of type `T`, excluding this
+    /// object.
     pub fn first_other_as_mut<T: SceneObject<ObjectType>>(&self) -> Option<RefMut<T>> {
         self.others_inner().find_map(|(_, obj)| obj.downcast_mut())
     }
 
+    /// Returns the local transform of this object relative to its parent.
+    ///
+    /// This transform represents the object's local position, rotation and scale,
+    /// before any parent transforms are applied.
+    ///
+    /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
     pub fn transform(&self) -> Transform {
         self.object_tracker.get(self.this_id).map_or_else(
             || {
@@ -1487,6 +1948,12 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             |o| *o.transform.borrow(),
         )
     }
+
+    /// Returns the local transform of another object relative to its parent.
+    ///
+    /// Similar to [`transform()`](Self::transform), but for accessing another object's transform.
+    ///
+    /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
     pub fn transform_of(&self, other: &TreeSceneObject<ObjectType>) -> Transform {
         self.object_tracker.get(other.object_id).map_or_else(
             || {
@@ -1496,6 +1963,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             |o| *o.transform.borrow(),
         )
     }
+
+    /// Returns a mutable reference to this object's local transform.
+    ///
+    /// This allows modifying the object's local position, rotation and scale
+    /// relative to its parent.
+    ///
+    /// Returns a dummy transform and logs an error if the object ID is not found.
     pub fn transform_mut(&self) -> RefMut<Transform> {
         self.object_tracker.get(self.this_id).map_or_else(
             || {
@@ -1505,6 +1979,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             |o| o.transform.borrow_mut(),
         )
     }
+
+    /// Returns the absolute transform of this object in world space.
+    ///
+    /// This transform represents the object's final position, rotation and scale
+    /// after all parent transforms in the hierarchy have been applied.
+    ///
+    /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
     pub fn absolute_transform(&self) -> Transform {
         self.all_absolute_transforms
             .get(&self.this_id)
@@ -1517,6 +1998,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                 Transform::default()
             })
     }
+
+    /// Returns the absolute transform of another object in world space.
+    ///
+    /// Similar to [`absolute_transform()`](Self::absolute_transform), but for accessing
+    /// another object's absolute transform.
+    ///
+    /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
+    /// This should not occur when called through public APIs.
     pub fn absolute_transform_of(&self, other: &TreeSceneObject<ObjectType>) -> Transform {
         // Should not be possible to get an invalid object_id here if called from public.
         self.all_absolute_transforms
@@ -1530,21 +2019,50 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                 Transform::default()
             })
     }
+    /// Returns the rectangular bounds of this object's collider.
+    ///
+    /// If the object has multiple child colliders, returns the bounds of the first collider found.
+    /// Returns a default [`Rect`] if no collider is found.
     pub fn rect(&self) -> Rect {
         self.collider().unwrap_or_default().as_rect()
     }
+
+    /// Returns the rectangular bounds of another object's collider.
+    ///
+    /// If the other object has multiple child colliders, returns the bounds of the first collider found.
+    /// Returns a default [`Rect`] if no collider is found.
     pub fn rect_of(&self, other: &TreeSceneObject<ObjectType>) -> Rect {
         self.collider_of(other).unwrap_or_default().as_rect()
     }
+
+    /// Returns the width and height of this object's collider.
+    ///
+    /// If the object has multiple child colliders, returns the extent of the first collider found.
+    /// Returns a default [`Vec2`] if no collider is found.
     pub fn extent(&self) -> Vec2 {
         self.collider().unwrap_or_default().aa_extent()
     }
+
+    /// Returns the width and height of another object's collider.
+    ///
+    /// If the other object has multiple child colliders, returns the extent of the first collider found.
+    /// Returns a default [`Vec2`] if no collider is found.
     pub fn extent_of(&self, other: &TreeSceneObject<ObjectType>) -> Vec2 {
         self.collider_of(other).unwrap_or_default().aa_extent()
     }
+
+    /// Returns this object's collider.
+    ///
+    /// If the object has multiple child colliders, returns only the first collider found.
+    /// Returns [`None`] if no collider is found.
     pub fn collider(&self) -> Option<GenericCollider> {
         gg_err::log_err_then(self.collider_of_inner(self.this_id))
     }
+
+    /// Returns another object's collider.
+    ///
+    /// If the other object has multiple child colliders, returns only the first collider found.
+    /// Returns [`None`] if no collider is found.
     pub fn collider_of(&self, other: &TreeSceneObject<ObjectType>) -> Option<GenericCollider> {
         gg_err::log_err_then(self.collider_of_inner(other.object_id))
     }
@@ -1572,6 +2090,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             .or(children.iter().find_map(|o| gg_err::log_and_ok(self.collider_of_inner(o.object_id)).flatten())))
     }
 
+    /// Adds multiple scene objects as children of this object.
+    ///
+    /// Takes a vector of pre-wrapped objects and adds them all as children of this object,
+    /// automatically assigning new object IDs.
+    ///
+    /// # Parameters
+    /// * `objects` - A vector of pre-wrapped scene objects to add as children
     pub fn add_vec(&mut self, objects: Vec<SceneObjectWrapper<ObjectType>>) {
         self.object_tracker
             .pending_add
@@ -1581,6 +2106,13 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                 scene_object: inner.clone(),
             }));
     }
+
+    /// Adds a new scene object as a sibling of this object.
+    ///
+    /// Creates a new scene object and adds it as a sibling with the same parent as this object.
+    ///
+    /// # Parameters
+    /// * `object` - The scene object to add as a sibling
     pub fn add_sibling(&mut self, object: impl SceneObject<ObjectType>) {
         self.object_tracker.pending_add.push(TreeSceneObject {
             object_id: ObjectId::next(),
@@ -1588,6 +2120,17 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             scene_object: object.into_wrapper(),
         });
     }
+
+    /// Adds a new scene object as a child of this object.
+    ///
+    /// Creates a new scene object and adds it as a child of this object.
+    /// Returns the newly created `TreeSceneObject` which contains the object's ID and wrapper.
+    ///
+    /// # Parameters
+    /// * `object` - The scene object to add as a child
+    ///
+    /// # Returns
+    /// The newly created `TreeSceneObject` containing the child's ID and wrapper
     pub fn add_child(
         &mut self,
         object: impl SceneObject<ObjectType>,
@@ -1618,21 +2161,33 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.object_tracker.pending_add.push(rv.clone());
         rv
     }
+
+    /// Removes the given scene object and all its child objects from the scene.
+    ///
+    /// # Parameters
+    /// * `obj` - The scene object to remove
     pub fn remove(&mut self, obj: &TreeSceneObject<ObjectType>) {
         self.object_tracker.pending_remove.insert(obj.object_id);
         for child in &self.children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
+
+    /// Removes this object and all its child objects from the scene.
     pub fn remove_this(&mut self) {
         self.object_tracker.pending_remove.insert(self.this_id);
         self.remove_children();
     }
+
+    /// Removes all child objects of this object from the scene.
+    ///
+    /// This object remains in the scene.
     pub fn remove_children(&mut self) {
         for child in &self.children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
+
     fn test_collision_inner(
         &self,
         collider: &GenericCollider,
@@ -1677,6 +2232,14 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         }
         NonemptyVec::try_from_vec(rv)
     }
+    /// Tests for collisions between this object's collider and other objects with the given tags.
+    ///
+    /// # Parameters
+    /// * `listening_tags` - List of tags to check collisions against
+    ///
+    /// # Returns
+    /// * `Some(NonemptyVec<Collision>)` - Vector of collisions if any found
+    /// * `None` - If no collisions found or if this object has no collider
     pub fn test_collision(
         &self,
         listening_tags: Vec<&'static str>,
@@ -1684,6 +2247,18 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.collider()
             .and_then(|collider| self.test_collision_using(&collider, listening_tags))
     }
+
+    /// Tests for collisions at a specific point against other objects with the given tags.
+    ///
+    /// Creates a 1x1 box collider at the given point and checks for collisions.
+    ///
+    /// # Parameters
+    /// * `point` - The point to test collisions at
+    /// * `listening_tags` - List of tags to check collisions against
+    ///
+    /// # Returns
+    /// * `Some(NonemptyVec<Collision>)` - Vector of collisions if any found
+    /// * `None` - If no collisions found
     pub fn test_collision_point(
         &self,
         point: Vec2,
@@ -1694,6 +2269,16 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             listening_tags,
         )
     }
+
+    /// Tests for collisions after applying an offset to this object's collider.
+    ///
+    /// # Parameters
+    /// * `offset` - Vector offset to apply to this object's collider
+    /// * `listening_tags` - List of tags to check collisions against
+    ///  
+    /// # Returns
+    /// * `Some(NonemptyVec<Collision>)` - Vector of collisions if any found
+    /// * `None` - If no collisions found or if this object has no collider
     pub fn test_collision_offset(
         &self,
         offset: Vec2,
@@ -1703,6 +2288,21 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
             self.test_collision_using(&collider.translated(offset), listening_tags)
         })
     }
+
+    /// Tests for collisions along an axis at a given distance.
+    ///
+    /// Translates this object's collider along the given axis and distance, then checks for
+    /// collisions. Only returns collisions where the collision normal has a non-zero dot product
+    /// with the axis.
+    ///
+    /// # Parameters
+    /// * `axis` - Unit vector defining the direction to check
+    /// * `distance` - How far along the axis to project the collider
+    /// * `listening_tags` - List of tags to check collisions against
+    ///
+    /// # Returns
+    /// * `Some(NonemptyVec<Collision>)` - Vector of collisions if any found along the axis
+    /// * `None` - If no collisions found or if this object has no collider
     pub fn test_collision_along(
         &self,
         axis: Vec2,
@@ -1722,7 +2322,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     }
     fn lookup_parent(&self, object_id: ObjectId) -> Option<TreeSceneObject<ObjectType>> {
         let parent_id = self.all_parents.get(&object_id)?;
-        if parent_id.0 == 0 {
+        if parent_id.is_root() {
             None
         } else {
             self.object_tracker
@@ -1740,12 +2340,45 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     }
 }
 
+/// A context object for manipulating the game viewport and rendering settings.
+///
+/// `ViewportContext` provides methods to:
+/// - Control the viewport's position and scale
+/// - Set viewport boundaries and perform clamping
+/// - Change the clear color for rendering  
+/// - Access viewport properties like dimensions and center
+///
+/// # Examples
+/// ```ignore
+/// // Center viewport on object
+/// ctx.viewport_mut().centre_at(player_pos);
+///
+/// // Clamp viewport position
+/// ctx.viewport_mut().clamp_to_left(Some(0.0), Some(400.0));
+///
+/// // Change clear color
+/// ctx.viewport_mut().clear_col().set_rgba(1.0, 0.0, 0.0, 1.0);
+/// ```
 pub struct ViewportContext<'a> {
     viewport: &'a mut AdjustedViewport,
     clear_col: &'a mut Colour,
 }
 
 impl ViewportContext<'_> {
+    /// Clamps the left edge of the viewport between optional minimum and maximum bounds.
+    ///
+    /// # Arguments
+    /// * `min` - Optional minimum x-coordinate for the left edge
+    /// * `max` - Optional maximum x-coordinate for the left edge
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Keep viewport left edge between 0 and 400 units
+    /// ctx.viewport_mut().clamp_to_left(Some(0.0), Some(400.0));
+    ///
+    /// // Only clamp maximum position, allow unlimited leftward scrolling
+    /// ctx.viewport_mut().clamp_to_left(None, Some(500.0));
+    /// ```
     pub fn clamp_to_left(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min {
             if self.viewport.left() < min {
@@ -1758,6 +2391,21 @@ impl ViewportContext<'_> {
             }
         }
     }
+
+    /// Clamps the right edge of the viewport between optional minimum and maximum bounds.
+    ///
+    /// # Arguments
+    /// * `min` - Optional minimum x-coordinate for the right edge
+    /// * `max` - Optional maximum x-coordinate for the right edge
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Keep viewport right edge between 100 and 500 units
+    /// ctx.viewport_mut().clamp_to_right(Some(100.0), Some(500.0));
+    ///
+    /// // Only clamp minimum position, allow unlimited rightward scrolling  
+    /// ctx.viewport_mut().clamp_to_right(Some(0.0), None);
+    /// ```
     pub fn clamp_to_right(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min {
             if self.viewport.right() < min {
@@ -1770,21 +2418,45 @@ impl ViewportContext<'_> {
             }
         }
     }
+
+    /// Centers the viewport on the given point.
+    ///
+    /// # Arguments
+    /// * `centre` - The point to center the viewport on
+    ///
+    /// # Returns
+    /// * `&mut Self` - Allows method chaining
     pub fn centre_at(&mut self, centre: Vec2) -> &mut Self {
         self.translate(centre - self.viewport.centre());
         self
     }
+
+    /// Moves the viewport by the given delta vector.
+    ///
+    /// # Arguments
+    /// * `delta` - Vector to translate the viewport by
+    ///
+    /// # Returns
+    /// * `&mut Self` - Allows method chaining
     pub fn translate(&mut self, delta: Vec2) -> &mut Self {
         self.viewport.translation += delta;
         self
     }
+
+    /// Returns a mutable reference to the clear color used for rendering.
     pub fn clear_col(&mut self) -> &mut Colour {
         self.clear_col
     }
+
+    /// Returns a clone of the inner adjusted viewport.
     pub fn inner(&self) -> AdjustedViewport {
         self.viewport.clone()
     }
 
+    /// Sets the global scale factor for the viewport.
+    ///
+    /// # Arguments
+    /// * `global_scale_factor` - New scale factor to apply to the viewport
     pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         self.viewport.set_global_scale_factor(global_scale_factor);
     }
@@ -1800,6 +2472,43 @@ impl AxisAlignedExtent for ViewportContext<'_> {
     }
 }
 
+/// A context object provided during render operations that allows scene objects to manage their
+/// render items.
+///
+/// A render item represents the visual appearance of an object, containing vertex data and shader
+/// information needed to draw the object on screen. [`RenderContext`] provides methods to:
+///
+/// - Add new render items for drawing vertices and textures
+/// - Update existing render items to change an object's appearance
+/// - Remove render items to make objects invisible
+///
+/// # Examples
+///
+/// ```ignore
+/// // Update sprite render item with new texture coordinates
+/// fn on_animation_frame(&mut self, render_ctx: &mut RenderContext) {
+///     let new_render_item = RenderItem {
+///         vertices: self.sprite.get_vertices(),
+///         texture_coords: self.next_frame_coords(),
+///         depth: 0.5,
+///     };
+///     render_ctx.update_render_item(&new_render_item);
+/// }
+///
+/// // Add multiple render items for composite objects
+/// fn on_render(&mut self, render_ctx: &mut RenderContext) {
+///     // Add base shape
+///     render_ctx.insert_render_item(&self.body_render_item);
+///     
+///     // Add details on top
+///     render_ctx.insert_render_item(&self.details_render_item);
+/// }
+///
+/// // Remove render item to hide object
+/// fn on_hide(&mut self, render_ctx: &mut RenderContext) {
+///     render_ctx.remove_render_item();
+/// }
+/// ```
 pub struct RenderContext<'a> {
     pub(crate) this_id: ObjectId,
     vertex_map: &'a mut VertexMap,
@@ -1813,11 +2522,24 @@ impl<'a> RenderContext<'a> {
         }
     }
 
+    /// Updates this object's render item by removing any existing render item and inserting the
+    /// new one.
+    ///
+    /// # Arguments
+    /// * `new_render_item` - The new render item to use for this object
     pub fn update_render_item(&mut self, new_render_item: &RenderItem) {
         self.remove_render_item();
         self.vertex_map
             .insert(self.this_id, new_render_item.clone());
     }
+
+    /// Inserts a render item for this object, concatenating with any existing render item.
+    ///
+    /// If a render item already exists for this object, the new render item will be concatenated
+    /// with the existing one. Otherwise, the new render item will be inserted directly.
+    ///
+    /// # Arguments
+    /// * `new_render_item` - The render item to insert or concatenate
     pub fn insert_render_item(&mut self, new_render_item: &RenderItem) {
         if let Some(existing) = self.vertex_map.remove(self.this_id) {
             self.vertex_map
@@ -1827,6 +2549,10 @@ impl<'a> RenderContext<'a> {
                 .insert(self.this_id, new_render_item.clone());
         }
     }
+
+    /// Removes this object's render item from the vertex map.
+    ///
+    /// Logs an error if no render item exists to remove.
     pub fn remove_render_item(&mut self) {
         if self.vertex_map.remove(self.this_id).is_none() {
             error!("removed nonexistent vertices: {:?}", self.this_id);
