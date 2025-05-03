@@ -154,14 +154,6 @@ impl Vec2 {
     pub fn one() -> Vec2 {
         Vec2 { x: 1., y: 1. }
     }
-    /// Returns a vector with both components set to the given value.
-    ///
-    /// This can be useful for creating vectors with uniform values
-    /// or as a basis for scaling operations.
-    #[must_use]
-    pub fn splat(v: f32) -> Vec2 {
-        Vec2 { x: v, y: v }
-    }
     /// Returns a vector with both components set to 0.0.
     ///
     /// This can be useful for initialisation or as a neutral element
@@ -169,6 +161,24 @@ impl Vec2 {
     #[must_use]
     pub fn zero() -> Vec2 {
         Vec2 { x: 0., y: 0. }
+    }
+
+    /// Creates a new vector with both components set to the given value.
+    ///
+    /// This is useful for operations where you want uniform scaling or offsets
+    /// in both dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use glongge::core::prelude::*;
+    /// let vec = Vec2::splat(3.0);
+    /// assert_eq!(vec.x, 3.0);
+    /// assert_eq!(vec.y, 3.0);
+    /// ```
+    #[must_use]
+    pub fn splat(v: f32) -> Vec2 {
+        Vec2 { x: v, y: v }
     }
 
     /// Returns the squared length of the vector.

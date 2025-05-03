@@ -92,8 +92,14 @@ pub trait ObjectTypeEnum: Clone + Copy + Debug + Eq + PartialEq + Sized + 'stati
     }
 }
 
-// ObjectId(0) represents the root object.
+// Start at 1 because ObjectId(0) represents the root object.
 static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
+
+/// A unique identifier for scene objects within the engine.
+///
+/// [`ObjectId`] uses an atomic counter to generate unique IDs, starting at 1.
+/// The ID 0 is reserved for the root object, which never actually exists in the scene -- it is only
+/// used to ensure a proper tree structure.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId(pub(crate) usize);
 

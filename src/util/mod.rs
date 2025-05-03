@@ -246,57 +246,12 @@ pub mod gg_iter {
 #[allow(dead_code)]
 pub mod gg_err {
     use anyhow::Result;
-    use tracing::{error, warn};
+    use tracing::error;
     use vulkano::command_buffer::CommandBufferExecError;
     use vulkano::{Validated, ValidationError, VulkanError};
     use vulkano_taskgraph::InvalidSlotError;
     use vulkano_taskgraph::graph::ExecuteError;
 
-    pub fn is_some_and_warn<T>(result: Result<Option<T>>) -> bool {
-        match result {
-            Ok(Some(_)) => true,
-            Ok(None) => false,
-            Err(e) => {
-                warn!("{}", e.root_cause());
-                false
-            }
-        }
-    }
-
-    pub fn warn_err_then<T>(result: Result<Option<T>>) -> Option<T> {
-        match result {
-            Ok(o) => o,
-            Err(e) => {
-                warn!("{}", e.root_cause());
-                None
-            }
-        }
-    }
-
-    pub fn warn_unwrap_or<T, U: Into<T>>(default: U, result: Result<T>) -> T {
-        match result {
-            Ok(v) => v,
-            Err(e) => {
-                warn!("{}", e.root_cause());
-                default.into()
-            }
-        }
-    }
-
-    pub fn warn_and_ok<T>(result: Result<T>) -> Option<T> {
-        match result {
-            Ok(v) => Some(v),
-            Err(e) => {
-                warn!("{}", e.root_cause());
-                None
-            }
-        }
-    }
-    pub fn warn_err(result: Result<()>) {
-        if let Err(e) = result {
-            warn!("{}", e.root_cause());
-        }
-    }
     pub fn is_some_and_log<T>(result: Result<Option<T>>) -> bool {
         match result {
             Ok(Some(_)) => true,
@@ -305,6 +260,12 @@ pub mod gg_err {
                 error!("{}", e.root_cause());
                 false
             }
+        }
+    }
+
+    pub fn log_err_and_ignore<T>(result: Result<T>) {
+        if let Err(e) = result {
+            error!("{}", e.root_cause());
         }
     }
 

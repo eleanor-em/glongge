@@ -2,6 +2,7 @@ use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWrapper, TreeSceneObject,
 use crate::util::{
     UnorderedPair,
     collision::{Collider, GgInternalCollisionShape},
+    gg_err,
 };
 use itertools::Itertools;
 use std::{
@@ -9,6 +10,36 @@ use std::{
     fmt::{Debug, Formatter},
 };
 
+/// Specifies how collision processing should proceed after handling a collision.
+///
+/// # Examples
+///
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// fn on_collision(
+///     &mut self,
+///     ctx: &mut UpdateContext<ObjectType>,
+///     other: TreeSceneObject<ObjectType>,
+///     mtv: Vec2,
+/// ) -> CollisionResponse {
+///     // Adjust velocity based on collision
+///     if !mtv.dot(Vec2::right()).is_zero() {
+///         self.vel.x = -self.vel.x;  // Reverse horizontal velocity
+///     }
+///     
+///     // Move object out of collision
+///     if other.emitting_tags().contains(&"BLOCK") {
+///         ctx.transform_mut().centre += mtv;
+///     }
+///     
+///     // Return Done to stop processing additional collisions
+///     CollisionResponse::Done
+/// }
+/// ```
+///
+/// * `Continue` - Continue processing additional collisions after this one
+/// * `Done` - Stop processing additional collisions after this one
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum CollisionResponse {
     Continue,
@@ -22,6 +53,12 @@ pub(crate) struct CollisionNotification<ObjectType: ObjectTypeEnum> {
     pub(crate) mtv: Vec2,
 }
 
+/// Represents a collision between two objects in the scene.
+///
+/// # Fields
+/// * `other` - The scene object that this object collided with
+/// * `mtv` - Minimum Translation Vector (MTV): the vector needed to separate the colliding
+///   objects. Direction points from the other object towards this one.
 pub struct Collision<ObjectType: ObjectTypeEnum> {
     pub other: TreeSceneObject<ObjectType>,
     pub mtv: Vec2,
@@ -39,7 +76,7 @@ impl<ObjectType: ObjectTypeEnum> Debug for Collision<ObjectType> {
     }
 }
 
-pub struct CollisionHandler {
+pub(crate) struct CollisionHandler {
     object_ids_by_emitting_tag: BTreeMap<&'static str, BTreeSet<ObjectId>>,
     object_ids_by_listening_tag: BTreeMap<&'static str, BTreeSet<ObjectId>>,
     possible_collisions: BTreeSet<UnorderedPair<ObjectId>>,
@@ -103,7 +140,7 @@ impl CollisionHandler {
                     });
                 self.possible_collisions.extend(new_possible_collisions);
             } else {
-                error!("object_ids_by_listening tag missing tag: {tag}");
+                error!("CollisionHandler: `object_ids_by_listening` tag missing tag: {tag}");
             }
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
@@ -116,15 +153,16 @@ impl CollisionHandler {
                     });
                 self.possible_collisions.extend(new_possible_collisions);
             } else {
-                error!("object_ids_by_tag tag missing tag: {tag}");
+                error!("CollisionHandler: `object_ids_by_tag` tag missing tag: {tag}");
             }
         }
     }
     pub(crate) fn remove_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
-        for ids in self.object_ids_by_emitting_tag.values_mut() {
-            ids.retain(|id| !removed_ids.contains(id));
-        }
-        for ids in self.object_ids_by_listening_tag.values_mut() {
+        for ids in self
+            .object_ids_by_emitting_tag
+            .values_mut()
+            .chain(self.object_ids_by_listening_tag.values_mut())
+        {
             ids.retain(|id| !removed_ids.contains(id));
         }
         self.possible_collisions.retain(|pair| {
@@ -139,9 +177,9 @@ impl CollisionHandler {
         let collisions = self.get_collisions_inner(objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
-            if let Err(e) = Self::process_collision_inner(parents, objects, &mut rv, &ids, mtv) {
-                error!("{}", e.root_cause());
-            }
+            gg_err::log_err_and_ignore(Self::process_collision_inner(
+                parents, objects, &mut rv, &ids, mtv,
+            ));
         }
         rv
     }
@@ -169,12 +207,18 @@ impl CollisionHandler {
         ids: &UnorderedPair<ObjectId>,
         mtv: Vec2,
     ) -> Result<()> {
-        let this_id = parents
-            .get(&ids.fst())
-            .with_context(|| format!("missing object_id in parents: {:?}", ids.fst()))?;
-        let other_id = parents
-            .get(&ids.snd())
-            .with_context(|| format!("missing object_id in parents: {:?}", ids.snd()))?;
+        let this_id = parents.get(&ids.fst()).with_context(|| {
+            format!(
+                "CollisionHandler: missing ObjectId in `parents`: {:?}",
+                ids.fst()
+            )
+        })?;
+        let other_id = parents.get(&ids.snd()).with_context(|| {
+            format!(
+                "CollisionHandler: missing ObjectId in `parents`: {:?}",
+                ids.snd()
+            )
+        })?;
 
         let this = TreeSceneObject {
             object_id: *this_id,
@@ -219,7 +263,7 @@ impl CollisionHandler {
         Ok(())
     }
 
-    pub fn all_tags(&self) -> Vec<&'static str> {
+    pub(crate) fn all_tags(&self) -> Vec<&'static str> {
         self.object_ids_by_emitting_tag
             .keys()
             .copied()
@@ -233,6 +277,6 @@ impl CollisionHandler {
     ) -> Result<&BTreeSet<ObjectId>> {
         self.object_ids_by_emitting_tag
             .get(tag)
-            .with_context(|| format!("missing tag in object_ids_by_emitting_tag: {tag}"))
+            .with_context(|| format!("CollisionHandler: `object_ids_by_emitting_tag` missing tag: {tag}"))
     }
 }
