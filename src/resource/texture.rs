@@ -1,5 +1,4 @@
 use asefile::AsepriteFile;
-use num_traits::Zero;
 use std::time::Duration;
 use std::{
     collections::{BTreeMap, HashMap},

@@ -1,6 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
 
-use num_traits::{Float, One};
+use num_traits::Float;
 
 use glongge::core::prelude::*;
 use glongge::core::scene::Scene;

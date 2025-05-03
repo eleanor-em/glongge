@@ -3,7 +3,6 @@ use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use num_traits::Zero;
 
 #[register_scene_object]
 pub struct GgInternalCanvas {

@@ -5,7 +5,6 @@ use crate::resource::texture::{MaterialId, Texture};
 use crate::util::collision::CompoundCollider;
 use crate::util::linalg::{Edge2i, Vec2i};
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use num_traits::Zero;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;

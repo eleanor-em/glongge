@@ -171,7 +171,6 @@ mod polygon {
     use crate::core::prelude::*;
     use crate::util::{gg_iter, gg_range};
     use itertools::Itertools;
-    use num_traits::Zero;
     use std::ops::Range;
     use tracing::warn;
 

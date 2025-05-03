@@ -7,7 +7,7 @@ use crate::{
     resource::texture::{MaterialId, Texture},
 };
 use glongge_derive::{partially_derive_scene_object, register_scene_object};
-use num_traits::{ToPrimitive, Zero};
+use num_traits::ToPrimitive;
 use std::cell::RefCell;
 use std::rc::Rc;
 

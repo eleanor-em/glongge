@@ -9,7 +9,6 @@ use crate::core::prelude::*;
 use crate::core::vk::AdjustedViewport;
 use crate::gui::GuiContext;
 pub use egui_winit::winit::keyboard::KeyCode;
-use num_traits::Zero;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {

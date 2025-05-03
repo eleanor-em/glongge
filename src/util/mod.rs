@@ -462,6 +462,10 @@ pub mod gg_float {
     pub fn from_u128_or_inf(x: u128) -> f32 {
         f32::from_u128(x).unwrap_or(f32::INFINITY)
     }
+
+    pub fn force_positive_zero(x: f32) -> f32 {
+        if x.is_zero() { 0. } else { x }
+    }
 }
 
 pub mod gg_range {

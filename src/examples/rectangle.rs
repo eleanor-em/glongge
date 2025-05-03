@@ -8,7 +8,7 @@ use glongge::{
     resource::sprite::Sprite,
 };
 use glongge_derive::*;
-use num_traits::{FloatConst, Zero};
+use num_traits::FloatConst;
 use rand::{
     Rng,
     distributions::{Distribution, Uniform},

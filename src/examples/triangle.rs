@@ -4,7 +4,7 @@ use glongge::core::{
     scene::{Scene, SceneName},
 };
 use glongge_derive::*;
-use num_traits::{FloatConst, Zero};
+use num_traits::FloatConst;
 use rand::{
     Rng,
     distributions::{Distribution, Uniform},

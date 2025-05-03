@@ -14,7 +14,6 @@ use egui::{
     TextStyle, Ui,
 };
 use itertools::Itertools;
-use num_traits::Zero;
 use regex::Regex;
 use std::cell::RefCell;
 use std::collections::BTreeMap;

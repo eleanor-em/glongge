@@ -1,5 +1,4 @@
 use egui::{FullOutput, ViewportId, ViewportInfo};
-use num_traits::Zero;
 use std::marker::PhantomData;
 use std::{
     sync::{Arc, Mutex},
