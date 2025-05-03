@@ -121,12 +121,9 @@ impl GuiObjectView {
         &self,
         object_handler: &'a ObjectHandler<O>,
     ) -> Result<&'a SceneObjectWrapper<O>> {
-        gg_err::log_err_then(object_handler.get_object(self.object_id)).with_context(|| {
-            format!(
-                "!object_id.is_root() but object_handler.get_object(object_id) returned None: {:?}",
-                self.object_id
-            )
-        })
+        check_false!(self.object_id.is_root());
+        // infallible
+        Ok(object_handler.get_object_by_id(self.object_id)?.unwrap())
     }
 
     fn build_closure<O: ObjectTypeEnum>(
@@ -290,7 +287,7 @@ impl GuiObjectTreeNode {
             {
                 tags += "▣ ";
             }
-            if gg_err::is_some_and_log(object_handler.get_sprite(self.object_id)) {
+            if gg_err::log_unwrap_or(false, object_handler.has_sprite_for_gui(self.object_id)) {
                 tags += "👾 ";
             }
             self.label.set_tags(tags.trim());
@@ -446,7 +443,7 @@ impl GuiObjectTree {
         }
         if input_handler.pressed(KeyCode::KeyC) {
             if self.selected_id.get().is_root() {
-                if let Some(object_id) = object_handler.get_first_object_id() {
+                if let Some(object_id) = object_handler.get_first_object_id_for_gui() {
                     self.selected_id.send(object_id);
                 }
             } else if let Some(child) = gg_err::log_err_then(
@@ -1085,8 +1082,10 @@ impl DebugGui {
             self.scene_control.on_input(input_handler);
         }
         if !self.object_tree.selected_id.get().is_root() {
-            if gg_err::log_err_then(object_handler.get_object(self.object_tree.selected_id.get()))
-                .is_some()
+            if gg_err::log_err_then(
+                object_handler.get_object_by_id(self.object_tree.selected_id.get()),
+            )
+            .is_some()
             {
                 gg_err::log_err(
                     self.object_view

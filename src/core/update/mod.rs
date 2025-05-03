@@ -1,7 +1,7 @@
 pub mod collision;
 
 use crate::shader::SpriteShader;
-use crate::util::gg_float;
+use crate::util::{InspectMut, gg_float};
 use crate::{
     core::render::StoredRenderItem,
     core::scene::GuiClosure,
@@ -48,6 +48,12 @@ use std::{
 };
 use tracing::{span, warn};
 
+/// A container responsible for managing scene objects and their relationships in a hierarchical
+/// structure.
+///
+/// `ObjectHandler` maintains a collection of scene objects organized in a tree structure, tracks
+/// their parent-child relationships, computes absolute transforms, and handles collision detection
+/// between objects.
 pub(crate) struct ObjectHandler<ObjectType: ObjectTypeEnum> {
     objects: BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
     parents: BTreeMap<ObjectId, ObjectId>,
@@ -67,164 +73,161 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             collision_handler: CollisionHandler::new(),
         }
     }
-    fn get_object_type_string(&self, id: ObjectId) -> Result<String> {
-        let object_type = self
-            .objects
-            .get(&id)
-            .with_context(|| format!("missing object_id from objects: {id:?}"))?
-            .wrapped
-            .borrow()
-            .gg_type_enum();
-        Ok(format!("{object_type:?}"))
-    }
-    pub(crate) fn get_first_object_id(&self) -> Option<ObjectId> {
-        self.objects.first_key_value().map(|o| o.0).copied()
-    }
-    pub(crate) fn get_object(
+
+    /// Returns `None` if and only if `id.is_root()`.
+    pub(crate) fn get_object_by_id(
         &self,
         id: ObjectId,
     ) -> Result<Option<&SceneObjectWrapper<ObjectType>>> {
         if id.is_root() {
             Ok(None)
-        } else if let Some(object) = self.objects.get(&id) {
-            Ok(Some(object))
         } else {
-            bail!(
-                "missing object_id from objects: {:?} [{:?}]",
-                id,
-                self.get_object_type_string(id)?
-            )
+            self.objects.get(&id).map(Some).ok_or_else(|| {
+                anyhow!(
+                    "ObjectHandler: missing ObjectId in `objects`: {}",
+                    self.format_object_id_for_logging(id)
+                )
+            })
         }
     }
 
-    fn get_parent_id(&self, id: ObjectId) -> Result<ObjectId> {
-        if let Some(parent) = self.parents.get(&id) {
-            Ok(*parent)
-        } else {
-            let object_type = self
-                .objects
-                .get(&id)
-                .with_context(|| {
-                    format!("get_parent_id(): missing object_id from objects: {id:?}")
-                })?
-                .wrapped
-                .borrow()
-                .gg_type_enum();
-            bail!(
-                "get_parent_id(): missing object_id from parents: {:?} [{:?}]",
-                id,
-                object_type
-            )
-        }
-    }
+    /// Returns the chain of parent IDs from a given [`ObjectId`] to the root.
+    ///
+    /// Traverses up the object hierarchy starting from the given ID, collecting
+    /// all parent IDs until reaching the root object.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<ObjectId>)` - Vector of parent IDs in order. For example, if the hierarchy is
+    ///   `root -> A -> B`, returns `vec![B, A]`.
+    /// * `Err` - If a parent ID is missing from the internal parent map.
     pub(crate) fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
-        let mut parents = Vec::new();
+        let mut rv = Vec::new();
         while !id.is_root() {
-            parents.push(id);
+            rv.push(id);
             id = self.get_parent_id(id)?;
         }
-        Ok(parents)
+        Ok(rv)
     }
-    pub(crate) fn get_children(&self, id: ObjectId) -> Result<&Vec<TreeSceneObject<ObjectType>>> {
-        if let Some(child) = self.children.get(&id) {
-            Ok(child)
-        } else {
-            let object_type = self
-                .objects
-                .get(&id)
-                .with_context(|| format!("missing object_id from objects: {id:?}"))?
-                .wrapped
-                .borrow()
-                .gg_type_enum();
-            bail!(
-                "missing object_id from children: {:?} [{:?}]",
-                id,
-                object_type
+    fn get_parent_id(&self, id: ObjectId) -> Result<ObjectId> {
+        self.parents.get(&id).copied().ok_or_else(|| {
+            anyhow!(
+                "ObjectHandler: missing ObjectId in `parents`: {}",
+                self.format_object_id_for_logging(id)
             )
+        })
+    }
+    pub(crate) fn get_parent(
+        &self,
+        this_id: ObjectId,
+    ) -> Result<Option<TreeSceneObject<ObjectType>>> {
+        if this_id.is_root() {
+            return Ok(None);
         }
+
+        let parent_id = self.get_parent_id(this_id)?;
+        if let Some(parent) = self.get_object_by_id(parent_id)? {
+            Ok(Some(TreeSceneObject {
+                object_id: parent_id,
+                parent_id: self.get_parent_id(parent_id)?,
+                scene_object: parent.clone(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Look up the children of the given [`ObjectId`]. The returned [`Vec`] is in no particular
+    /// order.
+    pub(crate) fn get_children(&self, id: ObjectId) -> Result<&Vec<TreeSceneObject<ObjectType>>> {
+        self.children.get(&id).ok_or_else(|| {
+            anyhow!(
+                "ObjectHandler: missing ObjectId in `children`: {}",
+                self.format_object_id_for_logging(id)
+            )
+        })
     }
     fn get_children_mut(&mut self, id: ObjectId) -> Result<&mut Vec<TreeSceneObject<ObjectType>>> {
-        if let Some(child) = self.children.get_mut(&id) {
-            Ok(child)
-        } else {
-            let object_type = self
-                .objects
-                .get(&id)
-                .with_context(|| {
-                    format!("get_children_mut(): missing object_id from objects: {id:?}")
-                })?
-                .wrapped
-                .borrow()
-                .gg_type_enum();
-            bail!(
-                "get_children_mut(): missing object_id from children: {:?} [{:?}]",
-                id,
-                object_type
-            )
+        if !self.children.contains_key(&id) {
+            return Err(anyhow!(
+                "ObjectHandler: missing ObjectId in `children`: {}",
+                self.format_object_id_for_logging(id)
+            ));
         }
+        // SAFETY: checked immediately above.
+        unsafe { Ok(self.children.get_mut(&id).unwrap_unchecked()) }
     }
-    pub(crate) fn get_sprite(
-        &self,
-        id: ObjectId,
-    ) -> Result<Option<(ObjectId, Ref<GgInternalSprite>)>> {
-        Ok(self
-            .get_object(id)?
-            .and_then(|o| o.downcast::<GgInternalSprite>().map(|c| (id, c)))
-            .or(self
-                .get_children(id)?
-                .iter()
-                .find_map(|o| self.get_sprite(o.object_id).ok().flatten())))
-    }
+
+    /// Returns all collision shapes in a scene tree, starting from a given node.
+    ///
+    /// This method traverses the scene tree recursively starting from the given `id`, collecting
+    /// all collision shape components found in the object itself and its children.
+    ///
+    /// # Returns
+    /// * A vector of tuples containing the object ID and a reference to its collision shape
+    /// * Returns `Err` if any object lookup fails
     pub(crate) fn get_collision_shapes(
         &self,
         id: ObjectId,
     ) -> Result<Vec<(ObjectId, Ref<CollisionShape>)>> {
-        Ok(self
-            .get_object(id)?
+        let mut rv = Vec::new();
+        if let Some(c) = self
+            .get_object_by_id(id)?
             .and_then(|o| o.downcast::<CollisionShape>().map(|c| (id, c)))
-            .map(|c| vec![c])
-            .unwrap_or(
-                self.get_children(id)?
-                    .iter()
-                    .filter_map(|o| gg_err::log_err(self.get_collision_shapes(o.object_id)))
-                    .flatten()
-                    .collect(),
-            ))
+        {
+            rv.push(c);
+        }
+        for child in self.get_children(id)? {
+            rv.extend(self.get_collision_shapes(child.object_id)?);
+        }
+        Ok(rv)
     }
+    /// Returns all collision shapes in a scene tree with mutable access, starting from a given node.
+    ///
+    /// Similar to `get_collision_shapes()`, but returns mutable references to the collision shapes
+    /// instead.
+    ///
+    /// # Returns
+    /// * A vector of tuples containing the object ID and a mutable reference to its collision shape
+    /// * Returns `Err` if any object lookup fails
     pub(crate) fn get_collision_shapes_mut(
         &self,
         id: ObjectId,
     ) -> Result<Vec<(ObjectId, RefMut<CollisionShape>)>> {
-        Ok(self
-            .get_object(id)?
+        let mut rv = Vec::new();
+        if let Some(c) = self
+            .get_object_by_id(id)?
             .and_then(|o| o.downcast_mut::<CollisionShape>().map(|c| (id, c)))
-            .map(|c| vec![c])
-            .unwrap_or(
-                self.get_children(id)?
-                    .iter()
-                    .filter_map(|o| gg_err::log_err(self.get_collision_shapes_mut(o.object_id)))
-                    .flatten()
-                    .collect(),
-            ))
+        {
+            rv.push(c);
+        }
+        for child in self.get_children(id)? {
+            rv.extend(self.get_collision_shapes_mut(child.object_id)?);
+        }
+        Ok(rv)
     }
 
+    /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        gg_err::log_err(self.remove_object_from_parent(remove_id));
+        if let Some(parent_id) = gg_err::log_err(self.get_parent_id(remove_id)) {
+            // Remove this object from its parent's list of children.
+            if let Ok(children) = self.get_children_mut(parent_id) {
+                // If this object's parent has already been removed, `children` may not exist.
+                // This is not an error.
+                children.retain(|obj| obj.object_id != remove_id);
+            }
+            self.parents.remove(&remove_id);
+        }
         self.objects.remove(&remove_id);
         self.absolute_transforms.remove(&remove_id);
         self.children.remove(&remove_id);
     }
-    fn remove_object_from_parent(&mut self, remove_id: ObjectId) -> Result<()> {
-        let parent_id = self.get_parent_id(remove_id)?;
-        if let Ok(children) = self.get_children_mut(parent_id) {
-            // If this object's parent has already been removed, `children` may not exist.
-            // This is not an error.
-            children.retain(|obj| obj.object_id != remove_id);
-        }
-        self.parents.remove(&remove_id);
-        Ok(())
-    }
 
+    /// Adds a new object to the scene hierarchy and establishes its parent-child relationships.
+    /// If this is the first object being added, will first initialize the root node (ID 0), then
+    /// the new object to be added.
+    ///
+    /// # Errors
+    /// Returns error if the new object's parent ID is not found in the hierarchy
     fn add_object(&mut self, new_obj: &TreeSceneObject<ObjectType>) -> Result<()> {
         if self.children.is_empty() {
             self.children.insert(ObjectId(0), Vec::new());
@@ -241,37 +244,8 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
     }
 
     fn get_collisions(&mut self) -> Vec<CollisionNotification<ObjectType>> {
-        // TODO: below line probably not needed, do more testing.
-        // self.update_all_transforms();
         self.collision_handler
             .get_collisions(&self.parents, &self.objects)
-    }
-
-    pub(crate) fn get_parent(
-        &self,
-        this_id: ObjectId,
-    ) -> Result<Option<TreeSceneObject<ObjectType>>> {
-        if this_id.0 == 0 {
-            return Ok(None);
-        }
-
-        let parent_id = self.get_parent_id(this_id)?;
-        if let Some(parent) = self.get_object(parent_id)? {
-            Ok(Some(TreeSceneObject {
-                object_id: parent_id,
-                parent_id: self.get_parent_id(parent_id)?,
-                scene_object: parent.clone(),
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-    fn get_children_owned(&self, this_id: ObjectId) -> Result<Vec<TreeSceneObject<ObjectType>>> {
-        Ok(self
-            .get_children(this_id)?
-            .iter()
-            .map(TreeSceneObject::clone)
-            .collect())
     }
 
     fn update_all_transforms(&mut self) {
@@ -279,73 +253,53 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         child_stack.push((ObjectId(0), Transform::default()));
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
             self.absolute_transforms.insert(parent_id, parent_transform);
-            match self.get_children(parent_id) {
-                Ok(children) => {
-                    for child in children {
-                        let absolute_transform = child.transform() * parent_transform;
-                        if let Some(mut collision_shape) =
-                            child.downcast_mut::<GgInternalCollisionShape>()
-                        {
-                            collision_shape.update_transform(absolute_transform);
-                        }
-                        child_stack.push((child.object_id, absolute_transform));
-                    }
+            if let Some(children) = gg_err::log_err(self.get_children(parent_id)) {
+                for child in children {
+                    let absolute_transform = child.transform() * parent_transform;
+                    child
+                        .downcast_mut::<GgInternalCollisionShape>()
+                        .inspect_mut(|shape| shape.update_transform(absolute_transform));
+                    child_stack.push((child.object_id, absolute_transform));
                 }
-                Err(e) => error!("{}", e.root_cause()),
             }
-        }
-    }
-
-    fn maybe_replace_invalid_shader_id(shader_exec: &mut ShaderExec) {
-        if !shader_exec.shader_id.is_valid() {
-            shader_exec.shader_id = get_shader(SpriteShader::name());
         }
     }
 
     fn create_shader_execs(&mut self, vertex_map: &mut VertexMap) -> Vec<ShaderExecWithVertexData> {
         self.update_all_transforms();
-        for (this_id, mut this) in self.objects.iter().filter_map(|(this_id, this)| {
-            RefMut::filter_map(this.wrapped.borrow_mut(), SceneObject::as_renderable_object)
-                .ok()
-                .map(|this| (this_id, this))
-        }) {
-            let mut render_ctx = RenderContext::new(*this_id, vertex_map);
-            this.on_render(&mut render_ctx);
+        for (id, object) in &self.objects {
+            if let Some(renderable) = object.wrapped.borrow_mut().as_renderable_object() {
+                renderable.on_render(&mut RenderContext::new(*id, vertex_map));
+            }
         }
         let mut shader_execs = Vec::with_capacity(vertex_map.len());
         let mut start = 0;
         for item in vertex_map.render_items() {
-            let mut shader_exec_inner = if let Some(o) =
-                gg_err::log_err_then(self.get_object(item.object_id)).and_then(|o| {
-                    RefMut::filter_map(o.wrapped.borrow_mut(), SceneObject::as_renderable_object)
-                        .ok()
-                }) {
-                o.shader_execs()
-            } else {
+            let Some(transform) = self.absolute_transforms.get(&item.object_id) else {
                 error!(
-                    "object in vertex_map not renderable: {:?} [{:?}]",
-                    item.object_id,
-                    gg_err::log_unwrap_or("unknown", self.get_object_type_string(item.object_id))
+                    "ObjectHandler: missing ObjectId in `absolute_transforms`: {}",
+                    self.format_object_id_for_logging(item.object_id)
                 );
                 continue;
             };
-            for render_info in &mut shader_exec_inner {
-                Self::maybe_replace_invalid_shader_id(render_info);
-            }
-            let transform = match self.absolute_transforms.get(&item.object_id) {
-                None => {
-                    error!(
-                        "missing object_id in transforms: {:?} [{:?}]",
-                        item.object_id,
-                        gg_err::log_unwrap_or(
-                            "unknown",
-                            self.get_object_type_string(item.object_id)
-                        )
-                    );
-                    continue;
-                }
-                Some(t) => t,
+            check_false!(item.object_id.is_root());
+            let Some(object) = gg_err::log_err_then(self.get_object_by_id(item.object_id)) else {
+                continue;
             };
+            let mut object = object.wrapped.borrow_mut();
+            let Some(renderable) = object.as_renderable_object() else {
+                error!(
+                    "ObjectHandler: object in vertex_map not renderable: {}",
+                    self.format_object_id_for_logging(item.object_id)
+                );
+                continue;
+            };
+            let mut shader_exec_inner = renderable.shader_execs();
+            for shader_exec in &mut shader_exec_inner {
+                if !shader_exec.shader_id.is_valid() {
+                    shader_exec.shader_id = get_shader(SpriteShader::name());
+                }
+            }
 
             let end = start + item.len() as u32;
             shader_execs.push(ShaderExecWithVertexData {
@@ -357,6 +311,32 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
             start = end;
         }
         shader_execs
+    }
+
+    pub(crate) fn get_first_object_id_for_gui(&self) -> Option<ObjectId> {
+        self.objects.first_key_value().map(|o| o.0).copied()
+    }
+    pub(crate) fn has_sprite_for_gui(&self, id: ObjectId) -> Result<bool> {
+        let Some(object) = self.get_object_by_id(id)? else {
+            check!(id.is_root());
+            return Ok(false);
+        };
+        if object.gg_type_id() == TypeId::of::<GgInternalSprite>() {
+            Ok(true)
+        } else {
+            for child in self.get_children(id)? {
+                if self.has_sprite_for_gui(child.object_id)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+    }
+    fn format_object_id_for_logging(&self, id: ObjectId) -> String {
+        let label = self.objects.get(&id).map_or("<unknown".to_string(), |obj| {
+            format!("{:?}", obj.wrapped.borrow().gg_type_enum())
+        });
+        format!("{label} [{id:?}]")
     }
 }
 
@@ -1048,7 +1028,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
     ) -> Result<Self> {
         let fps = caller.perf_stats.fps();
         let parent = caller.object_handler.get_parent(this_id)?;
-        let children = caller.object_handler.get_children_owned(this_id)?;
+        let children = caller.object_handler.get_children(this_id)?.clone();
         Ok(Self {
             input: input_handler,
             scene: SceneContext {
@@ -1154,7 +1134,7 @@ impl<'a, ObjectType: ObjectTypeEnum> FixedUpdateContext<'a, ObjectType> {
         object_tracker: &'a mut ObjectTracker<ObjectType>,
     ) -> Result<Self> {
         let parent = caller.object_handler.get_parent(this_id)?;
-        let children = caller.object_handler.get_children_owned(this_id)?;
+        let children = caller.object_handler.get_children(this_id)?.clone();
         Ok(Self {
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),

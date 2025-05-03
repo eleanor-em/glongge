@@ -916,3 +916,22 @@ impl ValueChannelSender<bool> {
         }
     }
 }
+
+pub trait InspectMut<T> {
+    #[allow(clippy::return_self_not_must_use)]
+    fn inspect_mut<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&mut T);
+}
+
+impl<T> InspectMut<T> for Option<T> {
+    fn inspect_mut<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut T),
+    {
+        if let Some(ref mut value) = self {
+            f(value);
+        }
+        self
+    }
+}

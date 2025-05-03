@@ -1906,20 +1906,20 @@ impl Default for Transform {
     }
 }
 
-/// Multiplies two transforms together, analogous to matrix multiplication.
-///
-/// This operation combines two transforms into a single transform that represents
-/// applying both transformations in sequence (right to left), with the following behavior:
-///
-/// - Centre positions are added together
-/// - Rotation angles are added together
-/// - Scale factors are multiplied component-wise
-///
-/// This matches how transformation matrices multiply together, but uses a more compact
-/// representation optimized for 2D transforms.
 impl Mul<Transform> for Transform {
     type Output = Transform;
 
+    /// Multiplies two transforms together, analogous to matrix multiplication.
+    ///
+    /// This operation combines two transforms into a single transform that represents
+    /// applying both transformations in sequence (right to left), with the following behavior:
+    ///
+    /// - Centre positions are added together
+    /// - Rotation angles are added together
+    /// - Scale factors are multiplied component-wise
+    ///
+    /// This matches how transformation matrices multiply together, but uses a more compact
+    /// representation optimized for 2D transforms.
     fn mul(self, rhs: Transform) -> Self::Output {
         Self {
             centre: self.centre + rhs.centre,
