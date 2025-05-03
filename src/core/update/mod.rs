@@ -208,7 +208,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        if let Some(parent_id) = gg_err::log_err(self.get_parent_id(remove_id)) {
+        if let Some(parent_id) = gg_err::log_and_ok(self.get_parent_id(remove_id)) {
             // Remove this object from its parent's list of children.
             if let Ok(children) = self.get_children_mut(parent_id) {
                 // If this object's parent has already been removed, `children` may not exist.
@@ -253,7 +253,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectHandler<ObjectType> {
         child_stack.push((ObjectId(0), Transform::default()));
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
             self.absolute_transforms.insert(parent_id, parent_transform);
-            if let Some(children) = gg_err::log_err(self.get_children(parent_id)) {
+            if let Some(children) = gg_err::log_and_ok(self.get_children(parent_id)) {
                 for child in children {
                     let absolute_transform = child.transform() * parent_transform;
                     child
@@ -415,7 +415,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     parent_id: ObjectId::root(),
                 })
                 .collect(),
-        )?;
+        );
         rv.perf_stats.add_objects.stop();
         rv.update_and_send_render_infos();
         Ok(rv)
@@ -429,6 +429,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             if is_running {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
+
+                // Handle fixed update.
                 fixed_update_us += self.delta.as_micros();
                 let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
                 if fixed_updates > 0 {
@@ -450,6 +452,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                     }
                 }
 
+                // Handle regular update.
                 let input_handler = self.input_handler.lock().unwrap().clone();
                 let (pending_add_objects, pending_remove_objects) = self
                     .call_on_update(&input_handler, fixed_updates)
@@ -459,13 +462,16 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 self.update_with_removed_objects(pending_remove_objects);
                 self.perf_stats.remove_objects.stop();
                 self.perf_stats.add_objects.start();
-                self.update_with_added_objects(&input_handler, pending_add_objects)?;
+                self.update_with_added_objects(&input_handler, pending_add_objects);
                 self.perf_stats.add_objects.stop();
                 self.debug_gui
                     .on_end_step(&input_handler, &mut self.viewport);
+
+                // Handle render.
                 self.update_and_send_render_infos();
                 self.input_handler.lock().unwrap().update_step();
 
+                // Update performance statistics.
                 self.perf_stats.total_stats.stop();
                 self.debug_gui
                     .console_log
@@ -504,7 +510,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         &mut self,
         input_handler: &InputHandler,
         mut pending_add_objects: Vec<TreeSceneObject<ObjectType>>,
-    ) -> Result<()> {
+    ) {
         while !pending_add_objects.is_empty() {
             pending_add_objects.retain(|obj| {
                 let rv = obj.parent_id.is_root()
@@ -529,7 +535,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             self.object_handler
                 .collision_handler
                 .add_objects(pending_add.iter());
-            self.load_new_objects(&mut object_tracker, pending_add)?;
+            self.load_new_objects(&mut object_tracker, pending_add);
             self.object_handler.update_all_transforms();
             self.call_on_ready(
                 &mut object_tracker,
@@ -542,7 +548,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             pending_add_objects = pending_add;
             self.update_with_removed_objects(pending_remove);
         }
-        Ok(())
     }
 
     fn call_on_ready(
@@ -552,7 +557,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         new_ids: RangeInclusive<usize>,
     ) {
         for this_id in new_ids.into_iter().map(ObjectId) {
-            gg_err::log_err(
+            gg_err::log_and_ok(
                 self.object_handler
                     .objects
                     .get_mut(&this_id)
@@ -576,27 +581,20 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         &mut self,
         object_tracker: &mut ObjectTracker<ObjectType>,
         pending_add: I,
-    ) -> Result<()>
-    where
+    ) where
         I: IntoIterator<Item = TreeSceneObject<ObjectType>>,
     {
         for new_obj in pending_add {
-            let parent = match self.object_handler.get_parent(new_obj.parent_id) {
-                Ok(p) => p,
-                Err(e) => {
-                    error!("{}", e.root_cause());
-                    continue;
-                }
+            let Some(parent) =
+                gg_err::log_and_ok(self.object_handler.get_parent(new_obj.parent_id))
+            else {
+                continue;
             };
-            match self.object_handler.add_object(&new_obj) {
-                Ok(o) => o,
-                Err(e) => {
-                    error!("{}", e.root_cause());
-                    continue;
-                }
+            if gg_err::log_and_ok(self.object_handler.add_object(&new_obj)).is_none() {
+                continue;
             }
             object_tracker
-                .last
+                .objects
                 .insert(new_obj.object_id(), new_obj.scene_object.clone());
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
@@ -609,22 +607,24 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 all_children: &self.object_handler.children,
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
-            if let Some(new_vertices) = new_obj
-                .scene_object
-                .wrapped
-                .borrow_mut()
-                .on_load(&mut object_ctx, &mut self.resource_handler)?
-            {
-                self.vertex_map.insert(new_obj.object_id, new_vertices);
-            }
             self.debug_gui
                 .object_tree
                 .on_add_object(&self.object_handler, &new_obj);
+            if let Some(new_vertices) = gg_err::log_and_ok(
+                new_obj
+                    .scene_object
+                    .wrapped
+                    .borrow_mut()
+                    .on_load(&mut object_ctx, &mut self.resource_handler),
+            )
+            .flatten()
+            {
+                self.vertex_map.insert(new_obj.object_id, new_vertices);
+            }
         }
         self.debug_gui
             .object_tree
             .refresh_labels(&self.object_handler);
-        Ok(())
     }
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
@@ -656,7 +656,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         );
         let _enter = update_span.enter();
         let mut object_tracker = ObjectTracker {
-            last: self.object_handler.objects.clone(),
+            objects: self.object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new(),
         };
@@ -718,10 +718,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         }
         self.perf_stats.fixed_update.stop();
 
-        self.perf_stats.detect_collision.start();
         self.handle_collisions(input_handler, &mut object_tracker);
-        self.object_handler.update_all_transforms();
-        self.perf_stats.on_collision.stop();
 
         self.perf_stats.on_update_end.start();
         self.iter_with_other_map(input_handler, &mut object_tracker, |mut obj, ctx| {
@@ -737,68 +734,53 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker<ObjectType>,
     ) {
+        if !USE_DEBUG_GUI {
+            return;
+        }
         if input_handler.pressed(KeyCode::Backquote) {
             self.debug_gui.toggle();
         }
 
-        if USE_DEBUG_GUI {
+        if self.debug_gui.enabled() {
+            // Handle mouseovers.
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
-            if self.debug_gui.enabled() {
-                if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
-                    let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
-                    let maybe_collisions = match UpdateContext::new(
-                        self,
-                        input_handler,
-                        ObjectId::root(),
-                        object_tracker,
-                    ) {
-                        Ok(ctx) => ctx.object.test_collision_point(mouse_pos, all_tags),
-                        Err(e) => {
-                            error!("{}", e.root_cause());
-                            None
-                        }
-                    };
-                    if let Some(collisions) = maybe_collisions {
-                        self.debug_gui
-                            .on_mouseovers(&self.object_handler, collisions);
-                    }
+            if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
+                let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
+                if let Some(collisions) = gg_err::log_and_ok(UpdateContext::new(
+                    self,
+                    input_handler,
+                    ObjectId::root(),
+                    object_tracker,
+                ))
+                .and_then(|ctx| ctx.object.test_collision_point(mouse_pos, all_tags))
+                {
+                    self.debug_gui
+                        .on_mouseovers(&self.object_handler, collisions);
                 }
             }
-            let selected_object = self.debug_gui.selected_object();
-            let gui_objects = self
-                .object_handler
+        }
+        // We have to do this even if !self.debug_gui.enabled() so that the in/out animations work.
+        let selected_object = self.debug_gui.selected_object();
+        let gui_cmds =
+            self.object_handler
                 .objects
-                .iter()
-                .filter(|(_, obj)| obj.wrapped.borrow_mut().as_gui_object().is_some())
-                .map(|(id, obj)| (*id, obj.clone()))
-                .collect_vec();
-            let gui_cmds = gui_objects
+                .clone()
                 .into_iter()
                 .filter_map(|(id, obj)| {
-                    match UpdateContext::new(self, input_handler, id, object_tracker) {
-                        Ok(ctx) => {
-                            let cmd = obj
-                                .wrapped
-                                .borrow_mut()
-                                .as_gui_object()
-                                .unwrap()
-                                .on_gui(&ctx, selected_object == Some(id));
-                            Some((id, cmd))
-                        }
-                        Err(e) => {
-                            error!("{}", e.root_cause());
-                            None
-                        }
-                    }
+                    gg_err::log_and_ok(UpdateContext::new(self, input_handler, id, object_tracker))
+                        .and_then(|ctx| {
+                            obj.wrapped.borrow_mut().as_gui_object().map(|gui_obj| {
+                                (id, gui_obj.on_gui(&ctx, selected_object == Some(id)))
+                            })
+                        })
                 })
                 .collect();
-            self.gui_cmd = Some(self.debug_gui.build(
-                input_handler,
-                &mut self.object_handler,
-                gui_cmds,
-            ));
-        }
+        self.gui_cmd = Some(self.debug_gui.build(
+            input_handler,
+            &mut self.object_handler,
+            gui_cmds,
+        ));
     }
 
     fn handle_collisions(
@@ -806,28 +788,32 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker<ObjectType>,
     ) {
+        self.perf_stats.detect_collision.start();
         let collisions = self.object_handler.get_collisions();
         self.perf_stats.detect_collision.stop();
         self.perf_stats.on_collision.start();
         let mut done_with_collisions = BTreeSet::new();
         for CollisionNotification { this, other, mtv } in collisions {
-            if !done_with_collisions.contains(&this.object_id) {
-                match UpdateContext::new(self, input_handler, this.object_id, object_tracker) {
-                    Ok(mut ctx) => match this
-                        .scene_object
-                        .wrapped
-                        .borrow_mut()
-                        .on_collision(&mut ctx, other, mtv)
-                    {
-                        CollisionResponse::Continue => {}
-                        CollisionResponse::Done => {
-                            done_with_collisions.insert(this.object_id);
-                        }
-                    },
-                    Err(e) => error!("{}", e.root_cause()),
-                }
+            if done_with_collisions.contains(&this.object_id) {
+                continue;
+            }
+            if let Some(CollisionResponse::Done) = gg_err::log_and_ok(UpdateContext::new(
+                self,
+                input_handler,
+                this.object_id,
+                object_tracker,
+            ))
+            .map(|mut ctx| {
+                this.scene_object
+                    .wrapped
+                    .borrow_mut()
+                    .on_collision(&mut ctx, other, mtv)
+            }) {
+                done_with_collisions.insert(this.object_id);
             }
         }
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_collision.stop();
     }
 
     fn update_coroutines(
@@ -836,23 +822,26 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         object_tracker: &mut ObjectTracker<ObjectType>,
     ) {
         for (this_id, this) in self.object_handler.objects.clone() {
-            if let Some(parent_id) = gg_err::log_and_ok(self.object_handler.get_parent_id(this_id))
-            {
-                let this = TreeSceneObject {
-                    object_id: this_id,
-                    parent_id,
-                    scene_object: this.clone(),
+            let Some(parent_id) = gg_err::log_and_ok(self.object_handler.get_parent_id(this_id))
+            else {
+                continue;
+            };
+            let this = TreeSceneObject {
+                object_id: this_id,
+                parent_id,
+                scene_object: this,
+            };
+            for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {
+                let Some(mut ctx) = gg_err::log_and_ok(UpdateContext::new(
+                    self,
+                    input_handler,
+                    this_id,
+                    object_tracker,
+                )) else {
+                    continue;
                 };
-                let last_coroutines = self.coroutines.remove(&this_id).unwrap_or_default();
-                for (id, coroutine) in last_coroutines {
-                    match UpdateContext::new(self, input_handler, this_id, object_tracker) {
-                        Ok(mut ctx) => {
-                            if let Some(coroutine) = coroutine.resume(this.clone(), &mut ctx) {
-                                ctx.scene.coroutines.insert(id, coroutine);
-                            }
-                        }
-                        Err(e) => error!("{}", e.root_cause()),
-                    }
+                if let Some(coroutine) = coroutine.resume(&this, &mut ctx) {
+                    ctx.scene.coroutines.insert(coroutine_id, coroutine);
                 }
             }
         }
@@ -866,30 +855,21 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         F: Fn(RefMut<dyn SceneObject<ObjectType>>, &mut UpdateContext<ObjectType>),
     {
         for (this_id, this) in self.object_handler.objects.clone() {
-            if let Some(parent_id) = gg_err::log_and_ok(self.object_handler.get_parent_id(this_id))
-            {
-                let this = TreeSceneObject {
-                    object_id: this_id,
-                    parent_id,
-                    scene_object: this.clone(),
-                };
-                match UpdateContext::new(self, input_handler, this_id, object_tracker) {
-                    Ok(mut ctx) => call_obj_event(this.scene_object.wrapped.borrow_mut(), &mut ctx),
-                    Err(e) => error!("{}", e.root_cause()),
-                }
-            }
+            gg_err::log_and_ok(UpdateContext::new(
+                self,
+                input_handler,
+                this_id,
+                object_tracker,
+            ))
+            .inspect_mut(|ctx| call_obj_event(this.wrapped.borrow_mut(), ctx));
         }
     }
     fn update_and_send_render_infos(&mut self) {
         self.perf_stats.render_infos.start();
-        let render_infos = self
+
+        let shader_execs = self
             .object_handler
             .create_shader_execs(&mut self.vertex_map);
-        self.send_shader_execs(render_infos);
-        self.perf_stats.render_infos.stop();
-    }
-
-    fn send_shader_execs(&mut self, shader_execs: Vec<ShaderExecWithVertexData>) {
         let maybe_vertices = if self.vertex_map.consume_vertices_changed() {
             Some(
                 self.vertex_map
@@ -913,6 +893,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         render_data_channel.set_clear_col(self.clear_col);
         render_data_channel.set_translation(self.viewport.translation);
         self.viewport = render_data_channel.current_viewport();
+
+        self.perf_stats.render_infos.stop();
     }
 }
 
@@ -1286,7 +1268,7 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
     pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
     where
         F: FnMut(
-                TreeSceneObject<ObjectType>,
+                &TreeSceneObject<ObjectType>,
                 &mut UpdateContext<ObjectType>,
                 CoroutineState,
             ) -> CoroutineResponse
@@ -1299,7 +1281,7 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
     pub fn start_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
     where
         F: FnMut(
-                TreeSceneObject<ObjectType>,
+                &TreeSceneObject<ObjectType>,
                 &mut UpdateContext<ObjectType>,
                 CoroutineState,
             ) -> CoroutineResponse
@@ -1321,7 +1303,7 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
 }
 
 struct ObjectTracker<ObjectType: ObjectTypeEnum> {
-    last: BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
+    objects: BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
     pending_add: Vec<TreeSceneObject<ObjectType>>,
     pending_remove: BTreeSet<ObjectId>,
 }
@@ -1329,14 +1311,14 @@ struct ObjectTracker<ObjectType: ObjectTypeEnum> {
 impl<ObjectType: ObjectTypeEnum> ObjectTracker<ObjectType> {
     fn new(object_handler: &ObjectHandler<ObjectType>) -> Self {
         Self {
-            last: object_handler.objects.clone(),
+            objects: object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new(),
         }
     }
 
     fn get(&self, object_id: ObjectId) -> Option<&SceneObjectWrapper<ObjectType>> {
-        self.last.get(&object_id)
+        self.objects.get(&object_id)
     }
     // fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut SceneObjectWrapper<ObjectType>> {
     //     self.last.get_mut(&object_id)
@@ -1449,7 +1431,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
 
     fn others_inner(&self) -> impl Iterator<Item = (ObjectId, &SceneObjectWrapper<ObjectType>)> {
         self.object_tracker
-            .last
+            .objects
             .iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
             .filter(|(object_id, _)| self.this_id != **object_id)
@@ -1587,7 +1569,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
                     }))
             })
             .map(|o| o.collider().clone())
-            .or(children.iter().find_map(|o| gg_err::log_err(self.collider_of_inner(o.object_id)).flatten())))
+            .or(children.iter().find_map(|o| gg_err::log_and_ok(self.collider_of_inner(o.object_id)).flatten())))
     }
 
     pub fn add_vec(&mut self, objects: Vec<SceneObjectWrapper<ObjectType>>) {

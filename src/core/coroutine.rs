@@ -27,7 +27,7 @@ pub enum CoroutineResponse {
 }
 
 pub type CoroutineFunc<ObjectType> = dyn FnMut(
-    TreeSceneObject<ObjectType>,
+    &TreeSceneObject<ObjectType>,
     &mut UpdateContext<ObjectType>,
     CoroutineState,
 ) -> CoroutineResponse;
@@ -43,7 +43,7 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
     pub(crate) fn new<F>(func: F) -> Self
     where
         F: FnMut(
-                TreeSceneObject<ObjectType>,
+                &TreeSceneObject<ObjectType>,
                 &mut UpdateContext<ObjectType>,
                 CoroutineState,
             ) -> CoroutineResponse
@@ -59,7 +59,7 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
 
     pub(crate) fn resume(
         mut self,
-        this: TreeSceneObject<ObjectType>,
+        this: &TreeSceneObject<ObjectType>,
         ctx: &mut UpdateContext<ObjectType>,
     ) -> Option<Self> {
         if self.wait_since.elapsed() < self.wait_duration {

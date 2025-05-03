@@ -1034,7 +1034,7 @@ impl DebugGui {
         self.wireframe_mouseovers
             .drain(..)
             .filter(|o| {
-                gg_err::log_err(object_handler.get_parent_chain(*o))
+                gg_err::log_and_ok(object_handler.get_parent_chain(*o))
                     .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
             })
             .flat_map(|o| {
@@ -1072,7 +1072,7 @@ impl DebugGui {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {
                 self.object_tree.selected_id.overwrite(ObjectId::root());
-                gg_err::log_err(
+                gg_err::log_and_ok(
                     self.object_view
                         .update_selection(object_handler, ObjectId::root()),
                 );
@@ -1087,7 +1087,7 @@ impl DebugGui {
             )
             .is_some()
             {
-                gg_err::log_err(
+                gg_err::log_and_ok(
                     self.object_view
                         .update_selection(object_handler, self.object_tree.selected_id.get()),
                 );
