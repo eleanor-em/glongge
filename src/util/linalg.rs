@@ -15,234 +15,6 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Range, Sub, SubAssign},
 };
 
-#[derive(
-    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
-)]
-pub struct Vec2i {
-    pub x: i32,
-    pub y: i32,
-}
-
-impl Vec2i {
-    pub fn right() -> Vec2i {
-        Vec2i { x: 1, y: 0 }
-    }
-    pub fn up() -> Vec2i {
-        Vec2i { x: 0, y: -1 }
-    }
-    pub fn left() -> Vec2i {
-        Vec2i { x: -1, y: 0 }
-    }
-    pub fn down() -> Vec2i {
-        Vec2i { x: 0, y: 1 }
-    }
-    pub fn one() -> Vec2i {
-        Vec2i { x: 1, y: 1 }
-    }
-
-    pub fn len(&self) -> f32 {
-        (self.dot(*self) as f32).sqrt()
-    }
-    pub fn dot(&self, other: Vec2i) -> i32 {
-        self.x * other.x + self.y * other.y
-    }
-
-    pub fn as_vec2(&self) -> Vec2 {
-        Into::<Vec2>::into(*self)
-    }
-
-    pub fn range(start: Vec2i, end: Vec2i) -> Product<Range<i32>, Range<i32>> {
-        (start.x..end.x).cartesian_product(start.y..end.y)
-    }
-    pub fn range_from_zero(end: impl Into<Vec2i>) -> Product<Range<i32>, Range<i32>> {
-        Self::range(Vec2i::zero(), end.into())
-    }
-
-    #[allow(clippy::cast_sign_loss)]
-    pub fn as_index(&self, width: u32, height: u32) -> usize {
-        check_ge!(self.x, 0);
-        check_ge!(self.y, 0);
-        check_lt!(self.x as u32, width);
-        check_lt!(self.y as u32, height);
-        (self.y as u32 * width + self.x as u32) as usize
-    }
-}
-
-impl From<Vec2i> for Vec2 {
-    fn from(value: Vec2i) -> Self {
-        Self {
-            x: value.x as f32,
-            y: value.y as f32,
-        }
-    }
-}
-
-impl Zero for Vec2i {
-    fn zero() -> Self {
-        Vec2i { x: 0, y: 0 }
-    }
-
-    fn is_zero(&self) -> bool {
-        *self == Self::zero()
-    }
-}
-
-impl From<[i32; 2]> for Vec2i {
-    fn from(value: [i32; 2]) -> Self {
-        Vec2i {
-            x: value[0],
-            y: value[1],
-        }
-    }
-}
-
-impl From<Vec2i> for [i32; 2] {
-    fn from(value: Vec2i) -> Self {
-        [value.x, value.y]
-    }
-}
-
-impl From<Vec2i> for [u32; 2] {
-    fn from(value: Vec2i) -> Self {
-        [
-            value.x.abs().try_into().unwrap(),
-            value.y.abs().try_into().unwrap(),
-        ]
-    }
-}
-
-impl fmt::Display for Vec2i {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "vec({}, {})", self.x, self.y)
-    }
-}
-
-#[derive(
-    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
-)]
-pub struct Edge2i(pub Vec2i, pub Vec2i);
-
-impl Edge2i {
-    pub fn as_tuple(&self) -> (Vec2i, Vec2i) {
-        (self.0, self.1)
-    }
-    #[must_use]
-    pub fn reverse(self) -> Self {
-        Self(self.1, self.0)
-    }
-}
-impl fmt::Display for Edge2i {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Edge[{}, {}]", self.0, self.1)
-    }
-}
-
-impl Add<Vec2i> for Vec2i {
-    type Output = Vec2i;
-
-    fn add(self, rhs: Vec2i) -> Self::Output {
-        Vec2i {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-impl AddAssign<Vec2i> for Vec2i {
-    fn add_assign(&mut self, rhs: Vec2i) {
-        self.x += rhs.x;
-        self.y += rhs.y;
-    }
-}
-
-impl Sub<Vec2i> for Vec2i {
-    type Output = Vec2i;
-
-    fn sub(self, rhs: Vec2i) -> Self::Output {
-        Vec2i {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-impl SubAssign<Vec2i> for Vec2i {
-    fn sub_assign(&mut self, rhs: Vec2i) {
-        self.x -= rhs.x;
-        self.y -= rhs.y;
-    }
-}
-
-impl Mul<i32> for Vec2i {
-    type Output = Vec2i;
-
-    fn mul(self, rhs: i32) -> Self::Output {
-        rhs * self
-    }
-}
-impl Mul<Vec2i> for i32 {
-    type Output = Vec2i;
-
-    fn mul(self, rhs: Vec2i) -> Self::Output {
-        Vec2i {
-            x: self * rhs.x,
-            y: self * rhs.y,
-        }
-    }
-}
-impl Mul<&Vec2i> for i32 {
-    type Output = Vec2i;
-
-    fn mul(self, rhs: &Vec2i) -> Self::Output {
-        Vec2i {
-            x: self * rhs.x,
-            y: self * rhs.y,
-        }
-    }
-}
-impl MulAssign<i32> for Vec2i {
-    fn mul_assign(&mut self, rhs: i32) {
-        self.x *= rhs;
-        self.y *= rhs;
-    }
-}
-
-impl Div<i32> for Vec2i {
-    type Output = Vec2i;
-
-    fn div(self, rhs: i32) -> Self::Output {
-        Vec2i {
-            x: self.x / rhs,
-            y: self.y / rhs,
-        }
-    }
-}
-impl DivAssign<i32> for Vec2i {
-    fn div_assign(&mut self, rhs: i32) {
-        self.x /= rhs;
-        self.y /= rhs;
-    }
-}
-
-impl Neg for Vec2i {
-    type Output = Vec2i;
-
-    fn neg(self) -> Self::Output {
-        Vec2i {
-            x: -self.x,
-            y: -self.y,
-        }
-    }
-}
-impl Neg for &Vec2i {
-    type Output = Vec2i;
-
-    fn neg(self) -> Self::Output {
-        Vec2i {
-            x: -self.x,
-            y: -self.y,
-        }
-    }
-}
-
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Vec2 {
     pub x: f32,
@@ -724,10 +496,232 @@ impl Neg for &Vec2 {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialOrd, PartialEq)]
-pub struct Vec2Small {
-    pub x: f32,
-    pub y: f32,
+#[derive(
+    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
+)]
+pub struct Vec2i {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Vec2i {
+    pub fn right() -> Vec2i {
+        Vec2i { x: 1, y: 0 }
+    }
+    pub fn up() -> Vec2i {
+        Vec2i { x: 0, y: -1 }
+    }
+    pub fn left() -> Vec2i {
+        Vec2i { x: -1, y: 0 }
+    }
+    pub fn down() -> Vec2i {
+        Vec2i { x: 0, y: 1 }
+    }
+    pub fn one() -> Vec2i {
+        Vec2i { x: 1, y: 1 }
+    }
+
+    pub fn len(&self) -> f32 {
+        (self.dot(*self) as f32).sqrt()
+    }
+    pub fn dot(&self, other: Vec2i) -> i32 {
+        self.x * other.x + self.y * other.y
+    }
+
+    pub fn as_vec2(&self) -> Vec2 {
+        Into::<Vec2>::into(*self)
+    }
+
+    pub fn range(start: Vec2i, end: Vec2i) -> Product<Range<i32>, Range<i32>> {
+        (start.x..end.x).cartesian_product(start.y..end.y)
+    }
+    pub fn range_from_zero(end: impl Into<Vec2i>) -> Product<Range<i32>, Range<i32>> {
+        Self::range(Vec2i::zero(), end.into())
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub fn as_index(&self, width: u32, height: u32) -> usize {
+        check_ge!(self.x, 0);
+        check_ge!(self.y, 0);
+        check_lt!(self.x as u32, width);
+        check_lt!(self.y as u32, height);
+        (self.y as u32 * width + self.x as u32) as usize
+    }
+}
+
+impl From<Vec2i> for Vec2 {
+    fn from(value: Vec2i) -> Self {
+        Self {
+            x: value.x as f32,
+            y: value.y as f32,
+        }
+    }
+}
+
+impl Zero for Vec2i {
+    fn zero() -> Self {
+        Vec2i { x: 0, y: 0 }
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::zero()
+    }
+}
+
+impl From<[i32; 2]> for Vec2i {
+    fn from(value: [i32; 2]) -> Self {
+        Vec2i {
+            x: value[0],
+            y: value[1],
+        }
+    }
+}
+
+impl From<Vec2i> for [i32; 2] {
+    fn from(value: Vec2i) -> Self {
+        [value.x, value.y]
+    }
+}
+
+impl From<Vec2i> for [u32; 2] {
+    fn from(value: Vec2i) -> Self {
+        [
+            value.x.abs().try_into().unwrap(),
+            value.y.abs().try_into().unwrap(),
+        ]
+    }
+}
+
+impl fmt::Display for Vec2i {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "vec({}, {})", self.x, self.y)
+    }
+}
+
+#[derive(
+    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
+)]
+pub struct Edge2i(pub Vec2i, pub Vec2i);
+
+impl Edge2i {
+    pub fn as_tuple(&self) -> (Vec2i, Vec2i) {
+        (self.0, self.1)
+    }
+    #[must_use]
+    pub fn reverse(self) -> Self {
+        Self(self.1, self.0)
+    }
+}
+impl fmt::Display for Edge2i {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Edge[{}, {}]", self.0, self.1)
+    }
+}
+
+impl Add<Vec2i> for Vec2i {
+    type Output = Vec2i;
+
+    fn add(self, rhs: Vec2i) -> Self::Output {
+        Vec2i {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+impl AddAssign<Vec2i> for Vec2i {
+    fn add_assign(&mut self, rhs: Vec2i) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl Sub<Vec2i> for Vec2i {
+    type Output = Vec2i;
+
+    fn sub(self, rhs: Vec2i) -> Self::Output {
+        Vec2i {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+impl SubAssign<Vec2i> for Vec2i {
+    fn sub_assign(&mut self, rhs: Vec2i) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+    }
+}
+
+impl Mul<i32> for Vec2i {
+    type Output = Vec2i;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        rhs * self
+    }
+}
+impl Mul<Vec2i> for i32 {
+    type Output = Vec2i;
+
+    fn mul(self, rhs: Vec2i) -> Self::Output {
+        Vec2i {
+            x: self * rhs.x,
+            y: self * rhs.y,
+        }
+    }
+}
+impl Mul<&Vec2i> for i32 {
+    type Output = Vec2i;
+
+    fn mul(self, rhs: &Vec2i) -> Self::Output {
+        Vec2i {
+            x: self * rhs.x,
+            y: self * rhs.y,
+        }
+    }
+}
+impl MulAssign<i32> for Vec2i {
+    fn mul_assign(&mut self, rhs: i32) {
+        self.x *= rhs;
+        self.y *= rhs;
+    }
+}
+
+impl Div<i32> for Vec2i {
+    type Output = Vec2i;
+
+    fn div(self, rhs: i32) -> Self::Output {
+        Vec2i {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+impl DivAssign<i32> for Vec2i {
+    fn div_assign(&mut self, rhs: i32) {
+        self.x /= rhs;
+        self.y /= rhs;
+    }
+}
+
+impl Neg for Vec2i {
+    type Output = Vec2i;
+
+    fn neg(self) -> Self::Output {
+        Vec2i {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+impl Neg for &Vec2i {
+    type Output = Vec2i;
+
+    fn neg(self) -> Self::Output {
+        Vec2i {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
