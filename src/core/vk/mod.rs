@@ -24,31 +24,23 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
-use vulkano::pipeline::graphics::viewport::{Scissor, ViewportState};
+use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
-use vulkano::{
-    command_buffer::CommandBufferExecFuture,
-    pipeline::graphics::viewport::Viewport,
-    swapchain::{PresentFuture, SwapchainAcquireFuture},
-    sync::{
-        GpuFuture,
-        future::{FenceSignalFuture, JoinFuture},
-    },
-};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
 use vulkano_taskgraph::{Id, resource_map};
 
-pub mod vk_ctx;
+pub(crate) mod vk_ctx;
 
 #[derive(Clone)]
-pub struct GgWindow {
+pub(crate) struct GgWindow {
     inner: Arc<Window>,
 }
 
 impl GgWindow {
-    pub fn new(event_loop: &ActiveEventLoop, size: impl Into<Vec2i>) -> Result<Self> {
+    pub(crate) fn new(event_loop: &ActiveEventLoop, size: impl Into<Vec2i>) -> Result<Self> {
         let size = size.into();
         let mut window_attrs = WindowAttributes::default();
+        // TODO: allow setting window title.
         window_attrs.title = "glongge".to_string();
         window_attrs.resizable = true;
         window_attrs.inner_size = Some(egui_winit::winit::dpi::Size::Logical(LogicalSize::new(
@@ -59,7 +51,7 @@ impl GgWindow {
         Ok(Self { inner: window })
     }
 
-    pub fn create_default_viewport(&self) -> AdjustedViewport {
+    pub(crate) fn create_default_viewport(&self) -> AdjustedViewport {
         AdjustedViewport {
             inner: Viewport {
                 offset: [0., 0.],
@@ -72,16 +64,16 @@ impl GgWindow {
         }
     }
 
-    pub fn inner_size(&self) -> PhysicalSize<u32> {
+    pub(crate) fn inner_size(&self) -> PhysicalSize<u32> {
         self.inner.inner_size()
     }
-    pub fn scale_factor(&self) -> f32 {
+    pub(crate) fn scale_factor(&self) -> f32 {
         self.inner.scale_factor() as f32
     }
 }
 
 #[derive(Clone, Default)]
-pub struct AdjustedViewport {
+pub(crate) struct AdjustedViewport {
     inner: Viewport,
     scale_factor: f32,
     global_scale_factor: f32,
@@ -89,9 +81,10 @@ pub struct AdjustedViewport {
 }
 
 impl AdjustedViewport {
-    pub fn update_from_window(&mut self, window: &GgWindow) {
+    pub(crate) fn update_from_window(&mut self, window: &GgWindow) {
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
+        // TODO: verbose_every_seconds!
         info_every_seconds!(
             1,
             "update_from_window(): extent={:?}, scale_factor={}",
@@ -100,22 +93,22 @@ impl AdjustedViewport {
         );
     }
 
-    pub fn physical_width(&self) -> f32 {
+    pub(crate) fn physical_width(&self) -> f32 {
         self.inner.extent[0]
     }
-    pub fn physical_height(&self) -> f32 {
+    pub(crate) fn physical_height(&self) -> f32 {
         self.inner.extent[1]
     }
-    pub fn logical_width(&self) -> f32 {
+    pub(crate) fn logical_width(&self) -> f32 {
         self.inner.extent[0] / self.scale_factor()
     }
-    pub fn logical_height(&self) -> f32 {
+    pub(crate) fn logical_height(&self) -> f32 {
         self.inner.extent[1] / self.scale_factor()
     }
-    pub fn scale_factor(&self) -> f32 {
+    pub(crate) fn scale_factor(&self) -> f32 {
         self.scale_factor
     }
-    pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
+    pub(crate) fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         self.global_scale_factor = global_scale_factor;
     }
     pub(crate) fn global_scale_factor(&self) -> f32 {
@@ -125,38 +118,8 @@ impl AdjustedViewport {
         self.scale_factor / self.global_scale_factor
     }
 
-    pub fn as_viewport_state(&self) -> ViewportState {
-        ViewportState {
-            viewports: [self.inner.clone()].into_iter().collect(),
-            scissors: [Scissor {
-                offset: [
-                    gg_float::f32_to_u32(self.inner.offset[0].floor())
-                        .expect("very weird viewport extent"),
-                    gg_float::f32_to_u32(self.inner.offset[1].floor())
-                        .expect("very weird viewport extent"),
-                ],
-                extent: [
-                    gg_float::f32_to_u32(self.inner.extent[0].floor())
-                        .expect("very weird viewport extent"),
-                    gg_float::f32_to_u32(self.inner.extent[1].floor())
-                        .expect("very weird viewport extent"),
-                ],
-            }]
-            .into_iter()
-            .collect(),
-            ..ViewportState::default()
-        }
-    }
-
-    pub fn inner(&self) -> Viewport {
+    pub(crate) fn inner(&self) -> Viewport {
         self.inner.clone()
-    }
-
-    #[must_use]
-    pub fn translated(&self, translation: Vec2) -> AdjustedViewport {
-        let mut rv = self.clone();
-        rv.translation = translation;
-        rv
     }
 }
 
@@ -173,9 +136,6 @@ impl AxisAlignedExtent for AdjustedViewport {
     }
 }
 
-type SwapchainJoinFuture = JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>;
-type FenceFuture = FenceSignalFuture<PresentFuture<CommandBufferExecFuture<SwapchainJoinFuture>>>;
-
 struct WindowEventHandlerInner {
     window: GgWindow,
     scale_factor: f32,
@@ -184,7 +144,6 @@ struct WindowEventHandlerInner {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     platform: egui_winit::State,
-    fences: Vec<Option<Arc<FenceFuture>>>,
     task_graph: ExecutableTaskGraph<VulkanoContext>,
     virtual_swapchain_id: Id<Swapchain>,
 }
@@ -201,7 +160,7 @@ where
     phantom_data: PhantomData<ObjectType>,
 }
 
-pub struct WindowEventHandler<F, ObjectType>
+pub(crate) struct WindowEventHandler<F, ObjectType>
 where
     F: FnOnce(SceneHandlerBuilder<ObjectType>),
     ObjectType: ObjectTypeEnum,
@@ -216,13 +175,12 @@ where
     is_first_window_event: bool,
 }
 
-#[allow(private_bounds)]
 impl<F, ObjectType> WindowEventHandler<F, ObjectType>
 where
     F: FnOnce(SceneHandlerBuilder<ObjectType>),
     ObjectType: ObjectTypeEnum,
 {
-    pub fn create_and_run(
+    pub(crate) fn create_and_run(
         window_size: Vec2i,
         global_scale_factor: f32,
         clear_col: Colour,
@@ -257,8 +215,6 @@ where
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        let image_count = self.expect_inner().vk_ctx.image_count();
-        self.expect_inner().fences = vec![None; image_count];
         let window = self.expect_inner().window.clone();
         self.expect_inner()
             .vk_ctx
@@ -280,7 +236,6 @@ where
         let vk_ctx = VulkanoContext::new(event_loop, &window)?;
         let input_handler = InputHandler::new();
         let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
-        // TODO: this always loads all the example textures...
         ObjectType::preload_all(&mut resource_handler)?;
 
         // TODO: these need a barrier between executions because they access the current image.
@@ -289,7 +244,6 @@ where
         let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
             SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
             WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
-            // TriangleFanShader::create(vk_ctx.clone(), viewport.clone())?,
         ];
 
         let render_handler = RenderHandler::new(
@@ -312,7 +266,6 @@ where
             None,
         );
 
-        let fences = vec![None; vk_ctx.image_count()];
         let (task_graph, virtual_swapchain_id) =
             Self::build_task_graph(&vk_ctx, &render_handler, &resource_handler)?;
 
@@ -324,7 +277,6 @@ where
             input_handler,
             resource_handler,
             platform,
-            fences,
             task_graph,
             virtual_swapchain_id,
         });
@@ -336,6 +288,7 @@ where
         render_handler: &RenderHandler,
         resource_handler: &ResourceHandler,
     ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
+        // TODO: verbose!
         info!("building task graph");
         let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 100);
         let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
@@ -402,13 +355,16 @@ where
                         .unwrap()
                         .queue_key_event(keycode, event.state);
                 }
-                PhysicalKey::Unidentified(_) => {}
+                PhysicalKey::Unidentified(keycode) => {
+                    info!("PhysicalKey::Unidentified({keycode:?}), ignoring");
+                }
             },
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 let scale_factor = scale_factor as f32;
-                // Since scale_factor is given by winit, we expect exact comparison to work.
+                // Since scale_factor is given by winit, we expect an exact comparison to work.
                 #[allow(clippy::float_cmp)]
                 if self.expect_inner().scale_factor != scale_factor {
+                    // TODO: verbose_every_seconds!
                     info_every_seconds!(
                         1,
                         "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
@@ -420,6 +376,7 @@ where
                 }
             }
             WindowEvent::Resized(physical_size) => {
+                // TODO: verbose_every_seconds!
                 info_every_seconds!(
                     1,
                     "WindowEvent::Resized: {:?}: recreating swapchain",
@@ -446,6 +403,7 @@ where
                 }
                 match self.acquire_and_handle_image() {
                     Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
+                        // TODO: verbose_every_seconds!
                         info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
                         self.recreate_swapchain().unwrap();
                     }
@@ -485,6 +443,11 @@ where
 
         self.render_stats.execute.start();
         let inner = self.expect_inner();
+        // TODO: add more stuff to resource_map instead of recreating it all the time. From Marc:
+        //  "Or even if you use the same resources all the time, it's useful to use the resource map
+        //   for frame-local resources such as uniform buffers. All a ResourceMap is for is to
+        //   allow you to specify resources at task graph runtime rather than compile time. If you
+        //   use physical resources, you have to recompile the task graph each time."
         let resource_map = resource_map!(
             &inner.task_graph,
             inner.virtual_swapchain_id => vk_ctx.swapchain_id(),
@@ -516,7 +479,7 @@ where
         self.is_first_window_event = false;
         let raw_input = self.expect_inner().platform.take_egui_input(&window.inner);
         let stats = self.last_render_stats.clone();
-        let mut render_handler = self.expect_inner().render_handler.clone();
+        let render_handler = self.expect_inner().render_handler.clone();
         let input = self.expect_inner().input_handler.clone();
         let full_output = self.gui_ctx.run(raw_input, |ctx| {
             {

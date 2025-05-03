@@ -764,7 +764,7 @@ impl<ObjectType> SceneHandlerBuilder<ObjectType>
 where
     ObjectType: ObjectTypeEnum,
 {
-    pub fn new(
+    pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_handler: RenderHandler,

@@ -166,7 +166,7 @@ pub struct ShaderRenderFrame<'a> {
 }
 
 #[derive(Clone)]
-pub struct RenderHandler {
+pub(crate) struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     window: UniqueShared<GgWindow>,
@@ -178,7 +178,7 @@ pub struct RenderHandler {
 }
 
 impl RenderHandler {
-    pub fn new(
+    pub(crate) fn new(
         vk_ctx: &VulkanoContext,
         gui_ctx: GuiContext,
         window: GgWindow,
@@ -207,7 +207,7 @@ impl RenderHandler {
     }
 
     #[must_use]
-    pub fn with_global_scale_factor(self, global_scale_factor: f32) -> Self {
+    pub(crate) fn with_global_scale_factor(self, global_scale_factor: f32) -> Self {
         self.viewport
             .get()
             .set_global_scale_factor(global_scale_factor);
@@ -220,7 +220,7 @@ impl RenderHandler {
     }
 
     #[must_use]
-    pub fn with_clear_col(self, clear_col: Colour) -> Self {
+    pub(crate) fn with_clear_col(self, clear_col: Colour) -> Self {
         self.render_data_channel
             .lock()
             .unwrap()
@@ -238,7 +238,7 @@ impl RenderHandler {
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
     }
 
-    pub(crate) fn do_gui(&mut self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
+    pub(crate) fn do_gui(&self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
         let gui_commands = {
             let mut channel = self.render_data_channel.lock().unwrap();
             channel.last_render_stats = last_render_stats;

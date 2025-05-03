@@ -160,9 +160,9 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum> {
     rx: Receiver<SceneHandlerInstruction>,
 }
 
-#[allow(private_bounds)]
+// #[allow(private_bounds)]
 impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
-    pub fn new(
+    pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_handler: RenderHandler,

@@ -309,7 +309,7 @@ pub struct SpriteShader {
 }
 
 impl SpriteShader {
-    pub fn create(
+    pub(crate) fn create(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
         resource_handler: ResourceHandler,
@@ -667,7 +667,7 @@ pub struct WireframeShader {
 }
 
 impl WireframeShader {
-    pub fn create(
+    pub(crate) fn create(
         ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
     ) -> Result<UniqueShared<Box<dyn Shader>>> {

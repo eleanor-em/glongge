@@ -338,7 +338,7 @@ struct GuiFrame {
 }
 
 #[derive(Clone)]
-pub struct GuiRenderer {
+pub(crate) struct GuiRenderer {
     vk_ctx: VulkanoContext,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
@@ -363,7 +363,10 @@ pub struct GuiRenderer {
 impl GuiRenderer {
     const MAX_STAGING_SIZE_BYTES: DeviceSize = 10 * 1024 * 1024;
 
-    pub fn new(vk_ctx: VulkanoContext, viewport: UniqueShared<AdjustedViewport>) -> Result<Self> {
+    pub(crate) fn new(
+        vk_ctx: VulkanoContext,
+        viewport: UniqueShared<AdjustedViewport>,
+    ) -> Result<Self> {
         let device = vk_ctx.device();
         let font_sampler = Sampler::new(
             vk_ctx.device(),
@@ -588,7 +591,7 @@ impl GuiRenderer {
         }
         Ok(())
     }
-    pub fn pre_render_update(
+    pub(crate) fn pre_render_update(
         &self,
         cbf: &mut RecordingCommandBuffer,
         tcx: &mut TaskContext,

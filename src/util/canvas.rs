@@ -7,7 +7,6 @@ use glongge_derive::{partially_derive_scene_object, register_scene_object};
 #[register_scene_object]
 pub struct GgInternalCanvas {
     render_items: Vec<RenderItem>,
-    viewport: AdjustedViewport,
     depth: VertexDepth,
 }
 
@@ -87,8 +86,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
         self.render_items.clear();
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        self.viewport = ctx.viewport().inner();
+    fn on_update_end(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
         if self.render_items.is_empty() {
             // XXX: if there is nothing but the canvas, the game won't even start, because it has to
             // render something.
@@ -122,5 +120,4 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanv
 }
 
 use crate::core::update::RenderContext;
-use crate::core::vk::AdjustedViewport;
 pub use GgInternalCanvas as Canvas;

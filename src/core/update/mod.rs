@@ -2448,11 +2448,6 @@ impl ViewportContext<'_> {
         self.clear_col
     }
 
-    /// Returns a clone of the inner adjusted viewport.
-    pub fn inner(&self) -> AdjustedViewport {
-        self.viewport.clone()
-    }
-
     /// Sets the global scale factor for the viewport.
     ///
     /// # Arguments
