@@ -1139,10 +1139,7 @@ impl DebugGui {
     ) {
         self.object_tree.on_add_object(object_handler, object);
     }
-    pub fn on_done_adding_objects<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-    ) {
+    pub fn on_done_adding_objects<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
         self.object_tree.refresh_labels(object_handler);
     }
     pub fn on_remove_object<O: ObjectTypeEnum>(

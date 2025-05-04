@@ -605,8 +605,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 all_children: &self.object_handler.children,
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
-            self.debug_gui
-                .on_add_object(&self.object_handler, &new_obj);
+            self.debug_gui.on_add_object(&self.object_handler, &new_obj);
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
                     .scene_object
@@ -619,8 +618,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 self.vertex_map.insert(new_obj.object_id, new_vertices);
             }
         }
-        self.debug_gui
-            .on_done_adding_objects(&self.object_handler);
+        self.debug_gui.on_done_adding_objects(&self.object_handler);
     }
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
