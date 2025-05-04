@@ -702,8 +702,7 @@ pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     /// }
     /// ```
     /// Show some debugging information about the object, and allow editing it with
-    /// [`EditCellReceiver`](crate::gui::EditCellReceiver)/
-    /// [`EditCellSender`](crate::gui::EditCellSender):
+    /// [`EditCell`](crate::gui::EditCell)/[`EditCellSender`](crate::gui::EditCellSender):
     /// ```ignore
     /// fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiCommand> {
     ///     let extent = self.collider.aa_extent();

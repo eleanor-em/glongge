@@ -91,8 +91,8 @@ impl GuiObjectView {
     }
 
     fn clear_selection(&mut self) {
-        self.absolute_cell.reset();
-        self.relative_cell.reset();
+        self.absolute_cell.clear_state();
+        self.relative_cell.clear_state();
         self.object_id = ObjectId::root();
     }
 
@@ -105,8 +105,8 @@ impl GuiObjectView {
             for (_, mut c) in object_handler.get_collision_shapes_mut(self.object_id)? {
                 c.hide_wireframe();
             }
-            self.absolute_cell.reset();
-            self.relative_cell.reset();
+            self.absolute_cell.clear_state();
+            self.relative_cell.clear_state();
             self.object_id = selected_id;
             if !selected_id.is_root() {
                 for (_, mut c) in object_handler.get_collision_shapes_mut(selected_id)? {
@@ -1080,6 +1080,8 @@ impl DebugGui {
             self.object_tree
                 .on_input(input_handler, object_handler, &self.wireframe_mouseovers);
             self.scene_control.on_input(input_handler);
+        } else {
+            self.object_view.clear_selection();
         }
         if !self.object_tree.selected_id.get().is_root() {
             if gg_err::log_err_then(
@@ -1156,7 +1158,7 @@ impl DebugGui {
         self.enabled
     }
     pub fn selected_object(&self) -> Option<ObjectId> {
-        if self.object_tree.selected_id.get().is_root() {
+        if !self.enabled || self.object_tree.selected_id.get().is_root() {
             None
         } else {
             Some(self.object_tree.selected_id.get())

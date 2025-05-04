@@ -1645,10 +1645,10 @@ pub struct GgInternalCollisionShape {
     wireframe: RenderItem,
     show_wireframe: bool,
     last_show_wireframe: bool,
-    extent_cell_receiver_x: EditCellReceiver<f32>,
-    extent_cell_receiver_y: EditCellReceiver<f32>,
-    centre_cell_receiver_x: EditCellReceiver<f32>,
-    centre_cell_receiver_y: EditCellReceiver<f32>,
+    extent_cell_receiver_x: EditCell<f32>,
+    extent_cell_receiver_y: EditCell<f32>,
+    centre_cell_receiver_x: EditCell<f32>,
+    centre_cell_receiver_y: EditCell<f32>,
 }
 
 impl GgInternalCollisionShape {
@@ -1665,10 +1665,10 @@ impl GgInternalCollisionShape {
             wireframe: RenderItem::default(),
             show_wireframe: false,
             last_show_wireframe: false,
-            extent_cell_receiver_x: EditCellReceiver::new(),
-            extent_cell_receiver_y: EditCellReceiver::new(),
-            centre_cell_receiver_x: EditCellReceiver::new(),
-            centre_cell_receiver_y: EditCellReceiver::new(),
+            extent_cell_receiver_x: EditCell::new(),
+            extent_cell_receiver_y: EditCell::new(),
+            centre_cell_receiver_x: EditCell::new(),
+            centre_cell_receiver_y: EditCell::new(),
         };
         rv.regenerate_wireframe(&Transform::default());
         rv
@@ -1839,7 +1839,13 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
 }
 
 impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
-    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiCommand> {
+    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand> {
+        if !selected {
+            self.extent_cell_receiver_x.clear_state();
+            self.extent_cell_receiver_y.clear_state();
+            self.centre_cell_receiver_x.clear_state();
+            self.centre_cell_receiver_y.clear_state();
+        }
         let extent = self.collider.aa_extent();
         let (next_x, next_y) = (
             self.extent_cell_receiver_x.try_recv(),
@@ -1902,7 +1908,7 @@ impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionSh
 
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
-use crate::gui::EditCellReceiver;
+use crate::gui::EditCell;
 use crate::shader::{Shader, SpriteShader, WireframeShader, get_shader};
 use crate::util::canvas::Canvas;
 pub use GgInternalCollisionShape as CollisionShape;
