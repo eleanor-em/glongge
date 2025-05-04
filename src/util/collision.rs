@@ -936,16 +936,12 @@ impl CompoundCollider {
 
         let intersections_1 = filtered_edges
             .iter()
-            .filter_map(|(a, b)| {
-                Vec2::intersect(origin, (origin - prev) * ONE_OVER_EPSILON, *a, *b - *a)
-            })
+            .filter_map(|(a, b)| Vec2::intersect(origin, (origin - prev) / EPSILON, *a, *b - *a))
             .min_by(Vec2::cmp_by_length);
 
         let intersections_2 = filtered_edges
             .iter()
-            .filter_map(|(a, b)| {
-                Vec2::intersect(origin, (origin - next) * ONE_OVER_EPSILON, *a, *b - *a)
-            })
+            .filter_map(|(a, b)| Vec2::intersect(origin, (origin - next) / EPSILON, *a, *b - *a))
             .min_by(Vec2::cmp_by_length);
 
         if let (Some(start), Some(end)) = (intersections_1, intersections_2) {
@@ -953,7 +949,7 @@ impl CompoundCollider {
             filtered_edges
                 .iter()
                 .filter_map(|(a, b)| {
-                    Vec2::intersect(origin, (centre - origin) * ONE_OVER_EPSILON, *a, *b - *a)
+                    Vec2::intersect(origin, (centre - origin) / EPSILON, *a, *b - *a)
                 })
                 .min_by(|a, b| a.cmp_by_dist(b, origin))
         } else {
