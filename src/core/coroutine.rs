@@ -5,6 +5,9 @@ use std::{
 };
 
 static NEXT_COROUTINE_ID: AtomicUsize = AtomicUsize::new(0);
+/// A unique identifier for a coroutine instance.
+/// Can be stored for use with
+/// [`cancel_coroutine()`](crate::core::update::SceneContext::cancel_coroutine).
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CoroutineId(usize);
 
@@ -15,18 +18,38 @@ impl CoroutineId {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
+/// The current state of a coroutine's execution.
+///
+/// - `Starting`: Initial state when the coroutine begins execution
+/// - `Yielding`: The coroutine has temporarily suspended execution
+/// - `Waiting`: The coroutine is waiting for a specific duration before resuming
 pub enum CoroutineState {
+    /// Initial state when the coroutine begins execution
     Starting,
+    /// The coroutine has temporarily suspended execution
     Yielding,
+    /// The coroutine is waiting for a specific duration before resuming
     Waiting,
 }
+/// Represents possible responses from a coroutine during its execution.
+///
+/// - `Yield`: Suspend execution and return control to the engine for this update frame.
+/// - `Wait(Duration)`: Pause execution for a specified duration before resuming. Note: the coroutine will not
+///   resume exactly at the end of the duration, but rather at the start of the first update frame
+///   that is after the end of the duration.
+/// - `Complete`: The coroutine has finished its execution.
 pub enum CoroutineResponse {
+    /// Suspend execution and return control to the engine for this update frame.
     Yield,
+    /// Pause execution for a specified duration before resuming. Note: the coroutine will not
+    /// resume exactly at the end of the duration, but rather at the start of the first update frame
+    /// that is after the end of the duration.
     Wait(Duration),
+    /// The coroutine has finished its execution.
     Complete,
 }
 
-pub type CoroutineFunc<ObjectType> = dyn FnMut(
+pub(crate) type CoroutineFunc<ObjectType> = dyn FnMut(
     &TreeSceneObject<ObjectType>,
     &mut UpdateContext<ObjectType>,
     CoroutineState,

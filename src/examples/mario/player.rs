@@ -218,8 +218,9 @@ impl Player {
         hold_run: bool,
     ) {
         if hold_run {
-            ctx.scene_mut()
-                .maybe_cancel_coroutine(&mut self.cancel_run_crt);
+            if let Some(crt) = self.cancel_run_crt.take() {
+                ctx.scene_mut().cancel_coroutine(crt);
+            }
         } else {
             self.cancel_run_crt.get_or_insert_with(|| {
                 ctx.scene_mut().start_coroutine_after(
@@ -324,8 +325,8 @@ impl Player {
                     Duration::from_millis(60),
                 )
             });
-        } else {
-            ctx.scene_mut().maybe_cancel_coroutine(&mut self.coyote_crt);
+        } else if let Some(crt) = self.coyote_crt.take() {
+            ctx.scene_mut().cancel_coroutine(crt);
         }
 
         if self.coyote_crt.is_none() && self.state != PlayerState::Falling {

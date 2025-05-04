@@ -1516,11 +1516,13 @@ pub struct SceneContext<'a, ObjectType: ObjectTypeEnum> {
 }
 
 impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
+    /// Stop the game and exit gracefully.
     pub fn stop(&self) {
         self.scene_instruction_tx
             .send(SceneInstruction::Stop)
             .unwrap();
     }
+    /// Go to a new scene.
     pub fn goto(&self, instruction: SceneDestination) {
         self.scene_instruction_tx
             .send(SceneInstruction::Goto(instruction))
@@ -1537,6 +1539,38 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
             .expect("failed to ser/de scene_data, do the types match?")
     }
 
+    /// Starts a new coroutine (background task) for this object.
+    ///
+    /// Coroutines allow performing actions over multiple frames, like animations or delayed effects.
+    /// The coroutine function is called each frame until it returns `CoroutineResponse::Complete`.
+    ///
+    /// # Parameters  
+    /// * `func` - The coroutine function to execute. Takes:
+    ///   - A reference to this object as a [`TreeSceneObject`]
+    ///   - A mutable reference to the current [`UpdateContext`]
+    ///   - The most recent [`CoroutineState`], indicating if the coroutine has just started,
+    ///     whether it yielded, or whether it was waiting for a duration.
+    ///
+    /// # Returns
+    /// * A unique [`CoroutineId`] that can be used to cancel the coroutine later.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Start a coroutine that moves an object over time
+    /// ctx.scene_mut().start_coroutine(|this, ctx, last_state| {
+    ///     match last_state {
+    ///         CoroutineState::Starting => {
+    ///             // Initialize state
+    ///             CoroutineResponse::Wait(Duration::from_secs(1))
+    ///         }
+    ///         CoroutineState::Resuming => {
+    ///             // Move object
+    ///             ctx.object_mut().transform_mut().centre += Vec2::up();
+    ///             CoroutineResponse::Complete
+    ///         }
+    ///     }
+    /// });
+    /// ```
     pub fn start_coroutine<F>(&mut self, func: F) -> CoroutineId
     where
         F: FnMut(
@@ -1550,6 +1584,29 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
         self.coroutines.insert(id, Coroutine::new(func));
         id
     }
+    /// Helper function to start a new coroutine after a specified delay duration.
+    ///
+    /// Similar to [`start_coroutine()`](SceneContext::start_coroutine), but waits for the given
+    /// duration before executing the coroutine function for the first time.
+    ///
+    /// # Parameters
+    /// * `func` - The coroutine function to execute after the delay. Takes:
+    ///   - A reference to this object as a [`TreeSceneObject`]
+    ///   - A mutable reference to the current [`UpdateContext`]
+    ///   - The most recent [`CoroutineState`]
+    /// * `duration` - How long to wait before starting the coroutine
+    ///
+    /// # Returns
+    /// * A unique [`CoroutineId`] that can be used to cancel the coroutine.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Start a coroutine after 2 seconds
+    /// ctx.scene_mut().start_coroutine_after(|this, ctx, state| {
+    ///     // Coroutine logic...
+    ///     CoroutineResponse::Complete
+    /// }, Duration::from_secs(2));
+    /// ```
     pub fn start_coroutine_after<F>(&mut self, mut func: F, duration: Duration) -> CoroutineId
     where
         F: FnMut(
@@ -1564,11 +1621,26 @@ impl<ObjectType: ObjectTypeEnum> SceneContext<'_, ObjectType> {
             _ => func(this, ctx, action),
         })
     }
-    pub fn maybe_cancel_coroutine(&mut self, id: &mut Option<CoroutineId>) {
-        if let Some(id) = id.take() {
-            self.cancel_coroutine(id);
-        }
-    }
+    /// Cancels a running coroutine with the given ID.
+    ///
+    /// This will stop the coroutine from executing in future frames. The coroutine will be
+    /// removed at the end of the current frame.
+    ///
+    /// # Parameters
+    /// * `id` - The ID of the coroutine to cancel, obtained when starting the coroutine (see
+    ///   [`start_coroutine()`](SceneContext::start_coroutine)).
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Start a coroutine and store its ID
+    /// let coroutine_id = ctx.scene_mut().start_coroutine(|this, ctx, state| {
+    ///     // Coroutine logic...
+    ///     CoroutineResponse::Complete
+    /// });
+    ///
+    /// // Later, cancel the coroutine
+    /// ctx.scene_mut().cancel_coroutine(coroutine_id);
+    /// ```
     pub fn cancel_coroutine(&mut self, id: CoroutineId) {
         self.pending_removed_coroutines.insert(id);
     }
