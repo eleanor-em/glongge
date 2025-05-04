@@ -150,55 +150,52 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
     fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
         self.gui_selected |= self.force_visible;
         if self.gui_selected {
-            if let Some(mouse_pos) = ctx.input().screen_mouse_pos() {
-                let mouse_pressed = ctx.input().mouse_pressed(MouseButton::Primary);
-                let mouse_double_clicked = ctx.input().mouse_double_clicked(MouseButton::Primary);
-                if ctx.input().mouse_released(MouseButton::Primary) {
-                    self.selected_control_point = None;
-                }
-                if let Some(i) = self.selected_control_point {
-                    self.spline.control_points[i] = mouse_pos;
-                    self.recalculate();
-                }
-                if let Some(i) = self
-                    .spline
-                    .control_points
-                    .iter()
-                    .tuple_windows()
-                    .enumerate()
-                    .filter(|(_, (u, v))| {
-                        mouse_double_clicked && mouse_pos.dist_to_line(**u, **v) < 2.
-                    })
-                    .map(|(i, _)| i + 1)
-                    .next()
-                {
-                    self.spline.control_points.insert(i, mouse_pos);
-                    self.recalculate();
-                }
+            let mouse_pos = ctx.input().screen_mouse_pos().unwrap_or_default();
+            let mouse_pressed = ctx.input().mouse_pressed(MouseButton::Primary);
+            let mouse_double_clicked = ctx.input().mouse_double_clicked(MouseButton::Primary);
+            if ctx.input().mouse_released(MouseButton::Primary) {
+                self.selected_control_point = None;
+            }
+            if let Some(i) = self.selected_control_point {
+                self.spline.control_points[i] = mouse_pos;
+                self.recalculate();
+            }
+            if let Some(i) = self
+                .spline
+                .control_points
+                .iter()
+                .tuple_windows()
+                .enumerate()
+                .filter(|(_, (u, v))| mouse_double_clicked && mouse_pos.dist_to_line(**u, **v) < 2.)
+                .map(|(i, _)| i + 1)
+                .next()
+            {
+                self.spline.control_points.insert(i, mouse_pos);
+                self.recalculate();
+            }
 
-                let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
-                self.draw_to_canvas(&mut canvas, 1., self.colour);
-                for (&u, &v) in self.spline.control_points.iter().tuple_windows() {
-                    canvas.line(
-                        u,
-                        v,
-                        0.5,
-                        if mouse_pos.dist_to_line(u, v) < 2. {
-                            Colour::blue().scaled(0.8)
-                        } else {
-                            Colour::cyan()
-                        },
-                    );
-                }
-                for (i, &v) in self.spline.control_points.iter().enumerate() {
-                    if mouse_pos.dist_squared(v) <= Self::RADIUS * Self::RADIUS {
-                        canvas.circle(v, Self::RADIUS, 20, Colour::blue());
-                        if mouse_pressed {
-                            self.selected_control_point = Some(i);
-                        }
+            let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
+            self.draw_to_canvas(&mut canvas, 1., self.colour);
+            for (&u, &v) in self.spline.control_points.iter().tuple_windows() {
+                canvas.line(
+                    u,
+                    v,
+                    0.5,
+                    if mouse_pos.dist_to_line(u, v) < 2. {
+                        Colour::blue().scaled(0.8)
                     } else {
-                        canvas.circle(v, Self::RADIUS, 20, Colour::cyan());
+                        Colour::cyan()
+                    },
+                );
+            }
+            for (i, &v) in self.spline.control_points.iter().enumerate() {
+                if mouse_pos.dist_squared(v) <= Self::RADIUS * Self::RADIUS {
+                    canvas.circle(v, Self::RADIUS, 20, Colour::blue());
+                    if mouse_pressed {
+                        self.selected_control_point = Some(i);
                     }
+                } else {
+                    canvas.circle(v, Self::RADIUS, 20, Colour::cyan());
                 }
             }
         }
