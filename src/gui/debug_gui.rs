@@ -265,12 +265,33 @@ struct GuiObjectTreeNode {
 }
 
 impl GuiObjectTreeNode {
-    fn new() -> Self {
+    fn root() -> Self {
         Self {
             label: ObjectLabel::Root,
             object_id: ObjectId::root(),
             displayed: BTreeMap::new(),
             disambiguation: Rc::new(RefCell::new(BTreeMap::new())),
+            open: ValueChannel::default(),
+            expand_all_children: ValueChannel::default(),
+        }
+    }
+    fn node<O: ObjectTypeEnum>(&self, object: &TreeSceneObject<O>) -> Self {
+        let name = object.nickname_or_type_name();
+        let count = *self
+            .disambiguation
+            .borrow_mut()
+            .entry(name.clone())
+            .and_modify(|count| *count += 1)
+            .or_default();
+        Self {
+            label: if count > 0 {
+                ObjectLabel::Disambiguated(name, String::new(), count)
+            } else {
+                ObjectLabel::Unique(name, String::new())
+            },
+            object_id: object.object_id,
+            displayed: BTreeMap::new(),
+            disambiguation: self.disambiguation.clone(),
             open: ValueChannel::default(),
             expand_all_children: ValueChannel::default(),
         }
@@ -294,28 +315,6 @@ impl GuiObjectTreeNode {
         }
         for child in self.displayed.values_mut() {
             child.refresh_label(object_handler);
-        }
-    }
-
-    fn child<O: ObjectTypeEnum>(&self, object: &TreeSceneObject<O>) -> Self {
-        let name = object.nickname_or_type_name();
-        let count = *self
-            .disambiguation
-            .borrow_mut()
-            .entry(name.clone())
-            .and_modify(|count| *count += 1)
-            .or_default();
-        Self {
-            label: if count > 0 {
-                ObjectLabel::Disambiguated(name, String::new(), count)
-            } else {
-                ObjectLabel::Unique(name, String::new())
-            },
-            object_id: object.object_id,
-            displayed: BTreeMap::new(),
-            disambiguation: self.disambiguation.clone(),
-            open: ValueChannel::default(),
-            expand_all_children: ValueChannel::default(),
         }
     }
 
@@ -359,7 +358,7 @@ impl GuiObjectTreeNode {
     }
 }
 
-pub(crate) struct GuiObjectTree {
+struct GuiObjectTree {
     root: GuiObjectTreeNode,
     show: ValueChannel<bool>,
     selected_id: ValueChannel<ObjectId>,
@@ -369,7 +368,7 @@ impl GuiObjectTree {
     fn new() -> Self {
         let selected_id = ObjectId::root();
         Self {
-            root: GuiObjectTreeNode::new(),
+            root: GuiObjectTreeNode::root(),
             show: ValueChannel::with_value(true),
             selected_id: ValueChannel::with_value(selected_id),
         }
@@ -527,7 +526,7 @@ impl GuiObjectTree {
                     if tree.displayed.contains_key(&id) {
                         tree = tree.displayed.get_mut(&id).unwrap();
                     } else {
-                        let child = tree.child(object);
+                        let child = tree.node(object);
                         tree.displayed.insert(object.object_id, child);
                         return;
                     }
@@ -986,6 +985,7 @@ impl GuiSceneControl {
                 });
         })
     }
+
     pub fn is_paused(&self) -> bool {
         self.paused
     }
@@ -1002,9 +1002,9 @@ impl GuiSceneControl {
 
 pub(crate) struct DebugGui {
     enabled: bool,
-    pub(crate) object_tree: GuiObjectTree,
+    object_tree: GuiObjectTree,
     object_view: GuiObjectView,
-    pub(crate) console_log: GuiConsoleLog,
+    console_log: GuiConsoleLog,
     pub(crate) scene_control: GuiSceneControl,
     last_viewport: AdjustedViewport,
     frame: Frame,
@@ -1030,37 +1030,18 @@ impl DebugGui {
         })
     }
 
-    pub fn clear_mouseovers<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
-        self.wireframe_mouseovers
-            .drain(..)
-            .filter(|o| {
-                gg_err::log_and_ok(object_handler.get_parent_chain(*o))
-                    .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
-            })
-            .flat_map(|o| {
-                gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes_mut(o))
-            })
-            .for_each(|(_, mut c)| c.hide_wireframe());
+    pub fn toggle(&mut self) {
+        self.enabled = !self.enabled;
     }
-
-    pub fn on_mouseovers<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        collisions: NonemptyVec<Collision<O>>,
-    ) {
-        self.wireframe_mouseovers = collisions
-            .into_iter()
-            .flat_map(|c| {
-                let result = object_handler.get_collision_shapes_mut(c.other.object_id);
-                gg_err::log_unwrap_or(Vec::new(), result)
-                    .into_iter()
-                    .map(|(o, mut c)| {
-                        c.show_wireframe();
-                        o
-                    })
-            })
-            .unique()
-            .collect_vec();
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn selected_object(&self) -> Option<ObjectId> {
+        if !self.enabled || self.object_tree.selected_id.get().is_root() {
+            None
+        } else {
+            Some(self.object_tree.selected_id.get())
+        }
     }
 
     pub fn build<O: ObjectTypeEnum>(
@@ -1119,6 +1100,58 @@ impl DebugGui {
         })
     }
 
+    // Events:
+    pub fn clear_mouseovers<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+        self.wireframe_mouseovers
+            .drain(..)
+            .filter(|o| {
+                gg_err::log_and_ok(object_handler.get_parent_chain(*o))
+                    .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
+            })
+            .flat_map(|o| {
+                gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes_mut(o))
+            })
+            .for_each(|(_, mut c)| c.hide_wireframe());
+    }
+    pub fn on_mouseovers<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        collisions: NonemptyVec<Collision<O>>,
+    ) {
+        self.wireframe_mouseovers = collisions
+            .into_iter()
+            .flat_map(|c| {
+                let result = object_handler.get_collision_shapes_mut(c.other.object_id);
+                gg_err::log_unwrap_or(Vec::new(), result)
+                    .into_iter()
+                    .map(|(o, mut c)| {
+                        c.show_wireframe();
+                        o
+                    })
+            })
+            .unique()
+            .collect_vec();
+    }
+    pub fn on_add_object<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        object: &TreeSceneObject<O>,
+    ) {
+        self.object_tree.on_add_object(object_handler, object);
+    }
+    pub fn on_done_adding_objects<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+    ) {
+        self.object_tree.refresh_labels(object_handler);
+    }
+    pub fn on_remove_object<O: ObjectTypeEnum>(
+        &mut self,
+        object_handler: &ObjectHandler<O>,
+        remove_id: ObjectId,
+    ) {
+        self.object_tree.on_remove_object(object_handler, remove_id);
+    }
     pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {
         let mut viewport_moved = false;
         if self.enabled && input_handler.mod_super() {
@@ -1150,18 +1183,12 @@ impl DebugGui {
             self.last_viewport = viewport.clone();
         }
     }
-
-    pub fn toggle(&mut self) {
-        self.enabled = !self.enabled;
-    }
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-    pub fn selected_object(&self) -> Option<ObjectId> {
-        if !self.enabled || self.object_tree.selected_id.get().is_root() {
-            None
-        } else {
-            Some(self.object_tree.selected_id.get())
-        }
+    pub fn on_perf_stats(
+        &mut self,
+        update_perf_stats: Option<UpdatePerfStats>,
+        render_perf_stats: Option<RenderPerfStats>,
+    ) {
+        self.console_log.update_perf_stats(update_perf_stats);
+        self.console_log.render_perf_stats(render_perf_stats);
     }
 }

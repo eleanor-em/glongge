@@ -474,11 +474,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 // Update performance statistics.
                 self.perf_stats.total_stats.stop();
                 self.debug_gui
-                    .console_log
-                    .update_perf_stats(self.perf_stats.get());
-                self.debug_gui
-                    .console_log
-                    .render_perf_stats(self.last_render_perf_stats.clone());
+                    .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
                 self.frame_counter += 1;
 
                 if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
@@ -610,7 +606,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
             self.debug_gui
-                .object_tree
                 .on_add_object(&self.object_handler, &new_obj);
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
@@ -625,8 +620,7 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             }
         }
         self.debug_gui
-            .object_tree
-            .refresh_labels(&self.object_handler);
+            .on_done_adding_objects(&self.object_handler);
     }
 
     fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
@@ -635,7 +629,6 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
             .remove_objects(&pending_remove_objects);
         for remove_id in &pending_remove_objects {
             self.debug_gui
-                .object_tree
                 .on_remove_object(&self.object_handler, *remove_id);
         }
         for remove_id in pending_remove_objects {
