@@ -7,6 +7,9 @@ use itertools::Itertools;
 use std::ffi::OsStr;
 use std::path::Path;
 
+/// A scene object that serves as a container to group and organise child objects.
+/// This container type only provides a name/label for the group without adding any additional
+/// functionality.
 #[register_scene_object]
 pub struct GgInternalContainer<ObjectType> {
     label: String,
@@ -42,13 +45,14 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer
 }
 
 #[derive(Copy, Clone, Default, Debug)]
-pub enum CreateCoord {
+enum CreateCoord {
     #[default]
     Zero,
     TopLeft(Vec2),
     Centre(Vec2),
 }
 
+/// A pre-packaged SceneObject that simply draws a sprite with no animation.
 #[register_scene_object]
 pub struct GgInternalStaticSprite {
     filename: String,
@@ -113,12 +117,10 @@ impl GgInternalStaticSprite {
     pub fn build_colliding<ObjectType: ObjectTypeEnum>(
         self,
         emitting_tags: Vec<&'static str>,
-        listening_tags: Vec<&'static str>,
     ) -> GgInternalCollidingSprite {
         GgInternalCollidingSprite {
             inner: self,
             emitting_tags,
-            listening_tags,
         }
     }
 }
@@ -180,11 +182,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
     }
 }
 
+/// A pre-packaged SceneObject similar to [`GgInternalStaticSprite`] but with added collision
+/// detection based on the sprite's dimensions.
 #[register_scene_object]
 pub struct GgInternalCollidingSprite {
     inner: GgInternalStaticSprite,
     emitting_tags: Vec<&'static str>,
-    listening_tags: Vec<&'static str>,
 }
 
 #[partially_derive_scene_object]
@@ -209,15 +212,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalColliding
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.inner.sprite.as_box_collider(),
             &<GgInternalCollidingSprite as SceneObject<ObjectType>>::emitting_tags(self),
-            &<GgInternalCollidingSprite as SceneObject<ObjectType>>::listening_tags(self),
+            &Vec::new(),
         ));
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {
         self.emitting_tags.clone()
-    }
-    fn listening_tags(&self) -> Vec<&'static str> {
-        self.listening_tags.clone()
     }
 }
 

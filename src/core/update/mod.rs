@@ -511,6 +511,8 @@ impl<ObjectType: ObjectTypeEnum> UpdateHandler<ObjectType> {
         input_handler: &InputHandler,
         mut pending_add_objects: Vec<TreeSceneObject<ObjectType>>,
     ) {
+        // Multiple iterations, because on_load() may add more objects.
+        // See e.g. GgInternalContainer.
         while !pending_add_objects.is_empty() {
             pending_add_objects.retain(|obj| {
                 let rv = obj.parent_id.is_root()
