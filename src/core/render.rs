@@ -42,6 +42,8 @@ impl Default for ShaderExec {
     }
 }
 
+/// Container for shader execution data and geometry information.
+/// Public for the work-in-progress custom shader system.
 #[derive(Clone, Debug)]
 pub struct ShaderExecWithVertexData {
     pub inner: Vec<ShaderExec>,
@@ -50,7 +52,7 @@ pub struct ShaderExecWithVertexData {
     pub depth: VertexDepth,
 }
 
-pub struct RenderDataChannel {
+pub(crate) struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithCol>,
     pub(crate) shader_execs: Vec<ShaderExecWithVertexData>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
@@ -111,11 +113,12 @@ impl RenderDataChannel {
         }
     }
 
-    pub fn set_translation(&mut self, translation: Vec2) {
+    pub(crate) fn set_translation(&mut self, translation: Vec2) {
         self.viewport.translation = translation;
     }
 }
 
+/// Public for the work-in-progress custom shader system.
 #[derive(Clone)]
 pub struct RenderFrame {
     pub vertices: Vec<VertexWithCol>,
@@ -160,6 +163,7 @@ impl VertexWithCol {
     }
 }
 
+/// Public for the work-in-progress custom shader system.
 pub struct ShaderRenderFrame<'a> {
     pub vertices: &'a [VertexWithCol],
     pub render_infos: Vec<ShaderExecWithVertexData>,
@@ -337,6 +341,9 @@ impl RenderHandler {
     }
 }
 
+/// Task responsible for preparing render data before actual rendering.
+/// Handles viewport updates, shader pre-render updates, and GUI primitive tessellation.
+/// Updates render frame data from the render data channel and propagates it to shaders.
 struct PreRenderTask {
     handler: RenderHandler,
 }
@@ -396,6 +403,7 @@ impl Task for PreRenderTask {
     }
 }
 
+/// Task responsible for clearing the swapchain image with the set clear colour before rendering.
 struct ClearTask {
     handler: RenderHandler,
 }
@@ -445,11 +453,20 @@ impl Task for ClearTask {
     }
 }
 
+/// Represents the depth ordering of vertices.
+///
+/// The depth determines the rendering order of vertices, with three main layers:
+/// - `Back`: Renders behind the middle layer; 0 is the backmost value.
+/// - `Middle`: The default middle layer between back and front
+/// - `Front`: Renders in front of the middle layer; [`u16::MAX`] is the frontmost value.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub enum VertexDepth {
+    /// Back layer with u16 depth value (0 = furthest back)
     Back(u16),
+    /// Middle layer between back and front
     #[default]
     Middle,
+    /// Front layer with u16 depth value ([`u16::MAX`] = furthest front)
     Front(u16),
 }
 
@@ -507,6 +524,7 @@ impl Ord for VertexDepth {
     }
 }
 
+/// A list of coloured vertices to be rendered by a shader at a fixed depth.
 #[derive(Clone, Debug, Default)]
 pub struct RenderItem {
     pub depth: VertexDepth,
@@ -536,6 +554,8 @@ impl RenderItem {
         self
     }
 
+    /// Concatenates this render item with another one.
+    /// Takes the maximum depth between the two items.
     #[must_use]
     pub fn concat(mut self, other: RenderItem) -> Self {
         self.vertices.extend(other.vertices);
