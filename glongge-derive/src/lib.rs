@@ -11,6 +11,7 @@ use syn::{
     Type
 };
 
+/// Do not use this macro directly. It is handled by build.rs.
 #[proc_macro_attribute]
 pub fn register_object_type(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -97,6 +98,22 @@ pub fn register_scene_object(_args: proc_macro::TokenStream, input: proc_macro::
 }
 
 #[proc_macro_attribute]
+/// Creates implementations of the following SceneObject trait methods:
+/// - gg_type_enum()
+/// - as_any()
+/// - as_any_mut() 
+/// Meant to be used for implementations of SceneObject<ObjectType>:
+/// ```ignore 
+/// use glongge_derive::register_scene_object;
+///
+/// #[register_scene_object]
+/// struct MyObject {};
+/// #[partially_derive_scene_object]
+/// impl SceneObject<ObjectType> for MyObject {
+///   // ...
+/// }
+/// ```
+/// See complete examples in src/examples.
 pub fn partially_derive_scene_object(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut item_impl = parse_macro_input!(item as ItemImpl);
     let struct_name = if let syn::Type::Path(type_path) = &*item_impl.self_ty {

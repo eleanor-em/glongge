@@ -1755,7 +1755,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
     pub fn first_child<T: SceneObject<ObjectType>>(&self) -> Option<TreeSceneObject<ObjectType>> {
         self.children
             .iter()
-            .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
+            .find(|obj| obj.gg_type_id() == TypeId::of::<T>())
             .cloned()
     }
 
@@ -1807,7 +1807,7 @@ impl<ObjectType: ObjectTypeEnum> ObjectContext<'_, ObjectType> {
         self.all_children
             .get(&id)?
             .iter()
-            .find(|obj| obj.inner_type_id() == TypeId::of::<T>())
+            .find(|obj| obj.gg_type_id() == TypeId::of::<T>())
             .cloned()
     }
 
