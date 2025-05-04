@@ -1276,6 +1276,7 @@ impl<'a, ObjectType: ObjectTypeEnum> UpdateContext<'a, ObjectType> {
 
     /// Returns the time elapsed since the last frame as a [`Duration`].
     /// See [`delta_60fps()`](UpdateContext::delta_60fps()) for more information.
+    /// In general, prefer using [`delta_60fps()`](UpdateContext::delta_60fps()).
     pub fn delta(&self) -> Duration {
         self.delta
     }

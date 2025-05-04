@@ -12,32 +12,6 @@ use std::{
 
 /// Specifies how collision processing should proceed after handling a collision.
 ///
-/// # Examples
-///
-/// ```ignore
-/// use glongge::core::prelude::*;
-///
-/// fn on_collision(
-///     &mut self,
-///     ctx: &mut UpdateContext<ObjectType>,
-///     other: TreeSceneObject<ObjectType>,
-///     mtv: Vec2,
-/// ) -> CollisionResponse {
-///     // Adjust velocity based on collision
-///     if !mtv.dot(Vec2::right()).is_zero() {
-///         self.vel.x = -self.vel.x;  // Reverse horizontal velocity
-///     }
-///     
-///     // Move object out of collision
-///     if other.emitting_tags().contains(&"BLOCK") {
-///         ctx.transform_mut().centre += mtv;
-///     }
-///     
-///     // Return Done to stop processing additional collisions
-///     CollisionResponse::Done
-/// }
-/// ```
-///
 /// * `Continue` - Continue processing additional collisions after this one
 /// * `Done` - Stop processing additional collisions after this one
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
