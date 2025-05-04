@@ -275,8 +275,8 @@ impl CollisionHandler {
         &self,
         tag: &'static str,
     ) -> Result<&BTreeSet<ObjectId>> {
-        self.object_ids_by_emitting_tag
-            .get(tag)
-            .with_context(|| format!("CollisionHandler: `object_ids_by_emitting_tag` missing tag: {tag}"))
+        self.object_ids_by_emitting_tag.get(tag).with_context(|| {
+            format!("CollisionHandler: `object_ids_by_emitting_tag` missing tag: {tag}")
+        })
     }
 }
