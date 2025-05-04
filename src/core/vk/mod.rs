@@ -29,7 +29,8 @@ use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
 use vulkano_taskgraph::{Id, resource_map};
 
-pub(crate) mod vk_ctx;
+// Public to allow access to VulkanoContext.
+pub mod vk_ctx;
 
 #[derive(Clone)]
 pub(crate) struct GgWindow {

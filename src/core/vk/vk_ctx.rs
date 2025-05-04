@@ -34,6 +34,9 @@ use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
+/// Provides access to the Vulkan context and resources.
+/// This struct is public to allow custom shader implementations, though this functionality
+/// is currently work-in-progress and incomplete.
 #[derive(Clone)]
 pub struct VulkanoContext {
     // Should only ever be created once:
@@ -275,16 +278,18 @@ fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtension
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
+        khr_dynamic_rendering: true,
         ..DeviceExtensions::empty()
     }
 }
 fn device_features() -> DeviceFeatures {
     DeviceFeatures {
-        // Required for extra texture samplers on macOS:
+        // See comment in `create_instance()`.
         // descriptor_indexing: true,
         fill_mode_non_solid: true,
         // Required to fix sampler cross-talk with AMD drivers:
         shader_sampled_image_array_non_uniform_indexing: true,
+        dynamic_rendering: true,
         ..Default::default()
     }
 }
@@ -293,7 +298,8 @@ fn create_instance(
     event_loop: &ActiveEventLoop,
     library: Arc<VulkanLibrary>,
 ) -> Result<Arc<Instance>> {
-    // TODO: this was required at one point. Does not seem to be required any more?
+    // TODO: this was required at one point. Should not be required due to a MoltenVK update,
+    //  however it may be needed at some point for older versions of macOS.
     // if std::env::consts::OS == "macos" {
     //     let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
     //         Ok(var) => var,
@@ -322,7 +328,6 @@ fn create_any_physical_device(
         .enumerate_physical_devices()?
         .filter(|p| p.supported_extensions().contains(&device_extensions()))
         .filter(|p| p.supported_features().contains(&device_features()))
-        // Dynamic rendering support:
         .filter(|p| {
             p.api_version() >= Version::V1_3 || p.supported_extensions().khr_dynamic_rendering
         })
@@ -371,11 +376,6 @@ fn create_any_graphical_queue_family(
         physical_device.queue_family_properties()[queue_family_index]
     );
 
-    let mut enabled_extensions = device_extensions();
-    let mut enabled_features = device_features();
-    // Also enable dynamic rendering, guaranteed to be available by filtering:
-    enabled_extensions.khr_dynamic_rendering = true;
-    enabled_features.dynamic_rendering = true;
     let (device, mut queues) = Device::new(
         physical_device,
         DeviceCreateInfo {
@@ -383,8 +383,8 @@ fn create_any_graphical_queue_family(
                 queue_family_index: queue_family_index as u32,
                 ..Default::default()
             }],
-            enabled_extensions,
-            enabled_features,
+            enabled_extensions: device_extensions(),
+            enabled_features: device_features(),
             ..Default::default()
         },
     )?;
