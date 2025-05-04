@@ -103,6 +103,8 @@ impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
     }
 }
 
+/// A key to uniquely identify a scene in scene management collections and for scene navigation.
+/// Simple wrapper around `&'static str`.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct SceneName(&'static str);
 
@@ -112,6 +114,10 @@ impl SceneName {
     }
 }
 
+/// Specifies a scene destination with an entrance point.
+/// `entrance_id` allows objects to change their behaviour based on how the scene was entered.
+/// For example, in a Mario-style game, different `entrance_id`s could represent different pipes
+/// or doors that lead into the scene, each positioning the player at a different location.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct SceneDestination {
     name: SceneName,
@@ -124,31 +130,155 @@ impl SceneDestination {
     }
 }
 
+/// Defines a game scene that can create and manage game objects.
+///
+/// A Scene represents a distinct section of the game, like a level, menu, or other self-contained
+/// game state.
+/// Each scene is responsible for:
+/// - Creating and initialising its objects when entered
+/// - Managing scene-specific data and state
+/// - Handling scene transitions through entrances/exits
+///
+/// # Implementation Notes
+/// Scenes must be `Send` to allow transfer between threads during scene transitions.
+///
+/// # Examples
+///
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// struct Level1 {
+///     player_start: Vec2,
+/// }
+///
+/// impl Scene<GameObjectType> for Level1 {
+///     fn name(&self) -> SceneName {
+///         SceneName::new("level_1")
+///     }
+///
+///     fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+///         // Create initial objects for the level
+///         scene_object_vec![
+///             Box::new(Player::new(self.player_start)),
+///             Box::new(Platform::new()),
+///         ]
+///     }
+/// }
+/// ```
 pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     fn name(&self) -> SceneName;
-    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>>;
 
+    /// Loads scene-specific data from a byte array.
+    ///
+    /// This method is called before `create_objects()` to load any scene-specific data that was
+    /// previously saved or provided. The default implementation does nothing.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use glongge::core::prelude::*;
+    ///
+    /// #[derive(Default, Serialize, Deserialize)]
+    /// struct MySceneData {
+    ///     player_start: Vec2,
+    /// }
+    /// fn load(&mut self, data: &[u8]) -> Result<()> {
+    ///     // Deserialize scene data from bytes
+    ///     let scene_data: MySceneData = bincode::deserialize(data)?;
+    ///     self.player_start = scene_data.player_start;
+    ///     Ok(())
+    /// }
+    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+    ///     // Create initial objects for the level
+    ///     scene_object_vec![
+    ///         Box::new(Player::new(self.player_start)),
+    ///         Box::new(Platform::new()),
+    ///     ]
+    /// }
+    /// ```
     #[allow(unused_variables)]
     fn load(&mut self, data: &[u8]) -> Result<()> {
         Ok(())
     }
+    /// Create the initial objects for the scene.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+    ///     // Create initial objects for the level
+    ///     scene_object_vec![
+    ///         Box::new(Player::new(self.player_start)),
+    ///         Box::new(Platform::new()),
+    ///     ]
+    /// }
+    /// ```
+    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>>;
+
     #[allow(unused_variables)]
     fn initial_data(&self) -> Vec<u8> {
         Vec::new()
     }
 
+    /// Returns a `SceneDestination` for a specific entrance point in this scene.
+    ///
+    /// This helper method simplifies creating scene destinations when transitioning between scenes.
+    /// The `entrance_id` parameter specifies which entry point in the scene to use, allowing for
+    /// multiple entry points like doors, pipes, or portals.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// // In MarioUndergroundScene, define entrance IDs as constants
+    /// const PIPE_ENTRANCE: usize = 0;
+    /// const DOOR_ENTRANCE: usize = 1;
+    ///
+    /// // Use at_entrance() to create a destination when transitioning scenes
+    /// fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    ///     if self.player_entered_pipe {
+    ///         // Go to underground scene through pipe entrance
+    ///         ctx.goto(underground_scene.at_entrance(PIPE_ENTRANCE));
+    ///     }
+    /// }
+    /// ```
     fn at_entrance(&self, entrance_id: usize) -> SceneDestination {
         SceneDestination::new(self.name(), entrance_id)
     }
 }
 
-#[allow(dead_code)]
 pub(crate) enum SceneHandlerInstruction {
     Exit,
     Goto(SceneDestination),
 }
 
-#[allow(private_bounds)]
+/// Manages the lifecycle and transitions between game scenes.
+///
+/// The `[SceneHandler`] is responsible for:
+/// - Creating and storing game scenes
+/// - Managing scene transitions
+/// - Managing scene-specific data persistence
+///
+/// # Examples
+///
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// GgContextBuilder::<ObjectType>::new([1280, 800])?
+///     .with_global_scale_factor(2.)
+///     .build_and_run_window(|scene_handler| {
+///         std::thread::spawn(move || {
+///             // Create scene handler
+///             let mut scene_handler = scene_handler.build(input_handler, resource_handler, render_handler);
+///             
+///             // Add scenes
+///             scene_handler.create_scene(MainMenuScene);
+///             scene_handler.create_scene(Level1Scene);
+///
+///             // Start game with initial scene
+///             scene_handler.consume_with_scene(MainMenuScene.name(), 0);
+///         });
+///     })
+/// ```
 pub struct SceneHandler<ObjectType: ObjectTypeEnum> {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -179,6 +309,7 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
             rx,
         }
     }
+    /// Creates and registers a new scene. See [`SceneHandler`] example.
     pub fn create_scene<S: Scene<ObjectType> + 'static>(&mut self, scene: S) {
         check_false!(self.scenes.contains_key(&scene.name()));
         check_false!(self.scene_data.contains_key(&scene.name()));
@@ -195,6 +326,8 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
             ),
         );
     }
+    /// Begins the scene handling loop with a particular starting scene.
+    /// See [`SceneHandler`] example.
     pub fn consume_with_scene(mut self, mut name: SceneName, mut entrance_id: usize) {
         ensure_shaders_locked();
         loop {
@@ -647,7 +780,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 pub enum SceneInstruction {
     Pause,
     Resume,
