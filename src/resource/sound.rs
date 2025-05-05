@@ -148,8 +148,9 @@ impl SoundHandler {
     fn load_file_inner(
         inner: &Arc<Mutex<SoundHandlerInner>>,
         ctx: SoundContext,
-        filename: String,
+        filename: impl AsRef<str>,
     ) -> Result<Sound> {
+        let filename = filename.as_ref().to_string();
         let sound_buffer = {
             let maybe_buffer = inner.lock().unwrap().loaded_files.get(&filename).cloned();
             if let Some(buffer) = maybe_buffer {
@@ -195,9 +196,10 @@ impl SoundHandler {
 }
 
 impl Loader<Sound> for SoundHandler {
-    fn spawn_load_file(&self, filename: String) {
+    fn spawn_load_file(&self, filename: impl AsRef<str>) {
         let inner = self.inner.clone();
         let ctx = self.ctx.clone();
+        let filename = filename.as_ref().to_string();
         let handle = std::thread::spawn(move || {
             Self::load_file_inner(&inner, ctx, filename).unwrap();
         });
@@ -207,7 +209,7 @@ impl Loader<Sound> for SoundHandler {
             .push(handle);
     }
 
-    fn wait_load_file(&self, filename: String) -> Result<Sound> {
+    fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Sound> {
         Self::load_file_inner(&self.inner, self.ctx.clone(), filename)
     }
 

@@ -38,8 +38,8 @@ impl ResourceHandler {
 }
 
 pub trait Loader<T> {
-    fn spawn_load_file(&self, filename: String);
-    fn wait_load_file(&self, filename: String) -> Result<T>;
+    fn spawn_load_file(&self, filename: impl AsRef<str>);
+    fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<T>;
 
     fn wait(&self) -> Result<()>;
 }
