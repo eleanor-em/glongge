@@ -20,6 +20,28 @@ fn main() -> Result<()> {
     GgContextBuilder::new([1280, 800])?
         .with_global_scale_factor(2.)
         .build_and_run_window(|scene_handler| {
+            let resource_handler = scene_handler.resource_handler();
+            for sound in [
+                "res/overworld.ogg",
+                "res/underground.ogg",
+                "res/jump-small.wav",
+                "res/stomp.wav",
+                "res/death.wav",
+                "res/pipe.wav",
+                "res/bump.wav",
+                "res/flagpole.wav",
+                "res/stage-clear.wav",
+            ] {
+                resource_handler.sound.spawn_load_file(sound.to_string());
+            }
+            for texture in [
+                "res/mario_sheet.png",
+                "res/world_sheet.png",
+                "res/enemies_sheet.png",
+            ] {
+                resource_handler.texture.wait_load_file(texture).unwrap();
+            }
+            resource_handler.wait_all().unwrap();
             std::thread::spawn(move || {
                 let mut scene_handler = scene_handler.build();
                 scene_handler.create_scene(TriangleScene);

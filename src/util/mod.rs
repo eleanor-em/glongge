@@ -767,6 +767,11 @@ impl SceneHandlerBuilder {
             render_handler,
         }
     }
+
+    pub fn resource_handler(&self) -> &ResourceHandler {
+        &self.resource_handler
+    }
+
     pub fn build(self) -> SceneHandler {
         SceneHandler::new(
             self.input_handler,
