@@ -4,7 +4,7 @@ use crate::core::scene::{GuiClosure, GuiCommand};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::vk::{AdjustedViewport, RenderPerfStats};
-use crate::core::{ObjectId, ObjectTypeEnum, TreeSceneObject};
+use crate::core::{ObjectId, TreeSceneObject};
 use crate::gui::{GuiUi, TransformCell};
 use crate::util::{NonemptyVec, ValueChannel, ValueChannelSender, gg_err, gg_float, gg_iter};
 use egui::style::ScrollStyle;
@@ -96,9 +96,9 @@ impl GuiObjectView {
         self.object_id = ObjectId::root();
     }
 
-    fn update_selection<O: ObjectTypeEnum>(
+    fn update_selection(
         &mut self,
-        object_handler: &ObjectHandler<O>,
+        object_handler: &ObjectHandler,
         selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
@@ -117,18 +117,15 @@ impl GuiObjectView {
         Ok(())
     }
 
-    fn get_object<'a, O: ObjectTypeEnum>(
-        &self,
-        object_handler: &'a ObjectHandler<O>,
-    ) -> Result<&'a SceneObjectWrapper<O>> {
+    fn get_object<'a>(&self, object_handler: &'a ObjectHandler) -> Result<&'a SceneObjectWrapper> {
         check_false!(self.object_id.is_root());
         // infallible
         Ok(object_handler.get_object_by_id(self.object_id)?.unwrap())
     }
 
-    fn build_closure<O: ObjectTypeEnum>(
+    fn build_closure(
         &mut self,
-        object_handler: &mut ObjectHandler<O>,
+        object_handler: &mut ObjectHandler,
         mut gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
         frame: Frame,
         enabled: bool,
@@ -158,10 +155,7 @@ impl GuiObjectView {
         }))
     }
 
-    fn create_name_cmd<O: ObjectTypeEnum>(
-        &self,
-        object_handler: &mut ObjectHandler<O>,
-    ) -> Result<Box<GuiCommand>> {
+    fn create_name_cmd(&self, object_handler: &mut ObjectHandler) -> Result<Box<GuiCommand>> {
         let name = format!(
             "{} [{}]",
             self.get_object(object_handler)?.nickname_or_type_name(),
@@ -184,10 +178,7 @@ impl GuiObjectView {
         }))
     }
 
-    fn create_transform_cmd<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-    ) -> Result<Box<GuiCommand>> {
+    fn create_transform_cmd(&mut self, object_handler: &ObjectHandler) -> Result<Box<GuiCommand>> {
         let object_id = self.object_id;
         let object = self.get_object(object_handler)?;
 
@@ -275,7 +266,7 @@ impl GuiObjectTreeNode {
             expand_all_children: ValueChannel::default(),
         }
     }
-    fn node<O: ObjectTypeEnum>(&self, object: &TreeSceneObject<O>) -> Self {
+    fn node(&self, object: &TreeSceneObject) -> Self {
         let name = object.nickname_or_type_name();
         let count = *self
             .disambiguation
@@ -297,7 +288,7 @@ impl GuiObjectTreeNode {
         }
     }
 
-    fn refresh_label<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    fn refresh_label(&mut self, object_handler: &ObjectHandler) {
         if !self.object_id.is_root() {
             let mut tags = String::new();
             if !gg_err::log_unwrap_or(
@@ -426,10 +417,10 @@ impl GuiObjectTree {
         })
     }
 
-    fn on_input<O: ObjectTypeEnum>(
+    fn on_input(
         &mut self,
         input_handler: &InputHandler,
-        object_handler: &ObjectHandler<O>,
+        object_handler: &ObjectHandler,
         wireframe_mouseovers: &[ObjectId],
     ) {
         if input_handler.pressed(KeyCode::KeyF) {
@@ -475,18 +466,14 @@ impl GuiObjectTree {
             self.show.overwrite(!self.show.get());
         }
     }
-    fn select_next_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    fn select_next_sibling(&mut self, object_handler: &ObjectHandler) {
         self.select_nth_sibling(object_handler, 1);
     }
-    fn select_prev_sibling<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    fn select_prev_sibling(&mut self, object_handler: &ObjectHandler) {
         self.select_nth_sibling(object_handler, -1);
     }
 
-    fn select_nth_sibling<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        n: isize,
-    ) {
+    fn select_nth_sibling(&mut self, object_handler: &ObjectHandler, n: isize) {
         let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id.get()))
             .map_or(ObjectId::root(), |parent| parent.object_id);
         let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
@@ -514,11 +501,7 @@ impl GuiObjectTree {
         }
     }
 
-    pub fn on_add_object<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        object: &TreeSceneObject<O>,
-    ) {
+    pub fn on_add_object(&mut self, object_handler: &ObjectHandler, object: &TreeSceneObject) {
         let mut tree = &mut self.root;
         match object_handler.get_parent_chain(object.object_id) {
             Ok(chain) => {
@@ -536,11 +519,7 @@ impl GuiObjectTree {
         }
     }
 
-    pub fn on_remove_object<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        removed_id: ObjectId,
-    ) {
+    pub fn on_remove_object(&mut self, object_handler: &ObjectHandler, removed_id: ObjectId) {
         match object_handler.get_parent_chain(removed_id) {
             Ok(mut chain) => {
                 let mut tree = &mut self.root;
@@ -560,7 +539,7 @@ impl GuiObjectTree {
         }
     }
 
-    pub fn refresh_labels<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    pub fn refresh_labels(&mut self, object_handler: &ObjectHandler) {
         self.root.refresh_label(object_handler);
     }
 }
@@ -1044,10 +1023,10 @@ impl DebugGui {
         }
     }
 
-    pub fn build<O: ObjectTypeEnum>(
+    pub fn build(
         &mut self,
         input_handler: &InputHandler,
-        object_handler: &mut ObjectHandler<O>,
+        object_handler: &mut ObjectHandler,
         gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
     ) -> Box<GuiClosure> {
         if self.enabled {
@@ -1101,7 +1080,7 @@ impl DebugGui {
     }
 
     // Events:
-    pub fn clear_mouseovers<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    pub fn clear_mouseovers(&mut self, object_handler: &ObjectHandler) {
         self.wireframe_mouseovers
             .drain(..)
             .filter(|o| {
@@ -1113,10 +1092,10 @@ impl DebugGui {
             })
             .for_each(|(_, mut c)| c.hide_wireframe());
     }
-    pub fn on_mouseovers<O: ObjectTypeEnum>(
+    pub fn on_mouseovers(
         &mut self,
-        object_handler: &ObjectHandler<O>,
-        collisions: NonemptyVec<Collision<O>>,
+        object_handler: &ObjectHandler,
+        collisions: NonemptyVec<Collision>,
     ) {
         self.wireframe_mouseovers = collisions
             .into_iter()
@@ -1132,21 +1111,13 @@ impl DebugGui {
             .unique()
             .collect_vec();
     }
-    pub fn on_add_object<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        object: &TreeSceneObject<O>,
-    ) {
+    pub fn on_add_object(&mut self, object_handler: &ObjectHandler, object: &TreeSceneObject) {
         self.object_tree.on_add_object(object_handler, object);
     }
-    pub fn on_done_adding_objects<O: ObjectTypeEnum>(&mut self, object_handler: &ObjectHandler<O>) {
+    pub fn on_done_adding_objects(&mut self, object_handler: &ObjectHandler) {
         self.object_tree.refresh_labels(object_handler);
     }
-    pub fn on_remove_object<O: ObjectTypeEnum>(
-        &mut self,
-        object_handler: &ObjectHandler<O>,
-        remove_id: ObjectId,
-    ) {
+    pub fn on_remove_object(&mut self, object_handler: &ObjectHandler, remove_id: ObjectId) {
         self.object_tree.on_remove_object(object_handler, remove_id);
     }
     pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {

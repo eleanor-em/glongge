@@ -1,12 +1,11 @@
 use glongge::{core::prelude::*, resource::sprite::Sprite};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 
 use crate::examples::mario::{
     BLOCK_COLLISION_TAG, block::Bumpable, from_nes, from_nes_accel, player::Player,
 };
-use crate::object_type::ObjectType;
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Brick {
     top_left: Vec2,
     sprite: Sprite,
@@ -27,10 +26,10 @@ impl Brick {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Brick {
+impl SceneObject for Brick {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler
@@ -47,7 +46,7 @@ impl SceneObject<ObjectType> for Brick {
         self.initial_y += self.sprite.half_widths().y;
         Ok(None)
     }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
@@ -55,7 +54,7 @@ impl SceneObject<ObjectType> for Brick {
         ));
     }
 
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
         let mut transform = ctx.object().transform_mut();
         self.v_speed += self.v_accel;
         transform.centre.y += self.v_speed;

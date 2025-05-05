@@ -1,10 +1,9 @@
-use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
 use crate::resource::texture::{MaterialId, Texture};
 use crate::util::collision::CompoundCollider;
 use crate::util::linalg::{Edge2i, Vec2i};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -209,7 +208,7 @@ impl TilesetBuilder {
         rv
     }
 
-    pub fn build<O: ObjectTypeEnum>(self) -> Container<O> {
+    pub fn build(self) -> Container {
         let texture_areas: BTreeMap<_, _> = self
             .all_tiles
             .iter()
@@ -302,7 +301,6 @@ pub struct CollidableTile {
     pub emitting_tags: Vec<&'static str>,
 }
 
-#[register_scene_object]
 pub struct GgInternalTileset {
     tile_size: i32,
     filename: String,
@@ -327,17 +325,14 @@ impl GgInternalTileset {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalTileset {
+    fn gg_type_name(&self) -> String {
         "TilesetSegment".to_string()
-    }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_tileset()
     }
 
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         self.texture = resource_handler
@@ -369,12 +364,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalTileset {
         self.emitting_tags.clone()
     }
 
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalTileset {
+impl RenderableObject for GgInternalTileset {
     fn shader_execs(&self) -> Vec<ShaderExec> {
         vec![ShaderExec {
             shader_id: get_shader(SpriteShader::name()),

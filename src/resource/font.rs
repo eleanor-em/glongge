@@ -4,10 +4,7 @@ use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
 
-use crate::{
-    core::{ObjectTypeEnum, prelude::*},
-    resource::sprite::Sprite,
-};
+use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 
 const SAMPLE_RATIO: f32 = 8.;
@@ -81,9 +78,9 @@ impl Font {
         rv
     }
 
-    pub fn render_to_sprite<ObjectType: ObjectTypeEnum>(
+    pub fn render_to_sprite(
         &self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         text: &str,
         max_width: f32,

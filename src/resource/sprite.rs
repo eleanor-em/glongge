@@ -3,13 +3,12 @@ use crate::core::update::RenderContext;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
 use crate::{
-    core::{ObjectTypeEnum, prelude::*},
+    core::prelude::*,
     resource::texture::{MaterialId, Texture},
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use num_traits::ToPrimitive;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::cell::RefMut;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 enum SpriteState {
@@ -21,7 +20,7 @@ enum SpriteState {
     ShouldUpdate,
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct GgInternalSprite {
     materials: Vec<MaterialId>,
     material_indices: Vec<usize>,
@@ -38,8 +37,8 @@ pub struct GgInternalSprite {
 }
 
 impl GgInternalSprite {
-    fn add_from_textures<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    fn add_from_textures(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         textures: Vec<Texture>,
     ) -> Sprite {
@@ -59,9 +58,7 @@ impl GgInternalSprite {
             .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
             .collect_vec();
         let material_indices = (0..areas.len()).collect_vec();
-        // We do some shenanigans here to allow us to get an Rc<RefCell<GgInternalSprite>>,
-        // such that we don't have to depend on ObjectType in Sprite.
-        let inner = Rc::new(RefCell::new(Self {
+        let inner = Some(object_ctx.add_child(Self {
             materials,
             material_indices,
             frame_time_ms,
@@ -73,7 +70,6 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child_from_rc(inner.clone());
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {
             inner,
@@ -82,8 +78,8 @@ impl GgInternalSprite {
         }
     }
 
-    fn add_from_tileset<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    fn add_from_tileset(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
@@ -108,7 +104,7 @@ impl GgInternalSprite {
             .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
             .collect_vec();
         let material_indices = (0..areas.len()).collect_vec();
-        let inner = Rc::new(RefCell::new(Self {
+        let inner = Some(object_ctx.add_child(Self {
             materials,
             material_indices,
             frame_time_ms,
@@ -120,7 +116,6 @@ impl GgInternalSprite {
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
         }));
-        object_ctx.add_child_from_rc(inner.clone());
         let extent = tile_size.into();
         let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
         Sprite {
@@ -149,17 +144,14 @@ impl GgInternalSprite {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_sprite()
-    }
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalSprite {
+    fn gg_type_name(&self) -> String {
         self.name.clone()
     }
 
     fn on_load(
         &mut self,
-        _object_ctx: &mut ObjectContext<ObjectType>,
+        _object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         Ok(if self.state == SpriteState::Show {
@@ -172,7 +164,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         })
     }
 
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         if self.paused {
             return;
         }
@@ -190,12 +182,12 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalSprite {
         check_lt!(self.frame, self.material_indices.len());
     }
 
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSprite {
+impl RenderableObject for GgInternalSprite {
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
         match self.state {
             SpriteState::Hide | SpriteState::Show => {}
@@ -234,7 +226,7 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalSpri
 
 #[derive(Clone)]
 pub struct Sprite {
-    inner: Rc<RefCell<GgInternalSprite>>,
+    inner: Option<TreeSceneObject>,
     extent: Vec2,
     collider: BoxCollider,
 }
@@ -242,7 +234,7 @@ pub struct Sprite {
 impl Default for Sprite {
     fn default() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(GgInternalSprite::default())),
+            inner: None,
             extent: Vec2::zero(),
             collider: BoxCollider::default(),
         }
@@ -250,8 +242,8 @@ impl Default for Sprite {
 }
 
 impl Sprite {
-    pub fn add_from_file<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub fn add_from_file(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         filename: impl AsRef<str>,
     ) -> Result<Sprite> {
@@ -261,8 +253,8 @@ impl Sprite {
             vec![resource_handler.texture.wait_load_file(filename)?],
         ))
     }
-    pub fn add_from_file_animated<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub fn add_from_file_animated(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         filename: impl AsRef<str>,
     ) -> Result<Sprite> {
@@ -272,8 +264,8 @@ impl Sprite {
             resource_handler.texture.wait_load_file_animated(filename)?,
         ))
     }
-    pub fn add_from_tileset<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub fn add_from_tileset(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
@@ -291,8 +283,8 @@ impl Sprite {
             margin,
         )
     }
-    pub fn add_from_single_extent<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub fn add_from_single_extent(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
@@ -308,8 +300,8 @@ impl Sprite {
             Vec2i::zero(),
         )
     }
-    pub fn add_from_single_coords<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub fn add_from_single_coords(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
@@ -324,8 +316,8 @@ impl Sprite {
         )
     }
 
-    pub(crate) fn add_from_texture<ObjectType: ObjectTypeEnum>(
-        object_ctx: &mut ObjectContext<ObjectType>,
+    pub(crate) fn add_from_texture(
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
         texture: Texture,
     ) -> Sprite {
@@ -354,18 +346,18 @@ impl Sprite {
     }
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
-        self.inner.borrow_mut().render_item.depth = depth;
+        self.inner_unwrap().render_item.depth = depth;
         self
     }
     #[must_use]
     pub fn with_blend_col(self, col: Colour) -> Self {
-        self.inner.borrow_mut().set_blend_col(col);
+        self.inner_unwrap().set_blend_col(col);
         self
     }
     #[must_use]
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.inner_unwrap();
             inner.frame_time_ms = vec![ms; inner.materials.len()];
         }
         self
@@ -373,7 +365,7 @@ impl Sprite {
     #[must_use]
     pub fn with_frame_time_ms(self, times: Vec<u32>) -> Self {
         {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.inner_unwrap();
             check_eq!(times.len(), inner.material_indices.len());
             inner.frame_time_ms = times;
         }
@@ -382,7 +374,7 @@ impl Sprite {
     #[must_use]
     pub fn with_frame_time_factor(self, factor: f32) -> Self {
         {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.inner_unwrap();
             inner.frame_time_ms = inner
                 .frame_time_ms
                 .iter()
@@ -394,38 +386,38 @@ impl Sprite {
     }
     #[must_use]
     pub fn with_frame_orders(self, frames: Vec<usize>) -> Self {
-        self.inner.borrow_mut().set_frame_orders(frames);
+        self.inner_unwrap().set_frame_orders(frames);
         self
     }
     #[must_use]
     pub fn with_hidden(self) -> Self {
         {
-            self.inner.borrow_mut().state = SpriteState::Hide;
+            self.inner_unwrap().state = SpriteState::Hide;
         }
         self
     }
     #[must_use]
     pub fn with_name(self, name: impl AsRef<str>) -> Self {
         {
-            self.inner.borrow_mut().name = name.as_ref().to_string();
+            self.inner_unwrap().name = name.as_ref().to_string();
         }
         self
     }
 
     pub fn reset(&mut self) {
-        self.inner.borrow_mut().elapsed_us = 0;
+        self.inner_unwrap().elapsed_us = 0;
     }
     pub fn pause(&mut self) {
-        self.inner.borrow_mut().paused = true;
+        self.inner_unwrap().paused = true;
     }
     pub fn play(&mut self) {
-        self.inner.borrow_mut().paused = false;
+        self.inner_unwrap().paused = false;
     }
     pub fn hide(&mut self) {
-        self.inner.borrow_mut().state = SpriteState::ShouldHide;
+        self.inner_unwrap().state = SpriteState::ShouldHide;
     }
     pub fn show(&mut self) {
-        self.inner.borrow_mut().state = SpriteState::ShouldShow;
+        self.inner_unwrap().state = SpriteState::ShouldShow;
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {
@@ -433,11 +425,19 @@ impl Sprite {
     }
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
-        self.inner.borrow_mut().set_depth(depth);
+        self.inner_unwrap().set_depth(depth);
     }
 
     pub fn set_blend_col(&self, col: Colour) {
-        self.inner.borrow_mut().set_blend_col(col);
+        self.inner_unwrap().set_blend_col(col);
+    }
+
+    fn inner_unwrap(&self) -> RefMut<GgInternalSprite> {
+        self.inner
+            .as_ref()
+            .unwrap()
+            .downcast_mut::<GgInternalSprite>()
+            .unwrap()
     }
 }
 

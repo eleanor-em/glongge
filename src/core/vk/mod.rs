@@ -1,11 +1,9 @@
 use egui::{FullOutput, ViewportId, ViewportInfo};
-use std::marker::PhantomData;
 use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
 
-use crate::core::ObjectTypeEnum;
 use crate::core::render::RenderHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
@@ -149,24 +147,21 @@ struct WindowEventHandlerInner {
     virtual_swapchain_id: Id<Swapchain>,
 }
 
-struct WindowEventHandlerCreateInfo<F, ObjectType>
+struct WindowEventHandlerCreateInfo<F>
 where
-    F: FnOnce(SceneHandlerBuilder<ObjectType>),
-    ObjectType: ObjectTypeEnum,
+    F: FnOnce(SceneHandlerBuilder),
 {
     window_size: Vec2i,
     create_and_start_scene_handler: Option<F>,
     global_scale_factor: f32,
     clear_col: Colour,
-    phantom_data: PhantomData<ObjectType>,
 }
 
-pub(crate) struct WindowEventHandler<F, ObjectType>
+pub(crate) struct WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder<ObjectType>),
-    ObjectType: ObjectTypeEnum,
+    F: FnOnce(SceneHandlerBuilder),
 {
-    create_info: WindowEventHandlerCreateInfo<F, ObjectType>,
+    create_info: WindowEventHandlerCreateInfo<F>,
     inner: Option<WindowEventHandlerInner>,
 
     gui_ctx: GuiContext,
@@ -176,10 +171,9 @@ where
     is_first_window_event: bool,
 }
 
-impl<F, ObjectType> WindowEventHandler<F, ObjectType>
+impl<F> WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder<ObjectType>),
-    ObjectType: ObjectTypeEnum,
+    F: FnOnce(SceneHandlerBuilder),
 {
     pub(crate) fn create_and_run(
         window_size: Vec2i,
@@ -194,7 +188,6 @@ where
                 global_scale_factor,
                 clear_col,
                 create_and_start_scene_handler: Some(create_and_start_scene_handler),
-                phantom_data: PhantomData,
             },
             inner: None,
 
@@ -236,8 +229,8 @@ where
 
         let vk_ctx = VulkanoContext::new(event_loop, &window)?;
         let input_handler = InputHandler::new();
-        let mut resource_handler = ResourceHandler::new(&vk_ctx)?;
-        ObjectType::preload_all(&mut resource_handler)?;
+        let resource_handler = ResourceHandler::new(&vk_ctx)?;
+        // TODO: have preloading somehow.
 
         // TODO: these need a barrier between executions because they access the current image.
         //       That means the order of this vector matters. Need some way to let the user decide
@@ -312,10 +305,9 @@ where
     }
 }
 
-impl<F, ObjectType> ApplicationHandler for WindowEventHandler<F, ObjectType>
+impl<F> ApplicationHandler for WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder<ObjectType>),
-    ObjectType: ObjectTypeEnum,
+    F: FnOnce(SceneHandlerBuilder),
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(callback) = self.create_info.create_and_start_scene_handler.take() {
@@ -420,10 +412,9 @@ where
     }
 }
 
-impl<F, ObjectType> WindowEventHandler<F, ObjectType>
+impl<F> WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder<ObjectType>),
-    ObjectType: ObjectTypeEnum,
+    F: FnOnce(SceneHandlerBuilder),
 {
     fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
         self.render_stats.start();

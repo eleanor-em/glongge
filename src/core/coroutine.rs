@@ -1,4 +1,4 @@
-use crate::core::{ObjectTypeEnum, TreeSceneObject, update::UpdateContext};
+use crate::core::{TreeSceneObject, update::UpdateContext};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant},
@@ -49,27 +49,20 @@ pub enum CoroutineResponse {
     Complete,
 }
 
-pub(crate) type CoroutineFunc<ObjectType> = dyn FnMut(
-    &TreeSceneObject<ObjectType>,
-    &mut UpdateContext<ObjectType>,
-    CoroutineState,
-) -> CoroutineResponse;
+pub(crate) type CoroutineFunc =
+    dyn FnMut(&TreeSceneObject, &mut UpdateContext, CoroutineState) -> CoroutineResponse;
 
-pub(crate) struct Coroutine<ObjectType: ObjectTypeEnum> {
-    func: Box<CoroutineFunc<ObjectType>>,
+pub(crate) struct Coroutine {
+    func: Box<CoroutineFunc>,
     wait_since: Instant,
     wait_duration: Duration,
     last_action: CoroutineState,
 }
 
-impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
+impl Coroutine {
     pub(crate) fn new<F>(func: F) -> Self
     where
-        F: FnMut(
-                &TreeSceneObject<ObjectType>,
-                &mut UpdateContext<ObjectType>,
-                CoroutineState,
-            ) -> CoroutineResponse
+        F: FnMut(&TreeSceneObject, &mut UpdateContext, CoroutineState) -> CoroutineResponse
             + 'static,
     {
         Self {
@@ -82,8 +75,8 @@ impl<ObjectType: ObjectTypeEnum> Coroutine<ObjectType> {
 
     pub(crate) fn resume(
         mut self,
-        this: &TreeSceneObject<ObjectType>,
-        ctx: &mut UpdateContext<ObjectType>,
+        this: &TreeSceneObject,
+        ctx: &mut UpdateContext,
     ) -> Option<Self> {
         if self.wait_since.elapsed() < self.wait_duration {
             return Some(self);

@@ -1,9 +1,9 @@
 use crate::core::input::MouseButton;
+use crate::core::prelude::*;
 use crate::core::scene::{GuiCommand, GuiObject};
-use crate::core::{ObjectTypeEnum, prelude::*};
 use crate::util::canvas::Canvas;
 use egui::{Align, Layout};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use rand::Rng;
 use rand::thread_rng;
 
@@ -79,7 +79,7 @@ impl GgInternalSpline {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct GgInternalInteractiveSpline {
     spline: GgInternalSpline,
     line_points: Vec<Vec2>,
@@ -128,14 +128,11 @@ impl GgInternalInteractiveSpline {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteractiveSpline {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalInteractiveSpline {
+    fn gg_type_name(&self) -> String {
         "InteractiveSpline".to_string()
     }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_interactive_spline()
-    }
-    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, _ctx: &mut UpdateContext) {
         self.colour = match thread_rng().gen_range(0..6) {
             0 => Colour::red(),
             1 => Colour::green(),
@@ -147,7 +144,7 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
         }
     }
 
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         self.gui_selected |= self.force_visible;
         if self.gui_selected {
             let mouse_pos = ctx.input().screen_mouse_pos().unwrap_or_default();
@@ -201,13 +198,13 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalInteracti
         }
     }
 
-    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject<ObjectType>> {
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
         Some(self)
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalInteractiveSpline {
-    fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand> {
+impl GuiObject for GgInternalInteractiveSpline {
+    fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
         self.gui_selected = selected || self.force_visible;
         let string_desc = self
             .spline

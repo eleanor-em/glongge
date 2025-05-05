@@ -2,7 +2,7 @@ use crate::examples::mario::{
     block::{brick::Brick, question_block::QuestionBlock, underground_brick::UndergroundBrick},
     player::Player,
 };
-use crate::object_type::ObjectType;
+
 use glongge::core::prelude::*;
 use std::cell::RefMut;
 
@@ -14,21 +14,17 @@ pub mod plain_block;
 pub mod question_block;
 pub mod underground_brick;
 
-pub trait Bumpable: SceneObject<ObjectType> {
+pub trait Bumpable: SceneObject {
     fn bump(&mut self, player: &mut Player);
 }
 
-pub fn downcast_bumpable_mut(
-    obj: &mut TreeSceneObject<ObjectType>,
-) -> Option<RefMut<dyn Bumpable>> {
-    match obj.gg_type_enum() {
-        ObjectType::QuestionBlock => {
-            Some(obj.checked_downcast_mut::<QuestionBlock>() as RefMut<dyn Bumpable>)
-        }
-        ObjectType::Brick => Some(obj.checked_downcast_mut::<Brick>() as RefMut<dyn Bumpable>),
-        ObjectType::UndergroundBrick => {
-            Some(obj.checked_downcast_mut::<UndergroundBrick>() as RefMut<dyn Bumpable>)
-        }
-        _ => None,
-    }
+pub fn downcast_bumpable_mut(obj: &mut TreeSceneObject) -> Option<RefMut<dyn Bumpable>> {
+    (obj.downcast_mut::<QuestionBlock>()
+        .map(|o| o as RefMut<dyn Bumpable>))
+    .or(obj
+        .downcast_mut::<Brick>()
+        .map(|o| o as RefMut<dyn Bumpable>))
+    .or(obj
+        .downcast_mut::<UndergroundBrick>()
+        .map(|o| o as RefMut<dyn Bumpable>))
 }

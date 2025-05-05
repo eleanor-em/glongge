@@ -1,6 +1,5 @@
 use crate::core::prelude::*;
 
-use crate::core::ObjectTypeEnum;
 use crate::core::input::InputHandler;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
@@ -8,7 +7,6 @@ use crate::core::vk::WindowEventHandler;
 use crate::gui::{GuiContext, GuiUi};
 use egui::{Button, WidgetText};
 use std::fmt::{Debug, Display, Formatter};
-use std::marker::PhantomData;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::{hash::Hash, ops::Deref, vec::IntoIter};
@@ -699,15 +697,14 @@ fn setup_log() -> Result<()> {
     Ok(())
 }
 
-pub struct GgContextBuilder<ObjectType: ObjectTypeEnum> {
+pub struct GgContextBuilder {
     window_size: Vec2i,
     gui_ctx: GuiContext,
     global_scale_factor: f32,
     clear_col: Colour,
-    object_type: PhantomData<ObjectType>,
 }
 
-impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
+impl GgContextBuilder {
     pub fn new(window_size: impl Into<Vec2i>) -> Result<Self> {
         setup_log()?;
         let gui_ctx = GuiContext::default();
@@ -716,14 +713,13 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
             gui_ctx,
             global_scale_factor: 1.,
             clear_col: Colour::black(),
-            object_type: PhantomData,
         })
     }
 
     // #[must_use]
     // pub fn with_extra_shaders(
     //     mut self,
-    //     create_shaders: impl FnOnce(&GgContextBuilder<ObjectType>) -> Vec<UniqueShared<Box<dyn Shader>>>
+    //     create_shaders: impl FnOnce(&GgContextBuilder) -> Vec<UniqueShared<Box<dyn Shader>>>
     // ) -> Self {
     //     self.shaders.extend(create_shaders(&self));
     //     self
@@ -741,7 +737,7 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
 
     pub fn build_and_run_window<F>(self, create_and_start_scene_handler: F) -> Result<()>
     where
-        F: FnOnce(SceneHandlerBuilder<ObjectType>),
+        F: FnOnce(SceneHandlerBuilder),
     {
         WindowEventHandler::create_and_run(
             self.window_size,
@@ -753,17 +749,13 @@ impl<ObjectType: ObjectTypeEnum> GgContextBuilder<ObjectType> {
     }
 }
 
-pub struct SceneHandlerBuilder<ObjectType> {
+pub struct SceneHandlerBuilder {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
-    phantom_data: PhantomData<ObjectType>,
 }
 
-impl<ObjectType> SceneHandlerBuilder<ObjectType>
-where
-    ObjectType: ObjectTypeEnum,
-{
+impl SceneHandlerBuilder {
     pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
@@ -773,10 +765,9 @@ where
             input_handler,
             resource_handler,
             render_handler,
-            phantom_data: PhantomData,
         }
     }
-    pub fn build(self) -> SceneHandler<ObjectType> {
+    pub fn build(self) -> SceneHandler {
         SceneHandler::new(
             self.input_handler,
             self.resource_handler,

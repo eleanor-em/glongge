@@ -1,4 +1,3 @@
-use crate::object_type::ObjectType;
 use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
@@ -12,12 +11,12 @@ use std::iter;
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub struct SplineScene;
-impl Scene<ObjectType> for SplineScene {
+impl Scene for SplineScene {
     fn name(&self) -> SceneName {
         SceneName::new("spline")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut spline = InteractiveSpline::default();
         {
             let mut rng = rand::thread_rng();

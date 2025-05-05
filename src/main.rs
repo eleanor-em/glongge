@@ -1,12 +1,8 @@
-include!(concat!(env!("OUT_DIR"), "/object_type.rs"));
-
 use num_traits::Float;
 
 use glongge::core::prelude::*;
 use glongge::core::scene::Scene;
 use glongge::util::GgContextBuilder;
-
-use crate::object_type::ObjectType;
 
 pub mod examples;
 
@@ -21,7 +17,7 @@ use crate::examples::{
 
 fn main() -> Result<()> {
     run_test_cases();
-    GgContextBuilder::<ObjectType>::new([1280, 800])?
+    GgContextBuilder::new([1280, 800])?
         .with_global_scale_factor(2.)
         .build_and_run_window(|scene_handler| {
             std::thread::spawn(move || {

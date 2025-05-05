@@ -1,9 +1,8 @@
-use crate::object_type::ObjectType;
 use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
 };
-use glongge_derive::*;
+use glongge_derive::partially_derive_scene_object;
 use num_traits::FloatConst;
 use rand::{
     Rng,
@@ -14,12 +13,12 @@ use std::time::Instant;
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub struct TriangleScene;
-impl Scene<ObjectType> for TriangleScene {
+impl Scene for TriangleScene {
     fn name(&self) -> SceneName {
         SceneName::new("triangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 1;
         let mut rng = rand::thread_rng();
         let xs: Vec<f32> = Uniform::new(0., 200.)
@@ -57,7 +56,6 @@ impl Scene<ObjectType> for TriangleScene {
     }
 }
 
-#[register_scene_object]
 pub struct TriangleSpawner {}
 
 pub struct SpinningTriangle {
@@ -97,10 +95,10 @@ impl SpinningTriangle {
     }
 }
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for SpinningTriangle {
+impl SceneObject for SpinningTriangle {
     fn on_load(
         &mut self,
-        _object_ctx: &mut ObjectContext<ObjectType>,
+        _object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f32.sqrt();
@@ -121,7 +119,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
             vertex1, vertex2, vertex3,
         ])))
     }
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         if ctx.input().pressed(KeyCode::Space)
             && ctx.object().others().len() < 2500
             && ctx.viewport().contains_point(self.pos)
@@ -145,7 +143,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         }
     }
 
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
         self.t += Self::ANGULAR_VELOCITY;
         let next_pos = self.pos + self.velocity;
         if !ctx.viewport().contains_point(Vec2 {
@@ -163,7 +161,7 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         self.pos += self.velocity;
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         if self.alive_since.elapsed().as_secs_f32() > 0.1 && ctx.viewport().contains_point(self.pos)
         {
             for other in ctx.object().others() {
@@ -179,12 +177,12 @@ impl SceneObject<ObjectType> for SpinningTriangle {
         transform.rotation = self.rotation();
     }
 
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
 }
 
-impl RenderableObject<ObjectType> for SpinningTriangle {
+impl RenderableObject for SpinningTriangle {
     fn shader_execs(&self) -> Vec<ShaderExec> {
         vec![ShaderExec {
             blend_col: Colour::red(),

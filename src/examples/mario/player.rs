@@ -4,7 +4,8 @@ use crate::examples::mario::{
     block::downcast_bumpable_mut, block::pipe::Pipe, enemy::downcast_stompable_mut, from_nes,
     from_nes_accel,
 };
-use crate::object_type::ObjectType;
+
+use crate::examples::mario::block::flagpole::Flagpole;
 use glongge::{
     core::{
         prelude::*,
@@ -13,7 +14,7 @@ use glongge::{
     },
     resource::{sound::Sound, sprite::Sprite},
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use num_traits::Zero;
 use std::time::Duration;
 
@@ -49,7 +50,7 @@ impl Default for SpeedRegime {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Player {
     centre: Vec2,
     dir: Vec2,
@@ -175,12 +176,7 @@ impl Player {
             && self.state != PlayerState::RidingFlagpole
     }
 
-    fn update_as_idle(
-        &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        new_dir: Vec2,
-        hold_run: bool,
-    ) {
+    fn update_as_idle(&mut self, ctx: &mut UpdateContext, new_dir: Vec2, hold_run: bool) {
         if !new_dir.is_zero() {
             self.dir = new_dir;
             self.speed = Self::MIN_WALK_SPEED;
@@ -194,12 +190,7 @@ impl Player {
         }
     }
 
-    fn update_as_walking(
-        &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        new_dir: Vec2,
-        hold_run: bool,
-    ) {
+    fn update_as_walking(&mut self, ctx: &mut UpdateContext, new_dir: Vec2, hold_run: bool) {
         self.speed = self.speed.min(Self::MAX_WALK_SPEED);
         if hold_run {
             self.state = PlayerState::Running;
@@ -211,12 +202,7 @@ impl Player {
         }
     }
 
-    fn update_as_running(
-        &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        new_dir: Vec2,
-        hold_run: bool,
-    ) {
+    fn update_as_running(&mut self, ctx: &mut UpdateContext, new_dir: Vec2, hold_run: bool) {
         if hold_run {
             if let Some(crt) = self.cancel_run_crt.take() {
                 ctx.scene_mut().cancel_coroutine(crt);
@@ -291,7 +277,7 @@ impl Player {
         }
     }
 
-    fn maybe_start_jump(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn maybe_start_jump(&mut self, ctx: &mut UpdateContext) {
         if self.state != PlayerState::Falling {
             self.speed_regime = match self.speed {
                 x if (0.0..from_nes(1, 0, 0, 0)).contains(&x) => SpeedRegime::Slow,
@@ -334,7 +320,7 @@ impl Player {
         }
     }
 
-    fn maybe_start_exit_pipe(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn maybe_start_exit_pipe(&mut self, ctx: &mut UpdateContext) {
         if self.state == PlayerState::ExitingPipe && self.exit_pipe_crt.is_none() {
             self.exit_pipe_crt
                 .replace(ctx.scene_mut().start_coroutine(|this, ctx, last_state| {
@@ -367,7 +353,7 @@ impl Player {
                 }));
         }
     }
-    fn maybe_start_pipe(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn maybe_start_pipe(&mut self, ctx: &mut FixedUpdateContext) {
         if self.hold_down {
             if let Some(collisions) =
                 ctx.object()
@@ -375,12 +361,13 @@ impl Player {
             {
                 let pipe = &collisions.first().other;
                 if !pipe
-                    .checked_downcast::<Pipe>()
+                    .downcast::<Pipe>()
+                    .unwrap()
                     .orientation()
                     .dot(Vec2::down())
                     .is_zero()
                 {
-                    if let Some(instruction) = pipe.checked_downcast::<Pipe>().destination() {
+                    if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination() {
                         self.start_pipe(
                             ctx,
                             Vec2::down(),
@@ -396,9 +383,10 @@ impl Player {
                     .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG])
             {
                 let pipe = &collisions.first().other;
-                if let Some(instruction) = pipe.checked_downcast::<Pipe>().destination() {
+                if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination() {
                     if !pipe
-                        .checked_downcast::<Pipe>()
+                        .downcast::<Pipe>()
+                        .unwrap()
                         .orientation()
                         .dot(Vec2::right())
                         .is_zero()
@@ -417,7 +405,7 @@ impl Player {
     }
     fn start_pipe(
         &mut self,
-        ctx: &mut FixedUpdateContext<ObjectType>,
+        ctx: &mut FixedUpdateContext,
         direction: Vec2,
         pipe_centre: Vec2,
         pipe_instruction: SceneDestination,
@@ -466,7 +454,7 @@ impl Player {
         self.v_speed = self.initial_vspeed();
     }
 
-    fn start_die(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn start_die(&mut self, ctx: &mut UpdateContext) {
         self.music.stop();
         self.die_sprite.set_depth(VertexDepth::Front(10000));
         ctx.scene_mut().start_coroutine(|this, ctx, last_state| {
@@ -498,50 +486,10 @@ impl Player {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Player {
-    fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
-        resource_handler
-            .sound
-            .spawn_load_file("res/jump-small.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/stomp.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/death.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/pipe.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/bump.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/flagpole.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/stage-clear.wav".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/overworld.ogg".to_string());
-        resource_handler
-            .sound
-            .spawn_load_file("res/underground.ogg".to_string());
-        resource_handler
-            .texture
-            .wait_load_file("res/mario_sheet.png")?;
-        resource_handler
-            .texture
-            .wait_load_file("res/world_sheet.png")?;
-        resource_handler
-            .texture
-            .wait_load_file("res/enemies_sheet.png")?;
-        resource_handler.sound.wait()?;
-        Ok(())
-    }
+impl SceneObject for Player {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler
@@ -646,7 +594,7 @@ impl SceneObject<ObjectType> for Player {
             .wait_load_file("res/underground.ogg".to_string())?;
         Ok(None)
     }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         if ctx.scene_mut().name() == MarioOverworldScene.name() {
             *ctx.viewport_mut().clear_col() = Colour::from_bytes(92, 148, 252, 255);
             self.music = self.overworld_music.clone();
@@ -663,14 +611,14 @@ impl SceneObject<ObjectType> for Player {
             ));
     }
 
-    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
         self.accel = 0.;
         self.v_accel = 0.;
         self.maybe_start_exit_pipe(ctx);
         self.hold_down = ctx.input().down(KeyCode::ArrowDown);
         self.hold_right = ctx.input().down(KeyCode::ArrowRight);
     }
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         if self.state == PlayerState::Dying {
             self.speed = 0.;
             self.v_accel = BASE_GRAVITY;
@@ -705,7 +653,7 @@ impl SceneObject<ObjectType> for Player {
             self.last_nonzero_dir = self.dir;
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
         self.speed += self.accel;
         self.v_speed += self.v_accel;
         self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
@@ -775,8 +723,8 @@ impl SceneObject<ObjectType> for Player {
 
     fn on_collision(
         &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        mut other: TreeSceneObject<ObjectType>,
+        ctx: &mut UpdateContext,
+        mut other: TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !self.has_control() {
@@ -797,7 +745,7 @@ impl SceneObject<ObjectType> for Player {
                 }
             }
         }
-        if other.gg_type_enum() == ObjectType::Flagpole {
+        if other.downcast::<Flagpole>().is_some() {
             self.state = PlayerState::RidingFlagpole;
             self.music.stop();
             self.flagpole_sound.play();
@@ -825,7 +773,7 @@ impl SceneObject<ObjectType> for Player {
         }
         CollisionResponse::Done
     }
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         ctx.viewport_mut()
             .clamp_to_left(None, Some(self.centre.x - 200.));
         ctx.viewport_mut()

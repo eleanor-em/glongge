@@ -11,23 +11,22 @@ pub mod player;
 pub mod text_display;
 pub mod underground_floor;
 
-use crate::object_type::ObjectType;
-use block::brick::*;
-use block::decorative_pipe::*;
-use block::flagpole::*;
-use block::pipe::*;
-use block::plain_block::*;
-use block::question_block::*;
-use block::underground_brick::*;
-use enemy::goomba::*;
+use block::brick::Brick;
+use block::decorative_pipe::DecorativePipe;
+use block::flagpole::Flagpole;
+use block::pipe::Pipe;
+use block::plain_block::Block;
+use block::question_block::QuestionBlock;
+use block::underground_brick::UndergroundBrick;
+use enemy::goomba::Goomba;
 use glongge::core::builtin::{Container, StaticSprite};
 use glongge::core::render::VertexDepth;
 use glongge::scene_object_vec;
 use glongge::util::canvas::Canvas;
 use glongge::util::tileset::TilesetBuilder;
-use player::*;
-use text_display::*;
-use underground_floor::*;
+use player::Player;
+use text_display::WinTextDisplay;
+use underground_floor::UndergroundFloor;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 50 fps
@@ -106,7 +105,7 @@ fn create_castle(top_left: impl Into<Vec2>) -> StaticSprite {
 #[derive(Copy, Clone)]
 pub struct MarioOverworldScene;
 
-impl Scene<ObjectType> for MarioOverworldScene {
+impl Scene for MarioOverworldScene {
     fn name(&self) -> SceneName {
         SceneName::new("mario-overworld")
     }
@@ -115,7 +114,7 @@ impl Scene<ObjectType> for MarioOverworldScene {
         bincode::serialize(&AliveEnemyMap::default()).unwrap()
     }
 
-    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut ts = TilesetBuilder::new("res/world_sheet.png", 16).named("Doughnut");
         let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);
         let crumble = ts.create_tile_collision([0, 50], &vec![BLOCK_COLLISION_TAG]);
@@ -810,12 +809,12 @@ impl Scene<ObjectType> for MarioOverworldScene {
 
 #[derive(Copy, Clone)]
 pub struct MarioUndergroundScene;
-impl Scene<ObjectType> for MarioUndergroundScene {
+impl Scene for MarioUndergroundScene {
     fn name(&self) -> SceneName {
         SceneName::new("mario-underground")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         scene_object_vec![
             Canvas::default(),
             Player::new(

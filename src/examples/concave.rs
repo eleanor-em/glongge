@@ -1,23 +1,22 @@
-use crate::object_type::ObjectType;
 use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
 };
 use glongge::util::canvas::Canvas;
 use glongge::util::collision::{BoxCollider, CompoundCollider, ConvexCollider, Polygonal};
-use glongge_derive::*;
+use glongge_derive::partially_derive_scene_object;
 
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub struct ConcaveScene;
-impl Scene<ObjectType> for ConcaveScene {
+impl Scene for ConcaveScene {
     fn name(&self) -> SceneName {
         SceneName::new("concave")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         vec![
-            Canvas::default().into_wrapper(),
+            Canvas::new().into_wrapper(),
             ConvexHull::default().into_wrapper(),
             Compound::default().into_wrapper(),
             TrivialDecomposed::default().into_wrapper(),
@@ -33,12 +32,12 @@ impl Scene<ObjectType> for ConcaveScene {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct ConvexHull {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for ConvexHull {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for ConvexHull {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let mut collider = CollisionShape::from_collider(
             ConvexCollider::convex_hull_of(vec![
                 Vec2 { x: -16., y: -16. } * 2,
@@ -57,12 +56,12 @@ impl SceneObject<ObjectType> for ConvexHull {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Compound {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Compound {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for Compound {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let mut collider = CollisionShape::from_collider(
             CompoundCollider::new(vec![
                 BoxCollider::from_top_left(Vec2 { x: 0., y: 8. }, 32 * Vec2::one()).as_convex(),
@@ -88,14 +87,14 @@ impl SceneObject<ObjectType> for Compound {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct PixelPerfect {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for PixelPerfect {
+impl SceneObject for PixelPerfect {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
@@ -111,14 +110,15 @@ impl SceneObject<ObjectType> for PixelPerfect {
         Ok(None)
     }
 }
-#[register_scene_object]
+
+#[derive(Default)]
 pub struct PixelPerfectConvex {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for PixelPerfectConvex {
+impl SceneObject for PixelPerfectConvex {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
@@ -134,12 +134,12 @@ impl SceneObject<ObjectType> for PixelPerfectConvex {
         Ok(None)
     }
 }
-#[register_scene_object]
+#[derive(Default)]
 pub struct TrivialDecomposed {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for TrivialDecomposed {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for TrivialDecomposed {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let compound = CompoundCollider::decompose(
             ConvexCollider::convex_hull_of(vec![
                 Vec2 { x: -16., y: -16. } * 2,
@@ -158,12 +158,12 @@ impl SceneObject<ObjectType> for TrivialDecomposed {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Decomposed {}
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Decomposed {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for Decomposed {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: -16., y: -16. } * 2,
             Vec2 { x: 16., y: -18. } * 2,
@@ -179,11 +179,11 @@ impl SceneObject<ObjectType> for Decomposed {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct DecomposedCorner {}
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for DecomposedCorner {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for DecomposedCorner {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let size = 16;
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: 2. } * size,
@@ -201,11 +201,11 @@ impl SceneObject<ObjectType> for DecomposedCorner {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct DecomposedTee {}
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for DecomposedTee {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for DecomposedTee {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let size = 16.;
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: 1. } * size,
@@ -225,11 +225,11 @@ impl SceneObject<ObjectType> for DecomposedTee {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct DecomposedU {}
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for DecomposedU {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for DecomposedU {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let size = 16;
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: 0. } * size,
@@ -249,11 +249,11 @@ impl SceneObject<ObjectType> for DecomposedU {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct DecomposedCompound {}
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for DecomposedCompound {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for DecomposedCompound {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: 8. },
             Vec2 { x: 4., y: 0. },
@@ -273,11 +273,11 @@ impl SceneObject<ObjectType> for DecomposedCompound {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct DecomposedBigU {}
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for DecomposedBigU {
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+impl SceneObject for DecomposedBigU {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let size = 16;
         let compound = CompoundCollider::decompose(vec![
             Vec2 { x: 0., y: -2. } * size,

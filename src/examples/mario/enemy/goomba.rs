@@ -1,13 +1,13 @@
 use crate::examples::mario::{
     AliveEnemyMap, BASE_GRAVITY, BLOCK_COLLISION_TAG, ENEMY_COLLISION_TAG, enemy::Stompable,
 };
-use crate::object_type::ObjectType;
+
 use glongge::{core::prelude::*, resource::sprite::Sprite};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use num_traits::Zero;
 use std::time::Duration;
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Goomba {
     initial_coord: Vec2i,
     dead: bool,
@@ -20,7 +20,7 @@ pub struct Goomba {
 }
 
 impl Goomba {
-    pub fn create(top_left: Vec2i) -> SceneObjectWrapper<ObjectType> {
+    pub fn create(top_left: Vec2i) -> SceneObjectWrapper {
         Self {
             initial_coord: top_left,
             dead: false,
@@ -43,10 +43,10 @@ impl Stompable for Goomba {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Goomba {
+impl SceneObject for Goomba {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler
@@ -73,7 +73,7 @@ impl SceneObject<ObjectType> for Goomba {
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         Ok(None)
     }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         let mut data = ctx.scene_mut().data::<AliveEnemyMap>().unwrap();
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
@@ -86,7 +86,7 @@ impl SceneObject<ObjectType> for Goomba {
             ));
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
         let in_view = ctx.viewport().contains_point(self.top_left)
             || ctx
                 .viewport()
@@ -107,8 +107,8 @@ impl SceneObject<ObjectType> for Goomba {
     }
     fn on_collision(
         &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        other: TreeSceneObject<ObjectType>,
+        ctx: &mut UpdateContext,
+        other: TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {
@@ -130,7 +130,7 @@ impl SceneObject<ObjectType> for Goomba {
         }
         CollisionResponse::Done
     }
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         if self.dead && !self.started_death {
             ctx.scene_mut().start_coroutine_after(
                 |_this, ctx, _action| {

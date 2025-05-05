@@ -1,10 +1,11 @@
-use crate::core::{ObjectId, ObjectTypeEnum, SceneObjectWrapper, TreeSceneObject, prelude::*};
+use crate::core::{ObjectId, SceneObjectWrapper, TreeSceneObject, prelude::*};
 use crate::util::{
     UnorderedPair,
     collision::{Collider, GgInternalCollisionShape},
     gg_err,
 };
 use itertools::Itertools;
+use std::any::TypeId;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Formatter},
@@ -21,9 +22,9 @@ pub enum CollisionResponse {
 }
 
 #[derive(Debug)]
-pub(crate) struct CollisionNotification<ObjectType: ObjectTypeEnum> {
-    pub(crate) this: TreeSceneObject<ObjectType>,
-    pub(crate) other: TreeSceneObject<ObjectType>,
+pub(crate) struct CollisionNotification {
+    pub(crate) this: TreeSceneObject,
+    pub(crate) other: TreeSceneObject,
     pub(crate) mtv: Vec2,
 }
 
@@ -33,12 +34,12 @@ pub(crate) struct CollisionNotification<ObjectType: ObjectTypeEnum> {
 /// * `other` - The scene object that this object collided with
 /// * `mtv` - Minimum Translation Vector (MTV): the vector needed to separate the colliding
 ///   objects. Direction points from the other object towards this one.
-pub struct Collision<ObjectType: ObjectTypeEnum> {
-    pub other: TreeSceneObject<ObjectType>,
+pub struct Collision {
+    pub other: TreeSceneObject,
     pub mtv: Vec2,
 }
 
-impl<ObjectType: ObjectTypeEnum> Debug for Collision<ObjectType> {
+impl Debug for Collision {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -64,15 +65,15 @@ impl CollisionHandler {
             possible_collisions: BTreeSet::new(),
         }
     }
-    pub(crate) fn add_objects<'a, ObjectType: ObjectTypeEnum, I>(&'a mut self, added_objects: I)
+    pub(crate) fn add_objects<'a, I>(&'a mut self, added_objects: I)
     where
-        I: Iterator<Item = &'a TreeSceneObject<ObjectType>>,
+        I: Iterator<Item = &'a TreeSceneObject>,
     {
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
-        for obj in added_objects.filter(|obj| {
-            obj.scene_object.wrapped.borrow().gg_type_enum() == ObjectTypeEnum::gg_collider()
-        }) {
+        for obj in added_objects
+            .filter(|obj| obj.scene_object.type_id == TypeId::of::<GgInternalCollisionShape>())
+        {
             let id = obj.object_id();
             let obj = obj.scene_object.wrapped.borrow();
             for tag in obj.emitting_tags() {
@@ -143,11 +144,11 @@ impl CollisionHandler {
             !removed_ids.contains(&pair.fst()) && !removed_ids.contains(&pair.snd())
         });
     }
-    pub(crate) fn get_collisions<ObjectType: ObjectTypeEnum>(
+    pub(crate) fn get_collisions(
         &self,
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
-    ) -> Vec<CollisionNotification<ObjectType>> {
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
+    ) -> Vec<CollisionNotification> {
         let collisions = self.get_collisions_inner(objects);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
@@ -158,15 +159,19 @@ impl CollisionHandler {
         rv
     }
 
-    fn get_collisions_inner<ObjectType: ObjectTypeEnum>(
+    fn get_collisions_inner(
         &self,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions
             .iter()
             .filter_map(|ids| {
-                let o1 = objects[&ids.fst()].checked_downcast::<GgInternalCollisionShape>();
-                let o2 = objects[&ids.snd()].checked_downcast::<GgInternalCollisionShape>();
+                let o1 = objects[&ids.fst()]
+                    .downcast::<GgInternalCollisionShape>()
+                    .unwrap();
+                let o2 = objects[&ids.snd()]
+                    .downcast::<GgInternalCollisionShape>()
+                    .unwrap();
                 o1.collider()
                     .collides_with(o2.collider())
                     .map(|mtv| (*ids, mtv))
@@ -174,10 +179,10 @@ impl CollisionHandler {
             .collect()
     }
 
-    fn process_collision_inner<ObjectType: ObjectTypeEnum>(
+    fn process_collision_inner(
         parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper<ObjectType>>,
-        rv: &mut Vec<CollisionNotification<ObjectType>>,
+        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
+        rv: &mut Vec<CollisionNotification>,
         ids: &UnorderedPair<ObjectId>,
         mtv: Vec2,
     ) -> Result<()> {

@@ -1,9 +1,9 @@
 use crate::examples::mario::BLOCK_COLLISION_TAG;
-use crate::object_type::ObjectType;
-use glongge::{core::prelude::*, resource::sprite::Sprite};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
 
-#[register_scene_object]
+use glongge::{core::prelude::*, resource::sprite::Sprite};
+use glongge_derive::partially_derive_scene_object;
+
+#[derive(Default)]
 pub struct UndergroundFloor {
     top_left: Vec2,
     sprite: Sprite,
@@ -19,10 +19,10 @@ impl UndergroundFloor {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for UndergroundFloor {
+impl SceneObject for UndergroundFloor {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler
@@ -39,7 +39,7 @@ impl SceneObject<ObjectType> for UndergroundFloor {
         Ok(None)
     }
 
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),

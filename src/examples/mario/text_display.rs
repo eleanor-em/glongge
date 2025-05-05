@@ -1,4 +1,3 @@
-use crate::object_type::ObjectType;
 use glongge::{
     core::prelude::*,
     resource::{
@@ -6,9 +5,9 @@ use glongge::{
         sprite::Sprite,
     },
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct WinTextDisplay {
     centre: Vec2,
     font: Option<Font>,
@@ -25,10 +24,10 @@ impl WinTextDisplay {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for WinTextDisplay {
+impl SceneObject for WinTextDisplay {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let font = Font::from_slice(include_bytes!("../../../res/DejaVuSansMono.ttf"), 20.)?;

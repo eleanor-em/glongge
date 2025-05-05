@@ -1,8 +1,8 @@
+use crate::core::SceneObjectWrapper;
 use crate::core::prelude::*;
-use crate::core::{ObjectTypeEnum, SceneObjectWrapper};
 use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use itertools::Itertools;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -10,14 +10,13 @@ use std::path::Path;
 /// A scene object that serves as a container to group and organise child objects.
 /// This container type only provides a name/label for the group without adding any additional
 /// functionality.
-#[register_scene_object]
-pub struct GgInternalContainer<ObjectType> {
+pub struct GgInternalContainer {
     label: String,
-    children: Vec<SceneObjectWrapper<ObjectType>>,
+    children: Vec<SceneObjectWrapper>,
 }
 
-impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
-    pub fn new(label: impl AsRef<str>, children: Vec<SceneObjectWrapper<ObjectType>>) -> Self {
+impl GgInternalContainer {
+    pub fn new(label: impl AsRef<str>, children: Vec<SceneObjectWrapper>) -> Self {
         Self {
             label: label.as_ref().to_string(),
             children,
@@ -26,17 +25,13 @@ impl<ObjectType: ObjectTypeEnum> GgInternalContainer<ObjectType> {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalContainer<ObjectType> {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalContainer {
+    fn gg_type_name(&self) -> String {
         self.label.clone()
     }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_container()
-    }
-
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         object_ctx.add_vec(self.children.drain(..).collect_vec());
@@ -52,8 +47,7 @@ enum CreateCoord {
     Centre(Vec2),
 }
 
-/// A pre-packaged SceneObject that simply draws a sprite with no animation.
-#[register_scene_object]
+/// A pre-packaged [`SceneObject`] that simply draws a sprite with no animation.
 pub struct GgInternalStaticSprite {
     filename: String,
     name: Option<String>,
@@ -114,10 +108,7 @@ impl GgInternalStaticSprite {
         self.depth = Some(depth);
         self
     }
-    pub fn build_colliding<ObjectType: ObjectTypeEnum>(
-        self,
-        emitting_tags: Vec<&'static str>,
-    ) -> GgInternalCollidingSprite {
+    pub fn build_colliding(self, emitting_tags: Vec<&'static str>) -> GgInternalCollidingSprite {
         GgInternalCollidingSprite {
             inner: self,
             emitting_tags,
@@ -126,8 +117,8 @@ impl GgInternalStaticSprite {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSprite {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalStaticSprite {
+    fn gg_type_name(&self) -> String {
         if let Some(name) = &self.name.as_ref() {
             format!("StaticSprite [{name}]")
         } else if let Some(filename) = Path::new(&self.filename)
@@ -139,13 +130,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
             "StaticSprite".to_string()
         }
     }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_static_sprite()
-    }
 
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let sprite = if let Some(tex_segment) = self.tex_segment {
@@ -182,36 +170,32 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalStaticSpr
     }
 }
 
-/// A pre-packaged SceneObject similar to [`GgInternalStaticSprite`] but with added collision
+/// A pre-packaged [`SceneObject`] similar to [`GgInternalStaticSprite`] but with added collision
 /// detection based on the sprite's dimensions.
-#[register_scene_object]
 pub struct GgInternalCollidingSprite {
     inner: GgInternalStaticSprite,
     emitting_tags: Vec<&'static str>,
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollidingSprite {
-    fn type_name(&self) -> String {
-        <GgInternalStaticSprite as SceneObject<ObjectType>>::type_name(&self.inner)
+impl SceneObject for GgInternalCollidingSprite {
+    fn gg_type_name(&self) -> String {
+        <GgInternalStaticSprite as SceneObject>::gg_type_name(&self.inner)
             .replace("Static", "Colliding")
-    }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_colliding_sprite()
     }
 
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         self.inner.on_load(object_ctx, resource_handler)
     }
 
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         ctx.object_mut().add_child(CollisionShape::from_collider(
             self.inner.sprite.as_box_collider(),
-            &<GgInternalCollidingSprite as SceneObject<ObjectType>>::emitting_tags(self),
+            &<GgInternalCollidingSprite as SceneObject>::emitting_tags(self),
             &Vec::new(),
         ));
     }

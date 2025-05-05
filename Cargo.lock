@@ -1070,7 +1070,6 @@ dependencies = [
  "vulkano",
  "vulkano-shaders",
  "vulkano-taskgraph",
- "walkdir",
 ]
 
 [[package]]

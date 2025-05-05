@@ -1,13 +1,13 @@
 use crate::examples::mario::{BLOCK_COLLISION_TAG, PIPE_COLLISION_TAG};
-use crate::object_type::ObjectType;
+
 use glongge::{
     core::{prelude::*, render::VertexDepth, scene::SceneDestination},
     resource::sprite::Sprite,
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use num_traits::Zero;
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct Pipe {
     top_left: Vec2,
     sprite: Sprite,
@@ -34,10 +34,10 @@ impl Pipe {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for Pipe {
+impl SceneObject for Pipe {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler
@@ -65,7 +65,7 @@ impl SceneObject<ObjectType> for Pipe {
         Ok(None)
     }
 
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         ctx.object_mut()
             .add_child(CollisionShape::from_object_sprite(self, &self.sprite));
     }

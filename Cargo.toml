@@ -7,10 +7,6 @@ edition = "2024"
 name = "glongge"
 path = "src/lib.rs"
 
-[build-dependencies]
-anyhow = "1.0.86"
-walkdir = "2.5.0"
-
 [dependencies]
 glongge-derive = { path = "glongge-derive" }
 # core

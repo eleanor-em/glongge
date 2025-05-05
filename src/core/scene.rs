@@ -4,7 +4,7 @@ use crate::gui::{GuiContext, GuiUi};
 use crate::shader::ensure_shaders_locked;
 use crate::{
     core::{
-        ObjectTypeEnum, SceneObjectWrapper, TreeSceneObject,
+        SceneObjectWrapper, TreeSceneObject,
         input::InputHandler,
         prelude::*,
         render::{RenderDataChannel, RenderItem, ShaderExec},
@@ -22,8 +22,8 @@ use std::{
 };
 
 #[derive(Clone)]
-struct InternalScene<ObjectType: ObjectTypeEnum> {
-    scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
+struct InternalScene {
+    scene: Arc<Mutex<dyn Scene + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
@@ -31,9 +31,9 @@ struct InternalScene<ObjectType: ObjectTypeEnum> {
     tx: Sender<SceneHandlerInstruction>,
 }
 
-impl<ObjectType: ObjectTypeEnum> InternalScene<ObjectType> {
+impl InternalScene {
     fn new(
-        scene: Arc<Mutex<dyn Scene<ObjectType> + Send>>,
+        scene: Arc<Mutex<dyn Scene + Send>>,
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
@@ -151,12 +151,12 @@ impl SceneDestination {
 ///     player_start: Vec2,
 /// }
 ///
-/// impl Scene<GameObjectType> for Level1 {
+/// impl Scene for Level1 {
 ///     fn name(&self) -> SceneName {
 ///         SceneName::new("level_1")
 ///     }
 ///
-///     fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+///     fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
 ///         // Create initial objects for the level
 ///         scene_object_vec![
 ///             Box::new(Player::new(self.player_start)),
@@ -165,7 +165,7 @@ impl SceneDestination {
 ///     }
 /// }
 /// ```
-pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
+pub trait Scene: Send {
     fn name(&self) -> SceneName;
 
     /// Loads scene-specific data from a byte array.
@@ -188,7 +188,7 @@ pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     ///     self.player_start = scene_data.player_start;
     ///     Ok(())
     /// }
-    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
     ///     // Create initial objects for the level
     ///     scene_object_vec![
     ///         Box::new(Player::new(self.player_start)),
@@ -205,7 +205,7 @@ pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     /// # Examples
     ///
     /// ```ignore
-    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<GameObjectType>> {
+    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
     ///     // Create initial objects for the level
     ///     scene_object_vec![
     ///         Box::new(Player::new(self.player_start)),
@@ -213,7 +213,7 @@ pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     ///     ]
     /// }
     /// ```
-    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>>;
+    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper>;
 
     #[allow(unused_variables)]
     fn initial_data(&self) -> Vec<u8> {
@@ -234,7 +234,7 @@ pub trait Scene<ObjectType: ObjectTypeEnum>: Send {
     /// const DOOR_ENTRANCE: usize = 1;
     ///
     /// // Use at_entrance() to create a destination when transitioning scenes
-    /// fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    /// fn on_update(&mut self, ctx: &mut UpdateContext) {
     ///     if self.player_entered_pipe {
     ///         // Go to underground scene through pipe entrance
     ///         ctx.goto(underground_scene.at_entrance(PIPE_ENTRANCE));
@@ -263,7 +263,7 @@ pub(crate) enum SceneHandlerInstruction {
 /// ```ignore
 /// use glongge::core::prelude::*;
 ///
-/// GgContextBuilder::<ObjectType>::new([1280, 800])?
+/// GgContextBuilder::::new([1280, 800])?
 ///     .with_global_scale_factor(2.)
 ///     .build_and_run_window(|scene_handler| {
 ///         std::thread::spawn(move || {
@@ -279,11 +279,11 @@ pub(crate) enum SceneHandlerInstruction {
 ///         });
 ///     })
 /// ```
-pub struct SceneHandler<ObjectType: ObjectTypeEnum> {
+pub struct SceneHandler {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
-    scenes: BTreeMap<SceneName, InternalScene<ObjectType>>,
+    scenes: BTreeMap<SceneName, InternalScene>,
     scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
     current_scene_name: Arc<Mutex<Option<SceneName>>>,
     tx: Sender<SceneHandlerInstruction>,
@@ -291,7 +291,7 @@ pub struct SceneHandler<ObjectType: ObjectTypeEnum> {
 }
 
 // #[allow(private_bounds)]
-impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
+impl SceneHandler {
     pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
@@ -310,7 +310,7 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
         }
     }
     /// Creates and registers a new scene. See [`SceneHandler`] example.
-    pub fn create_scene<S: Scene<ObjectType> + 'static>(&mut self, scene: S) {
+    pub fn create_scene<S: Scene + 'static>(&mut self, scene: S) {
         check_false!(self.scenes.contains_key(&scene.name()));
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
@@ -360,11 +360,80 @@ impl<ObjectType: ObjectTypeEnum> SceneHandler<ObjectType> {
     }
 }
 
-pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
-    /// Implemented by
-    /// [`partially_derive_scene_object!`](glongge_derive::partially_derive_scene_object). Do not
-    /// implement manually.
-    fn gg_type_enum(&self) -> ObjectType;
+/// A trait representing an object that can exist in a game scene. Scene objects are the core
+/// building blocks for game scenes, representing entities like players, enemies, platforms, UI
+/// elements, etc.
+///
+/// # Lifecycle Methods
+/// Scene objects have several lifecycle methods that are called in sequence:
+/// - [`on_load()`](SceneObject::on_load) - Initial setup when added to scene
+/// - [`on_ready()`](SceneObject::on_ready) - Called after all objects for this update are loaded
+/// - [`on_update_begin()`](SceneObject::on_update_begin) - Start of each update frame
+/// - [`on_update()`](SceneObject::on_update) - Main update logic
+/// - [`on_fixed_update()`](SceneObject::on_fixed_update) - Physics/time-dependent updates
+/// - [`on_collision()`](SceneObject::on_collision) - Handle object collisions
+/// - [`on_update_end()`](SceneObject::on_update_end) - End of update frame
+///
+/// # Optional Rendering and GUI
+/// Objects can optionally implement rendering and GUI functionality through the following traits:
+/// - [`RenderableObject`] - For objects that need to be drawn to the screen
+/// - [`GuiObject`] - For objects that display GUI elements
+///
+/// # Examples
+///
+/// Basic scene object with movement:
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// #[derive(Default)]
+/// struct Player {
+///     velocity: Vec2,
+/// }
+///
+/// impl SceneObject for Player {
+///     fn on_update(&mut self, ctx: &mut UpdateContext) {
+///         // Handle input
+///         if ctx.input().pressed(KeyCode::Space) {
+///             self.velocity.y = -200.0; // Jump
+///         }
+///         
+///         // Update position
+///         let pos = &mut ctx.object_mut().transform_mut().centre;
+///         *pos += self.velocity * ctx.delta().as_secs_f32();
+///         
+///         // Apply gravity
+///         self.velocity.y += 400.0 * ctx.delta().as_secs_f32();
+///     }
+/// }
+/// ```
+///
+/// Scene object with collision handling:
+/// ```ignore
+/// use glongge::core::prelude::*;
+///
+/// struct Platform;
+///
+/// impl SceneObject for Platform {
+///     fn on_load(
+///         &mut self,
+///         object_ctx: &mut ObjectContext,
+///         _resource_handler: &mut ResourceHandler,
+///     ) -> Result<Option<RenderItem>> {
+///         // Create collision shape
+///         object_ctx.add_child(CollisionShape::from_rect(
+///             Rect::from_centre_and_size(Vec2::zero(), Vec2::new(100.0, 20.0)),
+///             &self.emitting_tags(),
+///             &[],
+///         ));
+///         Ok(None)
+///     }
+///
+///     fn emitting_tags(&self) -> Vec<&'static str> {
+///         vec!["SOLID"] // Other objects can detect collisions with this platform
+///     }
+/// }
+/// ```
+pub trait SceneObject: 'static {
     /// Implemented by
     /// [`partially_derive_scene_object!`](glongge_derive::partially_derive_scene_object). Do not
     /// implement manually.
@@ -375,31 +444,11 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Meant to give a descriptive name of the object type. Can be overridden if the default
-    /// (generated by build.rs) would be confusing.
-    fn type_name(&self) -> String {
-        format!("{:?}", self.gg_type_enum())
-    }
+    /// (generated by
+    /// [`partially_derive_scene_object!`](glongge_derive::partially_derive_scene_object)) would be
+    /// confusing.
+    fn gg_type_name(&self) -> String;
 
-    /// Called before any object is added to load required resources. This method is executed
-    /// before the scene starts and before any objects are instantiated, allowing for early
-    /// resource loading (in particular, images and audio).
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
-    ///     // Load texture that will be used by this object
-    ///     resource_handler.texture.load("player.png")?;
-    ///     
-    ///     // Load sound effect
-    ///     resource_handler.sound.load("jump.wav")?;
-    ///     Ok(())
-    /// }
-    /// ```
-    #[allow(unused_variables)]
-    fn on_preload(&mut self, resource_handler: &mut ResourceHandler) -> Result<()> {
-        Ok(())
-    }
     /// Called when the object is first added to the object handler to set up sprites, rendering,
     /// and any initial setup not dependent on other objects.
     /// Other objects added in the same update may not yet be available.
@@ -408,7 +457,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// ```ignore
     /// fn on_load(
     ///     &mut self,
-    ///     object_ctx: &mut ObjectContext<ObjectType>,
+    ///     object_ctx: &mut ObjectContext,
     ///     resource_handler: &mut ResourceHandler,
     /// ) -> Result<Option<RenderItem>> {
     ///     // Setup initial vertices for rendering a triangle
@@ -430,7 +479,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     #[allow(unused_variables)]
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         Ok(None)
@@ -441,7 +490,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// # Example
     ///
     /// ```ignore
-    /// fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    /// fn on_ready(&mut self, ctx: &mut UpdateContext) {
     ///     // Initialize position relative to other spawned objects
     ///     let others = ctx.object().others();
     ///     if !others.is_empty() {
@@ -452,7 +501,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// }
     /// ```
     #[allow(unused_variables)]
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {}
 
     /// Called at the beginning of each update frame, before any other update methods.
     /// Use this for initial state changes that other objects may depend on.
@@ -460,20 +509,20 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// # Example
     ///
     /// ```ignore
-    /// fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    /// fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
     ///     // Update position that other objects may depend on
     ///     ctx.object_mut().transform_mut().centre += self.velocity * ctx.delta().as_secs_f32();
     /// }
     /// ```
     #[allow(unused_variables)]
-    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {}
     /// Called during each update frame.
     /// This is the main update method where most object behavior and logic should be implemented.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    /// fn on_update(&mut self, ctx: &mut UpdateContext) {
     ///     // Check for input
     ///     if ctx.input().pressed(KeyCode::Space) {
     ///         self.jump();
@@ -489,20 +538,20 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// }
     /// ```
     #[allow(unused_variables)]
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update(&mut self, ctx: &mut UpdateContext) {}
     /// Use mostly for things that have a higher-order dependency on time, e.g. acceleration.
     /// Called after `on_update()`, but before `on_collision()` and `on_update_end()`.
     ///
     /// # Example
     ///
     /// ```ignore
-    /// fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    /// fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
     ///     // Apply gravity acceleration
     ///     self.velocity.y += GRAVITY_ACCEL * ctx.delta_60fps();
     /// }
     /// ```
     #[allow(unused_variables)]
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {}
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {}
     /// Called after `on_fixed_update()`, but before `on_update_end()`.
     ///
     /// # Examples
@@ -512,8 +561,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     ///
     /// fn on_collision(
     ///     &mut self,
-    ///     ctx: &mut UpdateContext<ObjectType>,
-    ///     other: TreeSceneObject<ObjectType>,
+    ///     ctx: &mut UpdateContext,
+    ///     other: TreeSceneObject,
     ///     mtv: Vec2,
     /// ) -> CollisionResponse {
     ///     // Adjust velocity based on collision
@@ -533,8 +582,8 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     #[allow(unused_variables)]
     fn on_collision(
         &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        other: TreeSceneObject<ObjectType>,
+        ctx: &mut UpdateContext,
+        other: TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         CollisionResponse::Done
@@ -546,7 +595,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// # Example
     ///
     /// ```ignore
-    /// fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    /// fn on_update_end(&mut self, ctx: &mut UpdateContext) {
     ///     // Update animation state
     ///     self.animation_time += ctx.delta().as_secs_f32();
     ///     
@@ -556,7 +605,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     ///     }
     /// }
     /// ```
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {}
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {}
 
     /// Returns a mutable reference to this object as a [`RenderableObject`], if it implements that
     /// trait.
@@ -567,7 +616,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// # Returns
     /// - `Some(&mut dyn RenderableObject)` if this object implements rendering
     /// - `None` if this object does not render
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         None
     }
 
@@ -579,7 +628,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     /// # Returns
     /// - `Some(&mut dyn GuiObject)` if this object has GUI elements
     /// - `None` if this object has no GUI
-    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject<ObjectType>> {
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
         None
     }
 
@@ -611,7 +660,7 @@ pub trait SceneObject<ObjectType: ObjectTypeEnum>: 'static {
     }
 }
 
-pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
+pub trait RenderableObject: SceneObject {
     /// Called during each render pass to update the render item for this object.
     ///
     /// This is useful for conditionally rendering different textures.
@@ -681,7 +730,7 @@ pub trait RenderableObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> 
 
 pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;
 pub type GuiCommand = dyn FnOnce(&mut GuiUi) + Send;
-pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
+pub trait GuiObject: SceneObject {
     /// Called during each frame to build and return GUI elements for this object.
     ///
     /// The `selected` parameter indicates if this object is currently selected in the scene.
@@ -690,7 +739,7 @@ pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     ///
     /// Show some simple debugging information about the object:
     /// ```ignore
-    /// fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> Box<GuiCommand> {
     ///     let height = self.height;
     ///     let ground_height = self.last_ground_height;
     ///     let v_speed = self.v_speed;
@@ -704,7 +753,7 @@ pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     /// Show some debugging information about the object, and allow editing it with
     /// [`EditCell`](crate::gui::EditCell)/[`EditCellSender`](crate::gui::EditCellSender):
     /// ```ignore
-    /// fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, _selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, ctx: &UpdateContext, _selected: bool) -> Box<GuiCommand> {
     ///     let extent = self.collider.aa_extent();
     ///     let (next_x, next_y) = (
     ///         self.extent_cell_receiver_x.try_recv(),
@@ -733,7 +782,7 @@ pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     /// ```
     /// Show some debugging information about the object, and allow copying it to the clipboard:
     /// ```ignore
-    /// fn on_gui(&mut self, _ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
     ///     self.gui_selected = selected || self.force_visible;
     ///     let string_desc = self
     ///         .control_points
@@ -752,14 +801,10 @@ pub trait GuiObject<ObjectType: ObjectTypeEnum>: SceneObject<ObjectType> {
     ///     })
     /// }
     /// ```
-    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand>;
+    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> Box<GuiCommand>;
 }
 
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for Box<dyn SceneObject<ObjectType>> {
-    fn gg_type_enum(&self) -> ObjectType {
-        self.as_ref().gg_type_enum()
-    }
-
+impl SceneObject for Box<dyn SceneObject> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
     }
@@ -767,12 +812,15 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for Box<dyn SceneObject
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self.as_mut().as_any_mut()
     }
+
+    fn gg_type_name(&self) -> String {
+        self.as_ref().gg_type_name()
+    }
 }
 
-impl<ObjectType, T> From<Box<T>> for Box<dyn SceneObject<ObjectType>>
+impl<T> From<Box<T>> for Box<dyn SceneObject>
 where
-    ObjectType: ObjectTypeEnum,
-    T: SceneObject<ObjectType>,
+    T: SceneObject,
 {
     fn from(value: Box<T>) -> Self {
         value

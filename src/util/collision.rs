@@ -1,14 +1,14 @@
 use crate::core::scene::{GuiCommand, GuiObject};
 use crate::util::{UnorderedPair, gg_iter};
 use crate::{
-    core::{ObjectTypeEnum, prelude::*, scene::SceneObject},
+    core::{prelude::*, scene::SceneObject},
     resource::sprite::Sprite,
     util::{
         gg_range,
         linalg::{AxisAlignedExtent, Transform, Vec2},
     },
 };
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 use num_traits::{Float, Zero};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1633,7 +1633,6 @@ impl Display for GenericCollider {
     }
 }
 
-#[register_scene_object]
 pub struct GgInternalCollisionShape {
     last_transform: Transform,
     collider: GenericCollider,
@@ -1674,16 +1673,10 @@ impl GgInternalCollisionShape {
         rv
     }
 
-    pub fn from_object<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>, C: Collider>(
-        object: &O,
-        collider: C,
-    ) -> Self {
+    pub fn from_object<O: SceneObject, C: Collider>(object: &O, collider: C) -> Self {
         Self::from_collider(collider, &object.emitting_tags(), &object.listening_tags())
     }
-    pub fn from_object_sprite<ObjectType: ObjectTypeEnum, O: SceneObject<ObjectType>>(
-        object: &O,
-        sprite: &Sprite,
-    ) -> Self {
+    pub fn from_object_sprite<O: SceneObject>(object: &O, sprite: &Sprite) -> Self {
         Self::from_collider(
             sprite.as_box_collider(),
             &object.emitting_tags(),
@@ -1716,29 +1709,29 @@ impl GgInternalCollisionShape {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollisionShape {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalCollisionShape {
+    fn gg_type_name(&self) -> String {
         format!("CollisionShape [{:?}]", self.collider.get_type()).to_string()
     }
 
     fn on_load(
         &mut self,
-        _object_ctx: &mut ObjectContext<ObjectType>,
+        _object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         Ok(None)
     }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
-    fn on_update_begin(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
         self.update_transform(ctx.absolute_transform());
     }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext<ObjectType>) {
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
         self.update_transform(ctx.absolute_transform());
     }
 
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         self.update_transform(ctx.absolute_transform());
         if self.show_wireframe {
             let mut canvas = ctx
@@ -1769,12 +1762,8 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         }
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         self.update_transform(ctx.absolute_transform());
-    }
-
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_collider()
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {
@@ -1784,10 +1773,10 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCollision
         self.listening_tags.clone()
     }
 
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
-    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject<ObjectType>> {
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
         if self.show_wireframe {
             Some(self)
         } else {
@@ -1806,7 +1795,7 @@ impl GgInternalCollisionShape {
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCollisionShape {
+impl RenderableObject for GgInternalCollisionShape {
     #[allow(clippy::if_not_else)] // clearer as written
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
         if self.show_wireframe {
@@ -1838,8 +1827,8 @@ impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalColl
     }
 }
 
-impl<ObjectType: ObjectTypeEnum> GuiObject<ObjectType> for GgInternalCollisionShape {
-    fn on_gui(&mut self, ctx: &UpdateContext<ObjectType>, selected: bool) -> Box<GuiCommand> {
+impl GuiObject for GgInternalCollisionShape {
+    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
         if !selected {
             self.extent_cell_receiver_x.clear_state();
             self.extent_cell_receiver_y.clear_state();

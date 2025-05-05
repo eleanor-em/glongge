@@ -1,16 +1,19 @@
-use crate::core::ObjectTypeEnum;
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
-use glongge_derive::{partially_derive_scene_object, register_scene_object};
+use glongge_derive::partially_derive_scene_object;
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct GgInternalCanvas {
     render_items: Vec<RenderItem>,
     depth: VertexDepth,
 }
 
 impl GgInternalCanvas {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn line(&mut self, start: Vec2, end: Vec2, width: f32, col: Colour) {
         self.render_items
             .push(vertex::line(start, end, width).with_blend_col(col));
@@ -65,28 +68,25 @@ impl GgInternalCanvas {
 }
 
 #[partially_derive_scene_object]
-impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
-    fn type_name(&self) -> String {
+impl SceneObject for GgInternalCanvas {
+    fn gg_type_name(&self) -> String {
         "Canvas".to_string()
-    }
-    fn gg_type_enum(&self) -> ObjectType {
-        ObjectType::gg_canvas()
     }
 
     fn on_load(
         &mut self,
-        _object_ctx: &mut ObjectContext<ObjectType>,
+        _object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         self.depth = VertexDepth::Front(u16::MAX);
         Ok(Some(RenderItem::default()))
     }
 
-    fn on_update_begin(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_begin(&mut self, _ctx: &mut UpdateContext) {
         self.render_items.clear();
     }
 
-    fn on_update_end(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, _ctx: &mut UpdateContext) {
         if self.render_items.is_empty() {
             // XXX: if there is nothing but the canvas, the game won't even start, because it has to
             // render something.
@@ -94,11 +94,11 @@ impl<ObjectType: ObjectTypeEnum> SceneObject<ObjectType> for GgInternalCanvas {
         }
     }
 
-    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject<ObjectType>> {
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
 }
-impl<ObjectType: ObjectTypeEnum> RenderableObject<ObjectType> for GgInternalCanvas {
+impl RenderableObject for GgInternalCanvas {
     fn on_render(&mut self, render_ctx: &mut RenderContext) {
         if let Some(mut ri) = self
             .render_items

@@ -1,4 +1,3 @@
-use crate::object_type::ObjectType;
 use glongge::util::canvas::Canvas;
 use glongge::{
     core::{
@@ -7,7 +6,7 @@ use glongge::{
     },
     resource::sprite::Sprite,
 };
-use glongge_derive::*;
+use glongge_derive::partially_derive_scene_object;
 use num_traits::FloatConst;
 use rand::{
     Rng,
@@ -16,14 +15,14 @@ use rand::{
 use std::time::Instant;
 
 #[allow(dead_code)]
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct RectangleScene;
-impl Scene<ObjectType> for RectangleScene {
+impl Scene for RectangleScene {
     fn name(&self) -> SceneName {
         SceneName::new("rectangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper<ObjectType>> {
+    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 10;
         let mut objects = Uniform::new(50., 350.)
             .sample_iter(rand::thread_rng())
@@ -45,7 +44,7 @@ impl Scene<ObjectType> for RectangleScene {
 
 const RECTANGLE_COLL_TAG: &str = "RECTANGLE_COLL_TAG";
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct RectanglePlayer {
     pos: Vec2,
     vel: Vec2,
@@ -57,10 +56,10 @@ impl RectanglePlayer {
 }
 
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for RectanglePlayer {
+impl SceneObject for RectanglePlayer {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/mario.png")?;
@@ -76,11 +75,11 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         .with_fixed_ms_per_frame(100);
         Ok(None)
     }
-    fn on_ready(&mut self, _ctx: &mut UpdateContext<ObjectType>) {
+    fn on_ready(&mut self, _ctx: &mut UpdateContext) {
         self.pos = Vec2 { x: 512., y: 384. };
     }
 
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         let mut direction = Vec2::zero();
         if ctx.input().down(KeyCode::ArrowLeft) {
             direction += Vec2::left();
@@ -98,7 +97,7 @@ impl SceneObject<ObjectType> for RectanglePlayer {
         self.pos += self.vel * ctx.delta_60fps();
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         ctx.object().transform_mut().centre = self.pos;
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
@@ -106,14 +105,14 @@ impl SceneObject<ObjectType> for RectanglePlayer {
     }
 }
 
-#[register_scene_object]
+#[derive(Default)]
 pub struct SpinningRectangle {
     pos: Vec2,
     velocity: Vec2,
     t: f32,
     col: Colour,
     sprite: Sprite,
-    alive_since: Instant,
+    alive_since: Option<Instant>,
 }
 
 impl SpinningRectangle {
@@ -135,7 +134,7 @@ impl SpinningRectangle {
             pos,
             velocity: vel_normed * Self::VELOCITY,
             col,
-            alive_since: Instant::now(),
+            alive_since: Some(Instant::now()),
             ..Default::default()
         }
     }
@@ -150,10 +149,10 @@ impl SpinningRectangle {
     }
 }
 #[partially_derive_scene_object]
-impl SceneObject<ObjectType> for SpinningRectangle {
+impl SceneObject for SpinningRectangle {
     fn on_load(
         &mut self,
-        object_ctx: &mut ObjectContext<ObjectType>,
+        object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png")?;
@@ -169,13 +168,11 @@ impl SceneObject<ObjectType> for SpinningRectangle {
         .with_fixed_ms_per_frame(500)
         .with_blend_col(self.col);
         object_ctx.transform_mut().centre = self.pos;
+        object_ctx.add_child(CollisionShape::from_object_sprite(self, &self.sprite));
+        self.alive_since = Some(Instant::now());
         Ok(None)
     }
-    fn on_ready(&mut self, ctx: &mut UpdateContext<ObjectType>) {
-        ctx.object_mut()
-            .add_child(CollisionShape::from_object_sprite(self, &self.sprite));
-    }
-    fn on_update(&mut self, ctx: &mut UpdateContext<ObjectType>) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
             let angle = rng.gen_range(0.0..(2. * f32::PI()));
@@ -199,13 +196,13 @@ impl SceneObject<ObjectType> for SpinningRectangle {
 
     fn on_collision(
         &mut self,
-        ctx: &mut UpdateContext<ObjectType>,
-        other: TreeSceneObject<ObjectType>,
+        ctx: &mut UpdateContext,
+        other: TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if let Some(rect) = other.downcast_mut::<SpinningRectangle>() {
-            if self.alive_since.elapsed().as_secs_f32() > 0.5
-                && rect.alive_since.elapsed().as_secs_f32() > 0.5
+            if self.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
+                && rect.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
             {
                 ctx.transform_mut().centre += mtv;
                 self.velocity = self.velocity.reflect(mtv.normed());
