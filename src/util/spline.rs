@@ -70,6 +70,9 @@ impl GgInternalSpline {
         }
         Some(rv)
     }
+    pub fn closest_point_to(&self, point: Vec2) -> Option<Vec2> {
+        self.closest_to(point).and_then(|t| self.point(t))
+    }
 
     pub fn len(&self) -> usize {
         self.control_points.len()

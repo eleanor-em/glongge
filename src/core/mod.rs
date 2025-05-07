@@ -1,5 +1,6 @@
 use crate::core::prelude::*;
 use scene::SceneObject;
+use std::marker::PhantomData;
 use std::{
     any::TypeId,
     cell::{Ref, RefCell, RefMut},
@@ -148,6 +149,130 @@ impl TreeSceneObject {
 impl Debug for TreeSceneObject {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} ({:?})", self.object_id, self.gg_type_id())
+    }
+}
+
+/// A type-safe wrapper around [`TreeSceneObject`] that ensures the wrapped object is of a specific
+/// type.
+///
+/// `TreeObjectOfType<T>` provides a way to safely store and access scene objects of a known type,
+/// allowing ergonomic access while preventing type mismatches at runtime. It acts as a
+/// strongly-typed reference to a scene object within the scene tree hierarchy.
+///
+/// # Type Parameters
+///
+/// * `T` - The specific [`SceneObject`] type that this wrapper contains.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Get a typed reference to a Player object
+/// let player: TreeObjectOfType<Player> = ctx.object().first_other::<Player>().try_into().unwrap();
+///
+/// // Now you can safely call methods on the player without downcasting
+/// let player_ground_position = player.inner().get_shadow().centre;
+/// ```
+///
+/// # Notes
+///
+/// Most accessor methods like `transform()`, `transform_mut()`, `emitting_tags()`, etc. borrow
+/// the underlying object. Be careful with these methods to avoid borrow checker issues.
+pub struct TreeObjectOfType<T: SceneObject> {
+    inner: Option<TreeSceneObject>,
+    phantom_data: PhantomData<T>,
+}
+
+impl<T: SceneObject> TreeObjectOfType<T> {
+    pub fn of(obj: TreeSceneObject) -> Option<Self> {
+        if obj.gg_type_id() == TypeId::of::<T>() {
+            Some(Self {
+                inner: Some(obj),
+                phantom_data: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+    pub fn and_of(obj: Option<TreeSceneObject>) -> Option<Self> {
+        obj.and_then(Self::of)
+    }
+
+    pub fn inner(&self) -> Ref<T> {
+        self.inner.as_ref().unwrap().downcast::<T>().unwrap()
+    }
+    pub fn inner_mut(&self) -> RefMut<T> {
+        self.inner.as_ref().unwrap().downcast_mut::<T>().unwrap()
+    }
+
+    pub fn gg_type_id(&self) -> TypeId {
+        self.inner.as_ref().unwrap().gg_type_id()
+    }
+    pub fn object_id(&self) -> ObjectId {
+        self.inner.as_ref().unwrap().object_id()
+    }
+    /// NOTE: Borrows!
+    pub fn transform(&self) -> Transform {
+        self.inner.as_ref().unwrap().transform()
+    }
+    /// NOTE: Borrows!
+    pub fn transform_mut(&self) -> RefMut<Transform> {
+        self.inner.as_ref().unwrap().transform_mut()
+    }
+    /// NOTE: Borrows!
+    pub fn emitting_tags(&self) -> Vec<&'static str> {
+        self.inner.as_ref().unwrap().emitting_tags()
+    }
+    /// NOTE: Borrows!
+    pub fn listening_tags(&self) -> Vec<&'static str> {
+        self.inner.as_ref().unwrap().listening_tags()
+    }
+
+    /// NOTE: Borrows!
+    pub fn nickname_or_type_name(&self) -> String {
+        self.inner.as_ref().unwrap().nickname_or_type_name()
+    }
+    /// NOTE: Borrows!
+    pub fn nickname(&self) -> Option<String> {
+        self.inner.as_ref().unwrap().nickname()
+    }
+    /// NOTE: Borrows!
+    pub fn set_nickname(&mut self, name: impl Into<String>) {
+        self.inner.as_mut().unwrap().set_nickname(name);
+    }
+}
+
+impl<T: SceneObject> Clone for TreeObjectOfType<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+impl<T: SceneObject> Default for TreeObjectOfType<T> {
+    fn default() -> Self {
+        Self {
+            inner: None,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+impl<T: SceneObject> TryFrom<TreeSceneObject> for TreeObjectOfType<T> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TreeSceneObject) -> std::result::Result<Self, Self::Error> {
+        Self::of(value).ok_or_else(|| anyhow!("type mismatch"))
+    }
+}
+
+impl<T: SceneObject> TryFrom<Option<TreeSceneObject>> for TreeObjectOfType<T> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Option<TreeSceneObject>) -> std::result::Result<Self, Self::Error> {
+        let value = value.ok_or_else(|| anyhow!("None"))?;
+        Self::try_from(value)
     }
 }
 
