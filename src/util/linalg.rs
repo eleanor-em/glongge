@@ -459,6 +459,29 @@ impl Vec2 {
     pub fn project(&self, axis: Vec2) -> Vec2 {
         self.dot(axis.normed()) * axis.normed()
     }
+    /// Projects the vector onto the x-axis.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use glongge::core::prelude::*;
+    /// let v = Vec2 { x: 3.0, y: 4.0 };
+    /// assert_eq!(v.project_x(), Vec2 { x: 3.0, y: 0.0 });
+    /// ```
+    #[must_use]
+    pub fn project_x(&self) -> Vec2 { self.x * Vec2::right() }
+
+    /// Projects the vector onto the y-axis.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use glongge::core::prelude::*;
+    /// let v = Vec2 { x: 3.0, y: 4.0 };
+    /// assert_eq!(v.project_y(), Vec2 { x: 0.0, y: 4.0 });
+    /// ```
+    #[must_use]
+    pub fn project_y(&self) -> Vec2 { self.y * Vec2::down() }
 
     /// Computes the Euclidean distance between two points.
     ///
