@@ -122,7 +122,7 @@ impl GuiObjectView {
         // infallible
         Ok(object_handler
             .get_object_by_id(self.object_id)
-            .with_context(|| format!("get_object(): {:?}", self.object_id))?
+            .context("GuiObjectView::get_object()")?
             .unwrap())
     }
 
@@ -189,7 +189,7 @@ impl GuiObjectView {
             .absolute_transforms
             .get(&object_id)
             .copied()
-            .with_context(|| format!("missing object_id in absolute_transforms: {object_id:?}"))?;
+            .with_context(|| format!("GuiObjectView::create_transform_cmd(): missing ObjectId in `absolute_transforms`: {object_id:?}"))?;
         let mut relative_transform = object.transform();
         self.absolute_cell.update_live(absolute_transform);
         self.relative_cell.update_live(relative_transform);

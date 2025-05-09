@@ -152,12 +152,10 @@ impl CollisionHandler {
         let collisions = self.get_collisions_inner(object_handler);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
-            gg_err::log_err_and_ignore(Self::process_collision_inner(
-                object_handler,
-                &mut rv,
-                &ids,
-                mtv,
-            ));
+            gg_err::log_err_and_ignore(
+                Self::process_collision_inner(object_handler, &mut rv, &ids, mtv)
+                    .with_context(|| format!("CollisionHandler::get_collisions(): {ids:?}")),
+            );
         }
         rv
     }

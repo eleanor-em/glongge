@@ -234,7 +234,10 @@ impl ObjectHandler {
         child_stack.push((ObjectId::root(), Transform::default()));
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
             self.absolute_transforms.insert(parent_id, parent_transform);
-            if let Some(children) = gg_err::log_and_ok(self.get_children(parent_id)) {
+            if let Some(children) = gg_err::log_and_ok(
+                self.get_children(parent_id)
+                    .context("ObjectHandler::update_all_transforms()"),
+            ) {
                 for child in children {
                     let absolute_transform = child.transform() * parent_transform;
                     child
@@ -266,7 +269,7 @@ impl ObjectHandler {
             check_false!(item.object_id.is_root());
             let Some(object) = gg_err::log_err_then(
                 self.get_object_by_id(item.object_id)
-                    .with_context(|| "create_shader_execs()"),
+                    .context("create_shader_execs()"),
             ) else {
                 continue;
             };
@@ -303,7 +306,7 @@ impl ObjectHandler {
     pub(crate) fn has_sprite_for_gui(&self, id: ObjectId) -> Result<bool> {
         let Some(object) = self
             .get_object_by_id(id)
-            .with_context(|| "has_sprite_for_gui({id:?})")?
+            .context("ObjectHandler::has_sprite_for_gui()")?
         else {
             check!(id.is_root());
             return Ok(false);
@@ -555,7 +558,8 @@ impl UpdateHandler {
                     .cloned()
                     .and_then(|this| {
                         let mut ctx =
-                            UpdateContext::new(self, input_handler, this_id, object_tracker)?;
+                            UpdateContext::new(self, input_handler, this_id, object_tracker)
+                                .context("UpdateHandler::call_on_ready()")?;
                         this.inner_mut().on_ready(&mut ctx);
                         Ok(())
                     }),
@@ -684,17 +688,19 @@ impl UpdateHandler {
                 let Some(this) = gg_err::log_err_then(
                     self.object_handler
                         .get_object_by_id(this_id)
-                        .context("UpdateHandler::call_on_update(): on_fixed_update"),
+                        .context("UpdateHandler::call_on_update(): on_fixed_update: parent"),
                 ) else {
                     error!(
-                        "UpdateHandler::call_on_update(): tried to call on_fixed_update on root object"
+                        "UpdateHandler::call_on_update(): tried to call on_fixed_update() on root object"
                     );
                     continue;
                 };
                 let this = this.clone(); // borrowck issues
-                if let Some(mut ctx) =
-                    gg_err::log_and_ok(FixedUpdateContext::new(self, this_id, &mut object_tracker))
-                {
+                if let Some(mut ctx) = gg_err::log_and_ok(
+                    FixedUpdateContext::new(self, this_id, &mut object_tracker).context(
+                        "UpdateHandler::call_on_update(): on_fixed_update: FixedUpdateContext",
+                    ),
+                ) {
                     this.inner_mut().on_fixed_update(&mut ctx);
                 }
             }
@@ -729,12 +735,10 @@ impl UpdateHandler {
             self.debug_gui.clear_mouseovers(&self.object_handler);
             if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
                 let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
-                if let Some(collisions) = gg_err::log_and_ok(UpdateContext::new(
-                    self,
-                    input_handler,
-                    ObjectId::root(),
-                    object_tracker,
-                ))
+                if let Some(collisions) = gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, ObjectId::root(), object_tracker)
+                        .context("UpdateHandler::update_gui(): on_mouseovers"),
+                )
                 .and_then(|ctx| ctx.object.test_collision_point(mouse_pos, all_tags))
                 {
                     self.debug_gui
@@ -750,12 +754,15 @@ impl UpdateHandler {
             .clone()
             .into_iter()
             .filter_map(|(id, obj)| {
-                gg_err::log_and_ok(UpdateContext::new(self, input_handler, id, object_tracker))
-                    .and_then(|ctx| {
-                        obj.inner_mut()
-                            .as_gui_object()
-                            .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
-                    })
+                gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, id, object_tracker)
+                        .context("UpdateHandler::update_gui(): on_gui"),
+                )
+                .and_then(|ctx| {
+                    obj.inner_mut()
+                        .as_gui_object()
+                        .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
+                })
             })
             .collect();
         self.gui_cmd = Some(self.debug_gui.build(
@@ -779,12 +786,15 @@ impl UpdateHandler {
             if done_with_collisions.contains(&this.object_id) {
                 continue;
             }
-            if let Some(CollisionResponse::Done) = gg_err::log_and_ok(UpdateContext::new(
-                self,
-                input_handler,
-                this.object_id,
-                object_tracker,
-            ))
+            if let Some(CollisionResponse::Done) = gg_err::log_and_ok(
+                UpdateContext::new(self, input_handler, this.object_id, object_tracker)
+                    .with_context(|| {
+                        format!(
+                            "UpdateHandler::handle_collisions(): {:?} - {:?}",
+                            this.object_id, other.object_id
+                        )
+                    }),
+            )
             .map(|mut ctx| {
                 this.scene_object
                     .wrapped
@@ -816,12 +826,10 @@ impl UpdateHandler {
             };
             let this = this.clone(); // borrowck issues
             for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {
-                let Some(mut ctx) = gg_err::log_and_ok(UpdateContext::new(
-                    self,
-                    input_handler,
-                    this_id,
-                    object_tracker,
-                )) else {
+                let Some(mut ctx) = gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, this_id, object_tracker)
+                        .context("UpdateHandler::update_coroutines()"),
+                ) else {
                     continue;
                 };
                 if let Some(coroutine) = coroutine.resume(&this, &mut ctx) {
@@ -839,12 +847,10 @@ impl UpdateHandler {
         F: Fn(RefMut<dyn SceneObject>, &mut UpdateContext),
     {
         for (this_id, this) in self.object_handler.objects.clone() {
-            gg_err::log_and_ok(UpdateContext::new(
-                self,
-                input_handler,
-                this_id,
-                object_tracker,
-            ))
+            gg_err::log_and_ok(
+                UpdateContext::new(self, input_handler, this_id, object_tracker)
+                    .context("UpdateHandler::iter_with_other_map()"),
+            )
             .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
         }
     }
@@ -1764,7 +1770,7 @@ impl ObjectContext<'_> {
     pub fn children_of(&self, obj: &TreeSceneObject) -> Option<&Vec<TreeSceneObject>> {
         gg_err::log_and_ok(
             self.children_of_inner(obj.object_id)
-                .with_context(|| "ObjectContext::children_of()"),
+                .context("ObjectContext::children_of()"),
         )
     }
     pub fn children_of_inner(&self, object_id: ObjectId) -> Result<&Vec<TreeSceneObject>> {
@@ -2112,7 +2118,7 @@ impl ObjectContext<'_> {
     pub fn collider(&self) -> Option<GenericCollider> {
         gg_err::log_err_then(
             self.collider_of_inner(self.this_id)
-                .with_context(|| format!("collider(): {:?}", self.this_id)),
+                .context("ObjectContext::collider()"),
         )
     }
 
@@ -2123,7 +2129,7 @@ impl ObjectContext<'_> {
     pub fn collider_of(&self, other: &TreeSceneObject) -> Option<GenericCollider> {
         gg_err::log_err_then(
             self.collider_of_inner(other.object_id)
-                .with_context(|| format!("collider_of(): {:?}", other.object_id)),
+                .context("ObjectContext::collider_of()"),
         )
     }
     fn collider_of_inner(&self, object_id: ObjectId) -> Result<Option<GenericCollider>> {
@@ -2135,7 +2141,7 @@ impl ObjectContext<'_> {
                 gg_err::log_err_then_invert(scene_object.downcast_mut::<GgInternalCollisionShape>()
                     .map(|mut o| {
                         let other_absolute_transform = self.all_absolute_transforms.get(&object_id)
-                            .with_context(|| format!("missing object_id in all_absolute_transforms: {object_id:?}"))?;
+                            .with_context(|| format!("ObjectContext::collider_of_inner(): missing ObjectId in `all_absolute_transforms`: {object_id:?}"))?;
                         o.update_transform(*other_absolute_transform);
                         Ok(o)
                     }))
@@ -2143,7 +2149,7 @@ impl ObjectContext<'_> {
             .map(|o| o.collider().clone())
             .or(children.iter().find_map(|o| {
                 gg_err::log_and_ok(self.collider_of_inner(o.object_id)
-                    .with_context(|| format!("collider_of_inner(): {:?}", o.object_id))).flatten()
+                    .context("ObjectHandler::collider_of_inner(): recursive case")).flatten()
             })))
     }
 
@@ -2234,20 +2240,20 @@ impl ObjectContext<'_> {
         let mut other = self
             .object_tracker
             .get(other_id)
-            .with_context(|| format!("missing object_id in objects: {other_id:?}"))?
+            .with_context(|| format!("ObjectContext::test_collision_inner(): missing ObjectId in `objects`: {other_id:?}"))?
             .downcast_mut::<GgInternalCollisionShape>()
             .unwrap();
         let other_absolute_transform =
             self.all_absolute_transforms
                 .get(&other_id)
                 .with_context(|| {
-                    format!("missing object_id in all_absolute_transforms: {other_id:?}")
+                    format!("ObjectContext::test_collision_inner(): missing ObjectId in `all_absolute_transforms`: {other_id:?}")
                 })?;
         other.update_transform(*other_absolute_transform);
         if let Some(mtv) = collider.collides_with(other.collider()) {
             let other = self
                 .lookup_parent(other_id)
-                .with_context(|| format!("orphaned GgInternalCollisionShape: {other_id:?}"))?
+                .with_context(|| format!("ObjectContext::test_collision_inner(): orphaned GgInternalCollisionShape: {other_id:?}"))?
                 .clone();
             Ok(Some(Collision { other, mtv }))
         } else {
@@ -2266,7 +2272,7 @@ impl ObjectContext<'_> {
                     rv.extend(colliding_ids.iter().filter_map(|other_id| {
                         gg_err::log_err_then(
                             self.test_collision_inner(collider, *other_id)
-                                .with_context(|| format!("test_collision_using(): {other_id:?}")),
+                                .context("ObjectContext::test_collision_using()"),
                         )
                     }));
                 }
