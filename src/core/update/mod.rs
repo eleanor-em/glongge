@@ -33,7 +33,6 @@ use crate::{
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use serde::{Serialize, de::DeserializeOwned};
-use std::any::TypeId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
@@ -81,7 +80,20 @@ impl ObjectHandler {
         } else {
             self.objects.get(&id).map(Some).ok_or_else(|| {
                 anyhow!(
-                    "ObjectHandler: missing ObjectId in `objects`: {}",
+                    "ObjectHandler::get_object_by_id(): missing ObjectId in `objects`: {}",
+                    self.format_object_id_for_logging(id)
+                )
+            })
+        }
+    }
+    /// Returns `None` if and only if `id.is_root()`.
+    fn get_parent_id_by_id(&self, id: ObjectId) -> Result<Option<ObjectId>> {
+        if id.is_root() {
+            Ok(None)
+        } else {
+            self.parents.get(&id).copied().map(Some).ok_or_else(|| {
+                anyhow!(
+                    "ObjectHandler::get_parent_id_by_id(): missing ObjectId in `parents`: {}",
                     self.format_object_id_for_logging(id)
                 )
             })
@@ -101,33 +113,35 @@ impl ObjectHandler {
         let mut rv = Vec::new();
         while !id.is_root() {
             rv.push(id);
-            id = self.get_parent_id(id)?;
+            id = self.get_parent_id_by_id(id)?.unwrap();
         }
         Ok(rv)
     }
-    fn get_parent_id(&self, id: ObjectId) -> Result<ObjectId> {
-        self.parents.get(&id).copied().ok_or_else(|| {
-            anyhow!(
-                "ObjectHandler: missing ObjectId in `parents`: {}",
-                self.format_object_id_for_logging(id)
-            )
-        })
-    }
-    pub(crate) fn get_parent(&self, this_id: ObjectId) -> Result<Option<TreeSceneObject>> {
-        if this_id.is_root() {
+    pub(crate) fn get_parent(&self, id: ObjectId) -> Result<Option<TreeSceneObject>> {
+        let Some(parent_id) = self
+            .get_parent_id_by_id(id)
+            .context("ObjectHandler::get_parent()")?
+        else {
+            check!(id.is_root());
             return Ok(None);
-        }
-
-        let parent_id = self.get_parent_id(this_id)?;
-        if let Some(parent) = self.get_object_by_id(parent_id)? {
-            Ok(Some(TreeSceneObject {
-                object_id: parent_id,
-                parent_id: self.get_parent_id(parent_id)?,
-                scene_object: parent.clone(),
-            }))
-        } else {
-            Ok(None)
-        }
+        };
+        let Some(scene_object) = self
+            .get_object_by_id(parent_id)
+            .context("ObjectHandler::get_tree_scene_object_by_id()")?
+            .cloned()
+        else {
+            check!(parent_id.is_root());
+            return Ok(None);
+        };
+        let parent_of_parent_id = self
+            .get_parent_id_by_id(parent_id)
+            .context("ObjectHandler::get_tree_scene_object_by_id()")?
+            .unwrap_or(ObjectId::root());
+        Ok(Some(TreeSceneObject {
+            object_id: parent_id,
+            parent_id: parent_of_parent_id,
+            scene_object,
+        }))
     }
 
     /// Look up the children of the given [`ObjectId`]. The returned [`Vec`] is in no particular
@@ -165,7 +179,8 @@ impl ObjectHandler {
     ) -> Result<Vec<(ObjectId, Ref<CollisionShape>)>> {
         let mut rv = Vec::new();
         if let Some(c) = self
-            .get_object_by_id(id)?
+            .get_object_by_id(id)
+            .with_context(|| format!("get_collision_shapes({id:?})"))?
             .and_then(|o| o.downcast::<CollisionShape>().map(|c| (id, c)))
         {
             rv.push(c);
@@ -189,7 +204,8 @@ impl ObjectHandler {
     ) -> Result<Vec<(ObjectId, RefMut<CollisionShape>)>> {
         let mut rv = Vec::new();
         if let Some(c) = self
-            .get_object_by_id(id)?
+            .get_object_by_id(id)
+            .with_context(|| format!("get_collision_shapes_mut({id:?})"))?
             .and_then(|o| o.downcast_mut::<CollisionShape>().map(|c| (id, c)))
         {
             rv.push(c);
@@ -202,7 +218,7 @@ impl ObjectHandler {
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        if let Some(parent_id) = gg_err::log_and_ok(self.get_parent_id(remove_id)) {
+        if let Some(parent_id) = gg_err::log_err_then(self.get_parent_id_by_id(remove_id)) {
             // Remove this object from its parent's list of children.
             if let Ok(children) = self.get_children_mut(parent_id) {
                 // If this object's parent has already been removed, `children` may not exist.
@@ -277,7 +293,10 @@ impl ObjectHandler {
                 continue;
             };
             check_false!(item.object_id.is_root());
-            let Some(object) = gg_err::log_err_then(self.get_object_by_id(item.object_id)) else {
+            let Some(object) = gg_err::log_err_then(
+                self.get_object_by_id(item.object_id)
+                    .with_context(|| "create_shader_execs()"),
+            ) else {
                 continue;
             };
             let mut object = object.wrapped.borrow_mut();
@@ -311,11 +330,14 @@ impl ObjectHandler {
         self.objects.first_key_value().map(|o| o.0).copied()
     }
     pub(crate) fn has_sprite_for_gui(&self, id: ObjectId) -> Result<bool> {
-        let Some(object) = self.get_object_by_id(id)? else {
+        let Some(object) = self
+            .get_object_by_id(id)
+            .with_context(|| "has_sprite_for_gui({id:?})")?
+        else {
             check!(id.is_root());
             return Ok(false);
         };
-        if object.gg_type_id() == TypeId::of::<GgInternalSprite>() {
+        if object.gg_is::<GgInternalSprite>() {
             Ok(true)
         } else {
             for child in self.get_children(id)? {
@@ -328,7 +350,7 @@ impl ObjectHandler {
     }
     fn format_object_id_for_logging(&self, id: ObjectId) -> String {
         let label = self.objects.get(&id).map_or(
-            "<unknown".to_string(),
+            "<unknown>".to_string(),
             SceneObjectWrapper::nickname_or_type_name,
         );
         format!("{label} [{id:?}]")
@@ -575,12 +597,20 @@ impl UpdateHandler {
         I: IntoIterator<Item = TreeSceneObject>,
     {
         for new_obj in pending_add {
-            let Some(parent) =
-                gg_err::log_and_ok(self.object_handler.get_parent(new_obj.parent_id))
-            else {
+            let Some(parent) = gg_err::log_and_ok(
+                self.object_handler
+                    .get_parent(new_obj.parent_id)
+                    .context("UpdateHandler::load_new_objects()"),
+            ) else {
                 continue;
             };
-            if gg_err::log_and_ok(self.object_handler.add_object(&new_obj)).is_none() {
+            if gg_err::log_and_ok(
+                self.object_handler
+                    .add_object(&new_obj)
+                    .context("UpdateHandler::load_new_objects()"),
+            )
+            .is_none()
+            {
                 continue;
             }
             object_tracker
@@ -589,8 +619,8 @@ impl UpdateHandler {
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
                 this_id: new_obj.object_id,
-                parent,
-                children: Vec::new(),
+                this_parent: parent,
+                this_children: Vec::new(),
                 object_tracker,
                 all_absolute_transforms: &self.object_handler.absolute_transforms,
                 all_parents: &self.object_handler.parents,
@@ -603,7 +633,8 @@ impl UpdateHandler {
                     .scene_object
                     .wrapped
                     .borrow_mut()
-                    .on_load(&mut object_ctx, &mut self.resource_handler),
+                    .on_load(&mut object_ctx, &mut self.resource_handler)
+                    .context("UpdateHandler::load_new_objects()"),
             )
             .flatten()
             {
@@ -680,7 +711,7 @@ impl UpdateHandler {
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
             for (this_id, this) in self.object_handler.objects.clone() {
                 if let Some(parent_id) =
-                    gg_err::log_and_ok(self.object_handler.get_parent_id(this_id))
+                    gg_err::log_err_then(self.object_handler.get_parent_id_by_id(this_id))
                 {
                     let this = TreeSceneObject {
                         object_id: this_id,
@@ -803,7 +834,8 @@ impl UpdateHandler {
         object_tracker: &mut ObjectTracker,
     ) {
         for (this_id, this) in self.object_handler.objects.clone() {
-            let Some(parent_id) = gg_err::log_and_ok(self.object_handler.get_parent_id(this_id))
+            let Some(parent_id) =
+                gg_err::log_err_then(self.object_handler.get_parent_id_by_id(this_id))
             else {
                 continue;
             };
@@ -1023,8 +1055,15 @@ impl<'a> UpdateContext<'a> {
         object_tracker: &'a mut ObjectTracker,
     ) -> Result<Self> {
         let fps = caller.perf_stats.fps();
-        let parent = caller.object_handler.get_parent(this_id)?;
-        let children = caller.object_handler.get_children(this_id)?.clone();
+        let parent = caller
+            .object_handler
+            .get_parent(this_id)
+            .context("UpdateContext::new()")?;
+        let children = caller
+            .object_handler
+            .get_children(this_id)
+            .context("UpdateContext::new()")?
+            .clone();
         Ok(Self {
             input: input_handler,
             scene: SceneContext {
@@ -1037,8 +1076,8 @@ impl<'a> UpdateContext<'a> {
             object: ObjectContext {
                 collision_handler: &caller.object_handler.collision_handler,
                 this_id,
-                parent,
-                children,
+                this_parent: parent,
+                this_children: children,
                 object_tracker,
                 all_absolute_transforms: &caller.object_handler.absolute_transforms,
                 all_parents: &caller.object_handler.parents,
@@ -1112,7 +1151,7 @@ impl<'a> UpdateContext<'a> {
     ///
     /// The [`SceneContext`] provides methods to:
     /// - Access and modify scene-specific persistent data
-    /// - Start, stop and manage coroutines (background tasks)  
+    /// - Start, stop and manage coroutines (background tasks)
     /// - Control scene flow (stop, pause, resume, transition between scenes)
     /// - Access scene metadata like the current scene name
     ///
@@ -1335,7 +1374,10 @@ impl<'a> FixedUpdateContext<'a> {
         this_id: ObjectId,
         object_tracker: &'a mut ObjectTracker,
     ) -> Result<Self> {
-        let parent = caller.object_handler.get_parent(this_id)?;
+        let parent = caller
+            .object_handler
+            .get_parent(this_id)
+            .context("FixedUpdateContext::new()")?;
         let children = caller.object_handler.get_children(this_id)?.clone();
         Ok(Self {
             scene: SceneContext {
@@ -1348,8 +1390,8 @@ impl<'a> FixedUpdateContext<'a> {
             object: ObjectContext {
                 collision_handler: &caller.object_handler.collision_handler,
                 this_id,
-                parent,
-                children,
+                this_parent: parent,
+                this_children: children,
                 object_tracker,
                 all_absolute_transforms: &caller.object_handler.absolute_transforms,
                 all_parents: &caller.object_handler.parents,
@@ -1677,8 +1719,8 @@ impl ObjectTracker {
 pub struct ObjectContext<'a> {
     collision_handler: &'a CollisionHandler,
     this_id: ObjectId,
-    parent: Option<TreeSceneObject>,
-    children: Vec<TreeSceneObject>,
+    this_parent: Option<TreeSceneObject>,
+    this_children: Vec<TreeSceneObject>,
     object_tracker: &'a mut ObjectTracker,
     all_absolute_transforms: &'a BTreeMap<ObjectId, Transform>,
     all_parents: &'a BTreeMap<ObjectId, ObjectId>,
@@ -1700,7 +1742,7 @@ impl ObjectContext<'_> {
     /// }
     /// ```
     pub fn parent(&self) -> Option<&TreeSceneObject> {
-        self.parent.as_ref()
+        self.this_parent.as_ref()
     }
     /// Returns the chain of parent objects from this object to the root.
     ///
@@ -1737,7 +1779,34 @@ impl ObjectContext<'_> {
     ///     .collect::<Vec<_>>();
     /// ```
     pub fn children(&self) -> Vec<TreeSceneObject> {
-        self.children.clone()
+        self.this_children.clone()
+    }
+
+    /// Returns a reference to the vector of child objects for the given scene object.
+    ///
+    /// Similar to [`children()`](ObjectContext::children), but for accessing another object's
+    /// children instead of this object's children.
+    ///
+    /// # Arguments
+    /// * `obj` - The scene object whose children to return
+    ///
+    /// # Returns
+    /// * `Some(&Vec<TreeSceneObject>)` - Reference to the vector of child objects if found
+    /// * `None` - If the object has no children or if the object ID is invalid
+    pub fn children_of(&self, obj: &TreeSceneObject) -> Option<&Vec<TreeSceneObject>> {
+        gg_err::log_and_ok(
+            self.children_of_inner(obj.object_id)
+                .with_context(|| "ObjectContext::children_of()"),
+        )
+    }
+    pub fn children_of_inner(&self, object_id: ObjectId) -> Result<&Vec<TreeSceneObject>> {
+        if object_id == self.this_id {
+            Ok(&self.this_children)
+        } else {
+            self.all_children
+                .get(&object_id)
+                .with_context(|| format!("ObjectContext::children_of_inner(): missing object_id in children: {object_id:?}"))
+        }
     }
 
     /// Returns the [`ObjectId`] of this object's parent in the scene hierarchy, or [`None`] if
@@ -1746,7 +1815,7 @@ impl ObjectContext<'_> {
     /// Note: You should rarely need to access object IDs directly. Consider using higher-level
     /// methods like [`parent()`](ObjectContext::parent) instead.
     pub fn parent_id(&self) -> Option<ObjectId> {
-        self.parent.as_ref().map(TreeSceneObject::object_id)
+        self.this_parent.as_ref().map(TreeSceneObject::object_id)
     }
     /// Returns the unique [`ObjectId`] for this object in the scene hierarchy.
     ///
@@ -1798,9 +1867,9 @@ impl ObjectContext<'_> {
     /// * `Some(TreeSceneObject)` - The first child matching type T, if found
     /// * `None` - If no child of type T exists
     pub fn first_child<T: SceneObject>(&self) -> Option<TreeSceneObject> {
-        self.children
+        self.this_children
             .iter()
-            .find(|obj| obj.gg_type_id() == TypeId::of::<T>())
+            .find(|&obj| obj.gg_is::<T>())
             .cloned()
     }
 
@@ -1813,7 +1882,9 @@ impl ObjectContext<'_> {
     /// * `Some(Ref<T>)` - A reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists
     pub fn first_child_as_ref<T: SceneObject>(&self) -> Option<Ref<T>> {
-        self.children.iter().find_map(DowncastRef::downcast::<T>)
+        self.this_children
+            .iter()
+            .find_map(DowncastRef::downcast::<T>)
     }
 
     /// Returns a mutable reference to the first child object of type `T` in this object's children
@@ -1826,7 +1897,7 @@ impl ObjectContext<'_> {
     /// * `Some(RefMut<T>)` - A mutable reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists
     pub fn first_child_as_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
-        self.children
+        self.this_children
             .iter()
             .find_map(DowncastRef::downcast_mut::<T>)
     }
@@ -1849,7 +1920,7 @@ impl ObjectContext<'_> {
         self.all_children
             .get(&id)?
             .iter()
-            .find(|obj| obj.gg_type_id() == TypeId::of::<T>())
+            .find(|&obj| obj.gg_is::<T>())
             .cloned()
     }
 
@@ -1948,7 +2019,7 @@ impl ObjectContext<'_> {
     /// [`first_other_as_mut()`](ObjectContext::first_other_as_mut) instead.
     pub fn first_other<T: SceneObject>(&self) -> Option<TreeSceneObject> {
         self.others_inner()
-            .find(|(_, obj)| obj.gg_type_id() == TypeId::of::<T>())
+            .find(|&(_, obj)| obj.gg_is::<T>())
             .map(|(object_id, obj)| TreeSceneObject {
                 object_id,
                 parent_id: *self
@@ -2093,7 +2164,10 @@ impl ObjectContext<'_> {
     /// If the object has multiple child colliders, returns only the first collider found.
     /// Returns [`None`] if no collider is found.
     pub fn collider(&self) -> Option<GenericCollider> {
-        gg_err::log_err_then(self.collider_of_inner(self.this_id))
+        gg_err::log_err_then(
+            self.collider_of_inner(self.this_id)
+                .with_context(|| format!("collider(): {:?}", self.this_id)),
+        )
     }
 
     /// Returns another object's collider.
@@ -2101,17 +2175,14 @@ impl ObjectContext<'_> {
     /// If the other object has multiple child colliders, returns only the first collider found.
     /// Returns [`None`] if no collider is found.
     pub fn collider_of(&self, other: &TreeSceneObject) -> Option<GenericCollider> {
-        gg_err::log_err_then(self.collider_of_inner(other.object_id))
+        gg_err::log_err_then(
+            self.collider_of_inner(other.object_id)
+                .with_context(|| format!("collider_of(): {:?}", other.object_id)),
+        )
     }
     fn collider_of_inner(&self, object_id: ObjectId) -> Result<Option<GenericCollider>> {
         // TODO: some more sensible way to handle objects with multiple child colliders.
-        let children = if object_id == self.this_id {
-            &self.children
-        } else {
-            self.all_children
-                .get(&object_id)
-                .with_context(|| format!("missing object_id in children: {object_id:?}"))?
-        };
+        let children = self.children_of_inner(object_id)?;
         Ok(children.iter()
             .find_map(|scene_object| {
                 // Find GgInternalCollisionShape objects, and update their transforms.
@@ -2124,7 +2195,10 @@ impl ObjectContext<'_> {
                     }))
             })
             .map(|o| o.collider().clone())
-            .or(children.iter().find_map(|o| gg_err::log_and_ok(self.collider_of_inner(o.object_id)).flatten())))
+            .or(children.iter().find_map(|o| {
+                gg_err::log_and_ok(self.collider_of_inner(o.object_id)
+                    .with_context(|| format!("collider_of_inner(): {:?}", o.object_id))).flatten()
+            })))
     }
 
     /// Adds multiple scene objects as children of this object.
@@ -2184,8 +2258,10 @@ impl ObjectContext<'_> {
     /// * `obj` - The scene object to remove
     pub fn remove(&mut self, obj: &TreeSceneObject) {
         self.object_tracker.pending_remove.insert(obj.object_id);
-        for child in &self.children {
-            self.object_tracker.pending_remove.insert(child.object_id);
+        if let Some(children) = self.children_of(obj).cloned() {
+            for child in children {
+                self.object_tracker.pending_remove.insert(child.object_id);
+            }
         }
     }
 
@@ -2199,7 +2275,7 @@ impl ObjectContext<'_> {
     ///
     /// This object remains in the scene.
     pub fn remove_children(&mut self) {
-        for child in &self.children {
+        for child in &self.this_children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
@@ -2241,7 +2317,10 @@ impl ObjectContext<'_> {
             match self.collision_handler.get_object_ids_by_emitting_tag(tag) {
                 Ok(colliding_ids) => {
                     rv.extend(colliding_ids.iter().filter_map(|other_id| {
-                        gg_err::log_err_then(self.test_collision_inner(collider, *other_id))
+                        gg_err::log_err_then(
+                            self.test_collision_inner(collider, *other_id)
+                                .with_context(|| format!("test_collision_using(): {other_id:?}")),
+                        )
                     }));
                 }
                 Err(e) => error!("{}", e.root_cause()),

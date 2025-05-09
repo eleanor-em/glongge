@@ -120,7 +120,10 @@ impl GuiObjectView {
     fn get_object<'a>(&self, object_handler: &'a ObjectHandler) -> Result<&'a SceneObjectWrapper> {
         check_false!(self.object_id.is_root());
         // infallible
-        Ok(object_handler.get_object_by_id(self.object_id)?.unwrap())
+        Ok(object_handler
+            .get_object_by_id(self.object_id)
+            .with_context(|| format!("get_object(): {:?}", self.object_id))?
+            .unwrap())
     }
 
     fn build_closure(
@@ -456,9 +459,11 @@ impl GuiObjectTree {
             self.select_prev_sibling(object_handler);
         }
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
-            if let Some(parent) =
-                gg_err::log_err_then(object_handler.get_parent(self.selected_id.get()))
-            {
+            if let Some(parent) = gg_err::log_err_then(
+                object_handler
+                    .get_parent(self.selected_id.get())
+                    .context("GuiObjectTree::on_input(): parent not found"),
+            ) {
                 self.selected_id.send(parent.object_id);
             }
         }
@@ -474,8 +479,12 @@ impl GuiObjectTree {
     }
 
     fn select_nth_sibling(&mut self, object_handler: &ObjectHandler, n: isize) {
-        let parent_id = gg_err::log_err_then(object_handler.get_parent(self.selected_id.get()))
-            .map_or(ObjectId::root(), |parent| parent.object_id);
+        let parent_id = gg_err::log_err_then(
+            object_handler
+                .get_parent(self.selected_id.get())
+                .context("GuiObjectTree::on_input(): parent not found"),
+        )
+        .map_or(ObjectId::root(), |parent| parent.object_id);
         let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
             .iter()
             .map(|o| o.object_id)
@@ -496,7 +505,9 @@ impl GuiObjectTree {
             error!(
                 "select_next_sibling(): no sibling found for {:?} (parent={:?})",
                 self.selected_id.get(),
-                object_handler.get_parent(self.selected_id.get())
+                object_handler
+                    .get_parent(self.selected_id.get())
+                    .context("GuiObjectTree::on_input(): parent not found")
             );
         }
     }
@@ -1045,7 +1056,14 @@ impl DebugGui {
         }
         if !self.object_tree.selected_id.get().is_root() {
             if gg_err::log_err_then(
-                object_handler.get_object_by_id(self.object_tree.selected_id.get()),
+                object_handler
+                    .get_object_by_id(self.object_tree.selected_id.get())
+                    .with_context(|| {
+                        format!(
+                            "selected object not found: {:?}",
+                            self.object_tree.selected_id.get()
+                        )
+                    }),
             )
             .is_some()
             {

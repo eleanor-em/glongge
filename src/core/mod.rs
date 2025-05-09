@@ -58,8 +58,8 @@ pub struct SceneObjectWrapper {
 }
 
 impl SceneObjectWrapper {
-    pub(crate) fn gg_type_id(&self) -> TypeId {
-        self.type_id
+    pub(crate) fn gg_is<T: SceneObject>(&self) -> bool {
+        self.type_id == TypeId::of::<T>()
     }
     pub(crate) fn transform(&self) -> Transform {
         *self.transform.borrow()
@@ -109,8 +109,8 @@ pub struct TreeSceneObject {
 }
 
 impl TreeSceneObject {
-    pub fn gg_type_id(&self) -> TypeId {
-        self.scene_object.type_id
+    pub fn gg_is<T: SceneObject>(&self) -> bool {
+        self.scene_object.type_id == TypeId::of::<T>()
     }
     pub fn object_id(&self) -> ObjectId {
         self.object_id
@@ -148,7 +148,12 @@ impl TreeSceneObject {
 
 impl Debug for TreeSceneObject {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} ({:?})", self.object_id, self.gg_type_id())
+        write!(
+            f,
+            "{:?} ({:?})",
+            self.object_id,
+            self.scene_object.nickname_or_type_name()
+        )
     }
 }
 
@@ -184,7 +189,7 @@ pub struct TreeObjectOfType<T: SceneObject> {
 
 impl<T: SceneObject> TreeObjectOfType<T> {
     pub fn of(obj: TreeSceneObject) -> Option<Self> {
-        if obj.gg_type_id() == TypeId::of::<T>() {
+        if obj.gg_is::<T>() {
             Some(Self {
                 inner: Some(obj),
                 phantom_data: PhantomData,
@@ -204,9 +209,6 @@ impl<T: SceneObject> TreeObjectOfType<T> {
         self.inner.as_ref().unwrap().downcast_mut::<T>().unwrap()
     }
 
-    pub fn gg_type_id(&self) -> TypeId {
-        self.inner.as_ref().unwrap().gg_type_id()
-    }
     pub fn object_id(&self) -> ObjectId {
         self.inner.as_ref().unwrap().object_id()
     }
@@ -238,6 +240,10 @@ impl<T: SceneObject> TreeObjectOfType<T> {
     /// NOTE: Borrows!
     pub fn set_nickname(&mut self, name: impl Into<String>) {
         self.inner.as_mut().unwrap().set_nickname(name);
+    }
+
+    pub fn remove(&self, ctx: &mut UpdateContext) {
+        ctx.object_mut().remove(self.inner.as_ref().unwrap());
     }
 }
 
@@ -310,23 +316,25 @@ pub trait DowncastRef {
 
 impl DowncastRef for SceneObjectWrapper {
     fn downcast<T: SceneObject>(&self) -> Option<Ref<T>> {
-        if self.type_id != TypeId::of::<T>() {
-            return None;
+        if self.gg_is::<T>() {
+            Ref::filter_map(self.wrapped.borrow(), |obj| {
+                obj.as_any().downcast_ref::<T>()
+            })
+            .ok()
+        } else {
+            None
         }
-        Ref::filter_map(self.wrapped.borrow(), |obj| {
-            obj.as_any().downcast_ref::<T>()
-        })
-        .ok()
     }
 
     fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
-        if self.type_id != TypeId::of::<T>() {
-            return None;
+        if self.gg_is::<T>() {
+            RefMut::filter_map(self.wrapped.borrow_mut(), |obj| {
+                obj.as_any_mut().downcast_mut::<T>()
+            })
+            .ok()
+        } else {
+            None
         }
-        RefMut::filter_map(self.wrapped.borrow_mut(), |obj| {
-            obj.as_any_mut().downcast_mut::<T>()
-        })
-        .ok()
     }
 }
 

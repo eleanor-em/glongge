@@ -250,12 +250,19 @@ pub mod gg_err {
     use vulkano_taskgraph::InvalidSlotError;
     use vulkano_taskgraph::graph::ExecuteError;
 
+    fn log_error(e: &anyhow::Error) {
+        error!("{}", e);
+        e.chain()
+            .skip(1)
+            .for_each(|cause| error!("caused by: {}", cause));
+    }
+
     pub fn is_some_and_log<T>(result: Result<Option<T>>) -> bool {
         match result {
             Ok(Some(_)) => true,
             Ok(None) => false,
             Err(e) => {
-                error!("{}", e.root_cause());
+                log_error(&e);
                 false
             }
         }
@@ -263,7 +270,7 @@ pub mod gg_err {
 
     pub fn log_err_and_ignore<T>(result: Result<T>) {
         if let Err(e) = result {
-            error!("{}", e.root_cause());
+            log_error(&e);
         }
     }
 
@@ -271,7 +278,7 @@ pub mod gg_err {
         match result {
             Ok(o) => o,
             Err(e) => {
-                error!("{}", e.root_cause());
+                log_error(&e);
                 None
             }
         }
@@ -280,7 +287,7 @@ pub mod gg_err {
         val.and_then(|result| match result {
             Ok(o) => Some(o),
             Err(e) => {
-                error!("{}", e.root_cause());
+                log_error(&e);
                 None
             }
         })
@@ -290,7 +297,7 @@ pub mod gg_err {
         match result {
             Ok(v) => v,
             Err(e) => {
-                error!("{}", e.root_cause());
+                log_error(&e);
                 default.into()
             }
         }
@@ -300,7 +307,7 @@ pub mod gg_err {
         match result {
             Ok(v) => Some(v),
             Err(e) => {
-                error!("{}", e.root_cause());
+                log_error(&e);
                 None
             }
         }
