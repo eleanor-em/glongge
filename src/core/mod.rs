@@ -61,12 +61,6 @@ impl SceneObjectWrapper {
     pub(crate) fn gg_is<T: SceneObject>(&self) -> bool {
         self.type_id == TypeId::of::<T>()
     }
-    pub(crate) fn transform(&self) -> Transform {
-        *self.transform.borrow()
-    }
-    pub(crate) fn transform_mut(&self) -> RefMut<Transform> {
-        self.transform.borrow_mut()
-    }
     pub fn nickname_or_type_name(&self) -> String {
         self.nickname
             .borrow()

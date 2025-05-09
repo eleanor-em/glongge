@@ -1,5 +1,6 @@
 pub mod collision;
 
+use crate::core::TreeObjectOfType;
 use crate::shader::SpriteShader;
 use crate::util::{InspectMut, gg_float};
 use crate::{
@@ -74,36 +75,53 @@ impl ObjectHandler {
     }
 
     /// Returns `None` if and only if `id.is_root()`.
-    pub(crate) fn get_object_by_id(&self, id: ObjectId) -> Result<Option<&SceneObjectWrapper>> {
+    pub(crate) fn get_object_by_id(&self, id: ObjectId) -> Result<Option<TreeSceneObject>> {
         if id.is_root() {
             Ok(None)
         } else {
-            self.objects.get(&id).map(Some).ok_or_else(|| {
-                anyhow!(
+            let Some(scene_object) = self.objects.get(&id).cloned() else {
+                bail!(
                     "ObjectHandler::get_object_by_id(): missing ObjectId in `objects`: {}",
+                    self.format_object_id_for_logging(id)
+                )
+            };
+            let parent_id = self.parents.get(&id).copied().unwrap_or(ObjectId::root());
+            Ok(Some(TreeSceneObject {
+                object_id: id,
+                parent_id,
+                scene_object,
+            }))
+        }
+    }
+    fn lookup_parent_id(&self, id: ObjectId) -> Result<Option<ObjectId>> {
+        if id.is_root() {
+            Ok(None)
+        } else {
+            self.parents.get(&id).copied().map(Some).ok_or_else(|| {
+                anyhow!(
+                    "ObjectHandler::lookup_parent_id(): missing ObjectId in `parents`: {}",
                     self.format_object_id_for_logging(id)
                 )
             })
         }
     }
     /// Returns `None` if and only if `id.is_root()`.
-    fn get_parent_id_by_id(&self, id: ObjectId) -> Result<Option<ObjectId>> {
-        if id.is_root() {
-            Ok(None)
-        } else {
-            self.parents.get(&id).copied().map(Some).ok_or_else(|| {
-                anyhow!(
-                    "ObjectHandler::get_parent_id_by_id(): missing ObjectId in `parents`: {}",
-                    self.format_object_id_for_logging(id)
-                )
-            })
-        }
+    pub(crate) fn get_parent_by_id(&self, id: ObjectId) -> Result<Option<TreeSceneObject>> {
+        let Some(parent_id) = self
+            .lookup_parent_id(id)
+            .context("ObjectHandler::get_parent_by_id()")?
+        else {
+            return Ok(None);
+        };
+        self.get_object_by_id(parent_id)
+            .context("ObjectHandler::get_parent_by_id()")
     }
 
     /// Returns the chain of parent IDs from a given [`ObjectId`] to the root.
     ///
     /// Traverses up the object hierarchy starting from the given ID, collecting
     /// all parent IDs until reaching the root object.
+    /// Warning: not especially fast.
     ///
     /// # Returns
     /// * `Ok(Vec<ObjectId>)` - Vector of parent IDs in order. For example, if the hierarchy is
@@ -113,35 +131,9 @@ impl ObjectHandler {
         let mut rv = Vec::new();
         while !id.is_root() {
             rv.push(id);
-            id = self.get_parent_id_by_id(id)?.unwrap();
+            id = self.lookup_parent_id(id)?.unwrap();
         }
         Ok(rv)
-    }
-    pub(crate) fn get_parent(&self, id: ObjectId) -> Result<Option<TreeSceneObject>> {
-        let Some(parent_id) = self
-            .get_parent_id_by_id(id)
-            .context("ObjectHandler::get_parent()")?
-        else {
-            check!(id.is_root());
-            return Ok(None);
-        };
-        let Some(scene_object) = self
-            .get_object_by_id(parent_id)
-            .context("ObjectHandler::get_tree_scene_object_by_id()")?
-            .cloned()
-        else {
-            check!(parent_id.is_root());
-            return Ok(None);
-        };
-        let parent_of_parent_id = self
-            .get_parent_id_by_id(parent_id)
-            .context("ObjectHandler::get_tree_scene_object_by_id()")?
-            .unwrap_or(ObjectId::root());
-        Ok(Some(TreeSceneObject {
-            object_id: parent_id,
-            parent_id: parent_of_parent_id,
-            scene_object,
-        }))
     }
 
     /// Look up the children of the given [`ObjectId`]. The returned [`Vec`] is in no particular
@@ -176,12 +168,12 @@ impl ObjectHandler {
     pub(crate) fn get_collision_shapes(
         &self,
         id: ObjectId,
-    ) -> Result<Vec<(ObjectId, Ref<CollisionShape>)>> {
+    ) -> Result<Vec<TreeObjectOfType<CollisionShape>>> {
         let mut rv = Vec::new();
         if let Some(c) = self
             .get_object_by_id(id)
-            .with_context(|| format!("get_collision_shapes({id:?})"))?
-            .and_then(|o| o.downcast::<CollisionShape>().map(|c| (id, c)))
+            .context("ObjectHandler::get_collision_shapes()")?
+            .and_then(TreeObjectOfType::of)
         {
             rv.push(c);
         }
@@ -190,37 +182,12 @@ impl ObjectHandler {
         }
         Ok(rv)
     }
-    /// Returns all collision shapes in a scene tree with mutable access, starting from a given node.
-    ///
-    /// Similar to `get_collision_shapes()`, but returns mutable references to the collision shapes
-    /// instead.
-    ///
-    /// # Returns
-    /// * A vector of tuples containing the object ID and a mutable reference to its collision shape
-    /// * Returns `Err` if any object lookup fails
-    pub(crate) fn get_collision_shapes_mut(
-        &self,
-        id: ObjectId,
-    ) -> Result<Vec<(ObjectId, RefMut<CollisionShape>)>> {
-        let mut rv = Vec::new();
-        if let Some(c) = self
-            .get_object_by_id(id)
-            .with_context(|| format!("get_collision_shapes_mut({id:?})"))?
-            .and_then(|o| o.downcast_mut::<CollisionShape>().map(|c| (id, c)))
-        {
-            rv.push(c);
-        }
-        for child in self.get_children(id)? {
-            rv.extend(self.get_collision_shapes_mut(child.object_id)?);
-        }
-        Ok(rv)
-    }
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        if let Some(parent_id) = gg_err::log_err_then(self.get_parent_id_by_id(remove_id)) {
+        if let Some(parent) = gg_err::log_err_then(self.get_parent_by_id(remove_id)) {
             // Remove this object from its parent's list of children.
-            if let Ok(children) = self.get_children_mut(parent_id) {
+            if let Ok(children) = self.get_children_mut(parent.object_id) {
                 // If this object's parent has already been removed, `children` may not exist.
                 // This is not an error.
                 children.retain(|obj| obj.object_id != remove_id);
@@ -233,7 +200,7 @@ impl ObjectHandler {
     }
 
     /// Adds a new object to the scene hierarchy and establishes its parent-child relationships.
-    /// If this is the first object being added, will first initialize the root node (ID 0), then
+    /// If this is the first object being added, will first initialise the root node (ID 0), then
     /// the new object to be added.
     ///
     /// # Errors
@@ -299,7 +266,7 @@ impl ObjectHandler {
             ) else {
                 continue;
             };
-            let mut object = object.wrapped.borrow_mut();
+            let mut object = object.scene_object.wrapped.borrow_mut();
             let Some(renderable) = object.as_renderable_object() else {
                 error!(
                     "ObjectHandler: object in vertex_map not renderable: {}",
@@ -599,7 +566,7 @@ impl UpdateHandler {
         for new_obj in pending_add {
             let Some(parent) = gg_err::log_and_ok(
                 self.object_handler
-                    .get_parent(new_obj.parent_id)
+                    .get_parent_by_id(new_obj.parent_id)
                     .context("UpdateHandler::load_new_objects()"),
             ) else {
                 continue;
@@ -709,23 +676,24 @@ impl UpdateHandler {
 
         self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            for (this_id, this) in self.object_handler.objects.clone() {
-                if let Some(parent_id) =
-                    gg_err::log_err_then(self.object_handler.get_parent_id_by_id(this_id))
+            for this_id in self.object_handler.objects.keys().cloned().collect_vec() {
+                let Some(this) = gg_err::log_err_then(
+                    self.object_handler
+                        .get_object_by_id(this_id)
+                        .context("UpdateHandler::call_on_update(): on_fixed_update"),
+                ) else {
+                    error!(
+                        "UpdateHandler::call_on_update(): tried to call on_fixed_update on root object"
+                    );
+                    continue;
+                };
+                if let Some(mut ctx) =
+                    gg_err::log_and_ok(FixedUpdateContext::new(self, this_id, &mut object_tracker))
                 {
-                    let this = TreeSceneObject {
-                        object_id: this_id,
-                        parent_id,
-                        scene_object: this.clone(),
-                    };
-                    match FixedUpdateContext::new(self, this_id, &mut object_tracker) {
-                        Ok(mut ctx) => this
-                            .scene_object
-                            .wrapped
-                            .borrow_mut()
-                            .on_fixed_update(&mut ctx),
-                        Err(e) => error!("{}", e.root_cause()),
-                    }
+                    this.scene_object
+                        .wrapped
+                        .borrow_mut()
+                        .on_fixed_update(&mut ctx);
                 }
             }
             self.object_handler.update_all_transforms();
@@ -833,16 +801,16 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker,
     ) {
-        for (this_id, this) in self.object_handler.objects.clone() {
-            let Some(parent_id) =
-                gg_err::log_err_then(self.object_handler.get_parent_id_by_id(this_id))
-            else {
+        for this_id in self.object_handler.objects.keys().cloned().collect_vec() {
+            let Some(this) = gg_err::log_err_then(
+                self.object_handler
+                    .get_object_by_id(this_id)
+                    .context("UpdateHandler::call_on_update(): update_coroutines"),
+            ) else {
+                error!(
+                        "UpdateHandler::call_on_update(): tried to call update_coroutines on root object"
+                    );
                 continue;
-            };
-            let this = TreeSceneObject {
-                object_id: this_id,
-                parent_id,
-                scene_object: this,
             };
             for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {
                 let Some(mut ctx) = gg_err::log_and_ok(UpdateContext::new(
@@ -1057,7 +1025,7 @@ impl<'a> UpdateContext<'a> {
         let fps = caller.perf_stats.fps();
         let parent = caller
             .object_handler
-            .get_parent(this_id)
+            .get_parent_by_id(this_id)
             .context("UpdateContext::new()")?;
         let children = caller
             .object_handler
@@ -1376,7 +1344,7 @@ impl<'a> FixedUpdateContext<'a> {
     ) -> Result<Self> {
         let parent = caller
             .object_handler
-            .get_parent(this_id)
+            .get_parent_by_id(this_id)
             .context("FixedUpdateContext::new()")?;
         let children = caller.object_handler.get_children(this_id)?.clone();
         Ok(Self {

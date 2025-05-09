@@ -102,22 +102,22 @@ impl GuiObjectView {
         selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
-            for (_, mut c) in object_handler.get_collision_shapes_mut(self.object_id)? {
-                c.hide_wireframe();
+            for c in object_handler.get_collision_shapes(self.object_id)? {
+                c.inner_mut().hide_wireframe();
             }
             self.absolute_cell.clear_state();
             self.relative_cell.clear_state();
             self.object_id = selected_id;
             if !selected_id.is_root() {
-                for (_, mut c) in object_handler.get_collision_shapes_mut(selected_id)? {
-                    c.show_wireframe();
+                for c in object_handler.get_collision_shapes(selected_id)? {
+                    c.inner_mut().show_wireframe();
                 }
             }
         }
         Ok(())
     }
 
-    fn get_object<'a>(&self, object_handler: &'a ObjectHandler) -> Result<&'a SceneObjectWrapper> {
+    fn get_object<'a>(&self, object_handler: &ObjectHandler) -> Result<TreeSceneObject> {
         check_false!(self.object_id.is_root());
         // infallible
         Ok(object_handler
@@ -461,7 +461,7 @@ impl GuiObjectTree {
         if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
             if let Some(parent) = gg_err::log_err_then(
                 object_handler
-                    .get_parent(self.selected_id.get())
+                    .get_parent_by_id(self.selected_id.get())
                     .context("GuiObjectTree::on_input(): parent not found"),
             ) {
                 self.selected_id.send(parent.object_id);
@@ -481,7 +481,7 @@ impl GuiObjectTree {
     fn select_nth_sibling(&mut self, object_handler: &ObjectHandler, n: isize) {
         let parent_id = gg_err::log_err_then(
             object_handler
-                .get_parent(self.selected_id.get())
+                .get_parent_by_id(self.selected_id.get())
                 .context("GuiObjectTree::on_input(): parent not found"),
         )
         .map_or(ObjectId::root(), |parent| parent.object_id);
@@ -506,7 +506,7 @@ impl GuiObjectTree {
                 "select_next_sibling(): no sibling found for {:?} (parent={:?})",
                 self.selected_id.get(),
                 object_handler
-                    .get_parent(self.selected_id.get())
+                    .get_parent_by_id(self.selected_id.get())
                     .context("GuiObjectTree::on_input(): parent not found")
             );
         }
@@ -1105,10 +1105,8 @@ impl DebugGui {
                 gg_err::log_and_ok(object_handler.get_parent_chain(*o))
                     .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
             })
-            .flat_map(|o| {
-                gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes_mut(o))
-            })
-            .for_each(|(_, mut c)| c.hide_wireframe());
+            .flat_map(|o| gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes(o)))
+            .for_each(|c| c.inner_mut().hide_wireframe());
     }
     pub fn on_mouseovers(
         &mut self,
@@ -1118,12 +1116,12 @@ impl DebugGui {
         self.wireframe_mouseovers = collisions
             .into_iter()
             .flat_map(|c| {
-                let result = object_handler.get_collision_shapes_mut(c.other.object_id);
+                let result = object_handler.get_collision_shapes(c.other.object_id);
                 gg_err::log_unwrap_or(Vec::new(), result)
                     .into_iter()
-                    .map(|(o, mut c)| {
-                        c.show_wireframe();
-                        o
+                    .map(|c| {
+                        c.inner_mut().show_wireframe();
+                        c.object_id()
                     })
             })
             .unique()
