@@ -10,7 +10,7 @@ pub trait Stompable: SceneObject {
     fn dead(&self) -> bool;
 }
 
-pub fn downcast_stompable_mut(obj: &mut TreeSceneObject) -> Option<RefMut<dyn Stompable>> {
+pub fn downcast_stompable_mut(obj: &TreeSceneObject) -> Option<RefMut<dyn Stompable>> {
     obj.downcast_mut::<Goomba>()
         .map(|o| o as RefMut<dyn Stompable>)
 }

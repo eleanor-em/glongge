@@ -76,7 +76,7 @@ impl CollisionHandler {
             .filter(|obj| obj.scene_object.type_id == TypeId::of::<GgInternalCollisionShape>())
         {
             let id = obj.object_id();
-            let obj = obj.scene_object.wrapped.borrow();
+            let obj = obj.inner();
             for tag in obj.emitting_tags() {
                 new_object_ids_by_emitting_tag
                     .entry(tag)
@@ -198,11 +198,11 @@ impl CollisionHandler {
             .context("CollisionHandler: root in `ids`")?;
 
         let (this_listening, this_emitting) = {
-            let this = this.scene_object.wrapped.borrow();
+            let this = this.inner();
             (this.listening_tags(), this.emitting_tags())
         };
         let (other_listening, other_emitting) = {
-            let other = other.scene_object.wrapped.borrow();
+            let other = other.inner();
             (other.listening_tags(), other.emitting_tags())
         };
         if !this_listening
@@ -222,8 +222,8 @@ impl CollisionHandler {
             .all_unique()
         {
             rv.push(CollisionNotification {
-                this: other,
-                other: this,
+                this: other.clone(),
+                other: this.clone(),
                 mtv: -mtv,
             });
         }

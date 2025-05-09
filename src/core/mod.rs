@@ -41,7 +41,7 @@ impl ObjectId {
         ObjectId(0)
     }
 
-    pub(crate) fn value_for_gui(&self) -> usize {
+    pub(crate) fn value_for_gui(self) -> usize {
         self.0
     }
 }
@@ -123,11 +123,11 @@ impl TreeSceneObject {
     }
     /// NOTE: Borrows!
     pub fn emitting_tags(&self) -> Vec<&'static str> {
-        self.scene_object.wrapped.borrow().emitting_tags()
+        self.inner().emitting_tags()
     }
     /// NOTE: Borrows!
     pub fn listening_tags(&self) -> Vec<&'static str> {
-        self.scene_object.wrapped.borrow().listening_tags()
+        self.inner().listening_tags()
     }
 
     /// NOTE: Borrows!
@@ -141,6 +141,13 @@ impl TreeSceneObject {
     /// NOTE: Borrows!
     pub fn set_nickname(&mut self, name: impl Into<String>) {
         self.scene_object.set_nickname(name);
+    }
+
+    pub(crate) fn inner(&self) -> Ref<dyn SceneObject> {
+        self.scene_object.wrapped.borrow()
+    }
+    pub(crate) fn inner_mut(&self) -> RefMut<dyn SceneObject> {
+        self.scene_object.wrapped.borrow_mut()
     }
 }
 
@@ -186,17 +193,17 @@ pub struct TreeObjectOfType<T: SceneObject> {
 }
 
 impl<T: SceneObject> TreeObjectOfType<T> {
-    pub fn of(obj: TreeSceneObject) -> Option<Self> {
+    pub fn of(obj: &TreeSceneObject) -> Option<Self> {
         if obj.gg_is::<T>() {
             Some(Self {
-                inner: Some(obj),
+                inner: Some(obj.clone()),
                 phantom_data: PhantomData,
             })
         } else {
             None
         }
     }
-    pub fn and_of(obj: Option<TreeSceneObject>) -> Option<Self> {
+    pub fn and_of(obj: Option<&TreeSceneObject>) -> Option<Self> {
         obj.and_then(Self::of)
     }
 
@@ -267,6 +274,13 @@ impl<T: SceneObject> TryFrom<TreeSceneObject> for TreeObjectOfType<T> {
     type Error = anyhow::Error;
 
     fn try_from(value: TreeSceneObject) -> std::result::Result<Self, Self::Error> {
+        Self::of(&value).ok_or_else(|| anyhow!("type mismatch"))
+    }
+}
+impl<T: SceneObject> TryFrom<&TreeSceneObject> for TreeObjectOfType<T> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &TreeSceneObject) -> std::result::Result<Self, Self::Error> {
         Self::of(value).ok_or_else(|| anyhow!("type mismatch"))
     }
 }
@@ -275,6 +289,14 @@ impl<T: SceneObject> TryFrom<Option<TreeSceneObject>> for TreeObjectOfType<T> {
     type Error = anyhow::Error;
 
     fn try_from(value: Option<TreeSceneObject>) -> std::result::Result<Self, Self::Error> {
+        let value = value.ok_or_else(|| anyhow!("None"))?;
+        Self::try_from(value)
+    }
+}
+impl<T: SceneObject> TryFrom<Option<&TreeSceneObject>> for TreeObjectOfType<T> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Option<&TreeSceneObject>) -> std::result::Result<Self, Self::Error> {
         let value = value.ok_or_else(|| anyhow!("None"))?;
         Self::try_from(value)
     }

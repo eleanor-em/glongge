@@ -117,7 +117,7 @@ impl GuiObjectView {
         Ok(())
     }
 
-    fn get_object(&self, object_handler: &ObjectHandler) -> Result<TreeSceneObject> {
+    fn get_object<'a>(&'a self, object_handler: &'a ObjectHandler) -> Result<&'a TreeSceneObject> {
         check_false!(self.object_id.is_root());
         // infallible
         Ok(object_handler
@@ -183,7 +183,7 @@ impl GuiObjectView {
 
     fn create_transform_cmd(&mut self, object_handler: &ObjectHandler) -> Result<Box<GuiCommand>> {
         let object_id = self.object_id;
-        let object = self.get_object(object_handler)?;
+        let object = self.get_object(object_handler)?.clone(); // borrowck issues
 
         let mut absolute_transform = object_handler
             .absolute_transforms

@@ -197,7 +197,7 @@ impl SceneObject for SpinningRectangle {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext,
-        other: TreeSceneObject,
+        other: &TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if let Some(rect) = other.downcast_mut::<SpinningRectangle>() {

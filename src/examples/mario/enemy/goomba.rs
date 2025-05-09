@@ -108,7 +108,7 @@ impl SceneObject for Goomba {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext,
-        other: TreeSceneObject,
+        other: &TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !mtv.dot(Vec2::right()).is_zero() {

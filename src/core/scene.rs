@@ -583,7 +583,7 @@ pub trait SceneObject: 'static {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext,
-        other: TreeSceneObject,
+        other: &TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         CollisionResponse::Done

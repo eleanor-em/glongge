@@ -724,7 +724,7 @@ impl SceneObject for Player {
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext,
-        mut other: TreeSceneObject,
+        other: &TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
         if !self.has_control() {
@@ -732,7 +732,7 @@ impl SceneObject for Player {
         }
         {
             let bottom = ctx.object().rect_of(&other).bottom();
-            if let Some(mut stompable) = downcast_stompable_mut(&mut other) {
+            if let Some(mut stompable) = downcast_stompable_mut(other) {
                 if !stompable.dead() {
                     if ctx.object().rect().bottom() < bottom {
                         stompable.stomp();
