@@ -313,7 +313,7 @@ impl GuiObjectTreeNode {
     }
 
     fn update_open_with_selected(&mut self, selected_id: ObjectId) -> bool {
-        if self.displayed.contains_key(&selected_id)
+        if self.object_id == selected_id
             || self
                 .displayed
                 .values_mut()
@@ -420,6 +420,24 @@ impl GuiObjectTree {
         })
     }
 
+    fn get_parent_or_object(
+        object_handler: &ObjectHandler,
+        mouseover_id: ObjectId,
+    ) -> Option<&TreeSceneObject> {
+        gg_err::log_err_then(
+            object_handler
+                .get_parent_by_id(mouseover_id)
+                .context("GuiObjectTree::get_parent_or_object(): parent"),
+        )
+        .or_else(|| {
+            gg_err::log_err_then(
+                object_handler
+                    .get_object_by_id(mouseover_id)
+                    .context("GuiObjectTree::get_parent_or_object(): object"),
+            )
+        })
+    }
+
     fn on_input(
         &mut self,
         input_handler: &InputHandler,
@@ -427,11 +445,14 @@ impl GuiObjectTree {
         wireframe_mouseovers: &[ObjectId],
     ) {
         if input_handler.pressed(KeyCode::KeyF) {
-            if let Some(i) = gg_iter::index_of(wireframe_mouseovers, &self.selected_id.get()) {
-                let i = (i + 1) % wireframe_mouseovers.len();
-                self.selected_id.send(wireframe_mouseovers[i]);
-            } else if !wireframe_mouseovers.is_empty() {
-                self.selected_id.send(wireframe_mouseovers[0]);
+            if let Some(object) = wireframe_mouseovers
+                .get(
+                    gg_iter::index_of(wireframe_mouseovers, &self.selected_id.get())
+                        .map_or(0, |i| (i + 1) % wireframe_mouseovers.len()),
+                )
+                .and_then(|mouseover_id| Self::get_parent_or_object(object_handler, *mouseover_id))
+            {
+                self.selected_id.send(object.object_id);
             }
         }
         if input_handler.pressed(KeyCode::KeyC) {
@@ -462,7 +483,7 @@ impl GuiObjectTree {
             if let Some(parent) = gg_err::log_err_then(
                 object_handler
                     .get_parent_by_id(self.selected_id.get())
-                    .context("GuiObjectTree::on_input(): parent not found"),
+                    .context("GuiObjectTree::on_input(): <P>: parent not found"),
             ) {
                 self.selected_id.send(parent.object_id);
             }
