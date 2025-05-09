@@ -117,7 +117,7 @@ impl GuiObjectView {
         Ok(())
     }
 
-    fn get_object<'a>(&self, object_handler: &ObjectHandler) -> Result<TreeSceneObject> {
+    fn get_object(&self, object_handler: &ObjectHandler) -> Result<TreeSceneObject> {
         check_false!(self.object_id.is_root());
         // infallible
         Ok(object_handler
@@ -162,7 +162,7 @@ impl GuiObjectView {
         let name = format!(
             "{} [{}]",
             self.get_object(object_handler)?.nickname_or_type_name(),
-            self.object_id.0
+            self.object_id.value_for_gui()
         );
         Ok(Box::new(move |ui: &mut Ui| {
             ui.vertical_centered(|ui| {

@@ -121,7 +121,6 @@ impl ObjectHandler {
     ///
     /// Traverses up the object hierarchy starting from the given ID, collecting
     /// all parent IDs until reaching the root object.
-    /// Warning: not especially fast.
     ///
     /// # Returns
     /// * `Ok(Vec<ObjectId>)` - Vector of parent IDs in order. For example, if the hierarchy is
@@ -221,13 +220,12 @@ impl ObjectHandler {
     }
 
     fn get_collisions(&mut self) -> Vec<CollisionNotification> {
-        self.collision_handler
-            .get_collisions(&self.parents, &self.objects)
+        self.collision_handler.get_collisions(self)
     }
 
     fn update_all_transforms(&mut self) {
         let mut child_stack = Vec::with_capacity(self.objects.len());
-        child_stack.push((ObjectId(0), Transform::default()));
+        child_stack.push((ObjectId::root(), Transform::default()));
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
             self.absolute_transforms.insert(parent_id, parent_transform);
             if let Some(children) = gg_err::log_and_ok(self.get_children(parent_id)) {
@@ -676,7 +674,7 @@ impl UpdateHandler {
 
         self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            for this_id in self.object_handler.objects.keys().cloned().collect_vec() {
+            for this_id in self.object_handler.objects.keys().copied().collect_vec() {
                 let Some(this) = gg_err::log_err_then(
                     self.object_handler
                         .get_object_by_id(this_id)
@@ -801,15 +799,15 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker,
     ) {
-        for this_id in self.object_handler.objects.keys().cloned().collect_vec() {
+        for this_id in self.object_handler.objects.keys().copied().collect_vec() {
             let Some(this) = gg_err::log_err_then(
                 self.object_handler
                     .get_object_by_id(this_id)
                     .context("UpdateHandler::call_on_update(): update_coroutines"),
             ) else {
                 error!(
-                        "UpdateHandler::call_on_update(): tried to call update_coroutines on root object"
-                    );
+                    "UpdateHandler::call_on_update(): tried to call update_coroutines on root object"
+                );
                 continue;
             };
             for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {

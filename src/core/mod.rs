@@ -28,7 +28,7 @@ static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 /// The ID 0 is reserved for the root object, which never actually exists in the scene -- it is only
 /// used to ensure a proper tree structure.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ObjectId(pub(crate) usize);
+pub struct ObjectId(usize);
 
 impl ObjectId {
     fn next() -> Self {
@@ -39,6 +39,10 @@ impl ObjectId {
     }
     pub(crate) fn root() -> Self {
         ObjectId(0)
+    }
+
+    pub(crate) fn value_for_gui(&self) -> usize {
+        self.0
     }
 }
 

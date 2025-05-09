@@ -1,4 +1,5 @@
-use crate::core::{ObjectId, SceneObjectWrapper, TreeSceneObject, prelude::*};
+use crate::core::update::ObjectHandler;
+use crate::core::{ObjectId, TreeSceneObject, prelude::*};
 use crate::util::{
     UnorderedPair,
     collision::{Collider, GgInternalCollisionShape},
@@ -146,14 +147,16 @@ impl CollisionHandler {
     }
     pub(crate) fn get_collisions(
         &self,
-        parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
+        object_handler: &ObjectHandler,
     ) -> Vec<CollisionNotification> {
-        let collisions = self.get_collisions_inner(objects);
+        let collisions = self.get_collisions_inner(object_handler);
         let mut rv = Vec::with_capacity(collisions.len() * 2);
         for (ids, mtv) in collisions {
             gg_err::log_err_and_ignore(Self::process_collision_inner(
-                parents, objects, &mut rv, &ids, mtv,
+                object_handler,
+                &mut rv,
+                &ids,
+                mtv,
             ));
         }
         rv
@@ -161,15 +164,15 @@ impl CollisionHandler {
 
     fn get_collisions_inner(
         &self,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
+        object_handler: &ObjectHandler,
     ) -> Vec<(UnorderedPair<ObjectId>, Vec2)> {
         self.possible_collisions
             .iter()
             .filter_map(|ids| {
-                let o1 = objects[&ids.fst()]
+                let o1 = object_handler.objects[&ids.fst()]
                     .downcast::<GgInternalCollisionShape>()
                     .unwrap();
-                let o2 = objects[&ids.snd()]
+                let o2 = object_handler.objects[&ids.snd()]
                     .downcast::<GgInternalCollisionShape>()
                     .unwrap();
                 o1.collider()
@@ -180,38 +183,23 @@ impl CollisionHandler {
     }
 
     fn process_collision_inner(
-        parents: &BTreeMap<ObjectId, ObjectId>,
-        objects: &BTreeMap<ObjectId, SceneObjectWrapper>,
+        object_handler: &ObjectHandler,
         rv: &mut Vec<CollisionNotification>,
         ids: &UnorderedPair<ObjectId>,
         mtv: Vec2,
     ) -> Result<()> {
-        let this_id = parents.get(&ids.fst()).with_context(|| {
-            format!(
-                "CollisionHandler: missing ObjectId in `parents`: {:?}",
-                ids.fst()
-            )
-        })?;
-        let other_id = parents.get(&ids.snd()).with_context(|| {
-            format!(
-                "CollisionHandler: missing ObjectId in `parents`: {:?}",
-                ids.snd()
-            )
-        })?;
+        let this = object_handler
+            .get_parent_by_id(ids.fst())
+            .context("CollisionHandler::process_collision_inner()")?
+            .context("CollisionHandler: root in `ids`")?;
+        let other = object_handler
+            .get_parent_by_id(ids.snd())
+            .context("CollisionHandler::process_collision_inner()")?
+            .context("CollisionHandler: root in `ids`")?;
 
-        let this = TreeSceneObject {
-            object_id: *this_id,
-            parent_id: *parents.get(this_id).unwrap_or(&ObjectId::root()),
-            scene_object: objects[this_id].clone(),
-        };
         let (this_listening, this_emitting) = {
             let this = this.scene_object.wrapped.borrow();
             (this.listening_tags(), this.emitting_tags())
-        };
-        let other = TreeSceneObject {
-            object_id: *other_id,
-            parent_id: *parents.get(other_id).unwrap_or(&ObjectId::root()),
-            scene_object: objects[other_id].clone(),
         };
         let (other_listening, other_emitting) = {
             let other = other.scene_object.wrapped.borrow();
