@@ -757,34 +757,30 @@ impl GgContextBuilder {
 }
 
 pub struct SceneHandlerBuilder {
-    input_handler: Arc<Mutex<InputHandler>>,
-    resource_handler: ResourceHandler,
-    render_handler: RenderHandler,
+    input: Arc<Mutex<InputHandler>>,
+    resource: ResourceHandler,
+    render: RenderHandler,
 }
 
 impl SceneHandlerBuilder {
     pub(crate) fn new(
-        input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: ResourceHandler,
-        render_handler: RenderHandler,
+        input: Arc<Mutex<InputHandler>>,
+        resource: ResourceHandler,
+        render: RenderHandler,
     ) -> Self {
         Self {
-            input_handler,
-            resource_handler,
-            render_handler,
+            input,
+            resource,
+            render,
         }
     }
 
     pub fn resource_handler(&self) -> &ResourceHandler {
-        &self.resource_handler
+        &self.resource
     }
 
     pub fn build(self) -> SceneHandler {
-        SceneHandler::new(
-            self.input_handler,
-            self.resource_handler,
-            self.render_handler,
-        )
+        SceneHandler::new(self.input, self.resource, self.render)
     }
 }
 
