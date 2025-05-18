@@ -188,18 +188,19 @@ impl ObjectHandler {
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        if let Some(parent) = gg_err::log_err_then(
+        // Remove this object from its parent's list of children.
+        let parent_id = gg_err::log_err_then(
             self.get_parent_by_id(remove_id)
                 .context("ObjectHandler::remove_object()"),
-        ) {
-            // Remove this object from its parent's list of children.
-            if let Ok(children) = self.get_children_mut(parent.object_id) {
-                // If this object's parent has already been removed, `children` may not exist.
-                // This is not an error.
-                children.retain(|obj| obj.object_id != remove_id);
-            }
-            self.parents.remove(&remove_id);
+        )
+        .map_or(ObjectId::root(), |p| p.object_id);
+        if let Ok(children) = self.get_children_mut(parent_id) {
+            // If this object's parent has already been removed, `children` may not exist.
+            // This is not an error.
+            children.retain(|obj| obj.object_id != remove_id);
         }
+        self.parents.remove(&remove_id);
+
         self.objects.remove(&remove_id);
         self.absolute_transforms.remove(&remove_id);
         self.children.remove(&remove_id);
@@ -2193,12 +2194,14 @@ impl ObjectContext<'_> {
     ///
     /// # Parameters
     /// * `object` - The scene object to add as a sibling
-    pub fn add_sibling(&mut self, object: impl SceneObject) {
-        self.object_tracker.pending_add.push(TreeSceneObject {
+    pub fn add_sibling(&mut self, object: impl SceneObject) -> TreeSceneObject {
+        let rv = TreeSceneObject {
             object_id: ObjectId::next(),
             parent_id: self.parent().map_or(ObjectId::root(), |obj| obj.object_id),
             scene_object: object.into_wrapper(),
-        });
+        };
+        self.object_tracker.pending_add.push(rv.clone());
+        rv
     }
 
     /// Adds a new scene object as a child of this object.

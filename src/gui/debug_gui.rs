@@ -569,6 +569,9 @@ impl GuiObjectTree {
             }
             Err(e) => error!("{}", e.root_cause()),
         }
+        if self.selected_id.get() == removed_id {
+            self.selected_id.overwrite(ObjectId::root());
+        }
     }
 
     pub fn refresh_labels(&mut self, object_handler: &ObjectHandler) {
