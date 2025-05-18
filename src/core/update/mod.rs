@@ -144,7 +144,7 @@ impl ObjectHandler {
     pub(crate) fn get_children(&self, id: ObjectId) -> Result<&Vec<TreeSceneObject>> {
         self.children.get(&id).ok_or_else(|| {
             anyhow!(
-                "ObjectHandler: missing ObjectId in `children`: {}",
+                "ObjectHandler::get_children(): missing ObjectId in `children`: {}",
                 self.format_object_id_for_logging(id)
             )
         })
@@ -152,7 +152,7 @@ impl ObjectHandler {
     fn get_children_mut(&mut self, id: ObjectId) -> Result<&mut Vec<TreeSceneObject>> {
         if !self.children.contains_key(&id) {
             return Err(anyhow!(
-                "ObjectHandler: missing ObjectId in `children`: {}",
+                "ObjectHandler::get_children_mut(): missing ObjectId in `children`: {}",
                 self.format_object_id_for_logging(id)
             ));
         }
@@ -666,9 +666,14 @@ impl UpdateHandler {
         }
 
         self.perf_stats.on_update_begin.start();
-        self.iter_with_other_map(input_handler, &mut object_tracker, |mut obj, ctx| {
-            obj.on_update_begin(ctx);
-        });
+        self.iter_with_other_map(
+            input_handler,
+            &mut object_tracker,
+            |mut obj, ctx| {
+                obj.on_update_begin(ctx);
+            },
+            "on_update_begin",
+        );
         self.object_handler.update_all_transforms();
         self.perf_stats.on_update_begin.stop();
         self.perf_stats.coroutines.start();
@@ -676,9 +681,14 @@ impl UpdateHandler {
         self.object_handler.update_all_transforms();
         self.perf_stats.coroutines.stop();
         self.perf_stats.on_update.start();
-        self.iter_with_other_map(input_handler, &mut object_tracker, |mut obj, ctx| {
-            obj.on_update(ctx);
-        });
+        self.iter_with_other_map(
+            input_handler,
+            &mut object_tracker,
+            |mut obj, ctx| {
+                obj.on_update(ctx);
+            },
+            "on_update",
+        );
         self.object_handler.update_all_transforms();
         self.perf_stats.on_update.stop();
 
@@ -713,9 +723,14 @@ impl UpdateHandler {
         self.handle_collisions(input_handler, &mut object_tracker);
 
         self.perf_stats.on_update_end.start();
-        self.iter_with_other_map(input_handler, &mut object_tracker, |mut obj, ctx| {
-            obj.on_update_end(ctx);
-        });
+        self.iter_with_other_map(
+            input_handler,
+            &mut object_tracker,
+            |mut obj, ctx| {
+                obj.on_update_end(ctx);
+            },
+            "on_update_end",
+        );
         self.object_handler.update_all_transforms();
         self.perf_stats.on_update_end.stop();
         object_tracker
@@ -843,13 +858,15 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker,
         call_obj_event: F,
+        description: &str,
     ) where
         F: Fn(RefMut<dyn SceneObject>, &mut UpdateContext),
     {
         for (this_id, this) in self.object_handler.objects.clone() {
             gg_err::log_and_ok(
-                UpdateContext::new(self, input_handler, this_id, object_tracker)
-                    .context("UpdateHandler::iter_with_other_map()"),
+                UpdateContext::new(self, input_handler, this_id, object_tracker).with_context(
+                    || format!("UpdateHandler::iter_with_other_map(): {description}"),
+                ),
             )
             .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
         }
