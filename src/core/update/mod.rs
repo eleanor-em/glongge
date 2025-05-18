@@ -226,6 +226,32 @@ impl ObjectHandler {
         Ok(())
     }
 
+    fn reparent_object(
+        &mut self,
+        target_id: ObjectId,
+        new_parent_id: ObjectId,
+    ) -> Result<TreeSceneObject> {
+        let last_parent_id = self
+            .lookup_parent_id(target_id)
+            .with_context(|| {
+                format!("ObjectHandler::reparent_object({target_id:?}, {new_parent_id:?})")
+            })?
+            .unwrap_or(ObjectId::root());
+        self.parents.insert(target_id, new_parent_id);
+        self.get_children_mut(last_parent_id)
+            .with_context(|| format!("ObjectHandler::reparent_object({target_id:?}, {new_parent_id:?}): remove from last_parent_id children"))?
+            .retain(|o| o.object_id != target_id);
+        let o = self
+            .get_object_by_id(target_id)
+            .with_context(|| format!("ObjectHandler::reparent_object({target_id:?}, {new_parent_id:?})"))?
+            .cloned()
+            .with_context(|| format!("ObjectHandler::reparent_object({target_id:?}, {new_parent_id:?}): target_id == root?"))?;
+        self.get_children_mut(new_parent_id)
+            .with_context(|| format!("ObjectHandler::reparent_object({target_id:?}, {new_parent_id:?}): add to new_parent_id children"))?
+            .push(o.clone());
+        Ok(o)
+    }
+
     fn get_collisions(&mut self) -> Vec<CollisionNotification> {
         self.collision_handler.get_collisions(self)
     }
@@ -397,6 +423,7 @@ impl UpdateHandler {
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
         rv.perf_stats.add_objects.start();
+        let mut pending_move_objects = BTreeMap::new();
         rv.update_with_added_objects(
             &input_handler,
             objects
@@ -407,8 +434,10 @@ impl UpdateHandler {
                     parent_id: ObjectId::root(),
                 })
                 .collect(),
+            &mut pending_move_objects,
         );
         rv.perf_stats.add_objects.stop();
+        rv.update_with_moved_objects(pending_move_objects);
         rv.update_and_send_render_infos();
         Ok(rv)
     }
@@ -446,7 +475,7 @@ impl UpdateHandler {
 
                 // Handle regular update.
                 let input_handler = self.input_handler.lock().unwrap().clone();
-                let (pending_add_objects, pending_remove_objects) = self
+                let (pending_add_objects, pending_remove_objects, mut pending_move_objects) = self
                     .call_on_update(&input_handler, fixed_updates)
                     .into_pending();
 
@@ -454,8 +483,14 @@ impl UpdateHandler {
                 self.update_with_removed_objects(pending_remove_objects);
                 self.perf_stats.remove_objects.stop();
                 self.perf_stats.add_objects.start();
-                self.update_with_added_objects(&input_handler, pending_add_objects);
+                self.update_with_added_objects(
+                    &input_handler,
+                    pending_add_objects,
+                    &mut pending_move_objects,
+                );
                 self.perf_stats.add_objects.stop();
+                // TODO: add perf stats.
+                self.update_with_moved_objects(pending_move_objects);
                 self.debug_gui
                     .on_end_step(&input_handler, &mut self.viewport);
 
@@ -498,6 +533,7 @@ impl UpdateHandler {
         &mut self,
         input_handler: &InputHandler,
         mut pending_add_objects: Vec<TreeSceneObject>,
+        pending_move_objects: &mut BTreeMap<ObjectId, ObjectId>,
     ) {
         // Multiple iterations, because on_load() may add more objects.
         // See e.g. GgInternalContainer.
@@ -534,9 +570,27 @@ impl UpdateHandler {
             );
             self.object_handler.update_all_transforms();
 
-            let (pending_add, pending_remove) = object_tracker.into_pending();
+            let (pending_add, pending_remove, new_pending_move_objects) =
+                object_tracker.into_pending();
+            for (object_id, new_parent_id) in new_pending_move_objects {
+                check!(!pending_move_objects.keys().contains(&object_id));
+                pending_move_objects.insert(object_id, new_parent_id);
+            }
             pending_add_objects = pending_add;
             self.update_with_removed_objects(pending_remove);
+        }
+    }
+    fn update_with_moved_objects(&mut self, pending_move_objects: BTreeMap<ObjectId, ObjectId>) {
+        for (target_id, new_parent_id) in pending_move_objects {
+            check_ne!(target_id, new_parent_id);
+            self.debug_gui
+                .on_remove_object(&self.object_handler, target_id);
+            if let Some(o) = gg_err::log_and_ok(
+                self.object_handler
+                    .reparent_object(target_id, new_parent_id),
+            ) {
+                self.debug_gui.on_add_object(&self.object_handler, &o);
+            }
         }
     }
 
@@ -651,6 +705,7 @@ impl UpdateHandler {
             objects: self.object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new(),
+            pending_move: BTreeMap::new(),
         };
 
         self.perf_stats.on_gui.start();
@@ -1658,6 +1713,7 @@ struct ObjectTracker {
     objects: BTreeMap<ObjectId, TreeSceneObject>,
     pending_add: Vec<TreeSceneObject>,
     pending_remove: BTreeSet<ObjectId>,
+    pending_move: BTreeMap<ObjectId, ObjectId>,
 }
 
 impl ObjectTracker {
@@ -1666,6 +1722,7 @@ impl ObjectTracker {
             objects: object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new(),
+            pending_move: BTreeMap::new(),
         }
     }
 
@@ -1678,8 +1735,14 @@ impl ObjectTracker {
 }
 
 impl ObjectTracker {
-    fn into_pending(self) -> (Vec<TreeSceneObject>, BTreeSet<ObjectId>) {
-        (self.pending_add, self.pending_remove)
+    fn into_pending(
+        self,
+    ) -> (
+        Vec<TreeSceneObject>,
+        BTreeSet<ObjectId>,
+        BTreeMap<ObjectId, ObjectId>,
+    ) {
+        (self.pending_add, self.pending_remove, self.pending_move)
     }
 }
 
@@ -2249,6 +2312,41 @@ impl ObjectContext<'_> {
     pub fn remove_children(&mut self) {
         for child in &self.this_children {
             self.object_tracker.pending_remove.insert(child.object_id);
+        }
+    }
+
+    pub fn reparent(&mut self, target: &TreeSceneObject, new_parent: &TreeSceneObject) {
+        self.reparent_inner(target.object_id, new_parent.object_id);
+    }
+    pub fn reparent_as_child(&mut self, target: &TreeSceneObject) {
+        self.reparent_inner(target.object_id, self.this_id);
+    }
+    pub fn reparent_as_sibling(&mut self, target: &TreeSceneObject) {
+        self.reparent_inner(
+            target.object_id,
+            self.parent_id().unwrap_or(ObjectId::root()),
+        );
+    }
+    pub fn reparent_to_root(&mut self, target: &TreeSceneObject) {
+        self.reparent_inner(target.object_id, ObjectId::root());
+    }
+    pub fn reparent_this(&mut self, new_parent: &TreeSceneObject) {
+        self.reparent_inner(self.this_id, new_parent.object_id);
+    }
+    pub fn reparent_this_to_root(&mut self) {
+        self.reparent_inner(self.this_id, ObjectId::root());
+    }
+    fn reparent_inner(&mut self, target_id: ObjectId, new_parent_id: ObjectId) {
+        if let Some(existing_new_parent_id) = self
+            .object_tracker
+            .pending_move
+            .insert(target_id, new_parent_id)
+        {
+            // TODO: verbose!
+            info!(
+                "ObjectContext::reparent_inner(): inserted ({:?}, {:?}) but already had {:?}",
+                target_id, new_parent_id, existing_new_parent_id
+            );
         }
     }
 
