@@ -450,7 +450,9 @@ pub trait SceneObject: 'static {
     fn gg_type_name(&self) -> String;
 
     /// Called when the object is first added to the object handler to set up sprites, rendering,
-    /// and any initial setup not dependent on other objects.
+    /// and any initial setup not dependent on other objects existing.
+    /// Generally, adding children should be done here (so that they are available in
+    /// [`on_ready()`](SceneObject::on_ready)).
     /// Other objects added in the same update may not yet be available.
     ///
     /// # Example

@@ -36,14 +36,12 @@ impl SceneObject for DecorativePipe {
             Vec2i { x: 256, y: 676 },
         );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
-        Ok(None)
-    }
-    fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        ctx.object_mut().add_child(CollisionShape::from_collider(
+        object_ctx.add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),
         ));
+        Ok(None)
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {

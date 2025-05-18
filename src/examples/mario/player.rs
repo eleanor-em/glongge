@@ -592,6 +592,11 @@ impl SceneObject for Player {
         self.underground_music = resource_handler
             .sound
             .wait_load_file("res/underground.ogg".to_string())?;
+        object_ctx.add_child(CollisionShape::from_object_sprite(
+            self,
+            self.current_sprite(),
+        ));
+        self.last_nonzero_dir = Vec2::right();
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext) {
@@ -603,12 +608,6 @@ impl SceneObject for Player {
             self.music = self.underground_music.clone();
         }
         self.music.play_loop();
-        self.last_nonzero_dir = Vec2::right();
-        ctx.object_mut()
-            .add_child(CollisionShape::from_object_sprite(
-                self,
-                self.current_sprite(),
-            ));
     }
 
     fn on_update_begin(&mut self, ctx: &mut UpdateContext) {

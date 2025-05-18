@@ -44,14 +44,12 @@ impl SceneObject for Brick {
         );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
         self.initial_y += self.sprite.half_widths().y;
-        Ok(None)
-    }
-    fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        ctx.object_mut().add_child(CollisionShape::from_collider(
+        object_ctx.add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),
         ));
+        Ok(None)
     }
 
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {

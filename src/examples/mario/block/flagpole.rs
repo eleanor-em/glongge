@@ -36,15 +36,14 @@ impl SceneObject for Flagpole {
             Vec2i { x: 16, y: 748 },
         );
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
-        Ok(None)
-    }
-    fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        ctx.object_mut().add_child(CollisionShape::from_collider(
+        object_ctx.add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),
         ));
+        Ok(None)
     }
+
     fn emitting_tags(&self) -> Vec<&'static str> {
         [FLAG_COLLISION_TAG].into()
     }

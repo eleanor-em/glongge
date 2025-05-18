@@ -39,7 +39,6 @@ use std::rc::Rc;
 use std::{
     cell::{Ref, RefMut},
     collections::{BTreeMap, BTreeSet},
-    ops::RangeInclusive,
     sync::{
         Arc, Mutex, mpsc,
         mpsc::{Receiver, Sender},
@@ -537,6 +536,7 @@ impl UpdateHandler {
     ) {
         // Multiple iterations, because on_load() may add more objects.
         // See e.g. GgInternalContainer.
+        let mut new_ids = BTreeSet::new();
         while !pending_add_objects.is_empty() {
             pending_add_objects.retain(|obj| {
                 let rv = obj.parent_id.is_root()
@@ -554,20 +554,15 @@ impl UpdateHandler {
                 break;
             }
             let pending_add = pending_add_objects.drain(..).collect_vec();
-            let first_new_id = pending_add[0].object_id.0;
-            let last_new_id = pending_add.last().unwrap().object_id.0;
+            for id in pending_add[0].object_id.0..=pending_add.last().unwrap().object_id.0 {
+                new_ids.insert(ObjectId(id));
+            }
 
             let mut object_tracker = ObjectTracker::new(&self.object_handler);
             self.object_handler
                 .collision_handler
                 .add_objects(pending_add.iter());
             self.load_new_objects(&mut object_tracker, pending_add);
-            self.object_handler.update_all_transforms();
-            self.call_on_ready(
-                &mut object_tracker,
-                input_handler,
-                first_new_id..=last_new_id,
-            );
             self.object_handler.update_all_transforms();
 
             let (pending_add, pending_remove, new_pending_move_objects) =
@@ -578,6 +573,24 @@ impl UpdateHandler {
             }
             pending_add_objects = pending_add;
             self.update_with_removed_objects(pending_remove);
+        }
+
+        let mut object_tracker = ObjectTracker::new(&self.object_handler);
+        self.call_on_ready(&mut object_tracker, input_handler, new_ids);
+        let (pending_add, pending_remove, new_pending_move_objects) = object_tracker.into_pending();
+        for (object_id, new_parent_id) in new_pending_move_objects {
+            check!(!pending_move_objects.keys().contains(&object_id));
+            pending_move_objects.insert(object_id, new_parent_id);
+        }
+        self.update_with_removed_objects(pending_remove);
+        self.object_handler.update_all_transforms();
+
+        if !pending_add.is_empty() {
+            warn!(
+                "fc={}: recursive call to update_with_added_objects(); should not add objects in on_ready()",
+                self.frame_counter
+            );
+            self.update_with_added_objects(input_handler, pending_add, pending_move_objects);
         }
     }
     fn update_with_moved_objects(&mut self, pending_move_objects: BTreeMap<ObjectId, ObjectId>) {
@@ -598,9 +611,9 @@ impl UpdateHandler {
         &mut self,
         object_tracker: &mut ObjectTracker,
         input_handler: &InputHandler,
-        new_ids: RangeInclusive<usize>,
+        new_ids: impl IntoIterator<Item = ObjectId>,
     ) {
-        for this_id in new_ids.into_iter().map(ObjectId) {
+        for this_id in new_ids {
             gg_err::log_and_ok(
                 self.object_handler
                     .objects
@@ -1954,6 +1967,14 @@ impl ObjectContext<'_> {
             .find_map(DowncastRef::downcast_mut::<T>)
     }
 
+    pub fn first_child_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
+        let o = self.first_child::<T>()?;
+        Some(
+            o.try_into()
+                .expect("should be guaranteed by TreeObjectOfType::of()"),
+        )
+    }
+
     /// Returns the first child object of type `T` for the given object ID.
     /// Note: if you intend to downcast to `T`, consider
     /// [`first_child_of_as_ref()`](ObjectContext::first_child_of_as_ref) or
@@ -2009,6 +2030,25 @@ impl ObjectContext<'_> {
             .get(&id)?
             .iter()
             .find_map(DowncastRef::downcast_mut::<T>)
+    }
+    pub fn first_child_of_into<T: SceneObject>(&self, id: ObjectId) -> Option<TreeObjectOfType<T>> {
+        let o = self.first_child_of::<T>(id)?;
+        Some(
+            o.try_into()
+                .expect("should be guaranteed by TreeObjectOfType::of()"),
+        )
+    }
+    pub fn first_sibling<T: SceneObject>(&self) -> Option<&TreeSceneObject> {
+        self.first_child_of::<T>(self.parent_id().unwrap_or(ObjectId::root()))
+    }
+    pub fn first_sibling_as_ref<T: SceneObject>(&self) -> Option<Ref<T>> {
+        self.first_child_of_as_ref::<T>(self.parent_id().unwrap_or(ObjectId::root()))
+    }
+    pub fn first_sibling_as_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+        self.first_child_of_as_mut::<T>(self.parent_id().unwrap_or(ObjectId::root()))
+    }
+    pub fn first_sibling_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
+        self.first_child_of_into::<T>(self.parent_id().unwrap_or(ObjectId::root()))
     }
 
     fn others_inner(&self) -> impl Iterator<Item = &TreeSceneObject> {

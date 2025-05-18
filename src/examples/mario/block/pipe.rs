@@ -62,12 +62,8 @@ impl SceneObject for Pipe {
         }
         .with_depth(VertexDepth::Front(1000));
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
+        object_ctx.add_child(CollisionShape::from_object_sprite(self, &self.sprite));
         Ok(None)
-    }
-
-    fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        ctx.object_mut()
-            .add_child(CollisionShape::from_object_sprite(self, &self.sprite));
     }
 
     fn emitting_tags(&self) -> Vec<&'static str> {

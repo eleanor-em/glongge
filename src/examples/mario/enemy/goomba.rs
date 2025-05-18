@@ -71,6 +71,11 @@ impl SceneObject for Goomba {
         )
         .with_hidden();
         object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
+        object_ctx.add_child(CollisionShape::from_collider(
+            self.sprite.as_box_collider(),
+            &self.emitting_tags(),
+            &self.listening_tags(),
+        ));
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext) {
@@ -78,12 +83,6 @@ impl SceneObject for Goomba {
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
             ctx.object_mut().remove_this();
-        } else {
-            ctx.object_mut().add_child(CollisionShape::from_collider(
-                self.sprite.as_box_collider(),
-                &self.emitting_tags(),
-                &self.listening_tags(),
-            ));
         }
     }
     fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {

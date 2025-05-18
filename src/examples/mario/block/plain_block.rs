@@ -40,14 +40,12 @@ impl SceneObject for Block {
             Vec2i { x: 48, y: 476 },
             Vec2i { x: 16, y: 16 },
         );
-        Ok(None)
-    }
-    fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        ctx.object_mut().add_child(CollisionShape::from_collider(
+        object_ctx.add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),
         ));
+        Ok(None)
     }
 
     fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
