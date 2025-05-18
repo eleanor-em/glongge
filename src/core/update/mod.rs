@@ -2074,6 +2074,14 @@ impl ObjectContext<'_> {
         self.others_inner().find_map(TreeSceneObject::downcast_mut)
     }
 
+    pub fn first_other_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
+        let o = self.first_other::<T>()?;
+        Some(
+            o.try_into()
+                .expect("should be guaranteed by TreeObjectOfType::of()"),
+        )
+    }
+
     /// Returns the local transform of this object relative to its parent.
     ///
     /// This transform represents the object's local position, rotation and scale,
@@ -2399,6 +2407,7 @@ impl ObjectContext<'_> {
         }
         NonemptyVec::try_from_vec(rv)
     }
+
     /// Tests for collisions between this object's collider and other objects with the given tags.
     ///
     /// # Parameters

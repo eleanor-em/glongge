@@ -288,23 +288,6 @@ impl<T: SceneObject> TryFrom<&TreeSceneObject> for TreeObjectOfType<T> {
     }
 }
 
-impl<T: SceneObject> TryFrom<Option<TreeSceneObject>> for TreeObjectOfType<T> {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Option<TreeSceneObject>) -> std::result::Result<Self, Self::Error> {
-        let value = value.ok_or_else(|| anyhow!("None"))?;
-        Self::try_from(value)
-    }
-}
-impl<T: SceneObject> TryFrom<Option<&TreeSceneObject>> for TreeObjectOfType<T> {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Option<&TreeSceneObject>) -> std::result::Result<Self, Self::Error> {
-        let value = value.ok_or_else(|| anyhow!("None"))?;
-        Self::try_from(value)
-    }
-}
-
 pub trait DowncastRef {
     /// Attempts to downcast a reference to a specific scene object type.
     /// Returns None if the type does not match.
