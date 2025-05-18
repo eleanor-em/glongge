@@ -103,14 +103,14 @@ impl GuiObjectView {
     ) -> Result<()> {
         if self.object_id != selected_id {
             for c in object_handler.get_collision_shapes(self.object_id)? {
-                c.inner_mut().hide_wireframe();
+                c.borrow_mut().hide_wireframe();
             }
             self.absolute_cell.clear_state();
             self.relative_cell.clear_state();
             self.object_id = selected_id;
             if !selected_id.is_root() {
                 for c in object_handler.get_collision_shapes(selected_id)? {
-                    c.inner_mut().show_wireframe();
+                    c.borrow_mut().show_wireframe();
                 }
             }
         }
@@ -1127,7 +1127,7 @@ impl DebugGui {
                     .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
             })
             .flat_map(|o| gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes(o)))
-            .for_each(|c| c.inner_mut().hide_wireframe());
+            .for_each(|c| c.borrow_mut().hide_wireframe());
     }
     pub fn on_mouseovers(
         &mut self,
@@ -1141,7 +1141,7 @@ impl DebugGui {
                 gg_err::log_unwrap_or(Vec::new(), result)
                     .into_iter()
                     .map(|c| {
-                        c.inner_mut().show_wireframe();
+                        c.borrow_mut().show_wireframe();
                         c.object_id()
                     })
             })

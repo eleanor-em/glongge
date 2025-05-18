@@ -207,11 +207,14 @@ impl<T: SceneObject> TreeObjectOfType<T> {
         obj.and_then(Self::of)
     }
 
-    pub fn inner(&self) -> Ref<T> {
+    pub fn borrow(&self) -> Ref<T> {
         self.inner.as_ref().unwrap().downcast::<T>().unwrap()
     }
-    pub fn inner_mut(&self) -> RefMut<T> {
+    pub fn borrow_mut(&self) -> RefMut<T> {
         self.inner.as_ref().unwrap().downcast_mut::<T>().unwrap()
+    }
+    pub fn inner(&self) -> &TreeSceneObject {
+        self.inner.as_ref().unwrap()
     }
 
     pub fn object_id(&self) -> ObjectId {
