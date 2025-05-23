@@ -31,6 +31,7 @@ use crate::{
         linalg::Transform,
         linalg::{AxisAlignedExtent, Vec2},
     },
+    warn_every_seconds,
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
 use serde::{Serialize, de::DeserializeOwned};
@@ -59,6 +60,9 @@ pub(crate) struct ObjectHandler {
     pub(crate) absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<TreeSceneObject>>,
 
+    object_ref_tracker: BTreeMap<ObjectId, TreeSceneObject>,
+    dangling_names: BTreeMap<ObjectId, String>,
+
     collision_handler: CollisionHandler,
 }
 
@@ -69,6 +73,8 @@ impl ObjectHandler {
             parents: BTreeMap::new(),
             absolute_transforms: BTreeMap::new(),
             children: BTreeMap::new(),
+            object_ref_tracker: BTreeMap::new(),
+            dangling_names: BTreeMap::new(),
             collision_handler: CollisionHandler::new(),
         }
     }
@@ -187,6 +193,10 @@ impl ObjectHandler {
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
+        let name = self.get_object_by_id(remove_id).ok().flatten().map_or(
+            "<unknown>".to_string(),
+            TreeSceneObject::nickname_or_type_name,
+        );
         // Remove this object from its parent's list of children.
         let parent_id = gg_err::log_err_then(
             self.get_parent_by_id(remove_id)
@@ -203,6 +213,15 @@ impl ObjectHandler {
         self.objects.remove(&remove_id);
         self.absolute_transforms.remove(&remove_id);
         self.children.remove(&remove_id);
+
+        let o = self.object_ref_tracker.get(&remove_id).unwrap();
+        let count = Rc::strong_count(&o.scene_object.wrapped);
+        if count > 1 {
+            info!("remaining references to {name} ({remove_id:?}): {count}");
+            self.dangling_names.insert(remove_id, name);
+        } else {
+            self.object_ref_tracker.remove(&remove_id);
+        }
     }
 
     /// Adds a new object to the scene hierarchy and establishes its parent-child relationships.
@@ -218,6 +237,8 @@ impl ObjectHandler {
                 .insert(ObjectId(0), Transform::default());
         }
         self.objects.insert(new_obj.object_id, new_obj.clone());
+        self.object_ref_tracker
+            .insert(new_obj.object_id, new_obj.clone());
         self.parents.insert(new_obj.object_id, new_obj.parent_id);
         self.children.insert(new_obj.object_id, Vec::new());
         let children = self.get_children_mut(new_obj.parent_id)?;
@@ -324,6 +345,31 @@ impl ObjectHandler {
             start = end;
         }
         shader_execs
+    }
+
+    pub(crate) fn cleanup_references(&mut self) {
+        let mut leaked_bytes = 0;
+        for id in self.object_ref_tracker.keys().copied().collect_vec() {
+            let o = self.object_ref_tracker.get(&id).unwrap();
+            let count = Rc::strong_count(&o.scene_object.wrapped);
+            if !self.objects.contains_key(&id) {
+                leaked_bytes += count * size_of::<TreeSceneObject>();
+                let name = self
+                    .dangling_names
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or("<unknown>".to_string());
+                if count > 1 {
+                    warn_every_seconds!(1, "dangling references to {name} ({id:?}): {count}");
+                } else {
+                    self.object_ref_tracker.remove(&id);
+                    self.dangling_names.remove(&id);
+                }
+            }
+        }
+        if leaked_bytes > 0 {
+            warn_every_seconds!(1, "leaked memory: {:.2} KiB", (leaked_bytes as f64) / 1024.);
+        }
     }
 
     pub(crate) fn get_first_object_id_for_gui(&self) -> Option<ObjectId> {
@@ -801,6 +847,7 @@ impl UpdateHandler {
             "on_update_end",
         );
         self.object_handler.update_all_transforms();
+        self.object_handler.cleanup_references();
         self.perf_stats.on_update_end.stop();
         object_tracker
     }
