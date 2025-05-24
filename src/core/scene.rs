@@ -730,8 +730,25 @@ pub trait RenderableObject: SceneObject {
     fn shader_execs(&self) -> Vec<ShaderExec>;
 }
 
-pub type GuiClosure = dyn FnOnce(&GuiContext) + Send;
-pub type GuiCommand = dyn FnOnce(&mut GuiUi) + Send;
+pub(crate) type GuiClosure = dyn FnOnce(&GuiContext) + Send;
+pub struct GuiCommand(Box<dyn FnOnce(&mut GuiUi) + Send>);
+impl GuiCommand {
+    pub fn new<F: FnOnce(&mut GuiUi) + Send + 'static>(f: F) -> Self {
+        Self(Box::new(f))
+    }
+
+    pub fn call(self, ui: &mut GuiUi) {
+        self.0(ui);
+    }
+
+    #[must_use]
+    pub fn join(self, other: GuiCommand) -> GuiCommand {
+        GuiCommand::new(move |ui| {
+            self.call(ui);
+            other.call(ui);
+        })
+    }
+}
 pub trait GuiObject: SceneObject {
     /// Called during each frame to build and return GUI elements for this object.
     ///
@@ -741,7 +758,7 @@ pub trait GuiObject: SceneObject {
     ///
     /// Show some simple debugging information about the object:
     /// ```ignore
-    /// fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
     ///     let height = self.height;
     ///     let ground_height = self.last_ground_height;
     ///     let v_speed = self.v_speed;
@@ -755,7 +772,7 @@ pub trait GuiObject: SceneObject {
     /// Show some debugging information about the object, and allow editing it with
     /// [`EditCell`](crate::gui::EditCell)/[`EditCellSender`](crate::gui::EditCellSender):
     /// ```ignore
-    /// fn on_gui(&mut self, ctx: &UpdateContext, _selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, ctx: &UpdateContext, _selected: bool) -> GuiCommand {
     ///     let extent = self.collider.aa_extent();
     ///     let (next_x, next_y) = (
     ///         self.extent_cell_receiver_x.try_recv(),
@@ -784,7 +801,7 @@ pub trait GuiObject: SceneObject {
     /// ```
     /// Show some debugging information about the object, and allow copying it to the clipboard:
     /// ```ignore
-    /// fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
+    /// fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> GuiCommand {
     ///     self.gui_selected = selected || self.force_visible;
     ///     let string_desc = self
     ///         .control_points
@@ -803,7 +820,7 @@ pub trait GuiObject: SceneObject {
     ///     })
     /// }
     /// ```
-    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> Box<GuiCommand>;
+    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> GuiCommand;
 }
 
 impl SceneObject for Box<dyn SceneObject> {

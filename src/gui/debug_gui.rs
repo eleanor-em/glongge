@@ -129,7 +129,7 @@ impl GuiObjectView {
     fn build_closure(
         &mut self,
         object_handler: &mut ObjectHandler,
-        mut gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
+        mut gui_cmds: BTreeMap<ObjectId, GuiCommand>,
         frame: Frame,
         enabled: bool,
     ) -> Result<Box<GuiClosure>> {
@@ -147,24 +147,24 @@ impl GuiObjectView {
                 .frame(frame)
                 .show_animated(ctx, enabled && !is_root, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        name_cmd(ui);
-                        transform_cmd(ui);
+                        name_cmd.call(ui);
+                        transform_cmd.call(ui);
                         if let Some(gui_cmd) = gui_cmd {
                             ui.separator();
-                            gui_cmd(ui);
+                            gui_cmd.call(ui);
                         }
                     });
                 });
         }))
     }
 
-    fn create_name_cmd(&self, object_handler: &mut ObjectHandler) -> Result<Box<GuiCommand>> {
+    fn create_name_cmd(&self, object_handler: &mut ObjectHandler) -> Result<GuiCommand> {
         let name = format!(
             "{} [{}]",
             self.get_object(object_handler)?.nickname_or_type_name(),
             self.object_id.value_for_gui()
         );
-        Ok(Box::new(move |ui: &mut Ui| {
+        Ok(GuiCommand::new(move |ui: &mut Ui| {
             ui.vertical_centered(|ui| {
                 let mut layout_job = LayoutJob::default();
                 layout_job.append(
@@ -181,7 +181,7 @@ impl GuiObjectView {
         }))
     }
 
-    fn create_transform_cmd(&mut self, object_handler: &ObjectHandler) -> Result<Box<GuiCommand>> {
+    fn create_transform_cmd(&mut self, object_handler: &ObjectHandler) -> Result<GuiCommand> {
         let object_id = self.object_id;
         let object = self.get_object(object_handler)?.clone(); // borrowck issues
 
@@ -245,7 +245,7 @@ impl GuiObjectView {
             ui.add(egui::Label::new(layout_job).selectable(false));
             relative_transform.build_gui(ui, relative_sender);
         };
-        Ok(Box::new(transform_cmd))
+        Ok(GuiCommand::new(transform_cmd))
     }
 }
 
@@ -383,19 +383,19 @@ impl GuiObjectTree {
                         bar_width: 5.,
                         ..Default::default()
                     };
-                    show_cmd(ui);
+                    show_cmd.call(ui);
                 });
         })
     }
 
-    fn create_show_cmd(&mut self) -> Box<GuiCommand> {
+    fn create_show_cmd(&mut self) -> GuiCommand {
         let selected_changed = self
             .selected_id
             .try_recv_and_update()
             .is_some_and(|next| self.root.update_open_with_selected(next));
         let mut root = self.root.as_builder(selected_changed, &self.selected_id);
         let show_tx = self.show.sender();
-        Box::new(move |ui| {
+        GuiCommand::new(move |ui| {
             if show_tx.get() {
                 ui.vertical_centered(|ui| {
                     show_tx.add_as_button(ui, "🌳");
@@ -1062,7 +1062,7 @@ impl DebugGui {
         &mut self,
         input_handler: &InputHandler,
         object_handler: &mut ObjectHandler,
-        gui_cmds: BTreeMap<ObjectId, Box<GuiCommand>>,
+        gui_cmds: BTreeMap<ObjectId, GuiCommand>,
     ) -> Box<GuiClosure> {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {

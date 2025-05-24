@@ -207,7 +207,7 @@ impl SceneObject for GgInternalInteractiveSpline {
 }
 
 impl GuiObject for GgInternalInteractiveSpline {
-    fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
+    fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> GuiCommand {
         self.gui_selected = selected || self.force_visible;
         let string_desc = self
             .spline
@@ -216,7 +216,7 @@ impl GuiObject for GgInternalInteractiveSpline {
             .map(|v| format!("\t{v:?},\n"))
             .reduce(|acc: String, x: String| acc + &x)
             .unwrap_or_default();
-        Box::new(move |ui| {
+        GuiCommand::new(move |ui| {
             ui.with_layout(Layout::top_down(Align::Center), |ui| {
                 if ui.button("Copy as Vec").clicked() {
                     ui.output_mut(|o| {

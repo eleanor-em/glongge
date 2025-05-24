@@ -1828,7 +1828,7 @@ impl RenderableObject for GgInternalCollisionShape {
 }
 
 impl GuiObject for GgInternalCollisionShape {
-    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> Box<GuiCommand> {
+    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> GuiCommand {
         if !selected {
             self.extent_cell_receiver_x.clear_state();
             self.extent_cell_receiver_y.clear_state();
@@ -1875,7 +1875,7 @@ impl GuiObject for GgInternalCollisionShape {
         let listening_tags = self.listening_tags.join(", ");
 
         let collider = self.collider.clone();
-        Box::new(move |ui| {
+        GuiCommand::new(move |ui| {
             ui.label(collider.to_string());
             ui.add(egui::Label::new("Extent").selectable(false));
             collider

@@ -423,6 +423,10 @@ pub mod gg_float {
     pub fn force_positive_zero(x: f32) -> f32 {
         if x.is_zero() { 0. } else { x }
     }
+
+    pub fn sign_zero(x: f32) -> f32 {
+        if x.is_zero() { 0. } else { x.signum() }
+    }
 }
 
 pub mod gg_range {
