@@ -10,8 +10,8 @@ use crate::util::{NonemptyVec, ValueChannel, ValueChannelSender, gg_err, gg_floa
 use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{
-    Align, Button, Color32, FontSelection, Frame, Id, Layout, Sense, Style, TextBuffer, TextFormat,
-    TextStyle, Ui,
+    Align, Button, CollapsingResponse, Color32, FontSelection, Frame, Id, Layout, Sense, Style,
+    TextBuffer, TextFormat, TextStyle, Ui,
 };
 use itertools::Itertools;
 use regex::Regex;
@@ -630,68 +630,88 @@ impl GuiObjectTreeBuilder {
             self.displayed.values_mut().for_each(|tree| tree.build(ui));
         } else {
             ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                // Note: values must be stored here to stay consistent for children.
+                // TODO: this is somewhat dubious.
                 let parent_max_w = ui.max_rect().width();
                 let offset = ui.min_rect().left() - parent_max_w;
 
-                let mut layout_job = LayoutJob {
-                    halign: Align::Center,
-                    ..Default::default()
-                };
-                layout_job.append(self.label.get_tags(), 0., TextFormat::default());
-                ui.add(egui::Label::new(layout_job).selectable(false));
-
-                let mut header = egui::CollapsingHeader::new(self.label.name())
-                    .id_salt(self.label.id_salt())
-                    .show_background(self.is_selected)
-                    .open(Some(self.open_tx.get() && !self.displayed.is_empty()));
-                // Don't show it as "openable" if there are no children.
-                if self.displayed.is_empty() {
-                    header = header.icon(|ui, _openness, response| {
-                        // Copied from egui documentation.
-                        let stroke = ui.style().interact(response).fg_stroke;
-                        let radius = 2.0;
-                        ui.painter()
-                            .circle_filled(response.rect.center(), radius, stroke.color);
-                    });
-                }
-                let response = header.show(ui, |ui| {
-                    ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
-                    for (_, child_group) in &self
-                        .displayed
-                        .values_mut()
-                        .chunk_by(|tree| tree.label.name().to_string())
-                    {
-                        let mut child_group = child_group.collect_vec();
-                        let max_displayed = 10;
-                        child_group
-                            .iter_mut()
-                            .take(max_displayed)
-                            .for_each(|tree| tree.build(ui));
-                        if !self.expand_all_children_tx.get() && child_group.len() > max_displayed {
-                            let expander_label =
-                                egui::Label::new(format!("[..{}]", child_group.len()))
-                                    .extend()
-                                    .sense(Sense::click())
-                                    .selectable(false);
-                            if ui.add(expander_label).clicked() {
-                                self.expand_all_children_tx.send(true);
-                            }
-                            ui.end_row();
-                        }
-                    }
-                });
-                if self.selected_changed && self.is_selected {
-                    response.header_response.scroll_to_me(Some(Align::Center));
-                }
-                if response.header_response.double_clicked()
-                    || response.header_response.secondary_clicked()
-                {
-                    self.open_tx.toggle();
-                }
-                if response.header_response.clicked() {
-                    self.selected_tx.send(self.object_id);
-                }
+                self.build_label(ui);
+                let response = self.build_header(ui, parent_max_w, offset);
+                self.build_handle_response(&response);
             });
+        }
+    }
+
+    fn build_label(&mut self, ui: &mut Ui) {
+        let mut layout_job = LayoutJob {
+            halign: Align::Center,
+            ..Default::default()
+        };
+        layout_job.append(self.label.get_tags(), 0., TextFormat::default());
+        ui.add(egui::Label::new(layout_job).selectable(false));
+    }
+
+    fn build_header(
+        &mut self,
+        ui: &mut Ui,
+        parent_max_w: f32,
+        offset: f32,
+    ) -> CollapsingResponse<()> {
+        let mut header = egui::CollapsingHeader::new(self.label.name())
+            .id_salt(self.label.id_salt())
+            .show_background(self.is_selected)
+            .open(Some(self.open_tx.get() && !self.displayed.is_empty()));
+        // Don't show it as "openable" if there are no children.
+        if self.displayed.is_empty() {
+            header = header.icon(|ui, _openness, response| {
+                // Copied from egui documentation.
+                let stroke = ui.style().interact(response).fg_stroke;
+                let radius = 2.0;
+                ui.painter()
+                    .circle_filled(response.rect.center(), radius, stroke.color);
+            });
+        }
+        header.show(ui, |ui| {
+            self.build_children(ui, parent_max_w, offset);
+        })
+    }
+
+    fn build_children(&mut self, ui: &mut Ui, parent_max_w: f32, offset: f32) {
+        ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
+        for (_, child_group) in &self
+            .displayed
+            .values_mut()
+            .chunk_by(|tree| tree.label.name().to_string())
+        {
+            let mut child_group = child_group.collect_vec();
+            let max_displayed = 10;
+            child_group
+                .iter_mut()
+                .take(max_displayed)
+                .for_each(|tree| tree.build(ui));
+            if !self.expand_all_children_tx.get() && child_group.len() > max_displayed {
+                let expander_label = egui::Label::new(format!("[..{}]", child_group.len()))
+                    .extend()
+                    .sense(Sense::click())
+                    .selectable(false);
+                if ui.add(expander_label).clicked() {
+                    self.expand_all_children_tx.send(true);
+                }
+                ui.end_row();
+            }
+        }
+    }
+
+    fn build_handle_response(&mut self, response: &CollapsingResponse<()>) {
+        if self.selected_changed && self.is_selected {
+            response.header_response.scroll_to_me(Some(Align::Center));
+        }
+        if response.header_response.double_clicked() || response.header_response.secondary_clicked()
+        {
+            self.open_tx.toggle();
+        }
+        if response.header_response.clicked() {
+            self.selected_tx.send(self.object_id);
         }
     }
 }
