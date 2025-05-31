@@ -263,7 +263,7 @@ impl GuiObjectView {
 struct GuiObjectTreeNode {
     label: ObjectLabel,
     object_id: ObjectId,
-    displayed: BTreeMap<ObjectId, GuiObjectTreeNode>,
+    children: BTreeMap<ObjectId, GuiObjectTreeNode>,
     disambiguation: Rc<RefCell<BTreeMap<String, usize>>>, // for id_salt()
     open: ValueChannel<bool>,
     expand_all_children: ValueChannel<BTreeSet<usize>>,
@@ -274,7 +274,7 @@ impl GuiObjectTreeNode {
         Self {
             label: ObjectLabel::Root,
             object_id: ObjectId::root(),
-            displayed: BTreeMap::new(),
+            children: BTreeMap::new(),
             disambiguation: Rc::new(RefCell::new(BTreeMap::new())),
             open: ValueChannel::default(),
             expand_all_children: ValueChannel::default(),
@@ -295,7 +295,7 @@ impl GuiObjectTreeNode {
                 ObjectLabel::Unique(name, String::new())
             },
             object_id: object.object_id,
-            displayed: BTreeMap::new(),
+            children: BTreeMap::new(),
             disambiguation: self.disambiguation.clone(),
             open: ValueChannel::default(),
             expand_all_children: ValueChannel::default(),
@@ -307,18 +307,25 @@ impl GuiObjectTreeNode {
             let mut tags = String::new();
             if !gg_err::log_unwrap_or(
                 Vec::new(),
-                object_handler.get_collision_shapes(self.object_id),
+                object_handler
+                    .get_collision_shapes(self.object_id)
+                    .context("GuiObjectTreeNode::refresh_label()"),
             )
             .is_empty()
             {
                 tags += "▣ ";
             }
-            if gg_err::log_unwrap_or(false, object_handler.has_sprite_for_gui(self.object_id)) {
+            if gg_err::log_unwrap_or(
+                false,
+                object_handler
+                    .has_sprite_for_gui(self.object_id)
+                    .context("GuiObjectTreeNode::refresh_label()"),
+            ) {
                 tags += "👾 ";
             }
             self.label.set_tags(tags.trim());
         }
-        for child in self.displayed.values_mut() {
+        for child in self.children.values_mut() {
             child.refresh_label(object_handler);
         }
     }
@@ -326,7 +333,7 @@ impl GuiObjectTreeNode {
     fn update_open_with_selected(&mut self, selected_id: ObjectId) -> bool {
         if self.object_id == selected_id
             || self
-                .displayed
+                .children
                 .values_mut()
                 .any(|c| c.update_open_with_selected(selected_id))
         {
@@ -349,8 +356,8 @@ impl GuiObjectTreeNode {
         GuiObjectTreeBuilder {
             label: self.label.clone(),
             object_id: self.object_id,
-            displayed: self
-                .displayed
+            children: self
+                .children
                 .iter_mut()
                 .map(|(id, tree)| (*id, tree.as_builder(selected_changed, selected)))
                 .collect(),
@@ -544,27 +551,6 @@ impl GuiObjectTree {
         }
     }
 
-    pub fn on_add_object(
-        &mut self,
-        object_handler: &ObjectHandler,
-        object: &TreeSceneObject,
-    ) -> Result<()> {
-        let mut tree = &mut self.root;
-        let chain = object_handler
-            .get_parent_chain(object.object_id)
-            .context("GuiObjectTree::on_add_object()")?;
-        for id in chain.into_iter().rev() {
-            if tree.displayed.contains_key(&id) {
-                tree = tree.displayed.get_mut(&id).unwrap();
-            } else {
-                let child = tree.node(object);
-                tree.displayed.insert(object.object_id, child);
-                break;
-            }
-        }
-        Ok(())
-    }
-
     fn get_node_by_object_id(
         &mut self,
         object_handler: &ObjectHandler,
@@ -575,11 +561,11 @@ impl GuiObjectTree {
             .context("GuiObjectTree::get_node_by_object_id()")?;
         let mut tree = &mut self.root;
         for id in chain.into_iter().rev() {
-            if id == object_id {
-                return Ok(Some(tree));
-            }
-            if let Some(next) = tree.displayed.get_mut(&id) {
+            if let Some(next) = tree.children.get_mut(&id) {
                 tree = next;
+                if tree.object_id == object_id {
+                    return Ok(Some(tree));
+                }
             } else {
                 // Orphaned object.
                 bail!(
@@ -591,20 +577,81 @@ impl GuiObjectTree {
         Ok(None)
     }
 
+    pub fn on_add_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object: &TreeSceneObject,
+    ) -> Result<()> {
+        let mut tree = &mut self.root;
+        let chain = object_handler
+            .get_parent_chain(object.object_id)
+            .context("GuiObjectTree::on_add_object()")?;
+        for id in chain.into_iter().rev() {
+            if tree.children.contains_key(&id) {
+                tree = tree.children.get_mut(&id).unwrap();
+            } else {
+                let child = tree.node(object);
+                tree.children.insert(object.object_id, child);
+                break;
+            }
+        }
+        Ok(())
+    }
+
     pub fn on_remove_object(
         &mut self,
         object_handler: &ObjectHandler,
         removed_id: ObjectId,
     ) -> Result<()> {
-        info!("GuiObjectTree::on_remove_object({removed_id:?})");
-        if let Some(tree) = self
-            .get_node_by_object_id(object_handler, removed_id)
+        self.root.children.remove(&removed_id);
+        if let Some(parent) = object_handler
+            .get_parent_by_id(removed_id)
             .context("GuiObjectTree::on_remove_object()")?
         {
-            tree.displayed.remove(&removed_id);
+            if let Some(tree) = self
+                .get_node_by_object_id(object_handler, parent.object_id)
+                .context("GuiObjectTree::on_remove_object()")?
+            {
+                tree.children.remove(&removed_id);
+            }
         }
         if self.selected_id.get() == removed_id {
             self.selected_id.overwrite(ObjectId::root());
+        }
+        Ok(())
+    }
+
+    pub fn on_move_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object_id: ObjectId,
+        last_parent_id: ObjectId,
+        new_parent_id: ObjectId,
+    ) -> Result<()> {
+        let selected_id = self.selected_id.get();
+        let removed_from = if let Some(previous_parent_node) = self
+            .get_node_by_object_id(object_handler, last_parent_id)
+            .context("GuiObjectTree::on_move_object(): previous_parent_node")?
+        {
+            previous_parent_node.children.remove(&object_id)
+        } else {
+            self.root.children.remove(&object_id)
+        };
+        let Some(removed_node) = removed_from else {
+            bail!(
+                "GuiObjectTree::on_move_object(): object not found: {}",
+                object_handler.format_object_id_for_logging(object_id)
+            );
+        };
+
+        if let Some(new_parent_node) = self
+            .get_node_by_object_id(object_handler, new_parent_id)
+            .context("GuiObjectTree::on_move_object(): new_parent_node")?
+        {
+            new_parent_node.children.insert(object_id, removed_node);
+            new_parent_node.update_open_with_selected(selected_id);
+        } else {
+            self.root.children.insert(object_id, removed_node);
         }
         Ok(())
     }
@@ -617,7 +664,7 @@ impl GuiObjectTree {
 struct GuiObjectTreeBuilder {
     label: ObjectLabel,
     object_id: ObjectId,
-    displayed: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
+    children: BTreeMap<ObjectId, GuiObjectTreeBuilder>,
     open_tx: ValueChannelSender<bool>,
     is_selected: bool,
     selected_changed: bool,
@@ -629,7 +676,7 @@ impl GuiObjectTreeBuilder {
 
     fn build(&mut self, ui: &mut GuiUi) {
         if self.label == ObjectLabel::Root {
-            self.displayed.values_mut().for_each(|tree| tree.build(ui));
+            self.children.values_mut().for_each(|tree| tree.build(ui));
         } else {
             ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                 // Note: values must be stored here to stay consistent for children.
@@ -662,9 +709,9 @@ impl GuiObjectTreeBuilder {
         let mut header = egui::CollapsingHeader::new(self.label.name())
             .id_salt(self.label.id_salt())
             .show_background(self.is_selected)
-            .open(Some(self.open_tx.get() && !self.displayed.is_empty()));
+            .open(Some(self.open_tx.get() && !self.children.is_empty()));
         // Don't show it as "openable" if there are no children.
-        if self.displayed.is_empty() {
+        if self.children.is_empty() {
             header = header.icon(|ui, _openness, response| {
                 // Copied from egui documentation.
                 let stroke = ui.style().interact(response).fg_stroke;
@@ -682,7 +729,7 @@ impl GuiObjectTreeBuilder {
         ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
         let mut group_ix = 0;
         for (_, child_group) in &self
-            .displayed
+            .children
             .values_mut()
             .chunk_by(|tree| tree.label.name().to_string())
         {
@@ -720,7 +767,7 @@ impl GuiObjectTreeBuilder {
         {
             self.open_tx.toggle();
         }
-        if response.header_response.clicked() {
+        if response.header_response.clicked() && !self.is_selected {
             self.selected_tx.send(self.object_id);
         }
     }
@@ -1235,6 +1282,16 @@ impl DebugGui {
             self.object_view.clear_selection();
         }
         self.object_tree.on_remove_object(object_handler, remove_id)
+    }
+    pub fn on_move_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object_id: ObjectId,
+        last_parent_id: ObjectId,
+        new_parent_id: ObjectId,
+    ) -> Result<()> {
+        self.object_tree
+            .on_move_object(object_handler, object_id, last_parent_id, new_parent_id)
     }
     /// Handles viewport moving with the arrow keys.
     pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {

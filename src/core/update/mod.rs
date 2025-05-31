@@ -496,6 +496,15 @@ impl UpdateHandler {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
 
+                let update_span = span!(
+                    tracing::Level::INFO,
+                    "update",
+                    fc = self.frame_counter,
+                    // TODO: update `ffc`.
+                    ffc = self.fixed_frame_counter
+                );
+                let _enter = update_span.enter();
+
                 // Handle fixed update.
                 fixed_update_us += self.delta.as_micros();
                 let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
@@ -644,21 +653,22 @@ impl UpdateHandler {
     fn update_with_moved_objects(&mut self, pending_move_objects: BTreeMap<ObjectId, ObjectId>) {
         for (target_id, new_parent_id) in pending_move_objects {
             check_ne!(target_id, new_parent_id);
-            gg_err::log_err_and_ignore(
-                self.debug_gui
-                    .on_remove_object(&self.object_handler, target_id)
-                    .context("UpdateHandler::update_with_moved_objects()"),
-            );
-            if let Some(o) = gg_err::log_and_ok(
-                self.object_handler
-                    .reparent_object(target_id, new_parent_id),
-            ) {
+            if let Some(last_parent_id) = gg_err::log_and_ok(self.object_handler
+                .lookup_parent_id(target_id)
+                .with_context(|| {
+                    format!("UpdateHandler::update_with_moved_objects({target_id:?}, {new_parent_id:?})")
+                })) {
+                let last_parent_id = last_parent_id.unwrap_or(ObjectId::root());
                 gg_err::log_err_and_ignore(
                     self.debug_gui
-                        .on_add_object(&self.object_handler, &o)
+                        .on_move_object(&self.object_handler, target_id, last_parent_id, new_parent_id)
                         .context("UpdateHandler::update_with_moved_objects()"),
                 );
             }
+            gg_err::log_err_and_ignore(
+                self.object_handler
+                    .reparent_object(target_id, new_parent_id),
+            );
         }
     }
 
@@ -715,6 +725,15 @@ impl UpdateHandler {
             object_tracker
                 .objects
                 .insert(new_obj.object_id(), new_obj.clone());
+            gg_err::log_err_and_ignore(
+                self.debug_gui
+                    .on_add_object(
+                        &self.object_handler,
+                        &new_obj,
+                        // parent.as_ref().map_or(ObjectId::root(), |p| p.object_id),
+                    )
+                    .context("UpdateHandler::load_new_objects()"),
+            );
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
                 this_id: new_obj.object_id,
@@ -726,11 +745,6 @@ impl UpdateHandler {
                 all_children: &self.object_handler.children,
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
-            gg_err::log_err_and_ignore(
-                self.debug_gui
-                    .on_add_object(&self.object_handler, &new_obj)
-                    .context("UpdateHandler::load_new_objects()"),
-            );
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
                     .inner_mut()
@@ -774,13 +788,6 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         mut fixed_updates: u128,
     ) -> ObjectTracker {
-        let update_span = span!(
-            tracing::Level::INFO,
-            "update",
-            fc = self.frame_counter,
-            ffc = self.fixed_frame_counter
-        );
-        let _enter = update_span.enter();
         let mut object_tracker = ObjectTracker {
             objects: self.object_handler.objects.clone(),
             pending_add: Vec::new(),
