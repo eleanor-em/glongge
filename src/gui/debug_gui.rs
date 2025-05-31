@@ -640,38 +640,46 @@ impl GuiObjectTreeBuilder {
                 layout_job.append(self.label.get_tags(), 0., TextFormat::default());
                 ui.add(egui::Label::new(layout_job).selectable(false));
 
-                let response = egui::CollapsingHeader::new(self.label.name())
+                let mut header = egui::CollapsingHeader::new(self.label.name())
                     .id_salt(self.label.id_salt())
                     .show_background(self.is_selected)
-                    .open(Some(self.open_tx.get()))
-                    .show(ui, |ui| {
-                        ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
-                        for (_, child_group) in &self
-                            .displayed
-                            .values_mut()
-                            .chunk_by(|tree| tree.label.name().to_string())
-                        {
-                            let mut child_group = child_group.collect_vec();
-                            let max_displayed = 10;
-                            child_group
-                                .iter_mut()
-                                .take(max_displayed)
-                                .for_each(|tree| tree.build(ui));
-                            if !self.expand_all_children_tx.get()
-                                && child_group.len() > max_displayed
-                            {
-                                let expander_label =
-                                    egui::Label::new(format!("[..{}]", child_group.len()))
-                                        .extend()
-                                        .sense(Sense::click())
-                                        .selectable(false);
-                                if ui.add(expander_label).clicked() {
-                                    self.expand_all_children_tx.send(true);
-                                }
-                                ui.end_row();
-                            }
-                        }
+                    .open(Some(self.open_tx.get() && !self.displayed.is_empty()));
+                // Don't show it as "openable" if there are no children.
+                if self.displayed.is_empty() {
+                    header = header.icon(|ui, _openness, response| {
+                        // Copied from egui documentation.
+                        let stroke = ui.style().interact(response).fg_stroke;
+                        let radius = 2.0;
+                        ui.painter()
+                            .circle_filled(response.rect.center(), radius, stroke.color);
                     });
+                }
+                let response = header.show(ui, |ui| {
+                    ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
+                    for (_, child_group) in &self
+                        .displayed
+                        .values_mut()
+                        .chunk_by(|tree| tree.label.name().to_string())
+                    {
+                        let mut child_group = child_group.collect_vec();
+                        let max_displayed = 10;
+                        child_group
+                            .iter_mut()
+                            .take(max_displayed)
+                            .for_each(|tree| tree.build(ui));
+                        if !self.expand_all_children_tx.get() && child_group.len() > max_displayed {
+                            let expander_label =
+                                egui::Label::new(format!("[..{}]", child_group.len()))
+                                    .extend()
+                                    .sense(Sense::click())
+                                    .selectable(false);
+                            if ui.add(expander_label).clicked() {
+                                self.expand_all_children_tx.send(true);
+                            }
+                            ui.end_row();
+                        }
+                    }
+                });
                 if self.selected_changed && self.is_selected {
                     response.header_response.scroll_to_me(Some(Align::Center));
                 }
