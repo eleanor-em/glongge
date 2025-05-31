@@ -12,6 +12,8 @@ use crate::{
     },
     resource::ResourceHandler,
 };
+use egui::text::LayoutJob;
+use egui::{Color32, TextFormat};
 use std::{
     any::Any,
     collections::BTreeMap,
@@ -731,20 +733,56 @@ pub trait RenderableObject: SceneObject {
 }
 
 pub(crate) type GuiClosure = dyn FnOnce(&GuiContext) + Send;
-pub struct GuiCommand(Box<dyn FnOnce(&mut GuiUi) + Send>);
+pub struct GuiCommand {
+    func: Box<dyn FnOnce(&mut GuiUi) + Send>,
+    title: Option<String>,
+    add_separator: bool,
+}
 impl GuiCommand {
     pub fn new<F: FnOnce(&mut GuiUi) + Send + 'static>(f: F) -> Self {
-        Self(Box::new(f))
+        Self {
+            func: Box::new(f),
+            title: None,
+            add_separator: true,
+        }
+    }
+
+    #[must_use]
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_no_add_separator(mut self) -> Self {
+        self.add_separator = false;
+        self
     }
 
     pub fn call(self, ui: &mut GuiUi) {
-        self.0(ui);
+        if let Some(title) = self.title {
+            let mut layout_job = LayoutJob::default();
+            layout_job.append(
+                title.as_str(),
+                0.,
+                TextFormat {
+                    color: Color32::from_white_alpha(255),
+                    ..Default::default()
+                },
+            );
+            ui.add(egui::Label::new(layout_job).selectable(false));
+        }
+        (self.func)(ui);
     }
 
     #[must_use]
     pub fn join(self, other: GuiCommand) -> GuiCommand {
+        let add_separator = self.add_separator;
         GuiCommand::new(move |ui| {
             self.call(ui);
+            if add_separator {
+                ui.separator();
+            }
             other.call(ui);
         })
     }
