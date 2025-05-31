@@ -102,14 +102,20 @@ impl GuiObjectView {
         selected_id: ObjectId,
     ) -> Result<()> {
         if self.object_id != selected_id {
-            for c in object_handler.get_collision_shapes(self.object_id)? {
+            for c in object_handler
+                .get_collision_shapes(self.object_id)
+                .context("GuiObjectView::update_selection()")?
+            {
                 c.borrow_mut().hide_wireframe();
             }
             self.absolute_cell.clear_state();
             self.relative_cell.clear_state();
             self.object_id = selected_id;
             if !selected_id.is_root() {
-                for c in object_handler.get_collision_shapes(selected_id)? {
+                for c in object_handler
+                    .get_collision_shapes(selected_id)
+                    .context("GuiObjectView::update_selection()")?
+                {
                     c.borrow_mut().show_wireframe();
                 }
             }
@@ -119,10 +125,10 @@ impl GuiObjectView {
 
     fn get_object<'a>(&'a self, object_handler: &'a ObjectHandler) -> Result<&'a TreeSceneObject> {
         check_false!(self.object_id.is_root());
-        // infallible
         Ok(object_handler
             .get_object_by_id(self.object_id)
             .context("GuiObjectView::get_object()")?
+            // infallible
             .unwrap())
     }
 
@@ -161,7 +167,9 @@ impl GuiObjectView {
     fn create_name_cmd(&self, object_handler: &mut ObjectHandler) -> Result<GuiCommand> {
         let name = format!(
             "{} [{}]",
-            self.get_object(object_handler)?.nickname_or_type_name(),
+            self.get_object(object_handler)
+                .context("GuiObjectView::create_name_cmd()")?
+                .nickname_or_type_name(),
             self.object_id.value_for_gui()
         );
         Ok(GuiCommand::new(move |ui: &mut Ui| {
@@ -183,7 +191,10 @@ impl GuiObjectView {
 
     fn create_transform_cmd(&mut self, object_handler: &ObjectHandler) -> Result<GuiCommand> {
         let object_id = self.object_id;
-        let object = self.get_object(object_handler)?.clone(); // borrowck issues
+        let object = self
+            .get_object(object_handler)
+            .context("GuiObjectView::create_transform_cmd()")?
+            .clone(); // borrowck issues
 
         let mut absolute_transform = object_handler
             .absolute_transforms
@@ -533,45 +544,69 @@ impl GuiObjectTree {
         }
     }
 
-    pub fn on_add_object(&mut self, object_handler: &ObjectHandler, object: &TreeSceneObject) {
+    pub fn on_add_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object: &TreeSceneObject,
+    ) -> Result<()> {
         let mut tree = &mut self.root;
-        match object_handler.get_parent_chain(object.object_id) {
-            Ok(chain) => {
-                for id in chain.into_iter().rev() {
-                    if tree.displayed.contains_key(&id) {
-                        tree = tree.displayed.get_mut(&id).unwrap();
-                    } else {
-                        let child = tree.node(object);
-                        tree.displayed.insert(object.object_id, child);
-                        return;
-                    }
-                }
+        let chain = object_handler
+            .get_parent_chain(object.object_id)
+            .context("GuiObjectTree::on_add_object()")?;
+        for id in chain.into_iter().rev() {
+            if tree.displayed.contains_key(&id) {
+                tree = tree.displayed.get_mut(&id).unwrap();
+            } else {
+                let child = tree.node(object);
+                tree.displayed.insert(object.object_id, child);
+                break;
             }
-            Err(e) => error!("{}", e.root_cause()),
         }
+        Ok(())
     }
 
-    pub fn on_remove_object(&mut self, object_handler: &ObjectHandler, removed_id: ObjectId) {
-        match object_handler.get_parent_chain(removed_id) {
-            Ok(mut chain) => {
-                let mut tree = &mut self.root;
-                let mut id = chain.pop().unwrap();
-                while id != removed_id {
-                    if let Some(next) = tree.displayed.get_mut(&id) {
-                        tree = next;
-                    } else {
-                        // Orphaned object, nothing to remove
-                        return;
-                    }
-                    id = chain.pop().unwrap();
-                }
-                tree.displayed.remove(&id);
+    fn get_node_by_object_id(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object_id: ObjectId,
+    ) -> Result<Option<&mut GuiObjectTreeNode>> {
+        let chain = object_handler
+            .get_parent_chain(object_id)
+            .context("GuiObjectTree::get_node_by_object_id()")?;
+        let mut tree = &mut self.root;
+        for id in chain.into_iter().rev() {
+            if id == object_id {
+                return Ok(Some(tree));
             }
-            Err(e) => error!("{}", e.root_cause()),
+            if let Some(next) = tree.displayed.get_mut(&id) {
+                tree = next;
+            } else {
+                // Orphaned object.
+                bail!(
+                    "GuiObjectTree::get_node_by_object_id(): orphaned object: {}",
+                    object_handler.format_object_id_for_logging(object_id)
+                );
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn on_remove_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        removed_id: ObjectId,
+    ) -> Result<()> {
+        info!("GuiObjectTree::on_remove_object({removed_id:?})");
+        if let Some(tree) = self
+            .get_node_by_object_id(object_handler, removed_id)
+            .context("GuiObjectTree::on_remove_object()")?
+        {
+            tree.displayed.remove(&removed_id);
         }
         if self.selected_id.get() == removed_id {
             self.selected_id.overwrite(ObjectId::root());
         }
+        Ok(())
     }
 
     pub fn refresh_labels(&mut self, object_handler: &ObjectHandler) {
@@ -1064,6 +1099,39 @@ impl DebugGui {
         object_handler: &mut ObjectHandler,
         gui_cmds: BTreeMap<ObjectId, GuiCommand>,
     ) -> Box<GuiClosure> {
+        // Update state.
+        self.build_update_with_enabled(input_handler, object_handler);
+        gg_err::log_and_ok(
+            self.object_view
+                .update_selection(object_handler, self.object_tree.selected_id.get()),
+        );
+        self.last_update = Instant::now();
+
+        // Build closures.
+        let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
+        let build_object_view = gg_err::log_and_ok(self.object_view.build_closure(
+            object_handler,
+            gui_cmds,
+            self.frame,
+            self.enabled,
+        ));
+        let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
+        let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
+        Box::new(move |ctx| {
+            build_console_log(ctx);
+            build_object_tree(ctx);
+            if let Some(build_object_view) = build_object_view {
+                build_object_view(ctx);
+            }
+            build_scene_control(ctx);
+        })
+    }
+
+    fn build_update_with_enabled(
+        &mut self,
+        input_handler: &InputHandler,
+        object_handler: &mut ObjectHandler,
+    ) {
         if self.enabled {
             if input_handler.pressed(KeyCode::Escape) {
                 self.object_tree.selected_id.overwrite(ObjectId::root());
@@ -1078,47 +1146,6 @@ impl DebugGui {
         } else {
             self.object_view.clear_selection();
         }
-        if !self.object_tree.selected_id.get().is_root() {
-            if gg_err::log_err_then(
-                object_handler
-                    .get_object_by_id(self.object_tree.selected_id.get())
-                    .with_context(|| {
-                        format!(
-                            "selected object not found: {:?}",
-                            self.object_tree.selected_id.get()
-                        )
-                    }),
-            )
-            .is_some()
-            {
-                gg_err::log_and_ok(
-                    self.object_view
-                        .update_selection(object_handler, self.object_tree.selected_id.get()),
-                );
-            } else {
-                self.object_tree.selected_id.overwrite(ObjectId::root());
-                self.object_view.clear_selection();
-            }
-        }
-
-        let build_object_tree = self.object_tree.build_closure(self.frame, self.enabled);
-        let build_object_view = gg_err::log_and_ok(self.object_view.build_closure(
-            object_handler,
-            gui_cmds,
-            self.frame,
-            self.enabled,
-        ));
-        let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
-        let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
-        self.last_update = Instant::now();
-        Box::new(move |ctx| {
-            build_console_log(ctx);
-            build_object_tree(ctx);
-            if let Some(build_object_view) = build_object_view {
-                build_object_view(ctx);
-            }
-            build_scene_control(ctx);
-        })
     }
 
     // Events:
@@ -1151,15 +1178,27 @@ impl DebugGui {
             .unique()
             .collect_vec();
     }
-    pub fn on_add_object(&mut self, object_handler: &ObjectHandler, object: &TreeSceneObject) {
-        self.object_tree.on_add_object(object_handler, object);
+    pub fn on_add_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        object: &TreeSceneObject,
+    ) -> Result<()> {
+        self.object_tree.on_add_object(object_handler, object)
     }
     pub fn on_done_adding_objects(&mut self, object_handler: &ObjectHandler) {
         self.object_tree.refresh_labels(object_handler);
     }
-    pub fn on_remove_object(&mut self, object_handler: &ObjectHandler, remove_id: ObjectId) {
-        self.object_tree.on_remove_object(object_handler, remove_id);
+    pub fn on_remove_object(
+        &mut self,
+        object_handler: &ObjectHandler,
+        remove_id: ObjectId,
+    ) -> Result<()> {
+        if self.object_tree.selected_id.get() == remove_id {
+            self.object_view.clear_selection();
+        }
+        self.object_tree.on_remove_object(object_handler, remove_id)
     }
+    /// Handles viewport moving with the arrow keys.
     pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {
         let mut viewport_moved = false;
         if self.enabled && input_handler.mod_super() {

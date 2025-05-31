@@ -116,7 +116,7 @@ impl CollisionHandler {
                     });
                 self.possible_collisions.extend(new_possible_collisions);
             } else {
-                error!("CollisionHandler: `object_ids_by_listening` tag missing tag: {tag}");
+                error!("CollisionHandler: `object_ids_by_listening` missing tag: {tag}");
             }
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
@@ -129,7 +129,7 @@ impl CollisionHandler {
                     });
                 self.possible_collisions.extend(new_possible_collisions);
             } else {
-                error!("CollisionHandler: `object_ids_by_tag` tag missing tag: {tag}");
+                error!("CollisionHandler: `object_ids_by_tag` missing tag: {tag}");
             }
         }
     }

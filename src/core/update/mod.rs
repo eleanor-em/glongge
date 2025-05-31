@@ -217,7 +217,7 @@ impl ObjectHandler {
         let o = self.object_ref_tracker.get(&remove_id).unwrap();
         let count = Rc::strong_count(&o.scene_object.wrapped);
         if count > 1 {
-            info!("remaining references to {name} ({remove_id:?}): {count}");
+            info!("remaining references to `{name} ({remove_id:?})`: {count}");
             self.dangling_names.insert(remove_id, name);
         } else {
             self.object_ref_tracker.remove(&remove_id);
@@ -394,7 +394,7 @@ impl ObjectHandler {
             Ok(false)
         }
     }
-    fn format_object_id_for_logging(&self, id: ObjectId) -> String {
+    pub(crate) fn format_object_id_for_logging(&self, id: ObjectId) -> String {
         let label = self.objects.get(&id).map_or(
             "<unknown>".to_string(),
             TreeSceneObject::nickname_or_type_name,
@@ -547,7 +547,9 @@ impl UpdateHandler {
                 self.perf_stats.total_stats.stop();
                 self.debug_gui
                     .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
-                self.frame_counter += 1;
+                if !self.debug_gui.scene_control.is_paused() {
+                    self.frame_counter += 1;
+                }
 
                 if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
                     self.perf_stats.totals_s.remove(0);
@@ -642,13 +644,20 @@ impl UpdateHandler {
     fn update_with_moved_objects(&mut self, pending_move_objects: BTreeMap<ObjectId, ObjectId>) {
         for (target_id, new_parent_id) in pending_move_objects {
             check_ne!(target_id, new_parent_id);
-            self.debug_gui
-                .on_remove_object(&self.object_handler, target_id);
+            gg_err::log_err_and_ignore(
+                self.debug_gui
+                    .on_remove_object(&self.object_handler, target_id)
+                    .context("UpdateHandler::update_with_moved_objects()"),
+            );
             if let Some(o) = gg_err::log_and_ok(
                 self.object_handler
                     .reparent_object(target_id, new_parent_id),
             ) {
-                self.debug_gui.on_add_object(&self.object_handler, &o);
+                gg_err::log_err_and_ignore(
+                    self.debug_gui
+                        .on_add_object(&self.object_handler, &o)
+                        .context("UpdateHandler::update_with_moved_objects()"),
+                );
             }
         }
     }
@@ -717,7 +726,11 @@ impl UpdateHandler {
                 all_children: &self.object_handler.children,
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
-            self.debug_gui.on_add_object(&self.object_handler, &new_obj);
+            gg_err::log_err_and_ignore(
+                self.debug_gui
+                    .on_add_object(&self.object_handler, &new_obj)
+                    .context("UpdateHandler::load_new_objects()"),
+            );
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
                     .inner_mut()
@@ -736,12 +749,20 @@ impl UpdateHandler {
         self.object_handler
             .collision_handler
             .remove_objects(&pending_remove_objects);
+        let pending_remove_objects = pending_remove_objects
+            .into_iter()
+            .sorted()
+            .rev()
+            .collect_vec();
         for remove_id in &pending_remove_objects {
-            self.debug_gui
-                .on_remove_object(&self.object_handler, *remove_id);
+            gg_err::log_err_and_ignore(
+                self.debug_gui
+                    .on_remove_object(&self.object_handler, *remove_id)
+                    .context("UpdateHandler::update_with_removed_objects()"),
+            );
         }
         // Iterate in reverse order so that children are removed before parents.
-        for remove_id in pending_remove_objects.into_iter().sorted().rev() {
+        for remove_id in pending_remove_objects {
             self.object_handler.remove_object(remove_id);
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);
