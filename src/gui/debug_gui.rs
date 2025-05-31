@@ -16,7 +16,7 @@ use egui::{
 use itertools::Itertools;
 use regex::Regex;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
@@ -266,7 +266,7 @@ struct GuiObjectTreeNode {
     displayed: BTreeMap<ObjectId, GuiObjectTreeNode>,
     disambiguation: Rc<RefCell<BTreeMap<String, usize>>>, // for id_salt()
     open: ValueChannel<bool>,
-    expand_all_children: ValueChannel<bool>,
+    expand_all_children: ValueChannel<BTreeSet<usize>>,
 }
 
 impl GuiObjectTreeNode {
@@ -342,9 +342,9 @@ impl GuiObjectTreeNode {
         selected_changed: bool,
         selected: &ValueChannel<ObjectId>,
     ) -> GuiObjectTreeBuilder {
-        self.expand_all_children.try_recv_and_update();
+        self.expand_all_children.try_recv_and_update_cloned();
         if let Some(false) = self.open.try_recv_and_update() {
-            self.expand_all_children.overwrite(false);
+            self.expand_all_children.overwrite(BTreeSet::new());
         }
         GuiObjectTreeBuilder {
             label: self.label.clone(),
@@ -622,9 +622,11 @@ struct GuiObjectTreeBuilder {
     is_selected: bool,
     selected_changed: bool,
     selected_tx: ValueChannelSender<ObjectId>,
-    expand_all_children_tx: ValueChannelSender<bool>,
+    expand_all_children_tx: ValueChannelSender<BTreeSet<usize>>,
 }
 impl GuiObjectTreeBuilder {
+    const MAX_DISPLAYED_CHILDREN: usize = 5;
+
     fn build(&mut self, ui: &mut GuiUi) {
         if self.label == ObjectLabel::Root {
             self.displayed.values_mut().for_each(|tree| tree.build(ui));
@@ -678,24 +680,32 @@ impl GuiObjectTreeBuilder {
 
     fn build_children(&mut self, ui: &mut Ui, parent_max_w: f32, offset: f32) {
         ui.set_max_width(parent_max_w - ui.min_rect().left() + offset);
+        let mut group_ix = 0;
         for (_, child_group) in &self
             .displayed
             .values_mut()
             .chunk_by(|tree| tree.label.name().to_string())
         {
-            let mut child_group = child_group.collect_vec();
-            let max_displayed = 10;
-            child_group
-                .iter_mut()
-                .take(max_displayed)
-                .for_each(|tree| tree.build(ui));
-            if !self.expand_all_children_tx.get() && child_group.len() > max_displayed {
-                let expander_label = egui::Label::new(format!("[..{}]", child_group.len()))
+            group_ix += 1;
+            let child_group = child_group.collect_vec();
+            let num_children = child_group.len();
+            if self.expand_all_children_tx.get_ref().contains(&group_ix)
+                || num_children <= Self::MAX_DISPLAYED_CHILDREN
+            {
+                child_group.into_iter().for_each(|tree| tree.build(ui));
+            } else {
+                child_group
+                    .into_iter()
+                    .take(Self::MAX_DISPLAYED_CHILDREN)
+                    .for_each(|tree| tree.build(ui));
+                let expander_label = egui::Label::new(format!("[..{num_children}]"))
                     .extend()
                     .sense(Sense::click())
                     .selectable(false);
                 if ui.add(expander_label).clicked() {
-                    self.expand_all_children_tx.send(true);
+                    let mut new_set = self.expand_all_children_tx.get_cloned();
+                    new_set.insert(group_ix);
+                    self.expand_all_children_tx.send_cloned(&new_set);
                 }
                 ui.end_row();
             }

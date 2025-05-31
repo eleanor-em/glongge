@@ -798,13 +798,13 @@ macro_rules! scene_object_vec {
     };
 }
 
-pub(crate) struct ValueChannel<T: Copy> {
+pub(crate) struct ValueChannel<T: Clone> {
     value: T,
     tx: Sender<T>,
     rx: Receiver<T>,
 }
 
-impl<T: Copy> ValueChannel<T> {
+impl<T: Clone> ValueChannel<T> {
     pub fn with_value(value: T) -> Self {
         let (tx, rx) = mpsc::channel();
         Self { value, tx, rx }
@@ -813,6 +813,24 @@ impl<T: Copy> ValueChannel<T> {
     pub fn overwrite(&mut self, value: T) {
         self.value = value;
     }
+
+    pub fn try_recv_and_update_cloned(&mut self) -> Option<T> {
+        self.value = self.rx.try_iter().last()?;
+        Some(self.value.clone())
+    }
+
+    pub fn sender(&self) -> ValueChannelSender<T> {
+        ValueChannelSender {
+            value: self.value.clone(),
+            tx: self.tx.clone(),
+        }
+    }
+
+    pub fn send(&self, value: T) {
+        self.tx.send(value).unwrap();
+    }
+}
+impl<T: Copy> ValueChannel<T> {
     pub fn get(&self) -> T {
         self.value
     }
@@ -821,19 +839,9 @@ impl<T: Copy> ValueChannel<T> {
         self.value = self.rx.try_iter().last()?;
         Some(self.value)
     }
-
-    pub fn sender(&self) -> ValueChannelSender<T> {
-        ValueChannelSender {
-            value: self.value,
-            tx: self.tx.clone(),
-        }
-    }
-    pub fn send(&self, value: T) {
-        self.tx.send(value).unwrap();
-    }
 }
 
-impl<T: Copy + Default> Default for ValueChannel<T> {
+impl<T: Clone + Default> Default for ValueChannel<T> {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
@@ -845,9 +853,22 @@ impl<T: Copy + Default> Default for ValueChannel<T> {
 }
 
 #[derive(Clone)]
-pub(crate) struct ValueChannelSender<T: Copy> {
+pub(crate) struct ValueChannelSender<T: Clone> {
     value: T,
     tx: Sender<T>,
+}
+
+impl<T: Clone> ValueChannelSender<T> {
+    pub fn get_cloned(&self) -> T {
+        self.value.clone()
+    }
+    pub fn get_ref(&self) -> &T {
+        &self.value
+    }
+
+    pub fn send_cloned(&self, value: &T) {
+        self.tx.send(value.clone()).unwrap();
+    }
 }
 
 impl<T: Copy> ValueChannelSender<T> {
