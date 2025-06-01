@@ -217,7 +217,7 @@ impl InputHandler {
         self.queued_events.push(InputEvent::Key(key, state));
     }
 
-    pub(crate) fn update_step(&mut self) {
+    pub(crate) fn complete_update(&mut self) {
         self.data = self
             .data
             .iter()

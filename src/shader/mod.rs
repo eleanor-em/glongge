@@ -419,6 +419,7 @@ impl SpriteShader {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        // TODO: expect() below very occasionally crashes.
         let blank = textures
             .first()
             .expect("textures.first() should always contain a blank texture")

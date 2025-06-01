@@ -44,6 +44,9 @@ impl ObjectId {
     pub(crate) fn value_for_gui(self) -> usize {
         self.0
     }
+    pub fn value_eq_for_debugging(self, rhs: usize) -> bool {
+        self.0 == rhs
+    }
 }
 
 #[derive(Clone)]

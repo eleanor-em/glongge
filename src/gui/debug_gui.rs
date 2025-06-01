@@ -1294,7 +1294,11 @@ impl DebugGui {
             .on_move_object(object_handler, object_id, last_parent_id, new_parent_id)
     }
     /// Handles viewport moving with the arrow keys.
-    pub fn on_end_step(&mut self, input_handler: &InputHandler, viewport: &mut AdjustedViewport) {
+    pub fn complete_update(
+        &mut self,
+        input_handler: &InputHandler,
+        viewport: &mut AdjustedViewport,
+    ) {
         let mut viewport_moved = false;
         if self.enabled && input_handler.mod_super() {
             let mut direction = Vec2::zero();

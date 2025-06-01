@@ -469,7 +469,7 @@ impl UpdateHandler {
         let input_handler = rv.input_handler.lock().unwrap().clone();
         rv.perf_stats.add_objects.start();
         let mut pending_move_objects = BTreeMap::new();
-        rv.update_with_added_objects(
+        rv.complete_update_with_added_objects(
             &input_handler,
             objects
                 .into_iter()
@@ -482,8 +482,8 @@ impl UpdateHandler {
             &mut pending_move_objects,
         );
         rv.perf_stats.add_objects.stop();
-        rv.update_with_moved_objects(pending_move_objects);
-        rv.update_and_send_render_infos();
+        rv.complete_update_with_moved_objects(pending_move_objects);
+        rv.complete_update_with_render_infos();
         Ok(rv)
     }
 
@@ -496,16 +496,7 @@ impl UpdateHandler {
                 let now = Instant::now();
                 self.perf_stats.total_stats.start();
 
-                let update_span = span!(
-                    tracing::Level::INFO,
-                    "update",
-                    fc = self.frame_counter,
-                    // TODO: update `ffc`.
-                    ffc = self.fixed_frame_counter
-                );
-                let _enter = update_span.enter();
-
-                // Handle fixed update.
+                // Count the number of fixed updates to perform.
                 fixed_update_us += self.delta.as_micros();
                 let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
                 if fixed_updates > 0 {
@@ -527,30 +518,10 @@ impl UpdateHandler {
                     }
                 }
 
-                // Handle regular update.
+                // Perform the update.
                 let input_handler = self.input_handler.lock().unwrap().clone();
-                let (pending_add_objects, pending_remove_objects, mut pending_move_objects) = self
-                    .call_on_update(&input_handler, fixed_updates)
-                    .into_pending();
-
-                self.perf_stats.remove_objects.start();
-                self.update_with_removed_objects(pending_remove_objects);
-                self.perf_stats.remove_objects.stop();
-                self.perf_stats.add_objects.start();
-                self.update_with_added_objects(
-                    &input_handler,
-                    pending_add_objects,
-                    &mut pending_move_objects,
-                );
-                self.perf_stats.add_objects.stop();
-                // TODO: add perf stats.
-                self.update_with_moved_objects(pending_move_objects);
-                self.debug_gui
-                    .on_end_step(&input_handler, &mut self.viewport);
-
-                // Handle render.
-                self.update_and_send_render_infos();
-                self.input_handler.lock().unwrap().update_step();
+                let object_tracker = self.perform_update(&input_handler, fixed_updates);
+                self.complete_update(&input_handler, object_tracker);
 
                 // Update performance statistics.
                 self.perf_stats.total_stats.stop();
@@ -559,7 +530,6 @@ impl UpdateHandler {
                 if !self.debug_gui.scene_control.is_paused() {
                     self.frame_counter += 1;
                 }
-
                 if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
                     self.perf_stats.totals_s.remove(0);
                 }
@@ -585,7 +555,395 @@ impl UpdateHandler {
         }
     }
 
-    fn update_with_added_objects(
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    /// Perform the update by
+    /// 1. calling [`on_gui()`];
+    /// 2. calling [`on_update_begin()`];
+    /// 3. calling [`perform_coroutines()`];
+    /// 4. calling [`on_update()`];
+    /// 5. calling [`on_fixed_update()`];
+    /// 6. calling [`on_collision()`];
+    /// 7. calling [`on_update_end()`];
+    /// 8. checking for dangling references.
+    ///
+    /// Between each step, all transforms are updated.
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    fn perform_update(
+        &mut self,
+        input_handler: &InputHandler,
+        original_fixed_updates: u128,
+    ) -> ObjectTracker {
+        let mut object_tracker = ObjectTracker {
+            objects: self.object_handler.objects.clone(),
+            pending_add: Vec::new(),
+            pending_remove: BTreeSet::new(),
+            pending_move: BTreeMap::new(),
+        };
+        if let Some(fixed_updates) =
+            self.call_on_update(input_handler, original_fixed_updates, &mut object_tracker)
+        {
+            self.call_on_fixed_update(fixed_updates, &mut object_tracker);
+            self.call_on_collision(input_handler, &mut object_tracker);
+            self.call_on_update_end(input_handler, &mut object_tracker);
+        }
+        self.object_handler.cleanup_references();
+        object_tracker
+    }
+
+    fn iter_with_other_map<F>(
+        &mut self,
+        input_handler: &InputHandler,
+        object_tracker: &mut ObjectTracker,
+        call_obj_event: F,
+        description: &str,
+    ) where
+        F: Fn(RefMut<dyn SceneObject>, &mut UpdateContext),
+    {
+        for (this_id, this) in self.object_handler.objects.clone() {
+            gg_err::log_and_ok(
+                UpdateContext::new(self, input_handler, this_id, object_tracker).with_context(
+                    || format!("UpdateHandler::iter_with_other_map(): {description}"),
+                ),
+            )
+            .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
+        }
+    }
+
+    /// Returns the number of `fixed_updates` to perform, or None if the update should be aborted.
+    fn call_on_update(
+        &mut self,
+        input_handler: &InputHandler,
+        mut fixed_updates: u128,
+        object_tracker: &mut ObjectTracker,
+    ) -> Option<u128> {
+        self.call_on_gui(input_handler, object_tracker);
+        if self.debug_gui.scene_control.is_paused() {
+            // TODO: cache pressed buttons until step.
+            if self.debug_gui.scene_control.should_step() {
+                fixed_updates = 1;
+            } else {
+                return None;
+            }
+        }
+
+        self.call_on_update_begin(input_handler, object_tracker);
+        self.perform_coroutines(input_handler, object_tracker);
+
+        let update_span = span!(
+            tracing::Level::INFO,
+            "on_update",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.on_update.start();
+        self.iter_with_other_map(
+            input_handler,
+            object_tracker,
+            |mut obj, ctx| {
+                obj.on_update(ctx);
+            },
+            "on_update",
+        );
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_update.stop();
+
+        Some(fixed_updates)
+    }
+
+    fn call_on_gui(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "on_gui",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.on_gui.start();
+        if !USE_DEBUG_GUI {
+            self.perf_stats.on_gui.stop();
+            return;
+        }
+        if input_handler.pressed(KeyCode::Backquote) {
+            self.debug_gui.toggle();
+        }
+
+        if self.debug_gui.enabled() {
+            // Handle mouseovers.
+            let all_tags = self.object_handler.collision_handler.all_tags();
+            self.debug_gui.clear_mouseovers(&self.object_handler);
+            if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
+                let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
+                if let Some(collisions) = gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, ObjectId::root(), object_tracker)
+                        .context("UpdateHandler::call_on_gui(): on_mouseovers"),
+                )
+                .and_then(|ctx| ctx.object.test_collision_point(mouse_pos, all_tags))
+                {
+                    self.debug_gui
+                        .on_mouseovers(&self.object_handler, collisions);
+                }
+            }
+        }
+        // We have to do this even if !self.debug_gui.enabled() so that the in/out animations work.
+        let selected_object = self.debug_gui.selected_object();
+        let gui_cmds = self
+            .object_handler
+            .objects
+            .clone()
+            .into_iter()
+            .filter_map(|(id, obj)| {
+                gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, id, object_tracker)
+                        .context("UpdateHandler::call_on_gui(): on_gui"),
+                )
+                .and_then(|ctx| {
+                    obj.inner_mut()
+                        .as_gui_object()
+                        .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
+                })
+            })
+            .collect();
+        self.gui_cmd = Some(self.debug_gui.build(
+            input_handler,
+            &mut self.object_handler,
+            gui_cmds,
+        ));
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_gui.stop();
+    }
+    fn call_on_update_begin(
+        &mut self,
+        input_handler: &InputHandler,
+        object_tracker: &mut ObjectTracker,
+    ) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "on_update",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.on_update_begin.start();
+        self.iter_with_other_map(
+            input_handler,
+            object_tracker,
+            |mut obj, ctx| {
+                obj.on_update_begin(ctx);
+            },
+            "on_update_begin",
+        );
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_update_begin.stop();
+    }
+    fn perform_coroutines(
+        &mut self,
+        input_handler: &InputHandler,
+        object_tracker: &mut ObjectTracker,
+    ) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "perform_coroutines",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.coroutines.start();
+        for this_id in self.object_handler.objects.keys().copied().collect_vec() {
+            let Some(this) = gg_err::log_err_then(
+                self.object_handler
+                    .get_object_by_id(this_id)
+                    .context("UpdateHandler::perform_coroutines()"),
+            ) else {
+                error!(
+                    "UpdateHandler::perform_coroutines(): tried to call perform_coroutines() on root object"
+                );
+                continue;
+            };
+            let this = this.clone(); // borrowck issues
+            for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {
+                let Some(mut ctx) = gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, this_id, object_tracker)
+                        .context("UpdateHandler::perform_coroutines()"),
+                ) else {
+                    continue;
+                };
+                if let Some(coroutine) = coroutine.resume(&this, &mut ctx) {
+                    ctx.scene.coroutines.insert(coroutine_id, coroutine);
+                }
+            }
+        }
+        self.object_handler.update_all_transforms();
+        self.perf_stats.coroutines.stop();
+    }
+
+    fn call_on_fixed_update(
+        &mut self,
+        mut fixed_updates: u128,
+        object_tracker: &mut ObjectTracker,
+    ) {
+        self.perf_stats.fixed_update.start();
+        for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
+            let update_span = span!(
+                tracing::Level::INFO,
+                "on_fixed_update",
+                fc = self.frame_counter,
+                ffc = self.fixed_frame_counter
+            );
+            let _enter = update_span.enter();
+            for this_id in self.object_handler.objects.keys().copied().collect_vec() {
+                let Some(this) = gg_err::log_err_then(
+                    self.object_handler
+                        .get_object_by_id(this_id)
+                        .context("UpdateHandler::call_on_fixed_update(): parent"),
+                ) else {
+                    error!(
+                        "UpdateHandler::call_on_fixed_update(): tried to call on_fixed_update() on root object"
+                    );
+                    continue;
+                };
+                let this = this.clone(); // borrowck issues
+                if let Some(mut ctx) = gg_err::log_and_ok(
+                    FixedUpdateContext::new(self, this_id, object_tracker)
+                        .context("UpdateHandler::call_on_fixed_update(): FixedUpdateContext"),
+                ) {
+                    this.inner_mut().on_fixed_update(&mut ctx);
+                }
+            }
+            self.object_handler.update_all_transforms();
+            fixed_updates -= 1;
+            self.fixed_frame_counter += 1;
+        }
+        self.perf_stats.fixed_update.stop();
+    }
+    fn call_on_collision(
+        &mut self,
+        input_handler: &InputHandler,
+        object_tracker: &mut ObjectTracker,
+    ) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "on_collision",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.detect_collision.start();
+        let collisions = self.object_handler.get_collisions();
+        self.perf_stats.detect_collision.stop();
+        self.perf_stats.on_collision.start();
+        let mut done_with_collisions = BTreeSet::new();
+        for CollisionNotification { this, other, mtv } in collisions {
+            if done_with_collisions.contains(&this.object_id) {
+                continue;
+            }
+            if let Some(CollisionResponse::Done) = gg_err::log_and_ok(
+                UpdateContext::new(self, input_handler, this.object_id, object_tracker)
+                    .with_context(|| {
+                        format!(
+                            "UpdateHandler::call_on_collision(): {:?} - {:?}",
+                            this.object_id, other.object_id
+                        )
+                    }),
+            )
+            .map(|mut ctx| {
+                this.scene_object
+                    .wrapped
+                    .borrow_mut()
+                    .on_collision(&mut ctx, &other, mtv)
+            }) {
+                done_with_collisions.insert(this.object_id);
+            }
+        }
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_collision.stop();
+    }
+
+    fn call_on_update_end(
+        &mut self,
+        input_handler: &InputHandler,
+        object_tracker: &mut ObjectTracker,
+    ) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "on_update_End",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+        self.perf_stats.on_update_end.start();
+        self.iter_with_other_map(
+            input_handler,
+            object_tracker,
+            |mut obj, ctx| {
+                obj.on_update_end(ctx);
+            },
+            "on_update_end",
+        );
+        self.object_handler.update_all_transforms();
+        self.perf_stats.on_update_end.stop();
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    /// Complete the update by
+    /// 1. removing/adding/moving objects;
+    /// 2. updating the GUI;
+    /// 3. sending the render infos.
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    fn complete_update(&mut self, input_handler: &InputHandler, object_tracker: ObjectTracker) {
+        let update_span = span!(
+            tracing::Level::INFO,
+            "complete_update",
+            fc = self.frame_counter,
+            ffc = self.fixed_frame_counter
+        );
+        let _enter = update_span.enter();
+
+        let (pending_add_objects, pending_remove_objects, mut pending_move_objects) =
+            object_tracker.into_pending();
+        self.complete_update_with_removed_objects(pending_remove_objects);
+        // Note: complete_update_with_added_objects() is recursive.
+        self.perf_stats.add_objects.start();
+        self.complete_update_with_added_objects(
+            input_handler,
+            pending_add_objects,
+            &mut pending_move_objects,
+        );
+        self.perf_stats.add_objects.stop();
+        // TODO: add perf stats.
+        self.complete_update_with_moved_objects(pending_move_objects);
+        self.debug_gui
+            .complete_update(input_handler, &mut self.viewport);
+
+        self.complete_update_with_render_infos();
+        self.input_handler.lock().unwrap().complete_update();
+    }
+    fn complete_update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
+        self.perf_stats.remove_objects.start();
+        self.object_handler
+            .collision_handler
+            .remove_objects(&pending_remove_objects);
+        let pending_remove_objects = pending_remove_objects
+            .into_iter()
+            .sorted()
+            .rev()
+            .collect_vec();
+        for remove_id in &pending_remove_objects {
+            gg_err::log_err_and_ignore(
+                self.debug_gui
+                    .on_remove_object(&self.object_handler, *remove_id)
+                    .context("UpdateHandler::complete_update_with_removed_objects()"),
+            );
+        }
+        // Iterate in reverse order so that children are removed before parents.
+        for remove_id in pending_remove_objects {
+            self.object_handler.remove_object(remove_id);
+            self.vertex_map.remove(remove_id);
+            self.coroutines.remove(&remove_id);
+        }
+        self.perf_stats.remove_objects.stop();
+    }
+    fn complete_update_with_added_objects(
         &mut self,
         input_handler: &InputHandler,
         mut pending_add_objects: Vec<TreeSceneObject>,
@@ -619,7 +977,7 @@ impl UpdateHandler {
             self.object_handler
                 .collision_handler
                 .add_objects(pending_add.iter());
-            self.load_new_objects(&mut object_tracker, pending_add);
+            self.call_on_load(&mut object_tracker, pending_add);
             self.object_handler.update_all_transforms();
 
             let (pending_add, pending_remove, new_pending_move_objects) =
@@ -629,7 +987,7 @@ impl UpdateHandler {
                 pending_move_objects.insert(object_id, new_parent_id);
             }
             pending_add_objects = pending_add;
-            self.update_with_removed_objects(pending_remove);
+            self.complete_update_with_removed_objects(pending_remove);
         }
 
         let mut object_tracker = ObjectTracker::new(&self.object_handler);
@@ -639,68 +997,22 @@ impl UpdateHandler {
             check!(!pending_move_objects.keys().contains(&object_id));
             pending_move_objects.insert(object_id, new_parent_id);
         }
-        self.update_with_removed_objects(pending_remove);
+        self.complete_update_with_removed_objects(pending_remove);
         self.object_handler.update_all_transforms();
 
         if !pending_add.is_empty() {
             warn!(
-                "fc={}: recursive call to update_with_added_objects(); should not add objects in on_ready()",
+                "fc={}: recursive call to complete_update_with_added_objects(); should not add objects in on_ready()",
                 self.frame_counter
             );
-            self.update_with_added_objects(input_handler, pending_add, pending_move_objects);
-        }
-    }
-    fn update_with_moved_objects(&mut self, pending_move_objects: BTreeMap<ObjectId, ObjectId>) {
-        for (target_id, new_parent_id) in pending_move_objects {
-            check_ne!(target_id, new_parent_id);
-            if let Some(last_parent_id) = gg_err::log_and_ok(self.object_handler
-                .lookup_parent_id(target_id)
-                .with_context(|| {
-                    format!("UpdateHandler::update_with_moved_objects({target_id:?}, {new_parent_id:?})")
-                })) {
-                let last_parent_id = last_parent_id.unwrap_or(ObjectId::root());
-                gg_err::log_err_and_ignore(
-                    self.debug_gui
-                        .on_move_object(&self.object_handler, target_id, last_parent_id, new_parent_id)
-                        .context("UpdateHandler::update_with_moved_objects()"),
-                );
-            }
-            gg_err::log_err_and_ignore(
-                self.object_handler
-                    .reparent_object(target_id, new_parent_id),
+            self.complete_update_with_added_objects(
+                input_handler,
+                pending_add,
+                pending_move_objects,
             );
         }
     }
-
-    fn call_on_ready(
-        &mut self,
-        object_tracker: &mut ObjectTracker,
-        input_handler: &InputHandler,
-        new_ids: impl IntoIterator<Item = ObjectId>,
-    ) {
-        for this_id in new_ids {
-            gg_err::log_and_ok(
-                self.object_handler
-                    .objects
-                    .get_mut(&this_id)
-                    .with_context(|| {
-                        format!(
-                            "tried to call on_ready() for nonexistent added object: {this_id:?}"
-                        )
-                    })
-                    .cloned()
-                    .and_then(|this| {
-                        let mut ctx =
-                            UpdateContext::new(self, input_handler, this_id, object_tracker)
-                                .context("UpdateHandler::call_on_ready()")?;
-                        this.inner_mut().on_ready(&mut ctx);
-                        Ok(())
-                    }),
-            );
-        }
-    }
-
-    fn load_new_objects<I>(&mut self, object_tracker: &mut ObjectTracker, pending_add: I)
+    fn call_on_load<I>(&mut self, object_tracker: &mut ObjectTracker, pending_add: I)
     where
         I: IntoIterator<Item = TreeSceneObject>,
     {
@@ -708,7 +1020,7 @@ impl UpdateHandler {
             let Some(parent) = gg_err::log_and_ok(
                 self.object_handler
                     .get_parent_by_id(new_obj.parent_id)
-                    .context("UpdateHandler::load_new_objects()"),
+                    .context("UpdateHandler::call_on_load()"),
             ) else {
                 continue;
             };
@@ -716,7 +1028,7 @@ impl UpdateHandler {
             if gg_err::log_and_ok(
                 self.object_handler
                     .add_object(&new_obj)
-                    .context("UpdateHandler::load_new_objects()"),
+                    .context("UpdateHandler::call_on_load()"),
             )
             .is_none()
             {
@@ -727,12 +1039,8 @@ impl UpdateHandler {
                 .insert(new_obj.object_id(), new_obj.clone());
             gg_err::log_err_and_ignore(
                 self.debug_gui
-                    .on_add_object(
-                        &self.object_handler,
-                        &new_obj,
-                        // parent.as_ref().map_or(ObjectId::root(), |p| p.object_id),
-                    )
-                    .context("UpdateHandler::load_new_objects()"),
+                    .on_add_object(&self.object_handler, &new_obj)
+                    .context("UpdateHandler::call_on_load()"),
             );
             let mut object_ctx = ObjectContext {
                 collision_handler: &self.object_handler.collision_handler,
@@ -749,7 +1057,7 @@ impl UpdateHandler {
                 new_obj
                     .inner_mut()
                     .on_load(&mut object_ctx, &mut self.resource_handler)
-                    .context("UpdateHandler::load_new_objects()"),
+                    .context("UpdateHandler::call_on_load()"),
             )
             .flatten()
             {
@@ -758,264 +1066,58 @@ impl UpdateHandler {
         }
         self.debug_gui.on_done_adding_objects(&self.object_handler);
     }
-
-    fn update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
-        self.object_handler
-            .collision_handler
-            .remove_objects(&pending_remove_objects);
-        let pending_remove_objects = pending_remove_objects
-            .into_iter()
-            .sorted()
-            .rev()
-            .collect_vec();
-        for remove_id in &pending_remove_objects {
-            gg_err::log_err_and_ignore(
-                self.debug_gui
-                    .on_remove_object(&self.object_handler, *remove_id)
-                    .context("UpdateHandler::update_with_removed_objects()"),
-            );
-        }
-        // Iterate in reverse order so that children are removed before parents.
-        for remove_id in pending_remove_objects {
-            self.object_handler.remove_object(remove_id);
-            self.vertex_map.remove(remove_id);
-            self.coroutines.remove(&remove_id);
-        }
-    }
-
-    fn call_on_update(
+    fn call_on_ready(
         &mut self,
-        input_handler: &InputHandler,
-        mut fixed_updates: u128,
-    ) -> ObjectTracker {
-        let mut object_tracker = ObjectTracker {
-            objects: self.object_handler.objects.clone(),
-            pending_add: Vec::new(),
-            pending_remove: BTreeSet::new(),
-            pending_move: BTreeMap::new(),
-        };
-
-        self.perf_stats.on_gui.start();
-        self.update_gui(input_handler, &mut object_tracker);
-        self.perf_stats.on_gui.stop();
-        self.object_handler.update_all_transforms();
-        if self.debug_gui.scene_control.is_paused() {
-            // TODO: cache pressed buttons until step.
-            if self.debug_gui.scene_control.should_step() {
-                fixed_updates = 1;
-            } else {
-                return object_tracker;
-            }
-        }
-
-        self.perf_stats.on_update_begin.start();
-        self.iter_with_other_map(
-            input_handler,
-            &mut object_tracker,
-            |mut obj, ctx| {
-                obj.on_update_begin(ctx);
-            },
-            "on_update_begin",
-        );
-        self.object_handler.update_all_transforms();
-        self.perf_stats.on_update_begin.stop();
-        self.perf_stats.coroutines.start();
-        self.update_coroutines(input_handler, &mut object_tracker);
-        self.object_handler.update_all_transforms();
-        self.perf_stats.coroutines.stop();
-        self.perf_stats.on_update.start();
-        self.iter_with_other_map(
-            input_handler,
-            &mut object_tracker,
-            |mut obj, ctx| {
-                obj.on_update(ctx);
-            },
-            "on_update",
-        );
-        self.object_handler.update_all_transforms();
-        self.perf_stats.on_update.stop();
-
-        self.perf_stats.fixed_update.start();
-        for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
-            for this_id in self.object_handler.objects.keys().copied().collect_vec() {
-                let Some(this) = gg_err::log_err_then(
-                    self.object_handler
-                        .get_object_by_id(this_id)
-                        .context("UpdateHandler::call_on_update(): on_fixed_update: parent"),
-                ) else {
-                    error!(
-                        "UpdateHandler::call_on_update(): tried to call on_fixed_update() on root object"
-                    );
-                    continue;
-                };
-                let this = this.clone(); // borrowck issues
-                if let Some(mut ctx) = gg_err::log_and_ok(
-                    FixedUpdateContext::new(self, this_id, &mut object_tracker).context(
-                        "UpdateHandler::call_on_update(): on_fixed_update: FixedUpdateContext",
-                    ),
-                ) {
-                    this.inner_mut().on_fixed_update(&mut ctx);
-                }
-            }
-            self.object_handler.update_all_transforms();
-            fixed_updates -= 1;
-            self.fixed_frame_counter += 1;
-        }
-        self.perf_stats.fixed_update.stop();
-
-        self.handle_collisions(input_handler, &mut object_tracker);
-
-        self.perf_stats.on_update_end.start();
-        self.iter_with_other_map(
-            input_handler,
-            &mut object_tracker,
-            |mut obj, ctx| {
-                obj.on_update_end(ctx);
-            },
-            "on_update_end",
-        );
-        self.object_handler.update_all_transforms();
-        self.object_handler.cleanup_references();
-        self.perf_stats.on_update_end.stop();
-        object_tracker
-    }
-
-    fn update_gui(&mut self, input_handler: &InputHandler, object_tracker: &mut ObjectTracker) {
-        if !USE_DEBUG_GUI {
-            return;
-        }
-        if input_handler.pressed(KeyCode::Backquote) {
-            self.debug_gui.toggle();
-        }
-
-        if self.debug_gui.enabled() {
-            // Handle mouseovers.
-            let all_tags = self.object_handler.collision_handler.all_tags();
-            self.debug_gui.clear_mouseovers(&self.object_handler);
-            if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
-                let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
-                if let Some(collisions) = gg_err::log_and_ok(
-                    UpdateContext::new(self, input_handler, ObjectId::root(), object_tracker)
-                        .context("UpdateHandler::update_gui(): on_mouseovers"),
-                )
-                .and_then(|ctx| ctx.object.test_collision_point(mouse_pos, all_tags))
-                {
-                    self.debug_gui
-                        .on_mouseovers(&self.object_handler, collisions);
-                }
-            }
-        }
-        // We have to do this even if !self.debug_gui.enabled() so that the in/out animations work.
-        let selected_object = self.debug_gui.selected_object();
-        let gui_cmds = self
-            .object_handler
-            .objects
-            .clone()
-            .into_iter()
-            .filter_map(|(id, obj)| {
-                gg_err::log_and_ok(
-                    UpdateContext::new(self, input_handler, id, object_tracker)
-                        .context("UpdateHandler::update_gui(): on_gui"),
-                )
-                .and_then(|ctx| {
-                    obj.inner_mut()
-                        .as_gui_object()
-                        .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
-                })
-            })
-            .collect();
-        self.gui_cmd = Some(self.debug_gui.build(
-            input_handler,
-            &mut self.object_handler,
-            gui_cmds,
-        ));
-    }
-
-    fn handle_collisions(
-        &mut self,
-        input_handler: &InputHandler,
         object_tracker: &mut ObjectTracker,
+        input_handler: &InputHandler,
+        new_ids: impl IntoIterator<Item = ObjectId>,
     ) {
-        self.perf_stats.detect_collision.start();
-        let collisions = self.object_handler.get_collisions();
-        self.perf_stats.detect_collision.stop();
-        self.perf_stats.on_collision.start();
-        let mut done_with_collisions = BTreeSet::new();
-        for CollisionNotification { this, other, mtv } in collisions {
-            if done_with_collisions.contains(&this.object_id) {
-                continue;
-            }
-            if let Some(CollisionResponse::Done) = gg_err::log_and_ok(
-                UpdateContext::new(self, input_handler, this.object_id, object_tracker)
+        for this_id in new_ids {
+            gg_err::log_and_ok(
+                self.object_handler
+                    .objects
+                    .get_mut(&this_id)
                     .with_context(|| {
                         format!(
-                            "UpdateHandler::handle_collisions(): {:?} - {:?}",
-                            this.object_id, other.object_id
+                            "UpdateHandler::call_on_ready(): tried to call on_ready() for nonexistent added object: {this_id:?}"
                         )
+                    })
+                    .cloned()
+                    .and_then(|this| {
+                        let mut ctx =
+                            UpdateContext::new(self, input_handler, this_id, object_tracker)
+                                .context("UpdateHandler::call_on_ready()")?;
+                        this.inner_mut().on_ready(&mut ctx);
+                        Ok(())
                     }),
-            )
-            .map(|mut ctx| {
-                this.scene_object
-                    .wrapped
-                    .borrow_mut()
-                    .on_collision(&mut ctx, &other, mtv)
-            }) {
-                done_with_collisions.insert(this.object_id);
-            }
+            );
         }
-        self.object_handler.update_all_transforms();
-        self.perf_stats.on_collision.stop();
     }
-
-    fn update_coroutines(
+    fn complete_update_with_moved_objects(
         &mut self,
-        input_handler: &InputHandler,
-        object_tracker: &mut ObjectTracker,
+        pending_move_objects: BTreeMap<ObjectId, ObjectId>,
     ) {
-        for this_id in self.object_handler.objects.keys().copied().collect_vec() {
-            let Some(this) = gg_err::log_err_then(
-                self.object_handler
-                    .get_object_by_id(this_id)
-                    .context("UpdateHandler::call_on_update(): update_coroutines"),
-            ) else {
-                error!(
-                    "UpdateHandler::call_on_update(): tried to call update_coroutines on root object"
+        for (target_id, new_parent_id) in pending_move_objects {
+            check_ne!(target_id, new_parent_id);
+            if let Some(last_parent_id) = gg_err::log_and_ok(self.object_handler
+                .lookup_parent_id(target_id)
+                .with_context(|| {
+                    format!("UpdateHandler::complete_update_with_moved_objects({target_id:?}, {new_parent_id:?})")
+                })) {
+                let last_parent_id = last_parent_id.unwrap_or(ObjectId::root());
+                gg_err::log_err_and_ignore(
+                    self.debug_gui
+                        .on_move_object(&self.object_handler, target_id, last_parent_id, new_parent_id)
+                        .context("UpdateHandler::complete_update_with_moved_objects()"),
                 );
-                continue;
-            };
-            let this = this.clone(); // borrowck issues
-            for (coroutine_id, coroutine) in self.coroutines.remove(&this_id).unwrap_or_default() {
-                let Some(mut ctx) = gg_err::log_and_ok(
-                    UpdateContext::new(self, input_handler, this_id, object_tracker)
-                        .context("UpdateHandler::update_coroutines()"),
-                ) else {
-                    continue;
-                };
-                if let Some(coroutine) = coroutine.resume(&this, &mut ctx) {
-                    ctx.scene.coroutines.insert(coroutine_id, coroutine);
-                }
             }
+            gg_err::log_err_and_ignore(
+                self.object_handler
+                    .reparent_object(target_id, new_parent_id),
+            );
         }
     }
-    fn iter_with_other_map<F>(
-        &mut self,
-        input_handler: &InputHandler,
-        object_tracker: &mut ObjectTracker,
-        call_obj_event: F,
-        description: &str,
-    ) where
-        F: Fn(RefMut<dyn SceneObject>, &mut UpdateContext),
-    {
-        for (this_id, this) in self.object_handler.objects.clone() {
-            gg_err::log_and_ok(
-                UpdateContext::new(self, input_handler, this_id, object_tracker).with_context(
-                    || format!("UpdateHandler::iter_with_other_map(): {description}"),
-                ),
-            )
-            .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
-        }
-    }
-    fn update_and_send_render_infos(&mut self) {
+    fn complete_update_with_render_infos(&mut self) {
         self.perf_stats.render_infos.start();
 
         let shader_execs = self
