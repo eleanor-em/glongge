@@ -21,8 +21,12 @@ impl GgInternalCanvas {
     pub fn rect(&mut self, top_left: Vec2, bottom_right: Vec2, col: Colour) {
         let half_widths = (bottom_right - top_left) / 2;
         let centre = top_left + half_widths;
+        self.rect_centred(centre, half_widths, col);
+    }
+    pub fn rect_centred(&mut self, centre: Vec2, half_widths: Vec2, col: Colour) {
         self.render_items
             .push(vertex::rectangle(centre, half_widths).with_blend_col(col));
+
     }
     pub fn rect_transformed(
         &mut self,

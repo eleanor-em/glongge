@@ -1,10 +1,7 @@
-use glongge::{
-    core::prelude::*,
-    resource::{
-        font::{Font, TextWrapMode},
-        sprite::Sprite,
-    },
-};
+use glongge::{core::prelude::*, include_bytes_root, resource::{
+    font::{Font, TextWrapMode},
+    sprite::Sprite,
+}};
 use glongge_derive::partially_derive_scene_object;
 
 #[derive(Default)]
@@ -30,7 +27,7 @@ impl SceneObject for WinTextDisplay {
         object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
-        let font = Font::from_slice(include_bytes!("../../../res/DejaVuSansMono.ttf"), 20.)?;
+        let font = Font::from_slice(include_bytes_root!("res/DejaVuSansMono.ttf"), 20.)?;
         self.sprite = font.render_to_sprite(
             object_ctx,
             resource_handler,

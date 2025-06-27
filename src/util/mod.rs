@@ -21,6 +21,24 @@ pub mod log;
 pub mod spline;
 pub mod tileset;
 
+/// A macro that takes a path (e.g., "/res/DejaVuSansMono.ttf") and returns
+/// include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), path))
+///
+/// # Examples
+///
+/// ```
+/// use glongge::include_bytes_root;
+/// let font_bytes = include_bytes_root!("res/DejaVuSansMono.ttf");
+/// ```
+#[macro_export]
+macro_rules! include_bytes_root {
+    ($path:expr) => {
+        include_bytes!(concat!(concat!(env!("CARGO_MANIFEST_DIR"), "/"), $path))
+    };
+}
+
+
+
 #[allow(dead_code)]
 pub mod gg_time {
     use crate::util::gg_float;
