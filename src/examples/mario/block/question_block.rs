@@ -40,7 +40,6 @@ impl SceneObject for QuestionBlock {
             .wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -51,7 +50,6 @@ impl SceneObject for QuestionBlock {
         .with_frame_time_ms(vec![600, 100, 100, 100]);
         self.empty_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture,
             Vec2i { x: 349, y: 78 },
             Vec2i { x: 16, y: 16 },

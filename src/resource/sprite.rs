@@ -20,28 +20,32 @@ enum SpriteState {
     ShouldUpdate,
 }
 
+type DeferredTextureLoader = Box<dyn FnOnce(&ResourceHandler) -> Result<Texture>>;
+
 #[derive(Default)]
 pub struct GgInternalSprite {
+    textures: Vec<Texture>,
+    areas: Vec<Rect>,
     materials: Vec<MaterialId>,
     material_indices: Vec<usize>,
+    render_item: RenderItem,
+
     elapsed_us: u128,
     frame_time_ms: Vec<u32>,
     frame: usize,
-    render_item: RenderItem,
 
     paused: bool,
     state: SpriteState,
     last_state: SpriteState,
 
     name: String,
+
+    deferred: Option<DeferredTextureLoader>,
 }
 
 impl GgInternalSprite {
-    fn add_from_textures(
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-        textures: Vec<Texture>,
-    ) -> Sprite {
+    fn add_from_textures(object_ctx: &mut ObjectContext, textures: Vec<Texture>) -> Sprite {
+        check_false!(textures.is_empty());
         let areas = textures.iter().map(Texture::as_rect).collect_vec();
         let frame_time_ms = textures
             .iter()
@@ -51,15 +55,11 @@ impl GgInternalSprite {
             })
             .collect_vec();
         let render_item = vertex::rectangle(Vec2::zero(), textures[0].half_widths());
-        let extent = textures[0].aa_extent();
-        let materials = textures
-            .into_iter()
-            .zip(&areas)
-            .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
-            .collect_vec();
         let material_indices = (0..areas.len()).collect_vec();
         let inner = Some(object_ctx.add_child(Self {
-            materials,
+            textures,
+            areas,
+            materials: Vec::new(),
             material_indices,
             frame_time_ms,
             render_item,
@@ -69,24 +69,43 @@ impl GgInternalSprite {
             state: SpriteState::Show,
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
+            deferred: None,
         }));
-        let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
-        Sprite {
-            inner,
-            extent,
-            collider,
-        }
+        Sprite { inner }
+    }
+    fn add_from_texture_deferred(
+        object_ctx: &mut ObjectContext,
+        get_texture: DeferredTextureLoader,
+    ) -> Sprite {
+        let inner = Some(object_ctx.add_child(Self {
+            textures: Vec::new(),
+            areas: Vec::new(),
+            materials: Vec::new(),
+            material_indices: Vec::new(),
+            render_item: RenderItem::default(),
+            frame_time_ms: Vec::new(),
+            paused: false,
+            elapsed_us: 0,
+            frame: 0,
+            state: SpriteState::Show,
+            last_state: SpriteState::Show,
+            name: "Sprite".to_string(),
+            deferred: Some(get_texture),
+        }));
+        Sprite { inner }
     }
 
     fn add_from_tileset(
         object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
         offset: Vec2i,
         margin: Vec2i,
     ) -> Sprite {
+        let frame_count = (tile_count.x as usize) * (tile_count.y as usize);
+        check_gt!(frame_count, 0);
+        let textures = vec![texture; frame_count];
         let areas = Vec2i::range_from_zero(tile_count)
             .map(|(tile_x, tile_y)| {
                 let top_left = offset
@@ -95,40 +114,28 @@ impl GgInternalSprite {
                 Rect::new((top_left + tile_size / 2).into(), (tile_size / 2).into())
             })
             .collect_vec();
-        let frame_time_ms = vec![1000; areas.len()];
+        let frame_time_ms = vec![1000; frame_count];
         let render_item = vertex::rectangle(Vec2::zero(), (tile_size / 2).into());
-        let textures = vec![texture; areas.len()];
-        let materials = textures
-            .into_iter()
-            .zip(&areas)
-            .map(|(tex, area)| resource_handler.texture.material_from_texture(&tex, area))
-            .collect_vec();
         let material_indices = (0..areas.len()).collect_vec();
         let inner = Some(object_ctx.add_child(Self {
-            materials,
+            textures,
+            areas,
+            materials: Vec::new(),
             material_indices,
-            frame_time_ms,
             render_item,
+            frame_time_ms,
             paused: false,
             elapsed_us: 0,
             frame: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
+            deferred: None,
         }));
-        let extent = tile_size.into();
-        let collider = BoxCollider::from_centre(Vec2::zero(), extent / 2);
-        Sprite {
-            inner,
-            extent,
-            collider,
-        }
+        Sprite { inner }
     }
 
     fn set_frame_orders(&mut self, frames: Vec<usize>) {
-        for frame in &frames {
-            check_lt!(*frame, self.materials.len());
-        }
         self.material_indices = frames;
     }
 
@@ -140,6 +147,21 @@ impl GgInternalSprite {
     }
     fn set_blend_col(&mut self, col: Colour) {
         self.render_item = self.render_item.clone().with_blend_col(col);
+        if self.state == SpriteState::Show {
+            self.state = SpriteState::ShouldUpdate;
+        }
+    }
+
+    pub fn max_extent(&self) -> Vec2 {
+        self.areas
+            .iter()
+            .copied()
+            .reduce(|a, b| {
+                a.with_centre(Vec2::zero())
+                    .union(&b.with_centre(Vec2::zero()))
+            })
+            .unwrap_or_default()
+            .aa_extent()
     }
 }
 
@@ -152,8 +174,39 @@ impl SceneObject for GgInternalSprite {
     fn on_load(
         &mut self,
         _object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
+        resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
+        if let Some(deferred) = self.deferred.take() {
+            let texture = deferred(resource_handler)?;
+            let areas = vec![texture.as_rect()];
+            let frame_time_ms = vec![
+                texture
+                    .duration()
+                    .map_or(1000, |d| u32::try_from(d.as_millis()).unwrap_or(u32::MAX)),
+            ];
+            let render_item = vertex::rectangle(Vec2::zero(), texture.half_widths());
+            let material_indices = (0..areas.len()).collect_vec();
+            self.textures = vec![texture];
+            self.areas = areas;
+            self.material_indices = material_indices;
+            self.render_item = render_item;
+            self.frame_time_ms = frame_time_ms;
+            // TODO: sprite extent/collider
+            // let extent = texture.aa_extent();
+        }
+
+        self.materials = self
+            .textures
+            .iter()
+            .zip(&self.areas)
+            .map(|(tex, area)| resource_handler.texture.material_from_texture(tex, area))
+            .collect_vec();
+
+        check_false!(self.textures.is_empty());
+        check_eq!(self.textures.len(), self.areas.len());
+        check_eq!(self.textures.len(), self.materials.len());
+        check_false!(self.render_item.is_empty());
+
         Ok(if self.state == SpriteState::Show {
             self.last_state = SpriteState::Show;
             Some(self.render_item.clone())
@@ -224,21 +277,9 @@ impl RenderableObject for GgInternalSprite {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Sprite {
     inner: Option<TreeSceneObject>,
-    extent: Vec2,
-    collider: BoxCollider,
-}
-
-impl Default for Sprite {
-    fn default() -> Self {
-        Self {
-            inner: None,
-            extent: Vec2::zero(),
-            collider: BoxCollider::default(),
-        }
-    }
 }
 
 impl Sprite {
@@ -249,7 +290,6 @@ impl Sprite {
     ) -> Result<Sprite> {
         Ok(GgInternalSprite::add_from_textures(
             object_ctx,
-            resource_handler,
             vec![resource_handler.texture.wait_load_file(filename)?],
         ))
     }
@@ -260,13 +300,11 @@ impl Sprite {
     ) -> Result<Sprite> {
         Ok(GgInternalSprite::add_from_textures(
             object_ctx,
-            resource_handler,
             resource_handler.texture.wait_load_file_animated(filename)?,
         ))
     }
     pub fn add_from_tileset(
         object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
@@ -274,25 +312,17 @@ impl Sprite {
         margin: Vec2i,
     ) -> Sprite {
         GgInternalSprite::add_from_tileset(
-            object_ctx,
-            resource_handler,
-            texture,
-            tile_count,
-            tile_size,
-            offset,
-            margin,
+            object_ctx, texture, tile_count, tile_size, offset, margin,
         )
     }
     pub fn add_from_single_extent(
         object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         extent: Vec2i,
     ) -> Sprite {
         Self::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture,
             Vec2i::one(),
             extent,
@@ -302,47 +332,22 @@ impl Sprite {
     }
     pub fn add_from_single_coords(
         object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
         texture: Texture,
         top_left: Vec2i,
         bottom_right: Vec2i,
     ) -> Sprite {
-        Self::add_from_single_extent(
-            object_ctx,
-            resource_handler,
-            texture,
-            top_left,
-            bottom_right - top_left,
-        )
+        Self::add_from_single_extent(object_ctx, texture, top_left, bottom_right - top_left)
     }
 
-    pub(crate) fn add_from_texture(
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-        texture: Texture,
-    ) -> Sprite {
+    pub(crate) fn add_from_texture(object_ctx: &mut ObjectContext, texture: Texture) -> Sprite {
         let extent = texture.aa_extent().as_vec2int_lossy();
-        Self::add_from_single_extent(object_ctx, resource_handler, texture, Vec2i::zero(), extent)
+        Self::add_from_single_extent(object_ctx, texture, Vec2i::zero(), extent)
     }
-    #[must_use]
-    pub fn with_collider_half_widths(mut self, half_widths: Vec2) -> Self {
-        self.collider = self.collider.with_half_widths(half_widths);
-        self
-    }
-    #[must_use]
-    pub fn with_collider_extent(mut self, extent: Vec2) -> Self {
-        self.collider = self.collider.with_extent(extent);
-        self
-    }
-    #[must_use]
-    pub fn with_collider_centre(mut self, centre: Vec2) -> Self {
-        self.collider = self.collider.with_centre(centre);
-        self
-    }
-    #[must_use]
-    pub fn with_collider_top_left(mut self, top_left: Vec2) -> Self {
-        self.collider = self.collider.with_centre(top_left - self.centre());
-        self
+    pub(crate) fn add_from_texture_deferred(
+        object_ctx: &mut ObjectContext,
+        get_texture: DeferredTextureLoader,
+    ) -> Sprite {
+        GgInternalSprite::add_from_texture_deferred(object_ctx, get_texture)
     }
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
@@ -358,7 +363,7 @@ impl Sprite {
     pub fn with_fixed_ms_per_frame(self, ms: u32) -> Self {
         {
             let mut inner = self.inner_unwrap();
-            inner.frame_time_ms = vec![ms; inner.materials.len()];
+            inner.frame_time_ms = vec![ms; inner.frame_time_ms.len()];
         }
         self
     }
@@ -421,7 +426,7 @@ impl Sprite {
     }
 
     pub fn as_box_collider(&self) -> BoxCollider {
-        self.collider.clone()
+        BoxCollider::from_aa_extent(self)
     }
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
@@ -443,10 +448,10 @@ impl Sprite {
 
 impl AxisAlignedExtent for Sprite {
     fn aa_extent(&self) -> Vec2 {
-        self.extent
+        self.inner_unwrap().max_extent()
     }
 
     fn centre(&self) -> Vec2 {
-        Vec2::zero()
+        self.inner.as_ref().unwrap().transform().centre
     }
 }

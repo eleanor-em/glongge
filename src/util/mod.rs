@@ -22,7 +22,7 @@ pub mod spline;
 pub mod tileset;
 
 /// A macro that takes a path (e.g., "/res/DejaVuSansMono.ttf") and returns
-/// include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), path))
+/// `include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), path))`.
 ///
 /// # Examples
 ///
@@ -36,8 +36,6 @@ macro_rules! include_bytes_root {
         include_bytes!(concat!(concat!(env!("CARGO_MANIFEST_DIR"), "/"), $path))
     };
 }
-
-
 
 #[allow(dead_code)]
 pub mod gg_time {

@@ -4,8 +4,11 @@ use itertools::Itertools;
 use num_traits::ToPrimitive;
 use vulkano::format::Format;
 
+use crate::core::render::VertexDepth;
+use crate::core::scene::{GuiCommand, GuiObject};
 use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
+use glongge_derive::partially_derive_scene_object;
 
 const SAMPLE_RATIO: f32 = 8.;
 
@@ -40,18 +43,23 @@ impl Font {
         self.inner.height()
     }
 
-    fn layout(&self, text: &str, max_width: f32, text_wrap_mode: TextWrapMode) -> Vec<Glyph> {
+    fn layout(
+        &self,
+        text: impl AsRef<str>,
+        max_width: f32,
+        text_wrap_mode: TextWrapMode,
+    ) -> Vec<Glyph> {
         match text_wrap_mode {
             TextWrapMode::WrapAnywhere => self.layout_wrap_anywhere(text, max_width),
         }
     }
 
-    fn layout_wrap_anywhere(&self, text: &str, max_width: f32) -> Vec<Glyph> {
+    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Vec<Glyph> {
         let mut rv = Vec::new();
         let v_advance = self.height() + self.inner.line_gap();
         let mut caret = point(0.0, self.inner.ascent());
         let mut last_glyph: Option<Glyph> = None;
-        for c in text.chars() {
+        for c in text.as_ref().chars() {
             if c.is_control() {
                 if c == '\n' {
                     caret.x = 0.;
@@ -81,8 +89,7 @@ impl Font {
     pub fn render_to_sprite(
         &self,
         object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-        text: &str,
+        text: impl AsRef<str>,
         max_width: f32,
         text_wrap_mode: TextWrapMode,
     ) -> Result<Sprite> {
@@ -90,16 +97,17 @@ impl Font {
         let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        Ok(Sprite::add_from_texture(
+        Ok(Sprite::add_from_texture_deferred(
             object_ctx,
-            resource_handler,
-            resource_handler.texture.wait_load_reader_rgba(
-                "[font]".to_string(),
-                &mut reader,
-                width,
-                height,
-                Format::R8G8B8A8_UNORM,
-            )?,
+            Box::new(move |resource_handler| {
+                resource_handler.texture.wait_load_reader_rgba(
+                    "[font]".to_string(),
+                    &mut reader,
+                    width,
+                    height,
+                    Format::R8G8B8A8_UNORM,
+                )
+            }),
         ))
     }
 }
@@ -197,5 +205,92 @@ impl Read for GlyphReader {
             });
         }
         Ok(buf.len())
+    }
+}
+
+pub struct Label {
+    font: Font,
+    sprite: Option<Sprite>,
+    max_width: f32,
+    text_wrap_mode: TextWrapMode,
+
+    text_to_set: Option<String>,
+    last_text: Option<String>,
+
+    depth: VertexDepth,
+    blend_col: Colour,
+}
+
+impl Label {
+    pub fn new(font: Font, max_width: f32) -> Self {
+        Self {
+            font,
+            sprite: None,
+            max_width,
+            text_wrap_mode: TextWrapMode::WrapAnywhere,
+            text_to_set: None,
+            last_text: None,
+            depth: VertexDepth::default(),
+            blend_col: Colour::white(),
+        }
+    }
+
+    pub fn set_text(&mut self, text: impl AsRef<str>) {
+        self.text_to_set = Some(text.as_ref().to_string());
+    }
+
+    pub fn set_depth(&mut self, depth: VertexDepth) {
+        self.depth = depth;
+    }
+
+    pub fn set_blend_col(&mut self, colour: Colour) {
+        self.blend_col = colour;
+    }
+}
+
+#[partially_derive_scene_object]
+impl SceneObject for Label {
+    fn on_load(
+        &mut self,
+        object_ctx: &mut ObjectContext,
+        _resource_handler: &mut ResourceHandler,
+    ) -> Result<Option<RenderItem>> {
+        object_ctx.transform_mut().scale = Vec2::one() / self.font.sample_ratio();
+        Ok(None)
+    }
+
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
+        if let Some(text) = self.text_to_set.take() {
+            self.last_text = Some(text.clone());
+
+            if self.sprite.take().is_some() {
+                ctx.object_mut().remove_children();
+            }
+            self.sprite = Some(
+                self.font
+                    .render_to_sprite(ctx.object_mut(), text, self.max_width, self.text_wrap_mode)
+                    .unwrap(),
+            );
+        } else if let Some(sprite) = self.sprite.as_mut() {
+            sprite.set_depth(self.depth);
+            sprite.set_blend_col(self.blend_col);
+        }
+    }
+
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
+        Some(self)
+    }
+}
+
+impl GuiObject for Label {
+    fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
+        if let Some(text) = self.last_text.as_ref() {
+            let text = text.clone();
+            GuiCommand::new(move |ui| {
+                ui.add(egui::Label::new(text).selectable(false));
+            })
+        } else {
+            GuiCommand::new(move |_ui| {})
+        }
     }
 }

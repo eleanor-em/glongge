@@ -535,6 +535,10 @@ impl BoxCollider {
         }
     }
     #[must_use]
+    pub fn from_aa_extent(extent: &impl AxisAlignedExtent) -> Self {
+        Self::from_centre(extent.centre(), extent.half_widths())
+    }
+    #[must_use]
     pub fn from_transform(transform: Transform, extent: Vec2) -> Self {
         check_eq!(transform.rotation, 0.);
         Self {

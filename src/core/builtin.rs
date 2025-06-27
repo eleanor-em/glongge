@@ -139,7 +139,6 @@ impl SceneObject for GgInternalStaticSprite {
         let sprite = if let Some(tex_segment) = self.tex_segment {
             Sprite::add_from_single_coords(
                 object_ctx,
-                resource_handler,
                 resource_handler
                     .texture
                     .wait_load_file(self.filename.clone())?,
@@ -149,7 +148,6 @@ impl SceneObject for GgInternalStaticSprite {
         } else {
             Sprite::add_from_texture(
                 object_ctx,
-                resource_handler,
                 resource_handler
                     .texture
                     .wait_load_file(self.filename.clone())?,

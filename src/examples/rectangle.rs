@@ -65,7 +65,6 @@ impl SceneObject for RectanglePlayer {
         let texture = resource_handler.texture.wait_load_file("res/mario.png")?;
         self.sprite = Sprite::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture,
             Vec2i { x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -159,7 +158,6 @@ impl SceneObject for SpinningRectangle {
         let texture = resource_handler.texture.wait_load_file("res/goomba.png")?;
         self.sprite = Sprite::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture,
             Vec2i { x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },

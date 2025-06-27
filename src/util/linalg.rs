@@ -1693,6 +1693,10 @@ pub trait AxisAlignedExtent {
     fn contains_point(&self, pos: Vec2) -> bool {
         (self.left()..self.right()).contains(&pos.x) && (self.top()..self.bottom()).contains(&pos.y)
     }
+
+    fn union(&self, rhs: impl AxisAlignedExtent) -> Rect {
+        self.as_rect().union(&rhs.as_rect())
+    }
 }
 
 /// A rectangular shape defined by a center point and half-widths.
@@ -1754,6 +1758,19 @@ impl Rect {
             centre: Vec2::zero(),
             half_widths: Vec2::zero(),
         }
+    }
+
+    #[must_use]
+    pub fn union(&self, rhs: &Rect) -> Rect {
+        let top_left = self.top_left().min(rhs.top_left());
+        let bottom_right = self.bottom_right().max(rhs.bottom_right());
+        Self::from_coords(top_left, bottom_right)
+    }
+
+    #[must_use]
+    pub fn with_centre(mut self, centre: Vec2) -> Rect {
+        self.centre = centre;
+        self
     }
 }
 

@@ -866,7 +866,7 @@ impl UpdateHandler {
     ) {
         let update_span = span!(
             tracing::Level::INFO,
-            "on_update_End",
+            "on_update_end",
             fc = self.frame_counter,
             ffc = self.fixed_frame_counter
         );

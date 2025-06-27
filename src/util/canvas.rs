@@ -6,12 +6,17 @@ use glongge_derive::partially_derive_scene_object;
 #[derive(Default)]
 pub struct GgInternalCanvas {
     render_items: Vec<RenderItem>,
-    depth: VertexDepth,
+    depth: Option<VertexDepth>,
 }
 
 impl GgInternalCanvas {
     pub fn new() -> Self {
         Self::default()
+    }
+    #[must_use]
+    pub fn with_depth(mut self, depth: VertexDepth) -> Self {
+        self.set_depth(depth);
+        self
     }
 
     pub fn line(&mut self, start: Vec2, end: Vec2, width: f32, col: Colour) {
@@ -26,7 +31,6 @@ impl GgInternalCanvas {
     pub fn rect_centred(&mut self, centre: Vec2, half_widths: Vec2, col: Colour) {
         self.render_items
             .push(vertex::rectangle(centre, half_widths).with_blend_col(col));
-
     }
     pub fn rect_transformed(
         &mut self,
@@ -65,9 +69,8 @@ impl GgInternalCanvas {
             .push(vertex::circle(centre, radius, steps).with_blend_col(col));
     }
 
-    // TODO: hacky.
     pub fn set_depth(&mut self, depth: VertexDepth) {
-        self.depth = depth;
+        self.depth = Some(depth);
     }
 }
 
@@ -82,7 +85,9 @@ impl SceneObject for GgInternalCanvas {
         _object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
-        self.depth = VertexDepth::Front(u16::MAX);
+        if self.depth.is_none() {
+            self.depth = Some(VertexDepth::Front(u16::MAX));
+        }
         Ok(Some(RenderItem::default()))
     }
 
@@ -111,7 +116,7 @@ impl RenderableObject for GgInternalCanvas {
             .rev()
             .reduce(RenderItem::concat)
         {
-            ri.depth = self.depth;
+            ri.depth = self.depth.unwrap();
             render_ctx.update_render_item(&ri);
         }
     }

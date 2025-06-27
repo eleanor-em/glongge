@@ -493,7 +493,6 @@ impl SceneObject for Player {
             .wait_load_file("res/mario_sheet.png")?;
         self.idle_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 0, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -501,7 +500,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Idle]");
         self.walk_sprite = Sprite::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -513,7 +511,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Walk]");
         self.run_sprite = Sprite::add_from_tileset(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -525,7 +522,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Run]");
         self.skid_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 76, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -534,7 +530,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Skid]");
         self.fall_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 96, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -543,7 +538,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Fall]");
         self.die_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 116, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -552,7 +546,6 @@ impl SceneObject for Player {
         .with_name("Sprite[Die]");
         self.flagpole_sprite = Sprite::add_from_single_extent(
             object_ctx,
-            resource_handler,
             texture.clone(),
             Vec2i { x: 136, y: 8 },
             Vec2i { x: 16, y: 16 },
