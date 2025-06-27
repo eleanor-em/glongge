@@ -655,7 +655,7 @@ impl<T: Clone> UniqueShared<T> {
 }
 
 impl<T: ?Sized> UniqueShared<T> {
-    pub fn get(&self) -> MutexGuard<T> {
+    pub fn get(&self) -> MutexGuard<'_, T> {
         self.inner
             .try_lock()
             .expect("attempted to acquire UniqueShared but it was already in use")

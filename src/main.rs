@@ -32,7 +32,7 @@ fn main() -> Result<()> {
                 "res/flagpole.wav",
                 "res/stage-clear.wav",
             ] {
-                resource_handler.sound.spawn_load_file(sound.to_string());
+                resource_handler.sound.spawn_load_file(sound);
             }
             for texture in [
                 "res/mario_sheet.png",

@@ -169,7 +169,9 @@ impl Read for GlyphReader {
             .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?;
 
         // Zero out the buffer first.
-        buf.iter_mut().for_each(|val| *val = 0);
+        for val in buf.iter_mut() {
+            *val = 0;
+        }
 
         for glyph in glyphs {
             let bounds = glyph.px_bounds();

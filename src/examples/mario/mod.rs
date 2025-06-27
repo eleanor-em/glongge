@@ -114,6 +114,7 @@ impl Scene for MarioOverworldScene {
         bincode::serialize(&AliveEnemyMap::default()).unwrap()
     }
 
+    #[allow(clippy::too_many_lines)]
     fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut ts = TilesetBuilder::new("res/world_sheet.png", 16).named("Doughnut");
         let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);

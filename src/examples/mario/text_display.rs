@@ -41,7 +41,7 @@ impl SceneObject for WinTextDisplay {
         self.font = Some(font);
         let mut transform = object_ctx.transform_mut();
         transform.centre = self.centre;
-        transform.scale = Vec2::one() / self.font.as_ref().map_or_else(|| 1., |f| f.sample_ratio());
+        transform.scale = Vec2::one() / self.font.as_ref().map_or_else(|| 1., Font::sample_ratio);
         Ok(None)
     }
 }

@@ -462,16 +462,15 @@ impl GuiObjectTree {
         object_handler: &ObjectHandler,
         wireframe_mouseovers: &[ObjectId],
     ) {
-        if input_handler.pressed(KeyCode::KeyF) {
-            if let Some(object) = wireframe_mouseovers
+        if input_handler.pressed(KeyCode::KeyF)
+            && let Some(object) = wireframe_mouseovers
                 .get(
                     gg_iter::index_of(wireframe_mouseovers, &self.selected_id.get())
                         .map_or(0, |i| (i + 1) % wireframe_mouseovers.len()),
                 )
                 .and_then(|mouseover_id| Self::get_parent_or_object(object_handler, *mouseover_id))
-            {
-                self.selected_id.send(object.object_id);
-            }
+        {
+            self.selected_id.send(object.object_id);
         }
         if input_handler.pressed(KeyCode::KeyC) {
             if self.selected_id.get().is_root() {
@@ -497,14 +496,15 @@ impl GuiObjectTree {
         {
             self.select_prev_sibling(object_handler);
         }
-        if !input_handler.mod_super() && input_handler.pressed(KeyCode::KeyP) {
-            if let Some(parent) = gg_err::log_err_then(
+        if !input_handler.mod_super()
+            && input_handler.pressed(KeyCode::KeyP)
+            && let Some(parent) = gg_err::log_err_then(
                 object_handler
                     .get_parent_by_id(self.selected_id.get())
                     .context("GuiObjectTree::on_input(): <P>: parent not found"),
-            ) {
-                self.selected_id.send(parent.object_id);
-            }
+            )
+        {
+            self.selected_id.send(parent.object_id);
         }
         if input_handler.pressed(KeyCode::KeyO) {
             self.show.overwrite(!self.show.get());
@@ -607,13 +607,11 @@ impl GuiObjectTree {
         if let Some(parent) = object_handler
             .get_parent_by_id(removed_id)
             .context("GuiObjectTree::on_remove_object()")?
-        {
-            if let Some(tree) = self
+            && let Some(tree) = self
                 .get_node_by_object_id(object_handler, parent.object_id)
                 .context("GuiObjectTree::on_remove_object()")?
-            {
-                tree.children.remove(&removed_id);
-            }
+        {
+            tree.children.remove(&removed_id);
         }
         if self.selected_id.get() == removed_id {
             self.selected_id.overwrite(ObjectId::root());
@@ -739,7 +737,9 @@ impl GuiObjectTreeBuilder {
             if self.expand_all_children_tx.get_ref().contains(&group_ix)
                 || num_children <= Self::MAX_DISPLAYED_CHILDREN
             {
-                child_group.into_iter().for_each(|tree| tree.build(ui));
+                for tree in child_group {
+                    tree.build(ui);
+                }
             } else {
                 child_group
                     .into_iter()

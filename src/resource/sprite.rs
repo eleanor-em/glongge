@@ -432,7 +432,7 @@ impl Sprite {
         self.inner_unwrap().set_blend_col(col);
     }
 
-    fn inner_unwrap(&self) -> RefMut<GgInternalSprite> {
+    fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
         self.inner
             .as_ref()
             .unwrap()

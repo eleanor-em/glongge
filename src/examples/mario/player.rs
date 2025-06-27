@@ -122,8 +122,7 @@ impl Player {
 
     fn initial_vspeed(&self) -> f32 {
         match self.speed_regime {
-            SpeedRegime::Slow => -from_nes(4, 1, 0, 0),
-            SpeedRegime::Medium => -from_nes(4, 1, 0, 0),
+            SpeedRegime::Slow | SpeedRegime::Medium => -from_nes(4, 1, 0, 0),
             SpeedRegime::Fast => -from_nes(5, 0, 0, 0),
         }
     }
@@ -136,27 +135,27 @@ impl Player {
     }
     fn current_sprite(&self) -> &Sprite {
         match self.state {
-            PlayerState::Idle => &self.idle_sprite,
+            PlayerState::Idle | PlayerState::EnteringPipe | PlayerState::ExitingPipe => {
+                &self.idle_sprite
+            }
             PlayerState::Walking => &self.walk_sprite,
             PlayerState::Running => &self.run_sprite,
             PlayerState::Skidding => &self.skid_sprite,
             PlayerState::Falling => &self.fall_sprite,
             PlayerState::Dying => &self.die_sprite,
-            PlayerState::EnteringPipe => &self.idle_sprite,
-            PlayerState::ExitingPipe => &self.idle_sprite,
             PlayerState::RidingFlagpole => &self.flagpole_sprite,
         }
     }
     fn current_sprite_mut(&mut self) -> &mut Sprite {
         match self.state {
-            PlayerState::Idle => &mut self.idle_sprite,
+            PlayerState::Idle | PlayerState::EnteringPipe | PlayerState::ExitingPipe => {
+                &mut self.idle_sprite
+            }
             PlayerState::Walking => &mut self.walk_sprite,
             PlayerState::Running => &mut self.run_sprite,
             PlayerState::Skidding => &mut self.skid_sprite,
             PlayerState::Falling => &mut self.fall_sprite,
             PlayerState::Dying => &mut self.die_sprite,
-            PlayerState::EnteringPipe => &mut self.idle_sprite,
-            PlayerState::ExitingPipe => &mut self.idle_sprite,
             PlayerState::RidingFlagpole => &mut self.flagpole_sprite,
         }
     }
@@ -186,7 +185,7 @@ impl Player {
             } else {
                 self.state = PlayerState::Walking;
                 self.update_as_walking(ctx, new_dir, hold_run);
-            };
+            }
         }
     }
 
@@ -332,7 +331,7 @@ impl Player {
                         CoroutineState::Waiting => {
                             this.pipe_sound.play();
                         }
-                        _ => {}
+                        CoroutineState::Yielding => {}
                     }
                     if ctx
                         .object()
@@ -366,40 +365,37 @@ impl Player {
                     .orientation()
                     .dot(Vec2::down())
                     .is_zero()
+                    && let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination()
                 {
-                    if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination() {
-                        self.start_pipe(
-                            ctx,
-                            Vec2::down(),
-                            ctx.object().transform_of(pipe).centre,
-                            instruction,
-                        );
-                    }
+                    self.start_pipe(
+                        ctx,
+                        Vec2::down(),
+                        ctx.object().transform_of(pipe).centre,
+                        instruction,
+                    );
                 }
             }
-        } else if self.hold_right {
-            if let Some(collisions) =
+        } else if self.hold_right
+            && let Some(collisions) =
                 ctx.object()
                     .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG])
+        {
+            let pipe = &collisions.first().other;
+            if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination()
+                && !pipe
+                    .downcast::<Pipe>()
+                    .unwrap()
+                    .orientation()
+                    .dot(Vec2::right())
+                    .is_zero()
+                && !collisions.first().mtv.dot(Vec2::right()).is_zero()
             {
-                let pipe = &collisions.first().other;
-                if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination() {
-                    if !pipe
-                        .downcast::<Pipe>()
-                        .unwrap()
-                        .orientation()
-                        .dot(Vec2::right())
-                        .is_zero()
-                        && !collisions.first().mtv.dot(Vec2::right()).is_zero()
-                    {
-                        self.start_pipe(
-                            ctx,
-                            Vec2::right(),
-                            ctx.object().transform_of(pipe).centre,
-                            instruction,
-                        );
-                    }
-                }
+                self.start_pipe(
+                    ctx,
+                    Vec2::right(),
+                    ctx.object().transform_of(pipe).centre,
+                    instruction,
+                );
             }
         }
     }
@@ -566,32 +562,20 @@ impl SceneObject for Player {
 
         self.jump_sound = resource_handler
             .sound
-            .wait_load_file("res/jump-small.wav".to_string())?;
-        self.stomp_sound = resource_handler
-            .sound
-            .wait_load_file("res/stomp.wav".to_string())?;
-        self.die_sound = resource_handler
-            .sound
-            .wait_load_file("res/death.wav".to_string())?;
-        self.pipe_sound = resource_handler
-            .sound
-            .wait_load_file("res/pipe.wav".to_string())?;
-        self.bump_sound = resource_handler
-            .sound
-            .wait_load_file("res/bump.wav".to_string())?;
-        self.flagpole_sound = resource_handler
-            .sound
-            .wait_load_file("res/flagpole.wav".to_string())?;
+            .wait_load_file("res/jump-small.wav")?;
+        self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav")?;
+        self.die_sound = resource_handler.sound.wait_load_file("res/death.wav")?;
+        self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav")?;
+        self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav")?;
+        self.flagpole_sound = resource_handler.sound.wait_load_file("res/flagpole.wav")?;
         self.clear_sound = resource_handler
             .sound
-            .wait_load_file("res/stage-clear.wav".to_string())?;
+            .wait_load_file("res/stage-clear.wav")?;
 
-        self.overworld_music = resource_handler
-            .sound
-            .wait_load_file("res/overworld.ogg".to_string())?;
+        self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg")?;
         self.underground_music = resource_handler
             .sound
-            .wait_load_file("res/underground.ogg".to_string())?;
+            .wait_load_file("res/underground.ogg")?;
         object_ctx.add_child(CollisionShape::from_object_sprite(
             self,
             self.current_sprite(),
@@ -730,17 +714,17 @@ impl SceneObject for Player {
             return CollisionResponse::Done;
         }
         {
-            let bottom = ctx.object().rect_of(&other).bottom();
-            if let Some(mut stompable) = downcast_stompable_mut(other) {
-                if !stompable.dead() {
-                    if ctx.object().rect().bottom() < bottom {
-                        stompable.stomp();
-                        self.stomp_sound.play();
-                        self.v_speed = self.initial_vspeed();
-                        self.state = PlayerState::Falling;
-                    } else {
-                        self.start_die(ctx);
-                    }
+            let bottom = ctx.object().rect_of(other).bottom();
+            if let Some(mut stompable) = downcast_stompable_mut(other)
+                && !stompable.dead()
+            {
+                if ctx.object().rect().bottom() < bottom {
+                    stompable.stomp();
+                    self.stomp_sound.play();
+                    self.v_speed = self.initial_vspeed();
+                    self.state = PlayerState::Falling;
+                } else {
+                    self.start_die(ctx);
                 }
             }
         }

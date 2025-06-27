@@ -471,13 +471,13 @@ impl TextureHandler {
                 filename
             );
         }
-        if let Some(animation_control) = info.animation_control {
-            if animation_control.num_frames != 1 {
-                error!(
-                    "loading {}: unexpected num_frames {} (animated PNG not supported)",
-                    filename, animation_control.num_frames
-                );
-            }
+        if let Some(animation_control) = info.animation_control
+            && animation_control.num_frames != 1
+        {
+            error!(
+                "loading {}: unexpected num_frames {} (animated PNG not supported)",
+                filename, animation_control.num_frames
+            );
         }
         let format = match info.srgb {
             Some(_) => Format::R8G8B8A8_SRGB,

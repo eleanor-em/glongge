@@ -139,6 +139,7 @@ impl SpinningRectangle {
         }
     }
 
+    #[allow(clippy::unused_self)]
     fn rotation(&self) -> f32 {
         // let mut rv = Self::ANGULAR_VELOCITY * f32::PI() * self.t;
         // while rv > 2. * f32::PI() {
@@ -200,14 +201,13 @@ impl SceneObject for SpinningRectangle {
         other: &TreeSceneObject,
         mtv: Vec2,
     ) -> CollisionResponse {
-        if let Some(rect) = other.downcast_mut::<SpinningRectangle>() {
-            if self.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
-                && rect.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
-            {
-                ctx.transform_mut().centre += mtv;
-                self.velocity = self.velocity.reflect(mtv.normed());
-                rect.sprite.set_blend_col(self.col);
-            }
+        if let Some(rect) = other.downcast_mut::<SpinningRectangle>()
+            && self.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
+            && rect.alive_since.unwrap().elapsed().as_secs_f32() > 0.5
+        {
+            ctx.transform_mut().centre += mtv;
+            self.velocity = self.velocity.reflect(mtv.normed());
+            rect.sprite.set_blend_col(self.col);
         }
         CollisionResponse::Done
     }

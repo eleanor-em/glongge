@@ -165,7 +165,7 @@ impl SceneObject for SpinningTriangle {
         if self.alive_since.elapsed().as_secs_f32() > 0.1 && ctx.viewport().contains_point(self.pos)
         {
             for other in ctx.object().others() {
-                let dist = ctx.object().absolute_transform_of(&other).centre
+                let dist = ctx.object().absolute_transform_of(other).centre
                     - ctx.object().absolute_transform().centre;
                 if dist.len() < Self::TRI_WIDTH {
                     self.velocity = -dist.normed() * Self::VELOCITY;

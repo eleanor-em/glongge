@@ -127,7 +127,7 @@ pub struct RenderFrame {
 }
 
 impl RenderFrame {
-    fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame {
+    fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame<'_> {
         let shader_execs = self
             .shader_execs
             .clone()
@@ -249,7 +249,9 @@ impl RenderHandler {
             channel.gui_commands.drain(..).collect_vec()
         };
         *self.last_gui_commands_was_empty.get() = gui_commands.is_empty();
-        gui_commands.into_iter().for_each(|cmd| cmd(ctx));
+        for cmd in gui_commands {
+            cmd(ctx);
+        }
     }
 
     pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderDataChannel>> {

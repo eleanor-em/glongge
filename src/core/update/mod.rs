@@ -1530,7 +1530,7 @@ impl<'a> UpdateContext<'a> {
     /// transform.rotation += 0.5;
     /// transform.scale *= 1.1;
     /// ```
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.object.transform_mut()
     }
 
@@ -1672,7 +1672,7 @@ impl<'a> FixedUpdateContext<'a> {
     pub fn transform(&self) -> Transform {
         self.object.transform()
     }
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.object.transform_mut()
     }
 
@@ -2123,7 +2123,7 @@ impl ObjectContext<'_> {
     /// # Returns
     /// * `Some(Ref<T>)` - A reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists
-    pub fn first_child_as_ref<T: SceneObject>(&self) -> Option<Ref<T>> {
+    pub fn first_child_as_ref<T: SceneObject>(&self) -> Option<Ref<'_, T>> {
         self.this_children
             .iter()
             .find_map(DowncastRef::downcast::<T>)
@@ -2138,7 +2138,7 @@ impl ObjectContext<'_> {
     /// # Returns
     /// * `Some(RefMut<T>)` - A mutable reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists
-    pub fn first_child_as_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+    pub fn first_child_as_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>> {
         self.this_children
             .iter()
             .find_map(DowncastRef::downcast_mut::<T>)
@@ -2184,7 +2184,7 @@ impl ObjectContext<'_> {
     /// # Returns
     /// * `Some(Ref<T>)` - A reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists or if the object ID is invalid
-    pub fn first_child_of_as_ref<T: SceneObject>(&self, id: ObjectId) -> Option<Ref<T>> {
+    pub fn first_child_of_as_ref<T: SceneObject>(&self, id: ObjectId) -> Option<Ref<'_, T>> {
         self.all_children
             .get(&id)?
             .iter()
@@ -2202,7 +2202,7 @@ impl ObjectContext<'_> {
     /// # Returns
     /// * `Some(RefMut<T>)` - A mutable reference to the first child matching type T, if found
     /// * `None` - If no child of type T exists or if the object ID is invalid
-    pub fn first_child_of_as_mut<T: SceneObject>(&self, id: ObjectId) -> Option<RefMut<T>> {
+    pub fn first_child_of_as_mut<T: SceneObject>(&self, id: ObjectId) -> Option<RefMut<'_, T>> {
         self.all_children
             .get(&id)?
             .iter()
@@ -2218,10 +2218,10 @@ impl ObjectContext<'_> {
     pub fn first_sibling<T: SceneObject>(&self) -> Option<&TreeSceneObject> {
         self.first_child_of::<T>(self.parent_id().unwrap_or(ObjectId::root()))
     }
-    pub fn first_sibling_as_ref<T: SceneObject>(&self) -> Option<Ref<T>> {
+    pub fn first_sibling_as_ref<T: SceneObject>(&self) -> Option<Ref<'_, T>> {
         self.first_child_of_as_ref::<T>(self.parent_id().unwrap_or(ObjectId::root()))
     }
-    pub fn first_sibling_as_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+    pub fn first_sibling_as_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>> {
         self.first_child_of_as_mut::<T>(self.parent_id().unwrap_or(ObjectId::root()))
     }
     pub fn first_sibling_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
@@ -2258,14 +2258,14 @@ impl ObjectContext<'_> {
         self.others_inner().collect()
     }
     /// Returns immutable references to all other objects in the scene that match type `T`.
-    pub fn others_as_ref<T: SceneObject>(&self) -> Vec<Ref<T>> {
+    pub fn others_as_ref<T: SceneObject>(&self) -> Vec<Ref<'_, T>> {
         self.others_inner()
             .filter_map(TreeSceneObject::downcast)
             .collect()
     }
 
     /// Returns mutable references to all other objects in the scene that match type `T`.
-    pub fn others_as_mut<T: SceneObject>(&self) -> Vec<RefMut<T>> {
+    pub fn others_as_mut<T: SceneObject>(&self) -> Vec<RefMut<'_, T>> {
         self.others_inner()
             .filter_map(TreeSceneObject::downcast_mut)
             .collect()
@@ -2281,13 +2281,13 @@ impl ObjectContext<'_> {
     }
 
     /// Returns a reference to the first object in the scene of type `T`, excluding this object.
-    pub fn first_other_as_ref<T: SceneObject>(&self) -> Option<Ref<T>> {
+    pub fn first_other_as_ref<T: SceneObject>(&self) -> Option<Ref<'_, T>> {
         self.others_inner().find_map(TreeSceneObject::downcast)
     }
 
     /// Returns a mutable reference to the first object in the scene of type `T`, excluding this
     /// object.
-    pub fn first_other_as_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+    pub fn first_other_as_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>> {
         self.others_inner().find_map(TreeSceneObject::downcast_mut)
     }
 
@@ -2336,7 +2336,7 @@ impl ObjectContext<'_> {
     /// relative to its parent.
     ///
     /// Returns a dummy transform and logs an error if the object ID is not found.
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.object_tracker.get(self.this_id).map_or_else(
             || {
                 error!("missing object_id in objects: this={:?}", self.this_id);
@@ -2766,15 +2766,15 @@ impl ViewportContext<'_> {
     /// ctx.viewport_mut().clamp_to_left(None, Some(500.0));
     /// ```
     pub fn clamp_to_left(&mut self, min: Option<f32>, max: Option<f32>) {
-        if let Some(min) = min {
-            if self.viewport.left() < min {
-                self.translate((min - self.viewport.left()) * Vec2::right());
-            }
+        if let Some(min) = min
+            && self.viewport.left() < min
+        {
+            self.translate((min - self.viewport.left()) * Vec2::right());
         }
-        if let Some(max) = max {
-            if self.viewport.left() > max {
-                self.translate((self.viewport.left() - max) * Vec2::left());
-            }
+        if let Some(max) = max
+            && self.viewport.left() > max
+        {
+            self.translate((self.viewport.left() - max) * Vec2::left());
         }
     }
 
@@ -2793,15 +2793,15 @@ impl ViewportContext<'_> {
     /// ctx.viewport_mut().clamp_to_right(Some(0.0), None);
     /// ```
     pub fn clamp_to_right(&mut self, min: Option<f32>, max: Option<f32>) {
-        if let Some(min) = min {
-            if self.viewport.right() < min {
-                self.translate((min - self.viewport.right()) * Vec2::right());
-            }
+        if let Some(min) = min
+            && self.viewport.right() < min
+        {
+            self.translate((min - self.viewport.right()) * Vec2::right());
         }
-        if let Some(max) = max {
-            if self.viewport.right() > max {
-                self.translate((self.viewport.right() - max) * Vec2::left());
-            }
+        if let Some(max) = max
+            && self.viewport.right() > max
+        {
+            self.translate((self.viewport.right() - max) * Vec2::left());
         }
     }
 

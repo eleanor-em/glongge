@@ -18,13 +18,13 @@ pub trait Bumpable: SceneObject {
     fn bump(&mut self, player: &mut Player);
 }
 
-pub fn downcast_bumpable_mut(obj: &mut TreeSceneObject) -> Option<RefMut<dyn Bumpable>> {
-    (obj.downcast_mut::<QuestionBlock>()
-        .map(|o| o as RefMut<dyn Bumpable>))
-    .or(obj
-        .downcast_mut::<Brick>()
-        .map(|o| o as RefMut<dyn Bumpable>))
-    .or(obj
-        .downcast_mut::<UndergroundBrick>()
-        .map(|o| o as RefMut<dyn Bumpable>))
+pub fn downcast_bumpable_mut(obj: &mut TreeSceneObject) -> Option<RefMut<'_, dyn Bumpable>> {
+    obj.downcast_mut::<QuestionBlock>()
+        .map(|o| o as RefMut<dyn Bumpable>)
+        .or(obj
+            .downcast_mut::<Brick>()
+            .map(|o| o as RefMut<dyn Bumpable>))
+        .or(obj
+            .downcast_mut::<UndergroundBrick>()
+            .map(|o| o as RefMut<dyn Bumpable>))
 }

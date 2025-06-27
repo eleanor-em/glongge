@@ -121,7 +121,7 @@ impl TreeSceneObject {
         *self.scene_object.transform.borrow()
     }
     /// NOTE: Borrows!
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.scene_object.transform.borrow_mut()
     }
     /// NOTE: Borrows!
@@ -146,10 +146,10 @@ impl TreeSceneObject {
         self.scene_object.set_nickname(name);
     }
 
-    pub(crate) fn inner(&self) -> Ref<dyn SceneObject> {
+    pub(crate) fn inner(&self) -> Ref<'_, dyn SceneObject> {
         self.scene_object.wrapped.borrow()
     }
-    pub(crate) fn inner_mut(&self) -> RefMut<dyn SceneObject> {
+    pub(crate) fn inner_mut(&self) -> RefMut<'_, dyn SceneObject> {
         self.scene_object.wrapped.borrow_mut()
     }
 }
@@ -210,10 +210,10 @@ impl<T: SceneObject> TreeObjectOfType<T> {
         obj.and_then(Self::of)
     }
 
-    pub fn borrow(&self) -> Ref<T> {
+    pub fn borrow(&self) -> Ref<'_, T> {
         self.inner.as_ref().unwrap().downcast::<T>().unwrap()
     }
-    pub fn borrow_mut(&self) -> RefMut<T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.inner.as_ref().unwrap().downcast_mut::<T>().unwrap()
     }
     pub fn inner(&self) -> &TreeSceneObject {
@@ -228,7 +228,7 @@ impl<T: SceneObject> TreeObjectOfType<T> {
         self.inner.as_ref().unwrap().transform()
     }
     /// NOTE: Borrows!
-    pub fn transform_mut(&self) -> RefMut<Transform> {
+    pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.inner.as_ref().unwrap().transform_mut()
     }
     /// NOTE: Borrows!
@@ -305,7 +305,7 @@ pub trait DowncastRef {
     /// let wrong_type = triangle.downcast::<Sprite>();
     /// assert!(wrong_type.is_none());
     /// ```
-    fn downcast<T: SceneObject>(&self) -> Option<Ref<T>>;
+    fn downcast<T: SceneObject>(&self) -> Option<Ref<'_, T>>;
 
     /// Attempts to downcast a mutable reference to a specific scene object type.
     /// Returns None if the type does not match.
@@ -320,11 +320,11 @@ pub trait DowncastRef {
     /// let wrong_type = triangle.downcast_mut::<Sprite>();
     /// assert!(wrong_type.is_none());
     /// ```
-    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<T>>;
+    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>>;
 }
 
 impl DowncastRef for SceneObjectWrapper {
-    fn downcast<T: SceneObject>(&self) -> Option<Ref<T>> {
+    fn downcast<T: SceneObject>(&self) -> Option<Ref<'_, T>> {
         if self.gg_is::<T>() {
             Ref::filter_map(self.wrapped.borrow(), |obj| {
                 obj.as_any().downcast_ref::<T>()
@@ -335,7 +335,7 @@ impl DowncastRef for SceneObjectWrapper {
         }
     }
 
-    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>> {
         if self.gg_is::<T>() {
             RefMut::filter_map(self.wrapped.borrow_mut(), |obj| {
                 obj.as_any_mut().downcast_mut::<T>()
@@ -348,10 +348,10 @@ impl DowncastRef for SceneObjectWrapper {
 }
 
 impl DowncastRef for TreeSceneObject {
-    fn downcast<T: SceneObject>(&self) -> Option<Ref<T>> {
+    fn downcast<T: SceneObject>(&self) -> Option<Ref<'_, T>> {
         self.scene_object.downcast()
     }
-    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<T>> {
+    fn downcast_mut<T: SceneObject>(&self) -> Option<RefMut<'_, T>> {
         self.scene_object.downcast_mut()
     }
 }
