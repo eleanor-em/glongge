@@ -55,7 +55,7 @@ pub fn line(start: Vec2, end: Vec2, width: f32) -> RenderItem {
 }
 
 pub fn circle(centre: Vec2, radius: f32, steps: u32) -> RenderItem {
-    let dt = 2. * f32::PI() / steps as f32;
+    let dt = 2.0 * f32::PI() / steps as f32;
     RenderItem::from_raw_vertices(
         (0..steps)
             .circular_tuple_windows()

@@ -71,8 +71,8 @@ impl SceneObject for QuestionBlock {
         transform.centre.y += self.v_speed;
         if transform.centre.y > self.initial_y {
             transform.centre.y = self.initial_y;
-            self.v_speed = 0.;
-            self.v_accel = 0.;
+            self.v_speed = 0.0;
+            self.v_accel = 0.0;
         }
     }
     fn emitting_tags(&self) -> Vec<&'static str> {

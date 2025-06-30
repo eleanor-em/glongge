@@ -53,12 +53,12 @@ impl GgWindow {
     pub(crate) fn create_default_viewport(&self) -> AdjustedViewport {
         AdjustedViewport {
             inner: Viewport {
-                offset: [0., 0.],
+                offset: [0.0, 0.0],
                 extent: self.inner_size().into(),
-                depth_range: 0.0..=1.,
+                depth_range: 0.0..=1.0,
             },
             scale_factor: self.scale_factor(),
-            global_scale_factor: 1.,
+            global_scale_factor: 1.0,
             translation: Vec2::zero(),
         }
     }
@@ -541,7 +541,7 @@ impl RenderPerfStats {
         if self.totals_ms.len() == self.totals_ms.capacity() {
             self.totals_ms.remove(0);
         }
-        let render_time = gg_float::micros(self.last_step.elapsed()) * 1000.;
+        let render_time = gg_float::micros(self.last_step.elapsed()) * 1000.0;
         self.totals_ms.push(render_time);
 
         let late_in_row = self
@@ -570,8 +570,8 @@ impl RenderPerfStats {
 
         if self.last_report.elapsed().as_secs() >= 2 {
             #[allow(clippy::cast_precision_loss)]
-            let on_time_rate = self.on_time as f32 / self.count as f32 * 100.;
-            if on_time_rate.round() < 100. {
+            let on_time_rate = self.on_time as f32 / self.count as f32 * 100.0;
+            if on_time_rate.round() < 100.0 {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {
@@ -606,7 +606,7 @@ impl RenderPerfStats {
             self.execute.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
         ];
-        if self.extra_debug.last_ms() != 0. {
+        if self.extra_debug.last_ms() != 0.0 {
             default.push(self.extra_debug.as_tuple_ms());
         }
         default

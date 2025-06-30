@@ -24,11 +24,11 @@ impl Scene for RectangleScene {
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 10;
-        let mut objects = Uniform::new(50., 350.)
+        let mut objects = Uniform::new(50.0, 350.0)
             .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(50., 350.).sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1., 1.).sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1., 1.).sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(50.0, 350.0).sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0).sample_iter(rand::thread_rng()))
+            .zip(Uniform::new(-1.0, 1.0).sample_iter(rand::thread_rng()))
             .take(N)
             .map(|(((x, y), vx), vy)| {
                 let pos = Vec2 { x, y };
@@ -52,7 +52,7 @@ pub struct RectanglePlayer {
 }
 
 impl RectanglePlayer {
-    const SPEED: f32 = 2.;
+    const SPEED: f32 = 2.0;
 }
 
 #[partially_derive_scene_object]
@@ -75,7 +75,7 @@ impl SceneObject for RectanglePlayer {
         Ok(None)
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext) {
-        self.pos = Vec2 { x: 512., y: 384. };
+        self.pos = Vec2 { x: 512.0, y: 384.0 };
     }
 
     fn on_update(&mut self, ctx: &mut UpdateContext) {
@@ -115,8 +115,8 @@ pub struct SpinningRectangle {
 }
 
 impl SpinningRectangle {
-    const VELOCITY: f32 = 2.;
-    // const ANGULAR_VELOCITY: f32 = 2.;
+    const VELOCITY: f32 = 2.0;
+    // const ANGULAR_VELOCITY: f32 = 2.0;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         let mut rng = rand::thread_rng();
@@ -141,11 +141,11 @@ impl SpinningRectangle {
     #[allow(clippy::unused_self)]
     fn rotation(&self) -> f32 {
         // let mut rv = Self::ANGULAR_VELOCITY * f32::PI() * self.t;
-        // while rv > 2. * f32::PI() {
-        //     rv -= 2. * f32::PI();
+        // while rv > 2.0 * f32::PI() {
+        //     rv -= 2.0 * f32::PI();
         // }
         // rv
-        0.
+        0.0
     }
 }
 #[partially_derive_scene_object]
@@ -174,7 +174,7 @@ impl SceneObject for SpinningRectangle {
     fn on_update(&mut self, ctx: &mut UpdateContext) {
         if ctx.input().pressed(KeyCode::Space) {
             let mut rng = rand::thread_rng();
-            let angle = rng.gen_range(0.0..(2. * f32::PI()));
+            let angle = rng.gen_range(0.0..(2.0 * f32::PI()));
             ctx.object_mut()
                 .add_sibling(SpinningRectangle::new(self.pos, Vec2::one().rotated(angle)));
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);

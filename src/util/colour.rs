@@ -15,10 +15,10 @@ impl Colour {
     }
     pub fn from_bytes(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self {
-            r: f32::from(r) / 255.,
-            g: f32::from(g) / 255.,
-            b: f32::from(b) / 255.,
-            a: f32::from(a) / 255.,
+            r: f32::from(r) / 255.0,
+            g: f32::from(g) / 255.0,
+            b: f32::from(b) / 255.0,
+            a: f32::from(a) / 255.0,
         }
     }
     pub fn from_bytes_clamp<I: PrimInt + FromPrimitive + ToPrimitive>(
@@ -47,40 +47,40 @@ impl Colour {
 
     pub fn red() -> Self {
         Self {
-            r: 1.,
+            r: 1.0,
             ..Default::default()
         }
     }
     pub fn green() -> Self {
         Self {
-            g: 1.,
+            g: 1.0,
             ..Default::default()
         }
     }
     pub fn blue() -> Self {
         Self {
-            b: 1.,
+            b: 1.0,
             ..Default::default()
         }
     }
     pub fn yellow() -> Self {
         Self {
-            r: 1.,
-            g: 1.,
+            r: 1.0,
+            g: 1.0,
             ..Default::default()
         }
     }
     pub fn magenta() -> Self {
         Self {
-            r: 1.,
-            b: 1.,
+            r: 1.0,
+            b: 1.0,
             ..Default::default()
         }
     }
     pub fn cyan() -> Self {
         Self {
-            g: 1.,
-            b: 1.,
+            g: 1.0,
+            b: 1.0,
             ..Default::default()
         }
     }
@@ -89,18 +89,18 @@ impl Colour {
     }
     pub fn white() -> Self {
         Self {
-            r: 1.,
-            g: 1.,
-            b: 1.,
-            a: 1.,
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
         }
     }
     pub fn empty() -> Self {
         Self {
-            r: 0.,
-            g: 0.,
-            b: 0.,
-            a: 0.,
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
         }
     }
 
@@ -109,9 +109,9 @@ impl Colour {
         self.r *= ratio;
         self.g *= ratio;
         self.b *= ratio;
-        self.r = self.r.clamp(0., 1.);
-        self.g = self.g.clamp(0., 1.);
-        self.b = self.b.clamp(0., 1.);
+        self.r = self.r.clamp(0.0, 1.0);
+        self.g = self.g.clamp(0.0, 1.0);
+        self.b = self.b.clamp(0.0, 1.0);
         self
     }
     #[must_use]
@@ -123,10 +123,10 @@ impl Colour {
     pub fn as_bytes(&self) -> [u8; 4] {
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         [
-            (self.r * 255.) as u8,
-            (self.g * 255.) as u8,
-            (self.b * 255.) as u8,
-            (self.a * 255.) as u8,
+            (self.r * 255.0) as u8,
+            (self.g * 255.0) as u8,
+            (self.b * 255.0) as u8,
+            (self.a * 255.0) as u8,
         ]
     }
     pub fn as_f32(&self) -> [f32; 4] {
@@ -137,10 +137,10 @@ impl Colour {
 impl Default for Colour {
     fn default() -> Self {
         Self {
-            r: 0.,
-            g: 0.,
-            b: 0.,
-            a: 1.,
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
         }
     }
 }

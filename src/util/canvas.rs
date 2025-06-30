@@ -99,7 +99,7 @@ impl SceneObject for GgInternalCanvas {
         if self.render_items.is_empty() {
             // XXX: if there is nothing but the canvas, the game won't even start, because it has to
             // render something.
-            self.line(Vec2::zero(), Vec2::zero(), 0., Colour::empty());
+            self.line(Vec2::zero(), Vec2::zero(), 0.0, Colour::empty());
         }
     }
 

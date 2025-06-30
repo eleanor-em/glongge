@@ -26,7 +26,7 @@ impl Goomba {
             dead: false,
             started_death: false,
             top_left: top_left.into(),
-            vel: Vec2 { x: -1., y: 0. },
+            vel: Vec2 { x: -1.0, y: 0.0 },
             ..Default::default()
         }
         .into_wrapper()
@@ -96,7 +96,7 @@ impl SceneObject for Goomba {
             {
                 self.v_accel = BASE_GRAVITY;
             } else {
-                self.v_accel = 0.;
+                self.v_accel = 0.0;
             }
             self.vel.y += self.v_accel;
             ctx.object().transform_mut().centre += self.vel;
@@ -113,13 +113,13 @@ impl SceneObject for Goomba {
         }
         if !mtv.dot(Vec2::up()).is_zero() {
             if self.vel.y.is_zero()
-                && mtv.y < 0.
+                && mtv.y < 0.0
                 && other.emitting_tags().contains(&BLOCK_COLLISION_TAG)
             {
                 // Player pushed a block into the Goomba from below.
                 self.stomp();
             } else {
-                self.vel.y = 0.;
+                self.vel.y = 0.0;
             }
         }
         if other.emitting_tags().contains(&BLOCK_COLLISION_TAG) {

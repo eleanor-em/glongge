@@ -31,15 +31,15 @@ use underground_floor::UndergroundFloor;
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 50 fps
     (pixels as f32
-        + subpixels as f32 / 16.
-        + subsubpixels as f32 / 256.
-        + subsubsubpixels as f32 / 4096.)
-        * 60.
-        / 50.
+        + subpixels as f32 / 16.0
+        + subsubpixels as f32 / 256.0
+        + subsubsubpixels as f32 / 4096.0)
+        * 60.0
+        / 50.0
 }
 const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 50 fps
-    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60. / 50.)
+    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60.0 / 50.0)
 }
 const BASE_GRAVITY: f32 = from_nes_accel(0, 7, 0, 0);
 const BLOCK_COLLISION_TAG: &str = "BLOCK";

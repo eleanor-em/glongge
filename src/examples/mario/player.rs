@@ -269,7 +269,7 @@ impl Player {
                 self.accel = -from_nes(0, 0, 13, 0);
             }
         }
-        if self.hold_jump && self.v_speed < 0. {
+        if self.hold_jump && self.v_speed < 0.0 {
             self.v_accel = self.hold_gravity();
         } else {
             self.v_accel = self.gravity();
@@ -293,7 +293,7 @@ impl Player {
 
         if ctx
             .object()
-            .test_collision_along(Vec2::down(), 1., vec![BLOCK_COLLISION_TAG])
+            .test_collision_along(Vec2::down(), 1.0, vec![BLOCK_COLLISION_TAG])
             .is_none()
         {
             self.coyote_crt.get_or_insert_with(|| {
@@ -339,14 +339,14 @@ impl Player {
                         .is_none()
                     {
                         this.state = PlayerState::Idle;
-                        this.v_speed = 0.;
-                        this.speed = 0.;
+                        this.v_speed = 0.0;
+                        this.speed = 0.0;
                         this.dir = Vec2::zero();
                         // Snap to top of pipe.
-                        this.centre.y = (this.centre.y / 8.).round() * 8.;
+                        this.centre.y = (this.centre.y / 8.0).round() * 8.0;
                         CoroutineResponse::Complete
                     } else {
-                        this.v_speed = -Self::MAX_VSPEED / 3.;
+                        this.v_speed = -Self::MAX_VSPEED / 3.0;
                         CoroutineResponse::Yield
                     }
                 }));
@@ -356,7 +356,7 @@ impl Player {
         if self.hold_down {
             if let Some(collisions) =
                 ctx.object()
-                    .test_collision_along(Vec2::down(), 1., vec![PIPE_COLLISION_TAG])
+                    .test_collision_along(Vec2::down(), 1.0, vec![PIPE_COLLISION_TAG])
             {
                 let pipe = &collisions.first().other;
                 if !pipe
@@ -378,7 +378,7 @@ impl Player {
         } else if self.hold_right
             && let Some(collisions) =
                 ctx.object()
-                    .test_collision_along(Vec2::right(), 1., vec![PIPE_COLLISION_TAG])
+                    .test_collision_along(Vec2::right(), 1.0, vec![PIPE_COLLISION_TAG])
         {
             let pipe = &collisions.first().other;
             if let Some(instruction) = pipe.downcast::<Pipe>().unwrap().destination()
@@ -421,15 +421,15 @@ impl Player {
                     }
 
                     this.centre.x = pipe_centre.x;
-                    this.speed = 0.;
+                    this.speed = 0.0;
                     this.v_speed = if pipe_centre.y > this.centre.y {
-                        Self::MAX_VSPEED / 2.
+                        Self::MAX_VSPEED / 2.0
                     } else {
-                        -Self::MAX_VSPEED / 2.
+                        -Self::MAX_VSPEED / 2.0
                     };
                 } else {
                     this.speed = Self::MAX_WALK_SPEED;
-                    this.v_speed = 0.;
+                    this.v_speed = 0.0;
                 }
 
                 match last_state {
@@ -588,15 +588,15 @@ impl SceneObject for Player {
     }
 
     fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
-        self.accel = 0.;
-        self.v_accel = 0.;
+        self.accel = 0.0;
+        self.v_accel = 0.0;
         self.maybe_start_exit_pipe(ctx);
         self.hold_down = ctx.input().down(KeyCode::ArrowDown);
         self.hold_right = ctx.input().down(KeyCode::ArrowRight);
     }
     fn on_update(&mut self, ctx: &mut UpdateContext) {
         if self.state == PlayerState::Dying {
-            self.speed = 0.;
+            self.speed = 0.0;
             self.v_accel = BASE_GRAVITY;
             return;
         }
@@ -668,8 +668,8 @@ impl SceneObject for Player {
                     .unwrap();
                 let mtv = coll.mtv.project(Vec2::down());
                 self.centre += self.v_speed * Vec2::down() + mtv;
-                self.v_speed = 0.;
-                if mtv.y < 0. {
+                self.v_speed = 0.0;
+                if mtv.y < 0.0 {
                     // Collision with the ground.
                     self.state = self.last_ground_state;
                     if self.speed.is_zero() {
@@ -685,12 +685,12 @@ impl SceneObject for Player {
             None => self.centre += self.v_speed * Vec2::down(),
         }
 
-        if self.speed < 0. {
+        if self.speed < 0.0 {
             if self.state == PlayerState::Falling {
                 self.speed = -self.speed;
                 self.dir = -self.dir;
             } else {
-                self.speed = 0.;
+                self.speed = 0.0;
                 self.dir = Vec2::zero();
                 self.state = PlayerState::Idle;
             }
@@ -730,14 +730,14 @@ impl SceneObject for Player {
                 .start_coroutine(move |this, ctx, _last_state| {
                     let mut this = this.downcast_mut::<Self>().unwrap();
                     this.centre.x = linalg::lerp(this.centre.x, dest_x, 0.2);
-                    this.speed = 0.;
-                    this.v_speed = Self::MAX_VSPEED / 3.;
+                    this.speed = 0.0;
+                    this.v_speed = Self::MAX_VSPEED / 3.0;
                     if let Some(collisions) = ctx.object().test_collision(vec![BLOCK_COLLISION_TAG])
                     {
-                        this.v_speed = 0.;
+                        this.v_speed = 0.0;
                         this.centre += collisions.first().mtv;
                         ctx.object_mut()
-                            .add_child(WinTextDisplay::new(Vec2 { x: 8., y: -200. }));
+                            .add_child(WinTextDisplay::new(Vec2 { x: 8.0, y: -200.0 }));
                         this.clear_sound.play();
                         CoroutineResponse::Complete
                     } else {
@@ -751,10 +751,10 @@ impl SceneObject for Player {
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         ctx.viewport_mut()
-            .clamp_to_left(None, Some(self.centre.x - 200.));
+            .clamp_to_left(None, Some(self.centre.x - 200.0));
         ctx.viewport_mut()
-            .clamp_to_right(Some(self.centre.x + 200.), None);
-        ctx.viewport_mut().clamp_to_left(Some(0.), None);
+            .clamp_to_right(Some(self.centre.x + 200.0), None);
+        ctx.viewport_mut().clamp_to_left(Some(0.0), None);
 
         let death_y = ctx.viewport().bottom() + self.current_sprite_mut().aa_extent().y;
         if self.has_control() && self.centre.y > death_y {
@@ -765,7 +765,7 @@ impl SceneObject for Player {
         transform.centre = self.centre;
         transform.scale = Vec2 {
             x: self.last_nonzero_dir.x,
-            y: 1.,
+            y: 1.0,
         };
 
         if self.state != self.last_state {

@@ -177,7 +177,7 @@ impl GuiObjectView {
                 let mut layout_job = LayoutJob::default();
                 layout_job.append(
                     &name,
-                    0.,
+                    0.0,
                     TextFormat {
                         color: Color32::from_white_alpha(255),
                         ..Default::default()
@@ -235,7 +235,7 @@ impl GuiObjectView {
             let mut layout_job = LayoutJob::default();
             layout_job.append(
                 "Absolute transform:",
-                0.,
+                0.0,
                 TextFormat {
                     color: Color32::from_white_alpha(255),
                     ..Default::default()
@@ -247,7 +247,7 @@ impl GuiObjectView {
             let mut layout_job = LayoutJob::default();
             layout_job.append(
                 "Relative transform:",
-                0.,
+                0.0,
                 TextFormat {
                     color: Color32::from_white_alpha(255),
                     ..Default::default()
@@ -392,13 +392,13 @@ impl GuiObjectTree {
         Box::new(move |ctx| {
             egui::SidePanel::left(Id::new("object-tree"))
                 .resizable(true)
-                .min_width(0.)
-                .default_width(250.)
+                .min_width(0.0)
+                .default_width(250.0)
                 .frame(frame)
                 .show_animated(ctx, enabled, |ui| {
                     ui.spacing_mut().scroll = ScrollStyle {
                         floating: false,
-                        bar_width: 5.,
+                        bar_width: 5.0,
                         ..Default::default()
                     };
                     show_cmd.call(ui);
@@ -421,7 +421,7 @@ impl GuiObjectTree {
                         let mut layout_job = LayoutJob::default();
                         layout_job.append(
                             "Object Tree",
-                            0.,
+                            0.0,
                             TextFormat {
                                 color: Color32::from_white_alpha(255),
                                 ..Default::default()
@@ -694,7 +694,7 @@ impl GuiObjectTreeBuilder {
             halign: Align::Center,
             ..Default::default()
         };
-        layout_job.append(self.label.get_tags(), 0., TextFormat::default());
+        layout_job.append(self.label.get_tags(), 0.0, TextFormat::default());
         ui.add(egui::Label::new(layout_job).selectable(false));
     }
 
@@ -844,7 +844,7 @@ impl GuiConsoleLog {
         Box::new(move |ctx| {
             egui::TopBottomPanel::top(Id::new("log"))
                 .frame(frame)
-                .default_height(180.)
+                .default_height(180.0)
                 .resizable(true)
                 .show_animated(ctx, enabled, |ui| {
                     ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
@@ -885,14 +885,14 @@ impl GuiConsoleLog {
         update_perf_stats: Option<UpdatePerfStats>,
     ) {
         egui::SidePanel::right("perf-update")
-            .default_width(160.)
+            .default_width(160.0)
             .frame(frame)
             .show_animated_inside(ui, view_perf == ViewPerfMode::Update, |ui| {
                 ui.vertical_centered(|ui| {
                     let mut layout_job = LayoutJob::default();
                     layout_job.append(
                         "Update Performance",
-                        0.,
+                        0.0,
                         TextFormat {
                             color: Color32::from_white_alpha(255),
                             ..Default::default()
@@ -939,7 +939,7 @@ impl GuiConsoleLog {
                     let mut layout_job = LayoutJob::default();
                     layout_job.append(
                         "Render Performance",
-                        0.,
+                        0.0,
                         TextFormat {
                             color: Color32::from_white_alpha(255),
                             ..Default::default()
@@ -971,7 +971,7 @@ impl GuiConsoleLog {
     fn build_log_scroll_area(ui: &mut Ui, log_output: Vec<String>) {
         ui.with_layout(egui::Layout::top_down(Align::LEFT), |ui| {
             egui::ScrollArea::both()
-                .min_scrolled_height(180.)
+                .min_scrolled_height(180.0)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     // XXX: separator needed to make it fill available space.
@@ -1086,15 +1086,15 @@ impl GuiSceneControl {
                 .frame(
                     frame
                         .fill(Color32::from_black_alpha(0))
-                        .outer_margin(12.)
-                        .inner_margin(0.),
+                        .outer_margin(12.0)
+                        .inner_margin(0.0),
                 )
                 .show_separator_line(false)
                 .show_animated(ctx, enabled, |ui| {
                     ui.style_mut().override_text_style = Some(TextStyle::Monospace);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing = [2., 0.].into();
-                        let size = 24.;
+                        ui.spacing_mut().item_spacing = [2.0, 0.0].into();
+                        let size = 24.0;
                         if ui
                             .add(
                                 Button::new("⏸")
@@ -1158,7 +1158,7 @@ impl DebugGui {
             last_viewport: AdjustedViewport::default(),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
-                .inner_margin(egui::Margin::same(6.)),
+                .inner_margin(egui::Margin::same(6.0)),
             wireframe_mouseovers: Vec::new(),
             last_update: Instant::now(),
         })
@@ -1314,9 +1314,9 @@ impl DebugGui {
             if input_handler.down(KeyCode::ArrowDown) {
                 direction += Vec2::down();
             }
-            direction *= gg_float::micros(self.last_update.elapsed()) * 128.;
+            direction *= gg_float::micros(self.last_update.elapsed()) * 128.0;
             let dx = if input_handler.mod_shift() {
-                direction * 5.
+                direction * 5.0
             } else {
                 direction
             };

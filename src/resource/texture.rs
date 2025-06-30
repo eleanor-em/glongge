@@ -708,7 +708,7 @@ impl Task for UploadTexturesTask {
             info!(
                 "created image view for: {} (id {id:?}, {:.1} KiB)",
                 tex.filename,
-                (tex.raw.buf.len() as f32) / 1024.
+                (tex.raw.buf.len() as f32) / 1024.0
             );
         }
         Ok(())

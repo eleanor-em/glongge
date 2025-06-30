@@ -18,7 +18,7 @@ use crate::examples::{
 fn main() -> Result<()> {
     run_test_cases();
     GgContextBuilder::new([1280, 800])?
-        .with_global_scale_factor(2.)
+        .with_global_scale_factor(2.0)
         .build_and_run_window(|scene_handler| {
             let resource_handler = scene_handler.resource_handler();
             for sound in [
@@ -63,34 +63,34 @@ fn main() -> Result<()> {
 
 fn run_test_cases() {
     // TODO: proper test cases...
-    let a = Vec2 { x: 1., y: 1. };
-    check!(a * 2. == Vec2 { x: 2., y: 2. });
-    check!(2. * a == Vec2 { x: 2., y: 2. });
-    check_lt!(f32::abs((a * 2. - a).x - 1.), f32::epsilon());
-    check_lt!(f32::abs((a * 2. - a).y - 1.), f32::epsilon());
+    let a = Vec2 { x: 1.0, y: 1. };
+    check!(a * 2. == Vec2 { x: 2.0, y: 2.0 });
+    check!(2. * a == Vec2 { x: 2.0, y: 2.0 });
+    check_lt!(f32::abs((a * 2.0 - a).x - 1.0), f32::epsilon());
+    check_lt!(f32::abs((a * 2.0 - a).y - 1.0), f32::epsilon());
     check!(
-        (Mat3x3::rotation(-1.) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
+        (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
             .almost_eq(Mat3x3::one())
     );
 
     check_almost_eq!(
         Vec2::right().rotated(45_f32.to_radians()),
-        Vec2 { x: 1., y: 1. }.normed()
+        Vec2 { x: 1.0, y: 1.0 }.normed()
     );
     check_almost_eq!(Vec2::right().rotated(90_f32.to_radians()), Vec2::down());
     check_almost_eq!(
         Vec2::right().rotated(135_f32.to_radians()),
-        Vec2 { x: -1., y: 1. }.normed()
+        Vec2 { x: -1.0, y: 1.0 }.normed()
     );
     check_almost_eq!(Vec2::right().rotated(180_f32.to_radians()), Vec2::left());
     check_almost_eq!(
         Vec2::right().rotated(225_f32.to_radians()),
-        Vec2 { x: -1., y: -1. }.normed()
+        Vec2 { x: -1.0, y: -1.0 }.normed()
     );
     check_almost_eq!(Vec2::right().rotated(270_f32.to_radians()), Vec2::up());
     check_almost_eq!(
         Vec2::right().rotated(315_f32.to_radians()),
-        Vec2 { x: 1., y: -1. }.normed()
+        Vec2 { x: 1.0, y: -1.0 }.normed()
     );
     check_almost_eq!(Vec2::right().rotated(360_f32.to_radians()), Vec2::right());
 

@@ -368,7 +368,11 @@ impl ObjectHandler {
             }
         }
         if leaked_bytes > 0 {
-            warn_every_seconds!(1, "leaked memory: {:.2} KiB", (leaked_bytes as f64) / 1024.);
+            warn_every_seconds!(
+                1,
+                "leaked memory: {:.2} KiB",
+                (leaked_bytes as f64) / 1024.0
+            );
         }
     }
 
@@ -505,14 +509,14 @@ impl UpdateHandler {
                         warn!(
                             "fixed update behind by {:.1} ms",
                             gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                / 1000.
+                                / 1000.0
                         );
                     }
                     if fixed_update_us >= FIXED_UPDATE_TIMEOUT {
                         warn!(
                             "fixed update behind by {:.1} ms, giving up",
                             gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                / 1000.
+                                / 1000.0
                         );
                         fixed_update_us = 0;
                     }
@@ -1232,14 +1236,14 @@ impl UpdatePerfStats {
             self.add_objects.as_tuple_ms(),
             self.render_infos.as_tuple_ms(),
         ];
-        if self.extra_debug.last_ms() != 0. {
+        if self.extra_debug.last_ms() != 0.0 {
             default.push(self.extra_debug.as_tuple_ms());
         }
         default
     }
 
     pub fn fps(&self) -> f32 {
-        self.totals_s.iter().map(|t| 1. / t).sum::<f32>() / self.totals_s.len() as f32
+        self.totals_s.iter().map(|t| 1.0 / t).sum::<f32>() / self.totals_s.len() as f32
     }
 }
 

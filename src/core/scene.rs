@@ -266,7 +266,7 @@ pub(crate) enum SceneHandlerInstruction {
 /// use glongge::core::prelude::*;
 ///
 /// GgContextBuilder::::new([1280, 800])?
-///     .with_global_scale_factor(2.)
+///     .with_global_scale_factor(2.0)
 ///     .build_and_run_window(|scene_handler| {
 ///         std::thread::spawn(move || {
 ///             // Create scene handler
@@ -764,7 +764,7 @@ impl GuiCommand {
             let mut layout_job = LayoutJob::default();
             layout_job.append(
                 title.as_str(),
-                0.,
+                0.0,
                 TextFormat {
                     color: Color32::from_white_alpha(255),
                     ..Default::default()

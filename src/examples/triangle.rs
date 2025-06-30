@@ -21,19 +21,19 @@ impl Scene for TriangleScene {
     fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 1;
         let mut rng = rand::thread_rng();
-        let xs: Vec<f32> = Uniform::new(0., 200.)
+        let xs: Vec<f32> = Uniform::new(0.0, 200.0)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let ys: Vec<f32> = Uniform::new(0., 200.)
+        let ys: Vec<f32> = Uniform::new(0.0, 200.0)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vxs: Vec<f32> = Uniform::new(-1., 1.)
+        let vxs: Vec<f32> = Uniform::new(-1.0, 1.0)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
-        let vys: Vec<f32> = Uniform::new(-1., 1.)
+        let vys: Vec<f32> = Uniform::new(-1.0, 1.0)
             .sample_iter(&mut rng)
             .take(N)
             .collect();
@@ -47,7 +47,7 @@ impl Scene for TriangleScene {
                 SpinningTriangle {
                     pos,
                     velocity: vel.normed(),
-                    t: 0.,
+                    t: 0.0,
                     alive_since: Instant::now(),
                 }
                 .into_wrapper()
@@ -70,22 +70,22 @@ impl Default for SpinningTriangle {
         Self {
             pos: Vec2::zero(),
             velocity: Vec2::zero(),
-            t: 0.,
+            t: 0.0,
             alive_since: Instant::now(),
         }
     }
 }
 
 impl SpinningTriangle {
-    const TRI_WIDTH: f32 = 20.;
-    const VELOCITY: f32 = 20.;
+    const TRI_WIDTH: f32 = 20.0;
+    const VELOCITY: f32 = 20.0;
     const ANGULAR_VELOCITY: f32 = 0.1;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
         Self {
             pos,
             velocity: vel_normed * Self::VELOCITY,
-            t: 0.,
+            t: 0.0,
             alive_since: Instant::now(),
         }
     }
@@ -102,18 +102,18 @@ impl SceneObject for SpinningTriangle {
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f32.sqrt();
-        let centre_correction = -tri_height / 6.;
+        let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {
             x: -Self::TRI_WIDTH,
-            y: -tri_height / 2. - centre_correction,
+            y: -tri_height / 2.0 - centre_correction,
         };
         let vertex2 = Vec2 {
             x: Self::TRI_WIDTH,
-            y: -tri_height / 2. - centre_correction,
+            y: -tri_height / 2.0 - centre_correction,
         };
         let vertex3 = Vec2 {
-            x: 0.,
-            y: tri_height / 2. - centre_correction,
+            x: 0.0,
+            y: tri_height / 2.0 - centre_correction,
         };
         Ok(Some(RenderItem::from_raw_vertices(vec![
             vertex1, vertex2, vertex3,

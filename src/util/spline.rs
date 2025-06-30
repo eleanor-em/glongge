@@ -57,8 +57,8 @@ impl GgInternalSpline {
     }
 
     pub fn closest_to(&self, point: Vec2) -> Option<f32> {
-        let mut t = 0.;
-        let mut rv = 0.;
+        let mut t = 0.0;
+        let mut rv = 0.0;
         let mut best_distance = f32::MAX;
         while t <= 1. {
             let x = self.point(t)?;
@@ -93,7 +93,7 @@ pub struct GgInternalInteractiveSpline {
 }
 
 impl GgInternalInteractiveSpline {
-    const RADIUS: f32 = 3.;
+    const RADIUS: f32 = 3.0;
 
     pub fn spline(&self) -> &GgInternalSpline {
         &self.spline
@@ -166,7 +166,9 @@ impl SceneObject for GgInternalInteractiveSpline {
                 .iter()
                 .tuple_windows()
                 .enumerate()
-                .filter(|(_, (u, v))| mouse_double_clicked && mouse_pos.dist_to_line(**u, **v) < 2.)
+                .filter(|(_, (u, v))| {
+                    mouse_double_clicked && mouse_pos.dist_to_line(**u, **v) < 2.0
+                })
                 .map(|(i, _)| i + 1)
                 .next()
             {
@@ -175,13 +177,13 @@ impl SceneObject for GgInternalInteractiveSpline {
             }
 
             let mut canvas = ctx.object_mut().first_other_as_mut::<Canvas>().unwrap();
-            self.draw_to_canvas(&mut canvas, 1., self.colour);
+            self.draw_to_canvas(&mut canvas, 1.0, self.colour);
             for (&u, &v) in self.spline.control_points.iter().tuple_windows() {
                 canvas.line(
                     u,
                     v,
                     0.5,
-                    if mouse_pos.dist_to_line(u, v) < 2. {
+                    if mouse_pos.dist_to_line(u, v) < 2.0 {
                         Colour::blue().scaled(0.8)
                     } else {
                         Colour::cyan()

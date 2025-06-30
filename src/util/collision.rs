@@ -180,7 +180,7 @@ mod polygon {
             while hull.len() >= 2 {
                 let last = hull[hull.len() - 1];
                 let snd_last = hull[hull.len() - 2];
-                if (last - snd_last).cross(vertex - snd_last) > 0. {
+                if (last - snd_last).cross(vertex - snd_last) > 0.0 {
                     break;
                 }
                 hull.pop();
@@ -197,7 +197,7 @@ mod polygon {
             let ends = (self_proj.end - other_proj.end).abs();
             f32::min(starts, ends)
         } else {
-            0.
+            0.0
         }
     }
     pub fn normals_of(mut vertices: Vec<Vec2>) -> Vec<Vec2> {
@@ -226,8 +226,8 @@ mod polygon {
                 .reduce(gg_iter::sum_tuple3)
                 .expect("inexplicable");
             Vec2 {
-                x: x / (6. * (area / 2.)),
-                y: y / (6. * (area / 2.)),
+                x: x / (6. * (area / 2.0)),
+                y: y / (6. * (area / 2.0)),
             }
         } else {
             Vec2::zero()
@@ -327,7 +327,7 @@ pub trait Polygonal {
                 (start, end)
             })
         {
-            canvas.line(start, end, 1., col);
+            canvas.line(start, end, 1.0, col);
             canvas.rect(
                 self.polygon_centre() - Vec2::one(),
                 self.polygon_centre() + Vec2::one(),
@@ -335,7 +335,7 @@ pub trait Polygonal {
             );
         }
         for (a, b) in vertices.into_iter().circular_tuple_windows() {
-            canvas.line(a, b, 1., col);
+            canvas.line(a, b, 1.0, col);
         }
     }
 }
@@ -365,7 +365,7 @@ impl OrientedBoxCollider {
     pub fn from_centre(centre: Vec2, half_widths: Vec2) -> Self {
         let mut rv = Self {
             centre,
-            rotation: 0.,
+            rotation: 0.0,
             axis_aligned_half_widths: half_widths,
             extent: Vec2::zero(),
         };
@@ -375,7 +375,7 @@ impl OrientedBoxCollider {
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
         let mut rv = Self {
             centre: top_left + extent.abs() / 2,
-            rotation: 0.,
+            rotation: 0.0,
             axis_aligned_half_widths: extent.abs() / 2,
             extent: Vec2::zero(),
         };
@@ -540,7 +540,7 @@ impl BoxCollider {
     }
     #[must_use]
     pub fn from_transform(transform: Transform, extent: Vec2) -> Self {
-        check_eq!(transform.rotation, 0.);
+        check_eq!(transform.rotation, 0.0);
         Self {
             centre: transform.centre,
             extent: transform.scale.component_wise(extent).abs(),
@@ -597,13 +597,13 @@ impl Collider for BoxCollider {
         let self_proj = self.left()..self.right();
         let other_proj = other.left()..other.right();
         let horizontal_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => return None,
+            None | Some(0.0) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
         let self_proj = self.top()..self.bottom();
         let other_proj = other.top()..other.bottom();
         let vertical_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => return None,
+            None | Some(0.0) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
         if vertical_dist < horizontal_dist {
@@ -653,7 +653,7 @@ impl Collider for BoxCollider {
     }
 
     fn rotated(&self, by: f32) -> Self {
-        check_eq!(by, 0., "cannot rotate BoxCollider");
+        check_eq!(by, 0.0, "cannot rotate BoxCollider");
         self.clone()
     }
 
@@ -702,19 +702,19 @@ impl BoxCollider3d {
         let self_proj = self.left()..self.right();
         let other_proj = other.left()..other.right();
         let horizontal_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => return None,
+            None | Some(0.0) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
         let self_proj = self.top()..self.bottom();
         let other_proj = other.top()..other.bottom();
         let vertical_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => return None,
+            None | Some(0.0) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
         let self_proj = self.back..self.front;
         let other_proj = other.back..other.front;
         let depth_dist = match gg_range::overlap_len_f32(&self_proj, &other_proj) {
-            None | Some(0.) => return None,
+            None | Some(0.0) => return None,
             Some(dist) => dist + polygon::adjust_for_containment(&self_proj, &other_proj),
         };
 
@@ -723,22 +723,22 @@ impl BoxCollider3d {
             // Collision along vertical axis.
             let mtv = vertical_dist * Vec2::down();
             if self.centre.y < other.centre.y {
-                Some((-mtv, 0.))
+                Some((-mtv, 0.0))
             } else {
-                Some((mtv, 0.))
+                Some((mtv, 0.0))
             }
         } else if horizontal_dist <= vertical_dist && horizontal_dist <= depth_dist {
             // Collision along horizontal axis.
             let mtv = horizontal_dist * Vec2::right();
             if self.centre.x < other.centre.x {
-                Some((-mtv, 0.))
+                Some((-mtv, 0.0))
             } else {
-                Some((mtv, 0.))
+                Some((mtv, 0.0))
             }
         } else {
             // Collision along third axis.
             let dh = depth_dist;
-            if (self.front - self.back) / 2. < (other.front - other.back) / 2. {
+            if (self.front - self.back) / 2.0 < (other.front - other.back) / 2.0 {
                 Some((Vec2::zero(), -dh))
             } else {
                 Some((Vec2::zero(), dh))
@@ -780,9 +780,9 @@ impl ConvexCollider {
         // Sort by clockwise winding order.
         vertices.sort_unstable_by(|&a, &b| {
             let det = (a - centre).cross(b - centre);
-            if det > 0. {
+            if det > 0.0 {
                 Ordering::Less
-            } else if det < 0. {
+            } else if det < 0.0 {
                 Ordering::Greater
             } else {
                 a.len_squared().total_cmp(&b.len_squared())
@@ -998,7 +998,7 @@ impl CompoundCollider {
             .collect_vec();
         let (prev, origin, next) = angles
             .into_iter()
-            .find(|(prev, origin, next)| (*origin - *prev).cross(*origin - *next) > 0.)?;
+            .find(|(prev, origin, next)| (*origin - *prev).cross(*origin - *next) > 0.0)?;
         let new_vertex = Self::get_new_vertex(&edges, prev, origin, next)?;
 
         let mut left_vertices = vec![origin, new_vertex];
@@ -1007,14 +1007,14 @@ impl CompoundCollider {
             changed = false;
             for (start, end) in &edges {
                 if left_vertices.contains(start) && !left_vertices.contains(end) {
-                    if (*end - origin).cross(new_vertex - origin) < 0. {
+                    if (*end - origin).cross(new_vertex - origin) < 0.0 {
                         left_vertices
                             .insert(gg_iter::index_of(&left_vertices, start).unwrap() + 1, *end);
                         changed = true;
                     }
                 } else if left_vertices.contains(end)
                     && !left_vertices.contains(start)
-                    && (*start - origin).cross(new_vertex - origin) < 0.
+                    && (*start - origin).cross(new_vertex - origin) < 0.0
                 {
                     left_vertices.insert(gg_iter::index_of(&left_vertices, end).unwrap(), *start);
                     changed = true;
@@ -1058,7 +1058,7 @@ impl CompoundCollider {
         let (w, h, vertices) = Self::pixel_perfect_vertices(data)?;
         let mut collider = Self::decompose(vertices);
         collider.override_normals = vec![Vec2::up(), Vec2::right(), Vec2::down(), Vec2::left()];
-        Ok(collider.translated(-Vec2::from([w as f32 / 2. + 0.75, h as f32 / 2. + 0.75])))
+        Ok(collider.translated(-Vec2::from([w as f32 / 2.0 + 0.75, h as f32 / 2.0 + 0.75])))
     }
 
     fn pixel_perfect_vertices(data: &[Vec<Colour>]) -> Result<(i32, i32, Vec<Vec2>)> {

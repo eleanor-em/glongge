@@ -123,7 +123,7 @@ impl Vec2 {
     /// Returns a unit vector pointing to the right (positive x-axis).
     #[must_use]
     pub fn right() -> Vec2 {
-        Vec2 { x: 1., y: 0. }
+        Vec2 { x: 1.0, y: 0.0 }
     }
     /// Returns a unit vector pointing upward (negative y-axis).
     ///
@@ -131,12 +131,12 @@ impl Vec2 {
     /// which is common in 2D graphics applications.
     #[must_use]
     pub fn up() -> Vec2 {
-        Vec2 { x: 0., y: -1. }
+        Vec2 { x: 0.0, y: -1.0 }
     }
     /// Returns a unit vector pointing to the left (negative x-axis).
     #[must_use]
     pub fn left() -> Vec2 {
-        Vec2 { x: -1., y: 0. }
+        Vec2 { x: -1.0, y: 0.0 }
     }
     /// Returns a unit vector pointing downward (positive y-axis).
     ///
@@ -144,7 +144,7 @@ impl Vec2 {
     /// which is common in 2D graphics applications.
     #[must_use]
     pub fn down() -> Vec2 {
-        Vec2 { x: 0., y: 1. }
+        Vec2 { x: 0.0, y: 1.0 }
     }
     /// Returns a vector with both components set to 1.0.
     ///
@@ -152,7 +152,7 @@ impl Vec2 {
     /// for component-wise operations.
     #[must_use]
     pub fn one() -> Vec2 {
-        Vec2 { x: 1., y: 1. }
+        Vec2 { x: 1.0, y: 1.0 }
     }
     /// Returns a vector with both components set to 0.0.
     ///
@@ -160,7 +160,7 @@ impl Vec2 {
     /// for addition operations.
     #[must_use]
     pub fn zero() -> Vec2 {
-        Vec2 { x: 0., y: 0. }
+        Vec2 { x: 0.0, y: 0.0 }
     }
 
     /// Creates a new vector with both components set to the given value.
@@ -210,7 +210,7 @@ impl Vec2 {
     #[must_use]
     pub fn normed(&self) -> Vec2 {
         let mut rv = match self.len() {
-            0. => Vec2::zero(),
+            0.0 => Vec2::zero(),
             len => *self / len,
         };
         rv.x = gg_float::force_positive_zero(rv.x);
@@ -285,7 +285,7 @@ impl Vec2 {
     /// ```
     #[must_use]
     pub fn reflect(&self, normal: Vec2) -> Vec2 {
-        *self - 2. * self.dot(normal) * normal
+        *self - 2.0 * self.dot(normal) * normal
     }
 
     /// Returns a new vector where each component is the reciprocal (1/x) of the corresponding component.
@@ -309,8 +309,8 @@ impl Vec2 {
             rv
         } else {
             Vec2 {
-                x: 1. / self.x,
-                y: 1. / self.y,
+                x: 1.0 / self.x,
+                y: 1.0 / self.y,
             }
         }
     }
@@ -546,7 +546,7 @@ impl Vec2 {
         }
         let dx = end - start;
         let l2 = dx.len_squared();
-        let t = ((*self - start).dot(dx) / l2).clamp(0., 1.);
+        let t = ((*self - start).dot(dx) / l2).clamp(0.0, 1.0);
         self.dist(start + t * dx)
     }
 
@@ -586,7 +586,7 @@ impl Vec2 {
         } else {
             let t = (p2 - p1).cross(ax2) / denom;
             let u = (p2 - p1).cross(ax1) / denom;
-            if (0. ..=1.).contains(&t) && (0. ..=1.).contains(&u) {
+            if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
                 Some(p1 + t * ax1)
             } else {
                 None
@@ -1271,15 +1271,15 @@ impl Mat3x3 {
     /// ```
     pub fn one() -> Mat3x3 {
         Mat3x3 {
-            xx: 1.,
-            xy: 0.,
-            xw: 0.,
-            yx: 0.,
-            yy: 1.,
-            yw: 0.,
-            wx: 0.,
-            wy: 0.,
-            ww: 1.,
+            xx: 1.0,
+            xy: 0.0,
+            xw: 0.0,
+            yx: 0.0,
+            yy: 1.0,
+            yw: 0.0,
+            wx: 0.0,
+            wy: 0.0,
+            ww: 1.0,
         }
     }
 
@@ -1293,15 +1293,15 @@ impl Mat3x3 {
     /// ```
     pub fn zero() -> Mat3x3 {
         Mat3x3 {
-            xx: 0.,
-            xy: 0.,
-            xw: 0.,
-            yx: 0.,
-            yy: 0.,
-            yw: 0.,
-            wx: 0.,
-            wy: 0.,
-            ww: 0.,
+            xx: 0.0,
+            xy: 0.0,
+            xw: 0.0,
+            yx: 0.0,
+            yy: 0.0,
+            yw: 0.0,
+            wx: 0.0,
+            wy: 0.0,
+            ww: 0.0,
         }
     }
 
@@ -1315,15 +1315,15 @@ impl Mat3x3 {
     /// ```
     pub fn translation(dx: f32, dy: f32) -> Mat3x3 {
         Mat3x3 {
-            xx: 1.,
-            xy: 0.,
+            xx: 1.0,
+            xy: 0.0,
             xw: dx,
-            yx: 0.,
-            yy: 1.,
+            yx: 0.0,
+            yy: 1.0,
             yw: dy,
-            wx: 0.,
-            wy: 0.,
-            ww: 1.,
+            wx: 0.0,
+            wy: 0.0,
+            ww: 1.0,
         }
     }
 
@@ -1358,13 +1358,13 @@ impl Mat3x3 {
         Mat3x3 {
             xx: f32::cos(radians),
             xy: -f32::sin(radians),
-            xw: 0.,
+            xw: 0.0,
             yx: f32::sin(radians),
             yy: f32::cos(radians),
-            yw: 0.,
-            wx: 0.,
-            wy: 0.,
-            ww: 1.,
+            yw: 0.0,
+            wx: 0.0,
+            wy: 0.0,
+            ww: 1.0,
         }
     }
 
@@ -1563,16 +1563,16 @@ impl Mul<Vec2> for Mat3x3 {
 
     fn mul(self, rhs: Vec2) -> Self::Output {
         Vec2 {
-            x: self.xx * rhs.x + self.xy * rhs.y + self.xw * 1.,
-            y: self.yx * rhs.x + self.yy * rhs.y + self.yw * 1.,
+            x: self.xx * rhs.x + self.xy * rhs.y + self.xw * 1.0,
+            y: self.yx * rhs.x + self.yy * rhs.y + self.yw * 1.0,
         }
     }
 }
 impl MulAssign<Mat3x3> for Vec2 {
     fn mul_assign(&mut self, rhs: Mat3x3) {
         (self.x, self.y) = (
-            rhs.xx * self.x + rhs.xy * self.y + rhs.xw * 1.,
-            rhs.yx * self.x + rhs.yy * self.y + rhs.yw * 1.,
+            rhs.xx * self.x + rhs.xy * self.y + rhs.xw * 1.0,
+            rhs.yx * self.x + rhs.yy * self.y + rhs.yw * 1.0,
         );
     }
 }
@@ -1598,10 +1598,10 @@ impl Mul<Mat3x3> for Mat3x3 {
 impl From<Mat3x3> for [[f32; 4]; 4] {
     fn from(value: Mat3x3) -> Self {
         [
-            [value.xx, value.xy, 0., value.xw],
-            [value.yx, value.yy, 0., value.yw],
-            [0., 0., 1., value.ww],
-            [value.wx, value.wy, 0., 1.],
+            [value.xx, value.xy, 0.0, value.xw],
+            [value.yx, value.yy, 0.0, value.yw],
+            [0.0, 0.0, 1.0, value.ww],
+            [value.wx, value.wy, 0.0, 1.0],
         ]
     }
 }
@@ -1776,7 +1776,7 @@ impl Rect {
 
 impl AxisAlignedExtent for Rect {
     fn aa_extent(&self) -> Vec2 {
-        self.half_widths * 2.
+        self.half_widths * 2.0
     }
     fn centre(&self) -> Vec2 {
         self.centre
@@ -1962,7 +1962,7 @@ impl Default for Transform {
     fn default() -> Self {
         Self {
             centre: Vec2::zero(),
-            rotation: 0.,
+            rotation: 0.0,
             scale: Vec2::one(),
         }
     }
@@ -2050,7 +2050,7 @@ pub fn eerp(a: f32, b: f32, t: f32) -> f32 {
 /// assert_eq!(linalg::smooth(2.0), 1.0);
 /// ```
 pub fn smooth(t: f32) -> f32 {
-    (6. * t * t * t * t * t - 15. * t * t * t * t + 10. * t * t * t).clamp(0., 1.)
+    (6.0 * t * t * t * t * t - 15.0 * t * t * t * t + 10.0 * t * t * t).clamp(0.0, 1.0)
 }
 
 /// A sigmoid function that creates an S-shaped curve, useful for smooth transitions.
@@ -2067,5 +2067,5 @@ pub fn smooth(t: f32) -> f32 {
 /// assert!((linalg::sigmoid(0.5, k) - 0.5).abs() < EPSILON);
 /// ```
 pub fn sigmoid(t: f32, k: f32) -> f32 {
-    1. / (1. + (-(t - 0.5) / k).exp())
+    1.0 / (1.0 + (-(t - 0.5) / k).exp())
 }

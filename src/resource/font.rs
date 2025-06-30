@@ -10,7 +10,7 @@ use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 use glongge_derive::partially_derive_scene_object;
 
-const SAMPLE_RATIO: f32 = 8.;
+const SAMPLE_RATIO: f32 = 8.0;
 
 mod internal {
     use crate::resource::font::SAMPLE_RATIO;
@@ -62,7 +62,7 @@ impl Font {
         for c in text.as_ref().chars() {
             if c.is_control() {
                 if c == '\n' {
-                    caret.x = 0.;
+                    caret.x = 0.0;
                     caret.y += v_advance;
                     last_glyph = None;
                 }
@@ -76,7 +76,7 @@ impl Font {
             }
             let next_x = caret.x + self.inner.h_advance(glyph.id);
             if !c.is_whitespace() && next_x > max_width {
-                caret.x = 0.;
+                caret.x = 0.0;
                 caret.y += v_advance;
             }
             glyph.position = caret;
@@ -143,10 +143,10 @@ impl GlyphReader {
                 b
             })
             .context("could not get outline of glyphs")?;
-        check_ge!(all_px_bounds.min.x, 0.);
-        check_ge!(all_px_bounds.min.y, 0.);
-        check_ge!(all_px_bounds.max.x, 0.);
-        check_ge!(all_px_bounds.max.y, 0.);
+        check_ge!(all_px_bounds.min.x, 0.0);
+        check_ge!(all_px_bounds.min.y, 0.0);
+        check_ge!(all_px_bounds.max.x, 0.0);
+        check_ge!(all_px_bounds.max.y, 0.0);
         Ok(Self {
             inner: Some(glyphs),
             col: col.as_bytes(),
@@ -200,8 +200,8 @@ impl Read for GlyphReader {
                 buf[px + 1] = self.col[1];
                 buf[px + 2] = self.col[2];
 
-                let a = f32::from(self.col[3]) / 255.;
-                buf[px + 3] = buf[px + 3].saturating_add((v * a * 255.) as u8);
+                let a = f32::from(self.col[3]) / 255.0;
+                buf[px + 3] = buf[px + 3].saturating_add((v * a * 255.0) as u8);
             });
         }
         Ok(buf.len())

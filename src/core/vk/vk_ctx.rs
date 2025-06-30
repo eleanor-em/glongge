@@ -165,7 +165,7 @@ impl VulkanoContext {
 
         info!(
             "created vulkano context in: {:.2} ms",
-            gg_float::micros(start.elapsed()) * 1000.
+            gg_float::micros(start.elapsed()) * 1000.0
         );
         Ok(Self {
             device,

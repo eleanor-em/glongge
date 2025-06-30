@@ -21,7 +21,7 @@ pub mod log;
 pub mod spline;
 pub mod tileset;
 
-/// A macro that takes a path (e.g., "/res/DejaVuSansMono.ttf") and returns
+/// A macro that takes a path (e.g.0, "/res/DejaVuSansMono.ttf") and returns
 /// `include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), path))`.
 ///
 /// # Examples
@@ -110,7 +110,7 @@ pub mod gg_time {
         }
         fn max_ms(&self) -> f32 {
             let max_ns = gg_float::from_u128_or_inf(self.max_ns);
-            max_ns / 1_000_000.
+            max_ns / 1_000_000.0
         }
         pub fn as_tuple_ms(&self) -> (String, f32, f32) {
             (self.tag.clone(), self.mean_ms(), self.max_ms())
@@ -145,16 +145,16 @@ pub mod gg_time {
         }
         fn mean_us(&self) -> f32 {
             if self.n == 0 {
-                return 0.;
+                return 0.0;
             }
             let mean = gg_float::from_u128_or_inf(self.total_ns / self.n);
-            mean / 1_000.
+            mean / 1_000.0
         }
         fn mean_ms(&self) -> f32 {
-            self.mean_us() / 1_000.
+            self.mean_us() / 1_000.0
         }
         pub fn last_ms(&self) -> f32 {
-            gg_float::from_u128_or_inf(self.last_ns) / 1_000_000.
+            gg_float::from_u128_or_inf(self.last_ns) / 1_000_000.0
         }
     }
 }
@@ -421,11 +421,11 @@ pub mod gg_float {
     }
 
     pub fn micros(duration: Duration) -> f32 {
-        from_u128_or_inf(duration.as_micros()) / 1_000_000.
+        from_u128_or_inf(duration.as_micros()) / 1_000_000.0
     }
 
     pub fn f32_to_u32(x: f32) -> Result<u32> {
-        if x > u32::MAX as f32 || x < 0. {
+        if x > u32::MAX as f32 || x < 0.0 {
             bail!("{x} does not fit in range of u32");
         }
         #[allow(clippy::cast_sign_loss)]
@@ -437,11 +437,11 @@ pub mod gg_float {
     }
 
     pub fn force_positive_zero(x: f32) -> f32 {
-        if x.is_zero() { 0. } else { x }
+        if x.is_zero() { 0.0 } else { x }
     }
 
     pub fn sign_zero(x: f32) -> f32 {
-        if x.is_zero() { 0. } else { x.signum() }
+        if x.is_zero() { 0.0 } else { x.signum() }
     }
 }
 
@@ -738,7 +738,7 @@ impl GgContextBuilder {
         Ok(Self {
             window_size: window_size.into(),
             gui_ctx,
-            global_scale_factor: 1.,
+            global_scale_factor: 1.0,
             clear_col: Colour::black(),
         })
     }

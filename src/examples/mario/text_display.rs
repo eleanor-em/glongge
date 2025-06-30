@@ -31,13 +31,13 @@ impl SceneObject for WinTextDisplay {
         object_ctx: &mut ObjectContext,
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
-        let font = Font::from_slice(include_bytes_root!("res/DejaVuSansMono.ttf"), 20.)?;
+        let font = Font::from_slice(include_bytes_root!("res/DejaVuSansMono.ttf"), 20.0)?;
         self.sprite =
             font.render_to_sprite(object_ctx, "You win!", 200.0, TextWrapMode::WrapAnywhere)?;
         self.font = Some(font);
         let mut transform = object_ctx.transform_mut();
         transform.centre = self.centre;
-        transform.scale = Vec2::one() / self.font.as_ref().map_or_else(|| 1., Font::sample_ratio);
+        transform.scale = Vec2::one() / self.font.as_ref().map_or_else(|| 1.0, Font::sample_ratio);
         Ok(None)
     }
 }
