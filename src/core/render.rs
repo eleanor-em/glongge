@@ -173,6 +173,7 @@ pub struct ShaderRenderFrame<'a> {
 pub(crate) struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    resource_handler: ResourceHandler,
     window: UniqueShared<GgWindow>,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
@@ -185,6 +186,7 @@ impl RenderHandler {
     pub(crate) fn new(
         vk_ctx: &VulkanoContext,
         gui_ctx: GuiContext,
+        resource_handler: ResourceHandler,
         window: GgWindow,
         viewport: UniqueShared<AdjustedViewport>,
         shaders: Vec<UniqueShared<Box<dyn Shader>>>,
@@ -201,6 +203,7 @@ impl RenderHandler {
         Ok(Self {
             gui_ctx,
             render_data_channel,
+            resource_handler,
             window: UniqueShared::new(window),
             viewport,
             shaders,
@@ -279,6 +282,7 @@ impl RenderHandler {
             QueueFamilyType::Graphics,
             PreRenderTask {
                 handler: self.clone(),
+                resource_handler: self.resource_handler.clone(),
             },
         );
         for image in self.gui_shader.image_writes() {
@@ -348,6 +352,7 @@ impl RenderHandler {
 /// Updates render frame data from the render data channel and propagates it to shaders.
 struct PreRenderTask {
     handler: RenderHandler,
+    resource_handler: ResourceHandler,
 }
 
 impl Task for PreRenderTask {
@@ -359,6 +364,10 @@ impl Task for PreRenderTask {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
+        if self.resource_handler.texture.is_not_yet_initialised() {
+            warn!("resource handler not yet initialised, skip PreRenderTask::execute()");
+            return Ok(());
+        }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()

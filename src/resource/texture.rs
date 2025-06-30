@@ -597,6 +597,10 @@ impl TextureHandler {
             .collect()
     }
 
+    pub(crate) fn is_not_yet_initialised(&self) -> bool {
+        self.ready_values().is_empty()
+    }
+
     pub(crate) fn get_updated_materials(&self) -> Option<Vec<Material>> {
         let mut material_handler = self.material_handler.lock().unwrap();
         if material_handler.dirty {

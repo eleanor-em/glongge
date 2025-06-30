@@ -243,6 +243,7 @@ where
         let render_handler = RenderHandler::new(
             &vk_ctx,
             self.gui_ctx.clone(),
+            resource_handler.clone(),
             window.clone(),
             viewport.clone(),
             shaders,
