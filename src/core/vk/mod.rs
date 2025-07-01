@@ -11,7 +11,7 @@ use crate::shader::{Shader, SpriteShader, WireframeShader, ensure_shaders_locked
 use crate::util::{SceneHandlerBuilder, UniqueShared, gg_err, gg_float};
 use crate::{
     core::{input::InputHandler, prelude::*},
-    info_every_seconds,
+    info_every_millis, info_every_seconds,
     resource::ResourceHandler,
     util::gg_time::TimeIt,
     warn_every_seconds,
@@ -284,7 +284,7 @@ where
         resource_handler: &ResourceHandler,
     ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
         // TODO: verbose!
-        info!("building task graph");
+        info_every_millis!(500, "building task graph");
         let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 100);
         let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
         let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);

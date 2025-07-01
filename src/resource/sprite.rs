@@ -191,8 +191,6 @@ impl SceneObject for GgInternalSprite {
             self.material_indices = material_indices;
             self.render_item = render_item;
             self.frame_time_ms = frame_time_ms;
-            // TODO: sprite extent/collider
-            // let extent = texture.aa_extent();
         }
 
         self.materials = self

@@ -22,6 +22,7 @@ use vulkano::{
 
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
+use crate::info_every_millis;
 use png::ColorType;
 use vulkano::image::Image;
 use vulkano::memory::DeviceAlignment;
@@ -172,10 +173,11 @@ struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
     textures_dirty: bool,
+    material_handler: Arc<Mutex<MaterialHandler>>,
 }
 
 impl TextureHandlerInner {
-    fn new(ctx: &VulkanoContext) -> Result<Self> {
+    fn new(ctx: &VulkanoContext, material_handler: Arc<Mutex<MaterialHandler>>) -> Result<Self> {
         let mut textures = BTreeMap::new();
 
         // Create blank texture
@@ -231,6 +233,7 @@ impl TextureHandlerInner {
             loaded_files: BTreeMap::new(),
             textures,
             textures_dirty: false,
+            material_handler,
         })
     }
 
@@ -308,6 +311,7 @@ impl TextureHandlerInner {
     }
 
     fn free_all_unused_textures(&mut self) {
+        let mut material_handler = self.material_handler.lock().unwrap();
         for unused_id in self
             .textures
             .iter()
@@ -315,8 +319,9 @@ impl TextureHandlerInner {
             .map(|(id, _)| *id)
             .collect_vec()
         {
-            info!("freeing texture id {unused_id}");
+            info_every_millis!(500, "freeing texture id {unused_id}");
             self.textures.remove(&unused_id);
+            material_handler.on_remove_texture(unused_id);
         }
     }
 
@@ -332,7 +337,7 @@ impl TextureHandlerInner {
             .map(|(filename, _)| filename.clone())
             .collect_vec()
         {
-            info!("freeing texture {filename}");
+            info_every_millis!(500, "freeing texture {filename}");
             self.loaded_files.remove(&filename);
         }
         self.free_all_unused_textures();
@@ -388,6 +393,16 @@ impl MaterialHandler {
             id
         }
     }
+    fn on_remove_texture(&mut self, texture_id: TextureId) {
+        self.materials_inverse.retain(|material, material_id| {
+            if material.texture_id == texture_id {
+                self.materials.remove(material_id);
+                false
+            } else {
+                true
+            }
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -399,8 +414,11 @@ pub struct TextureHandler {
 
 impl TextureHandler {
     pub(crate) fn new(ctx: VulkanoContext) -> Result<Self> {
-        let inner = Arc::new(Mutex::new(TextureHandlerInner::new(&ctx)?));
         let material_handler = Arc::new(Mutex::new(MaterialHandler::new()));
+        let inner = Arc::new(Mutex::new(TextureHandlerInner::new(
+            &ctx,
+            material_handler.clone(),
+        )?));
         Ok(Self {
             ctx,
             inner,
@@ -705,7 +723,8 @@ impl Task for UploadTexturesTask {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
-            info!(
+            info_every_millis!(
+                500,
                 "created image view for: {} (id {id:?}, {:.1} KiB)",
                 tex.filename,
                 (tex.raw.buf.len() as f32) / 1024.0

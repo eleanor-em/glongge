@@ -4,6 +4,7 @@ use crate::resource::texture::Material;
 use crate::shader::glsl::basic;
 use crate::{
     core::{prelude::*, vk::AdjustedViewport},
+    info_every_millis,
     shader::glsl::sprite,
     util::UniqueShared,
 };
@@ -432,7 +433,8 @@ impl SpriteShader {
         check_eq!(extended_samplers.len(), textures.len());
 
         if let Some(materials) = maybe_materials {
-            info!(
+            info_every_millis!(
+                500,
                 "updating materials: materials.len() = {}, textures.len() = {}",
                 materials.len(),
                 MAX_TEXTURE_COUNT - num_blank_copies
