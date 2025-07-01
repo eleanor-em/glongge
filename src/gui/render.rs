@@ -548,14 +548,16 @@ impl GuiRenderer {
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
             let texture_images = self.texture_images.get();
-            let existing_image = *texture_images
-                .get(&id)
-                .context("attempt to write into non-existing image")?;
+            let Some(existing_image) = texture_images
+                .get(&id) else {
+                error!("attempted to write to nonexistent image: {id:?}");
+                return Ok(());
+            };
 
             unsafe {
                 cbf.copy_buffer_to_image(&CopyBufferToImageInfo {
                     src_buffer: self.staging_buffer,
-                    dst_image: existing_image,
+                    dst_image: *existing_image,
                     regions: &[BufferImageCopy {
                         // Buffer offsets are derived
                         image_offset: [pos[0] as u32, pos[1] as u32, 0],
