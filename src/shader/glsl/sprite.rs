@@ -54,7 +54,7 @@ pub mod vertex_shader {
             };
 
             layout(set = 0, binding = 0) uniform MaterialData {
-                Material data[512];
+                Material data[16 * 1024];
             } materials;
 
             void main() {

@@ -548,8 +548,7 @@ impl GuiRenderer {
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
             let texture_images = self.texture_images.get();
-            let Some(existing_image) = texture_images
-                .get(&id) else {
+            let Some(existing_image) = texture_images.get(&id) else {
                 error!("attempted to write to nonexistent image: {id:?}");
                 return Ok(());
             };

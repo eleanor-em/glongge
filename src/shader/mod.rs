@@ -307,6 +307,7 @@ pub struct SpriteShader {
     materials: Id<Buffer>,
     virtual_swapchain_id: Option<Id<Swapchain>>,
     descriptor_set: UniqueShared<Option<SpriteShaderDescriptorSet>>,
+    descriptor_set_backup: UniqueShared<Vec<SpriteShaderDescriptorSet>>,
 }
 
 impl SpriteShader {
@@ -354,6 +355,7 @@ impl SpriteShader {
             materials,
             virtual_swapchain_id: None,
             descriptor_set: UniqueShared::new(None),
+            descriptor_set_backup: UniqueShared::new(Vec::new()),
         }) as Box<dyn Shader>))
     }
 
@@ -464,6 +466,12 @@ impl SpriteShader {
         ];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
+        }
+        if let Some(desc_set) = self.descriptor_set.get().take() {
+            self.descriptor_set_backup.get().push(desc_set);
+            if self.descriptor_set_backup.get().len() > 1 {
+                self.descriptor_set_backup.get().remove(0);
+            }
         }
         *self.descriptor_set.get() = Some(SpriteShaderDescriptorSet {
             desc: Arc::new(desc_set),

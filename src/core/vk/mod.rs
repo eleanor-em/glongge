@@ -285,7 +285,7 @@ where
     ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
         // TODO: verbose!
         info_every_millis!(500, "building task graph");
-        let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 100);
+        let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
         let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
         let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);
         render_handler.build_shader_task_graphs(

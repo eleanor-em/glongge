@@ -243,8 +243,10 @@ impl TextureHandlerInner {
         filename: String,
         loaded: RawLoadedTexture,
     ) -> Result<Texture> {
-        // Free up unused textures first.
-        self.free_all_unused_textures();
+        if self.textures.len() > MAX_TEXTURE_COUNT / 4 - 5 {
+            // Free up unused textures first.
+            self.free_all_unused_textures();
+        }
 
         let id = self
             .textures
