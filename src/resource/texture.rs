@@ -1,4 +1,5 @@
 use asefile::AsepriteFile;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -48,6 +49,7 @@ pub struct Texture {
     duration: Option<Duration>,
     extent: Vec2,
     ref_count: Arc<AtomicUsize>,
+    ready: Arc<AtomicBool>,
 }
 
 impl Texture {
@@ -56,6 +58,9 @@ impl Texture {
     }
     pub fn duration(&self) -> Option<Duration> {
         self.duration
+    }
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Relaxed)
     }
 }
 
@@ -77,6 +82,7 @@ impl Clone for Texture {
             duration: self.duration,
             extent: self.extent,
             ref_count: self.ref_count.clone(),
+            ready: self.ready.clone(),
         }
     }
 }
@@ -88,6 +94,7 @@ impl Default for Texture {
             duration: None,
             extent: Vec2::one(),
             ref_count: Arc::new(AtomicUsize::new(0)),
+            ready: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -116,6 +123,7 @@ pub(crate) struct InternalTexture {
     image: Id<Image>,
     uploaded_image_view: Option<Arc<ImageView>>,
     ref_count: Arc<AtomicUsize>,
+    ready: Arc<AtomicBool>,
 }
 
 impl InternalTexture {
@@ -140,6 +148,7 @@ impl InternalTexture {
             let image_view =
                 ImageView::new_default(ctx.resources().image(self.image)?.image().clone()).unwrap();
             self.uploaded_image_view = Some(image_view);
+            self.ready.store(true, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -226,6 +235,7 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: Arc::new(AtomicUsize::new(1)),
+            ready: Arc::new(AtomicBool::new(false)),
         };
         textures.insert(0, internal_texture);
 
@@ -257,7 +267,6 @@ impl TextureHandlerInner {
             .map(|(a, _)| a + 1)
             .or_else(|| self.textures.last_key_value().map(|(id, _)| id + 1))
             .expect("empty textures? (blank texture missing)");
-        let ref_count = Arc::new(AtomicUsize::new(1));
         let buf = ctx
             .resources()
             .create_buffer(
@@ -288,6 +297,8 @@ impl TextureHandlerInner {
                 },
             )
             .map_err(Validated::unwrap)?;
+        let ref_count = Arc::new(AtomicUsize::new(1));
+        let ready = Arc::new(AtomicBool::new(false));
         let internal_texture = InternalTexture {
             filename,
             raw: Arc::new(loaded),
@@ -295,6 +306,7 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: ref_count.clone(),
+            ready: ready.clone(),
         };
         let extent = internal_texture.aa_extent();
         if let Some(existing) = self.textures.insert(id, internal_texture) {
@@ -309,6 +321,7 @@ impl TextureHandlerInner {
             duration,
             extent,
             ref_count,
+            ready,
         })
     }
 

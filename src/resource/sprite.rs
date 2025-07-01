@@ -1,4 +1,5 @@
 use crate::core::render::VertexDepth;
+use crate::core::scene::{GuiCommand, GuiObject};
 use crate::core::update::RenderContext;
 use crate::shader::{Shader, SpriteShader, get_shader, vertex};
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
@@ -163,6 +164,10 @@ impl GgInternalSprite {
             .unwrap_or_default()
             .aa_extent()
     }
+
+    pub fn textures_ready(&self) -> bool {
+        self.textures.iter().all(Texture::is_ready)
+    }
 }
 
 #[partially_derive_scene_object]
@@ -236,6 +241,9 @@ impl SceneObject for GgInternalSprite {
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
         Some(self)
     }
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
+        Some(self)
+    }
 }
 
 impl RenderableObject for GgInternalSprite {
@@ -272,6 +280,17 @@ impl RenderableObject for GgInternalSprite {
             material_id,
             ..Default::default()
         }]
+    }
+}
+
+impl GuiObject for GgInternalSprite {
+    fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
+        let is_show = self.state == SpriteState::Show;
+        let textures_ready = self.textures_ready();
+        GuiCommand::new(move |ui| {
+            ui.add(egui::Label::new(format!("is_show: {is_show}")).selectable(false));
+            ui.add(egui::Label::new(format!("textures_ready: {textures_ready}")).selectable(false));
+        })
     }
 }
 
@@ -441,6 +460,10 @@ impl Sprite {
             .unwrap()
             .downcast_mut::<GgInternalSprite>()
             .unwrap()
+    }
+
+    pub fn textures_ready(&self) -> bool {
+        self.inner_unwrap().textures_ready()
     }
 }
 
