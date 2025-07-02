@@ -400,7 +400,16 @@ impl MaterialHandler {
         if let Some(id) = self.materials_inverse.get(&material) {
             *id
         } else {
-            let id = self.materials.last_key_value().map_or(0, |(&k, _)| k + 1);
+
+            let id = self
+                .materials
+                .keys()
+                .copied()
+                .tuple_windows()
+                .find(|(a, b)| *a + 1 != *b)
+                .map(|(a, _)| a + 1)
+                .or_else(|| self.materials.last_key_value().map(|(id, _)| id + 1))
+                .unwrap_or_default();
             self.materials.insert(id, material.clone());
             self.materials_inverse.insert(material, id);
             self.dirty = true;
