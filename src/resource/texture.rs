@@ -648,10 +648,14 @@ impl TextureHandler {
         self.ready_values().is_empty()
     }
 
-    pub(crate) fn get_updated_materials(&self) -> Option<Vec<Material>> {
+    pub(crate) fn get_updated_materials(&self) -> Option<Vec<(MaterialId, Material)>> {
         let mut material_handler = self.material_handler.lock().unwrap();
         if material_handler.dirty {
-            let rv = material_handler.materials.values().cloned().collect();
+            let rv = material_handler
+                .materials
+                .iter()
+                .map(|(id, mat)| (*id, mat.clone()))
+                .collect();
             material_handler.dirty = false;
             Some(rv)
         } else {

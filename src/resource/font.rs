@@ -268,10 +268,6 @@ impl SceneObject for Label {
             .is_some_and(Sprite::textures_ready)
         {
             if let Some(sprite) = self.sprite.take() {
-                info!(
-                    "remove sprite with texture id: {:?}",
-                    sprite.inner_unwrap().textures[0].id()
-                );
                 ctx.object_mut().remove(&sprite.inner.unwrap());
             }
             self.sprite = self.next_sprite.take();

@@ -1,6 +1,6 @@
 use crate::core::render::ShaderRenderFrame;
 use crate::core::vk::vk_ctx::VulkanoContext;
-use crate::resource::texture::Material;
+use crate::resource::texture::{Material, MaterialId};
 use crate::shader::glsl::basic;
 use crate::{
     core::{prelude::*, vk::AdjustedViewport},
@@ -432,8 +432,9 @@ impl SpriteShader {
 
         if let Some(materials) = maybe_materials {
             info!(
-                "updating materials: materials.len() = {}, texture ids: {nonempty_texture_ids:?}",
+                "updating materials: materials.len() = {}, texture count: {}",
                 materials.len(),
+                nonempty_texture_ids.len(),
             );
             self.update_materials(tcx, materials)?;
         }
@@ -471,7 +472,11 @@ impl SpriteShader {
         Ok(())
     }
 
-    fn update_materials(&mut self, tcx: &mut TaskContext, materials: Vec<Material>) -> Result<()> {
+    fn update_materials(
+        &mut self,
+        tcx: &mut TaskContext,
+        materials: Vec<(MaterialId, Material)>,
+    ) -> Result<()> {
         let mut data = [sprite::vertex_shader::Material {
             texture_id: 0,
             uv_top_left: Vec2::zero().into(),
@@ -480,32 +485,20 @@ impl SpriteShader {
             dummy2: 0,
             dummy3: 0,
         }; MAX_MATERIAL_COUNT];
-        data[0..materials.len()].copy_from_slice(
-            materials
-                .into_iter()
-                .map(|mat| {
-                    let uv_top_left = Vec2 {
-                        x: mat.area.top_left().x / mat.texture_extent.x,
-                        y: mat.area.top_left().y / mat.texture_extent.y,
-                    }
-                    .into();
-                    let uv_bottom_right = Vec2 {
-                        x: mat.area.bottom_right().x / mat.texture_extent.x,
-                        y: mat.area.bottom_right().y / mat.texture_extent.y,
-                    }
-                    .into();
-                    sprite::vertex_shader::Material {
-                        texture_id: mat.texture_id,
-                        uv_top_left,
-                        uv_bottom_right,
-                        dummy1: 0,
-                        dummy2: 0,
-                        dummy3: 0,
-                    }
-                })
-                .collect_vec()
-                .as_slice(),
-        );
+        for (id, mat) in materials {
+            let entry = &mut data[id as usize];
+            entry.texture_id = mat.texture_id;
+            entry.uv_top_left = mat
+                .area
+                .top_left()
+                .component_wise_div(mat.texture_extent)
+                .into();
+            entry.uv_bottom_right = mat
+                .area
+                .bottom_right()
+                .component_wise_div(mat.texture_extent)
+                .into();
+        }
         *tcx.write_buffer(self.materials, ..)? = sprite::vertex_shader::MaterialData { data };
         Ok(())
     }
