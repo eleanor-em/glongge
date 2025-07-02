@@ -34,7 +34,7 @@ use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 
 #[derive(Clone)]
-struct RawLoadedTexture {
+struct RawTexture {
     buf: Vec<u8>,
     info: ImageCreateInfo,
     duration: Option<Duration>,
@@ -87,18 +87,6 @@ impl Clone for Texture {
     }
 }
 
-impl Default for Texture {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            duration: None,
-            extent: Vec2::one(),
-            ref_count: Arc::new(AtomicUsize::new(0)),
-            ready: Arc::new(AtomicBool::new(false)),
-        }
-    }
-}
-
 impl Display for Texture {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -118,7 +106,7 @@ impl Drop for Texture {
 #[derive(Clone)]
 pub(crate) struct InternalTexture {
     filename: String,
-    raw: Arc<RawLoadedTexture>,
+    raw: Arc<RawTexture>,
     buf: Id<Buffer>,
     image: Id<Image>,
     uploaded_image_view: Option<Arc<ImageView>>,
@@ -237,7 +225,7 @@ impl TextureHandlerInner {
             .map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
             filename: "[blank]".to_string(),
-            raw: Arc::new(RawLoadedTexture {
+            raw: Arc::new(RawTexture {
                 buf: Colour::white().as_bytes().to_vec(),
                 info,
                 duration: None,
@@ -262,7 +250,7 @@ impl TextureHandlerInner {
         &mut self,
         ctx: &VulkanoContext,
         filename: String,
-        loaded: RawLoadedTexture,
+        loaded: RawTexture,
     ) -> Result<Texture> {
         if self.textures.len() > MAX_TEXTURE_COUNT / 4 - 5 {
             // Free up unused textures first.
@@ -480,7 +468,7 @@ impl TextureHandler {
         inner.loaded_files.insert(filename, vec![texture.clone()]);
         Ok(texture)
     }
-    fn load_file_inner(filename: &str) -> Result<RawLoadedTexture> {
+    fn load_file_inner(filename: &str) -> Result<RawTexture> {
         let path = Path::new(filename);
         let ext = path
             .extension()
@@ -496,7 +484,7 @@ impl TextureHandler {
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
-    fn load_file_inner_png(filename: &str) -> Result<RawLoadedTexture> {
+    fn load_file_inner_png(filename: &str) -> Result<RawTexture> {
         let png_bytes = fs::read(filename)?;
         let cursor = Cursor::new(png_bytes);
         let decoder = png::Decoder::new(cursor);
@@ -557,7 +545,7 @@ impl TextureHandler {
         inner.loaded_files.insert(filename, textures.clone());
         Ok(textures)
     }
-    fn load_file_inner_animated(filename: &str) -> Result<Vec<RawLoadedTexture>> {
+    fn load_file_inner_animated(filename: &str) -> Result<Vec<RawTexture>> {
         let path = Path::new(filename);
         let ext = path
             .extension()
@@ -570,7 +558,7 @@ impl TextureHandler {
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
-    fn load_file_inner_animated_aseprite(filename: &str) -> Result<Vec<RawLoadedTexture>> {
+    fn load_file_inner_animated_aseprite(filename: &str) -> Result<Vec<RawTexture>> {
         let ase = AsepriteFile::read_file(filename.as_ref())?;
         (0..ase.num_frames())
             .map(|i| ase.frame(i))
@@ -605,7 +593,7 @@ impl TextureHandler {
         width: u32,
         height: u32,
         format: Format,
-    ) -> Result<RawLoadedTexture> {
+    ) -> Result<RawTexture> {
         if format != Format::R8G8B8A8_SRGB {
             check_eq!(format, Format::R8G8B8A8_UNORM);
         }
@@ -618,7 +606,7 @@ impl TextureHandler {
         };
         let mut buf = vec![0; width as usize * height as usize * 4];
         reader.read_exact(&mut buf)?;
-        Ok(RawLoadedTexture {
+        Ok(RawTexture {
             buf,
             info: image_create_info,
             duration: None,

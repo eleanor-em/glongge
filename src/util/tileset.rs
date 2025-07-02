@@ -265,7 +265,7 @@ impl TilesetBuilder {
                 GgInternalTileset {
                     tile_size: self.tile_size,
                     filename: self.filename.clone(),
-                    texture: Texture::default(),
+                    texture: None,
                     material_id: MaterialId::default(),
                     tiles: tiles
                         .iter()
@@ -304,7 +304,7 @@ pub struct CollidableTile {
 pub struct GgInternalTileset {
     tile_size: i32,
     filename: String,
-    texture: Texture,
+    texture: Option<Texture>,
     material_id: MaterialId,
     tiles: Vec<RenderableTile>,
 
@@ -335,14 +335,16 @@ impl SceneObject for GgInternalTileset {
         object_ctx: &mut ObjectContext,
         resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
-        self.texture = resource_handler
-            .texture
-            .wait_load_file(self.filename.clone())?;
+        self.texture = Some(
+            resource_handler
+                .texture
+                .wait_load_file(self.filename.clone())?,
+        );
         let mut rv = RenderItem::default();
         for tile in &self.tiles {
             self.material_id = resource_handler
                 .texture
-                .material_from_texture(&self.texture, &tile.tex_area);
+                .material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area);
             let vertices = vertex::rectangle(
                 (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
                 (self.tile_size * Vec2i::one() / 2).into(),
