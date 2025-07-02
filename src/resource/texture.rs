@@ -1,6 +1,6 @@
 use asefile::AsepriteFile;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     collections::{BTreeMap, HashMap},
     default::Default,
@@ -10,7 +10,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::Ordering,
     },
 };
 use vulkano::{
@@ -32,6 +32,7 @@ use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandB
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
 use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
+use crate::util::UniqueShared;
 
 #[derive(Clone)]
 struct RawTexture {
@@ -48,7 +49,7 @@ pub struct Texture {
     id: TextureId,
     duration: Option<Duration>,
     extent: Vec2,
-    ref_count: Arc<AtomicUsize>,
+    ref_count: UniqueShared<usize>,
     ready: Arc<AtomicBool>,
 }
 
@@ -76,7 +77,7 @@ impl AxisAlignedExtent for Texture {
 
 impl Clone for Texture {
     fn clone(&self) -> Self {
-        self.ref_count.fetch_add(1, Ordering::Relaxed);
+        *self.ref_count.get() += 1;
         Self {
             id: self.id,
             duration: self.duration,
@@ -99,7 +100,7 @@ impl Display for Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        self.ref_count.fetch_sub(1, Ordering::Relaxed);
+        *self.ref_count.get() -= 1;
     }
 }
 
@@ -110,7 +111,7 @@ pub(crate) struct InternalTexture {
     buf: Id<Buffer>,
     image: Id<Image>,
     uploaded_image_view: Option<Arc<ImageView>>,
-    ref_count: Arc<AtomicUsize>,
+    ref_count: UniqueShared<usize>,
     has_write_access: bool,
     ready: Arc<AtomicBool>,
 }
@@ -182,6 +183,7 @@ struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
     material_handler: Arc<Mutex<MaterialHandler>>,
+    last_freed_textures: Instant,
 }
 
 impl TextureHandlerInner {
@@ -233,7 +235,7 @@ impl TextureHandlerInner {
             buf,
             image,
             uploaded_image_view: None,
-            ref_count: Arc::new(AtomicUsize::new(1)),
+            ref_count: UniqueShared::new(1),
             has_write_access: false,
             ready: Arc::new(AtomicBool::new(false)),
         };
@@ -243,6 +245,7 @@ impl TextureHandlerInner {
             loaded_files: BTreeMap::new(),
             textures,
             material_handler,
+            last_freed_textures: Instant::now(),
         })
     }
 
@@ -294,7 +297,7 @@ impl TextureHandlerInner {
                 },
             )
             .map_err(Validated::unwrap)?;
-        let ref_count = Arc::new(AtomicUsize::new(1));
+        let ref_count = UniqueShared::new(1);
         let ready = Arc::new(AtomicBool::new(false));
         let internal_texture = InternalTexture {
             filename,
@@ -310,7 +313,7 @@ impl TextureHandlerInner {
         if let Some(existing) = self.textures.insert(id, internal_texture) {
             panic!(
                 "tried to use texture id {id}, but ref_count={}",
-                existing.ref_count.load(Ordering::Relaxed)
+                existing.ref_count.get()
             );
         }
         Ok(Texture {
@@ -323,14 +326,18 @@ impl TextureHandlerInner {
     }
 
     fn free_all_unused_textures(&mut self) {
+        if self.last_freed_textures.elapsed().as_millis() < 500 && self.textures.len() < MAX_TEXTURE_COUNT {
+            return;
+        }
+        self.last_freed_textures = Instant::now();
         let mut material_handler = self.material_handler.lock().unwrap();
         let unused_ids = self
             .textures
             .iter()
-            .filter(|(_, tex)| tex.is_ready() && tex.ref_count.load(Ordering::Relaxed) == 0)
+            .filter(|(_, tex)| tex.is_ready() && *tex.ref_count.get() == 0)
             .map(|(id, _)| *id)
             .collect_vec();
-        info_every_millis!(500, "freeing texture ids: {unused_ids:?}");
+        info!("freeing texture ids: {unused_ids:?}");
         for unused_id in unused_ids {
             self.textures.remove(&unused_id);
             material_handler.on_remove_texture(unused_id);
@@ -344,7 +351,7 @@ impl TextureHandlerInner {
             .filter(|(_, textures)| {
                 textures
                     .iter()
-                    .all(|tex| tex.ref_count.load(Ordering::Relaxed) <= 1)
+                    .all(|tex| *tex.ref_count.get() <= 1)
             })
             .map(|(filename, _)| filename.clone())
             .collect_vec()
