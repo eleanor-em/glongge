@@ -252,10 +252,8 @@ impl TextureHandlerInner {
         filename: String,
         loaded: RawTexture,
     ) -> Result<Texture> {
-        if self.textures.len() > MAX_TEXTURE_COUNT / 4 - 5 {
-            // Free up unused textures first.
-            self.free_all_unused_textures();
-        }
+        // Free up unused textures first.
+        self.free_all_unused_textures();
 
         let id = self
             .textures
@@ -326,14 +324,14 @@ impl TextureHandlerInner {
 
     fn free_all_unused_textures(&mut self) {
         let mut material_handler = self.material_handler.lock().unwrap();
-        for unused_id in self
+        let unused_ids = self
             .textures
             .iter()
-            .filter(|(_, tex)| tex.ref_count.load(Ordering::Relaxed) == 0)
+            .filter(|(_, tex)| tex.is_ready() && tex.ref_count.load(Ordering::Relaxed) == 0)
             .map(|(id, _)| *id)
-            .collect_vec()
-        {
-            info_every_millis!(500, "freeing texture id {unused_id}");
+            .collect_vec();
+        info_every_millis!(500, "freeing texture ids: {unused_ids:?}");
+        for unused_id in unused_ids {
             self.textures.remove(&unused_id);
             material_handler.on_remove_texture(unused_id);
         }
@@ -400,7 +398,6 @@ impl MaterialHandler {
         if let Some(id) = self.materials_inverse.get(&material) {
             *id
         } else {
-
             let id = self
                 .materials
                 .keys()

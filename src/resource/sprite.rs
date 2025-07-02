@@ -166,7 +166,7 @@ impl GgInternalSprite {
     }
 
     pub fn textures_ready(&self) -> bool {
-        self.textures.iter().all(Texture::is_ready)
+        !self.render_item.is_empty() && self.textures.iter().all(Texture::is_ready)
     }
 }
 
@@ -300,7 +300,7 @@ impl GuiObject for GgInternalSprite {
 
 #[derive(Clone, Default)]
 pub struct Sprite {
-    inner: Option<TreeSceneObject>,
+    pub(crate) inner: Option<TreeSceneObject>,
 }
 
 impl Sprite {

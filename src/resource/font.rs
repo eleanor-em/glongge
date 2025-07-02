@@ -211,6 +211,7 @@ impl Read for GlyphReader {
 pub struct Label {
     font: Font,
     sprite: Option<Sprite>,
+    next_sprite: Option<Sprite>,
     max_width: f32,
     text_wrap_mode: TextWrapMode,
 
@@ -226,6 +227,7 @@ impl Label {
         Self {
             font,
             sprite: None,
+            next_sprite: None,
             max_width,
             text_wrap_mode: TextWrapMode::WrapAnywhere,
             text_to_set: None,
@@ -259,16 +261,35 @@ impl SceneObject for Label {
         Ok(None)
     }
 
-    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
-        if let Some(text) = self.text_to_set.take()
-            && text.as_str() != self.last_text.clone().unwrap_or_default().as_str()
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
+        if self
+            .next_sprite
+            .as_ref()
+            .is_some_and(Sprite::textures_ready)
         {
-            self.last_text = Some(text.clone());
-            if let Some(_sprite) = self.sprite.take() {
-                ctx.object_mut().remove_children();
+            if let Some(sprite) = self.sprite.take() {
+                ctx.object_mut().remove(&sprite.inner.unwrap());
             }
-            if !text.is_empty() {
-                self.sprite = Some(
+            self.sprite = self.next_sprite.take();
+            let sprite = self.sprite.as_mut().unwrap();
+            sprite.show();
+            sprite.set_depth(self.depth);
+            sprite.set_blend_col(self.blend_col);
+        }
+    }
+
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
+        if let Some(text) = self.text_to_set.take() {
+            if text.is_empty() {
+                self.last_text = Some(text);
+                self.sprite = None;
+                self.next_sprite = None;
+                ctx.object_mut().remove_children();
+            } else if text.as_str() == self.last_text.clone().unwrap_or_default().as_str() {
+                // No update necessary.
+            } else if self.next_sprite.is_none() {
+                self.last_text = Some(text.clone());
+                self.next_sprite = Some(
                     self.font
                         .render_to_sprite(
                             ctx.object_mut(),
@@ -276,12 +297,13 @@ impl SceneObject for Label {
                             self.max_width,
                             self.text_wrap_mode,
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .with_hidden(),
                 );
+            } else {
+                // Still loading the previous next_sprite, try again next update.
+                self.text_to_set = Some(text);
             }
-        } else if let Some(sprite) = self.sprite.as_mut() {
-            sprite.set_depth(self.depth);
-            sprite.set_blend_col(self.blend_col);
         }
     }
 
