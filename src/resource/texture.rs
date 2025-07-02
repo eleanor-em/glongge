@@ -123,12 +123,20 @@ pub(crate) struct InternalTexture {
     image: Id<Image>,
     uploaded_image_view: Option<Arc<ImageView>>,
     ref_count: Arc<AtomicUsize>,
+    has_write_access: bool,
     ready: Arc<AtomicBool>,
 }
 
 impl InternalTexture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> {
         self.uploaded_image_view.clone()
+    }
+    fn is_ready(&self) -> bool {
+        check_eq!(
+            self.ready.load(Ordering::Relaxed),
+            self.uploaded_image_view.is_some()
+        );
+        self.uploaded_image_view.is_some()
     }
 
     fn create_image_view(
@@ -137,7 +145,7 @@ impl InternalTexture {
         cbf: &mut RecordingCommandBuffer,
         _tcx: &mut TaskContext,
     ) -> TaskResult {
-        if self.uploaded_image_view.is_none() {
+        if !self.is_ready() {
             unsafe {
                 cbf.copy_buffer_to_image(&CopyBufferToImageInfo {
                     src_buffer: self.buf,
@@ -151,6 +159,10 @@ impl InternalTexture {
             self.ready.store(true, Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    fn can_upload(&self) -> bool {
+        self.has_write_access && !self.is_ready()
     }
 }
 
@@ -181,7 +193,6 @@ impl<R: Read> Read for WrappedPngReader<R> {
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
-    textures_dirty: bool,
     material_handler: Arc<Mutex<MaterialHandler>>,
 }
 
@@ -235,6 +246,7 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: Arc::new(AtomicUsize::new(1)),
+            has_write_access: false,
             ready: Arc::new(AtomicBool::new(false)),
         };
         textures.insert(0, internal_texture);
@@ -242,7 +254,6 @@ impl TextureHandlerInner {
         Ok(Self {
             loaded_files: BTreeMap::new(),
             textures,
-            textures_dirty: false,
             material_handler,
         })
     }
@@ -306,6 +317,7 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: ref_count.clone(),
+            has_write_access: false,
             ready: ready.clone(),
         };
         let extent = internal_texture.aa_extent();
@@ -315,7 +327,6 @@ impl TextureHandlerInner {
                 existing.ref_count.load(Ordering::Relaxed)
             );
         }
-        self.textures_dirty = true;
         Ok(Texture {
             id,
             duration,
@@ -625,7 +636,7 @@ impl TextureHandler {
             .unwrap()
             .textures
             .values()
-            .filter(|t| t.uploaded_image_view.is_some())
+            .filter(|t| t.is_ready())
             .cloned()
             .collect()
     }
@@ -674,7 +685,12 @@ impl TextureHandler {
     }
 
     pub(crate) fn wait_textures_dirty(&self) -> bool {
-        self.inner.lock().unwrap().textures_dirty
+        self.inner
+            .lock()
+            .unwrap()
+            .textures
+            .values()
+            .any(|t| !t.has_write_access)
     }
     pub(crate) fn build_task_graph(
         &self,
@@ -692,7 +708,7 @@ impl TextureHandler {
             },
         );
         let mut images = Vec::new();
-        for tex in inner.textures.values() {
+        for tex in inner.textures.values_mut() {
             upload_node.buffer_access(tex.buf, AccessTypes::COPY_TRANSFER_READ);
             upload_node.image_access(
                 tex.image,
@@ -700,9 +716,9 @@ impl TextureHandler {
                 ImageLayoutType::Optimal,
             );
             images.push(tex.image);
+            tex.has_write_access = true;
         }
         let upload_node = upload_node.build();
-        inner.textures_dirty = false;
         (upload_node, images)
     }
 }
@@ -721,20 +737,11 @@ impl Task for UploadTexturesTask {
         world: &Self::World,
     ) -> TaskResult {
         let mut inner = self.inner.inner.lock().unwrap();
-        if inner.textures_dirty {
-            info!("textures_dirty, skip upload");
-            return Ok(());
-        }
-        let textures_to_upload = inner
+        for (id, tex) in inner
             .textures
             .iter_mut()
-            .filter(|(_, tex)| tex.uploaded_image_view.is_none())
-            .collect_vec();
-        if textures_to_upload.is_empty() {
-            return Ok(());
-        }
-
-        for (id, tex) in textures_to_upload {
+            .filter(|(_, tex)| tex.can_upload())
+        {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
