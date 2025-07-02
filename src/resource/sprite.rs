@@ -275,11 +275,15 @@ impl RenderableObject for GgInternalSprite {
         check_lt!(self.frame, self.material_indices.len());
         let material_index = self.material_indices[self.frame];
         let material_id = self.materials[material_index];
-        vec![ShaderExec {
-            shader_id: get_shader(SpriteShader::name()),
-            material_id,
-            ..Default::default()
-        }]
+        if self.textures_ready() {
+            vec![ShaderExec {
+                shader_id: get_shader(SpriteShader::name()),
+                material_id,
+                ..Default::default()
+            }]
+        } else {
+            Vec::new()
+        }
     }
 }
 
