@@ -4,7 +4,6 @@ use crate::resource::texture::Material;
 use crate::shader::glsl::basic;
 use crate::{
     core::{prelude::*, vk::AdjustedViewport},
-    info_every_millis,
     shader::glsl::sprite,
     util::UniqueShared,
 };
@@ -406,40 +405,35 @@ impl SpriteShader {
             return Ok(());
         }
 
-        let sampler_create_info = SamplerCreateInfo::default();
-        let mut textures = self
-            .resource_handler
-            .texture
-            .ready_values()
-            .into_iter()
-            .filter_map(|tex| tex.image_view())
-            .collect_vec();
-        check_le!(textures.len(), MAX_TEXTURE_COUNT);
-        let samplers = (0..textures.len())
-            .map(|_| {
-                Ok(Sampler::new(self.ctx.device(), sampler_create_info.clone())
-                    .map_err(Validated::unwrap)?)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut textures = vec![None; MAX_TEXTURE_COUNT];
+        let mut nonempty_texture_ids = Vec::new();
+        for texture in self.resource_handler.texture.ready_values() {
+            let texture_id = texture.id() as usize;
+            check_le!(texture_id, MAX_TEXTURE_COUNT);
+            check_is_none!(textures[texture_id]);
+            textures[texture_id] = texture.image_view();
+            nonempty_texture_ids.push(texture_id);
+        }
 
-        // TODO: expect() below very occasionally crashes.
         let blank = textures
             .first()
             .expect("textures.first() should always contain a blank texture")
-            .clone();
-        let num_blank_copies = MAX_TEXTURE_COUNT - textures.len();
-        textures.extend(vec![blank; num_blank_copies]);
-        let mut extended_samplers = samplers.clone();
-        extended_samplers.extend(vec![samplers[0].clone(); num_blank_copies]);
-        check_eq!(textures.len(), MAX_TEXTURE_COUNT);
-        check_eq!(extended_samplers.len(), textures.len());
+            .clone()
+            .expect("textures.first() should always contain a blank texture that is loaded");
+        let textures = textures
+            .into_iter()
+            .map(|t| t.unwrap_or(blank.clone()))
+            .collect_vec();
+
+        let sampler_create_info = SamplerCreateInfo::default();
+        let sampler = Sampler::new(self.ctx.device(), sampler_create_info.clone())
+            .map_err(Validated::unwrap)?;
+        let samplers = vec![sampler.clone(); MAX_TEXTURE_COUNT];
 
         if let Some(materials) = maybe_materials {
-            info_every_millis!(
-                500,
-                "updating materials: materials.len() = {}, textures.len() = {}",
+            info!(
+                "updating materials: materials.len() = {}, texture ids: {nonempty_texture_ids:?}",
                 materials.len(),
-                MAX_TEXTURE_COUNT - num_blank_copies
             );
             self.update_materials(tcx, materials)?;
         }
@@ -458,11 +452,7 @@ impl SpriteShader {
                     .clone()
                     .into(),
             ),
-            WriteDescriptorSet::image_view_sampler_array(
-                1,
-                0,
-                textures.into_iter().zip(extended_samplers),
-            ),
+            WriteDescriptorSet::image_view_sampler_array(1, 0, textures.into_iter().zip(samplers)),
         ];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
@@ -475,7 +465,7 @@ impl SpriteShader {
         }
         *self.descriptor_set.get() = Some(SpriteShaderDescriptorSet {
             desc: Arc::new(desc_set),
-            _samplers: samplers,
+            _samplers: vec![sampler],
             _writes: desc_writes,
         });
         Ok(())
@@ -538,6 +528,7 @@ impl Shader for SpriteShader {
         render_frame: ShaderRenderFrame,
         tcx: &mut TaskContext,
     ) -> Result<()> {
+        self.resource_handler.texture.wait_free_unused_files();
         self.maybe_update_desc_sets(tcx)?;
         let render_infos = render_frame
             .render_infos

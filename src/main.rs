@@ -34,15 +34,17 @@ fn main() -> Result<()> {
             ] {
                 resource_handler.sound.spawn_load_file(sound);
             }
-            for texture in [
+            let stored_textures = [
                 "res/mario_sheet.png",
                 "res/world_sheet.png",
                 "res/enemies_sheet.png",
-            ] {
-                resource_handler.texture.wait_load_file(texture).unwrap();
-            }
+            ]
+            .into_iter()
+            .map(|filename| resource_handler.texture.wait_load_file(filename).unwrap())
+            .collect_vec();
             resource_handler.wait_all().unwrap();
             std::thread::spawn(move || {
+                let _stored_textures = stored_textures;
                 let mut scene_handler = scene_handler.build();
                 scene_handler.create_scene(TriangleScene);
                 scene_handler.create_scene(RectangleScene);

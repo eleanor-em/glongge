@@ -8,10 +8,7 @@ use std::{
     fs,
     io::{Cursor, Read},
     path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::Ordering,
-    },
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 use vulkano::{
     NonZeroDeviceSize, Validated,
@@ -23,7 +20,7 @@ use vulkano::{
 
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
-use crate::info_every_millis;
+use crate::util::UniqueShared;
 use png::ColorType;
 use vulkano::image::Image;
 use vulkano::memory::DeviceAlignment;
@@ -32,7 +29,6 @@ use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandB
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
 use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
-use crate::util::UniqueShared;
 
 #[derive(Clone)]
 struct RawTexture {
@@ -107,6 +103,7 @@ impl Drop for Texture {
 #[derive(Clone)]
 pub(crate) struct InternalTexture {
     filename: String,
+    id: TextureId,
     raw: Arc<RawTexture>,
     buf: Id<Buffer>,
     image: Id<Image>,
@@ -119,6 +116,9 @@ pub(crate) struct InternalTexture {
 impl InternalTexture {
     pub fn image_view(&self) -> Option<Arc<ImageView>> {
         self.uploaded_image_view.clone()
+    }
+    pub fn id(&self) -> TextureId {
+        self.id
     }
     fn is_ready(&self) -> bool {
         check_eq!(
@@ -227,6 +227,7 @@ impl TextureHandlerInner {
             .map_err(Validated::unwrap)?;
         let internal_texture = InternalTexture {
             filename: "[blank]".to_string(),
+            id: 0,
             raw: Arc::new(RawTexture {
                 buf: Colour::white().as_bytes().to_vec(),
                 info,
@@ -255,9 +256,6 @@ impl TextureHandlerInner {
         filename: String,
         loaded: RawTexture,
     ) -> Result<Texture> {
-        // Free up unused textures first.
-        self.free_all_unused_textures();
-
         let id = self
             .textures
             .keys()
@@ -301,6 +299,7 @@ impl TextureHandlerInner {
         let ready = Arc::new(AtomicBool::new(false));
         let internal_texture = InternalTexture {
             filename,
+            id,
             raw: Arc::new(loaded),
             buf,
             image,
@@ -316,6 +315,7 @@ impl TextureHandlerInner {
                 existing.ref_count.get()
             );
         }
+        info!("created texture id {id}");
         Ok(Texture {
             id,
             duration,
@@ -325,18 +325,23 @@ impl TextureHandlerInner {
         })
     }
 
-    fn free_all_unused_textures(&mut self) {
-        if self.last_freed_textures.elapsed().as_millis() < 500 && self.textures.len() < MAX_TEXTURE_COUNT {
+    fn free_unused_textures(&mut self) {
+        if self.last_freed_textures.elapsed().as_millis() < 1000
+            && self.textures.len() < MAX_TEXTURE_COUNT
+        {
             return;
         }
         self.last_freed_textures = Instant::now();
-        let mut material_handler = self.material_handler.lock().unwrap();
         let unused_ids = self
             .textures
             .iter()
             .filter(|(_, tex)| tex.is_ready() && *tex.ref_count.get() == 0)
             .map(|(id, _)| *id)
             .collect_vec();
+        if unused_ids.is_empty() {
+            return;
+        }
+        let mut material_handler = self.material_handler.lock().unwrap();
         info!("freeing texture ids: {unused_ids:?}");
         for unused_id in unused_ids {
             self.textures.remove(&unused_id);
@@ -348,18 +353,14 @@ impl TextureHandlerInner {
         for filename in self
             .loaded_files
             .iter()
-            .filter(|(_, textures)| {
-                textures
-                    .iter()
-                    .all(|tex| *tex.ref_count.get() <= 1)
-            })
+            .filter(|(_, textures)| textures.iter().all(|tex| *tex.ref_count.get() <= 1))
             .map(|(filename, _)| filename.clone())
             .collect_vec()
         {
-            info_every_millis!(500, "freeing texture {filename}");
+            info!("freeing texture {filename}");
             self.loaded_files.remove(&filename);
         }
-        self.free_all_unused_textures();
+        self.free_unused_textures();
     }
 }
 
@@ -424,6 +425,7 @@ impl MaterialHandler {
         self.materials_inverse.retain(|material, material_id| {
             if material.texture_id == texture_id {
                 self.materials.remove(material_id);
+                self.dirty = true;
                 false
             } else {
                 true
@@ -746,8 +748,7 @@ impl Task for UploadTexturesTask {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
-            info_every_millis!(
-                500,
+            info!(
                 "created image view for: {} (id {id:?}, {:.1} KiB)",
                 tex.filename,
                 (tex.raw.buf.len() as f32) / 1024.0

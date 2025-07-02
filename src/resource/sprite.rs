@@ -25,7 +25,7 @@ type DeferredTextureLoader = Box<dyn FnOnce(&ResourceHandler) -> Result<Texture>
 
 #[derive(Default)]
 pub struct GgInternalSprite {
-    textures: Vec<Texture>,
+    pub(crate) textures: Vec<Texture>,
     areas: Vec<Rect>,
     materials: Vec<MaterialId>,
     material_indices: Vec<usize>,
@@ -291,9 +291,11 @@ impl GuiObject for GgInternalSprite {
     fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
         let is_show = self.state == SpriteState::Show;
         let textures_ready = self.textures_ready();
+        let texture_ids = self.textures.iter().map(Texture::id).collect_vec();
         GuiCommand::new(move |ui| {
             ui.add(egui::Label::new(format!("is_show: {is_show}")).selectable(false));
             ui.add(egui::Label::new(format!("textures_ready: {textures_ready}")).selectable(false));
+            ui.add(egui::Label::new(format!("texture ids: {texture_ids:?}")).selectable(false));
         })
     }
 }
@@ -458,7 +460,7 @@ impl Sprite {
         self.inner_unwrap().set_blend_col(col);
     }
 
-    fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
+    pub(crate) fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
         self.inner
             .as_ref()
             .unwrap()
