@@ -26,7 +26,7 @@ impl Goomba {
             dead: false,
             started_death: false,
             top_left: top_left.into(),
-            vel: Vec2 { x: -1.0, y: 0.0 },
+            vel: Vec2 { x: -0.8, y: 0.0 },
             ..Default::default()
         }
         .into_wrapper()
@@ -83,7 +83,8 @@ impl SceneObject for Goomba {
             ctx.object_mut().remove_this();
         }
     }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
+
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         let in_view = ctx.viewport().contains_point(self.top_left)
             || ctx
                 .viewport()
@@ -99,7 +100,7 @@ impl SceneObject for Goomba {
                 self.v_accel = 0.0;
             }
             self.vel.y += self.v_accel;
-            ctx.object().transform_mut().centre += self.vel;
+            ctx.object().transform_mut().centre += self.vel * ctx.delta_60fps();
         }
     }
     fn on_collision(

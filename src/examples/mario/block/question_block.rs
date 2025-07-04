@@ -65,15 +65,18 @@ impl SceneObject for QuestionBlock {
         Ok(None)
     }
 
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
         let mut transform = ctx.object().transform_mut();
-        self.v_speed += self.v_accel;
-        transform.centre.y += self.v_speed;
+        transform.centre.y += self.v_speed * ctx.delta_60fps();
         if transform.centre.y > self.initial_y {
             transform.centre.y = self.initial_y;
             self.v_speed = 0.0;
             self.v_accel = 0.0;
         }
+    }
+
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
+        self.v_speed += self.v_accel;
     }
     fn emitting_tags(&self) -> Vec<&'static str> {
         [BLOCK_COLLISION_TAG].into()

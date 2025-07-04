@@ -47,14 +47,17 @@ impl SceneObject for Block {
         Ok(None)
     }
 
-    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
-        self.v_speed += self.v_accel;
-        self.top_left.y += self.v_speed;
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
+        self.top_left.y += self.v_speed * ctx.delta_60fps();
         if self.top_left.y > self.initial_y {
             self.top_left.y = self.initial_y;
             self.v_speed = 0.0;
             self.v_accel = 0.0;
         }
+    }
+
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
+        self.v_speed += self.v_accel;
     }
     fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();

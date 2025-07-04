@@ -29,13 +29,10 @@ use text_display::WinTextDisplay;
 use underground_floor::UndergroundFloor;
 
 const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
-    // fixed update at 50 fps
-    (pixels as f32
+    pixels as f32
         + subpixels as f32 / 16.0
         + subsubpixels as f32 / 256.0
-        + subsubsubpixels as f32 / 4096.0)
-        * 60.0
-        / 50.0
+        + subsubsubpixels as f32 / 4096.0
 }
 const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 50 fps

@@ -259,14 +259,14 @@ impl Player {
             if new_dir == self.dir {
                 self.speed = Self::MIN_WALK_SPEED.max(self.speed);
                 if self.speed < from_nes(1, 9, 0, 0) {
-                    self.accel = from_nes(0, 0, 9, 8);
+                    self.accel = from_nes_accel(0, 0, 9, 8);
                 } else {
-                    self.accel = from_nes(0, 0, 14, 4);
+                    self.accel = from_nes_accel(0, 0, 14, 4);
                 }
             } else if self.speed < from_nes(1, 9, 0, 0) {
-                self.accel = -from_nes(0, 0, 14, 4);
+                self.accel = -from_nes_accel(0, 0, 14, 4);
             } else {
-                self.accel = -from_nes(0, 0, 13, 0);
+                self.accel = -from_nes_accel(0, 0, 13, 0);
             }
         }
         if self.hold_jump && self.v_speed < 0.0 {
@@ -352,7 +352,7 @@ impl Player {
                 }));
         }
     }
-    fn maybe_start_pipe(&mut self, ctx: &mut FixedUpdateContext) {
+    fn maybe_start_pipe(&mut self, ctx: &mut UpdateContext) {
         if self.hold_down {
             if let Some(collisions) =
                 ctx.object()
@@ -401,7 +401,7 @@ impl Player {
     }
     fn start_pipe(
         &mut self,
-        ctx: &mut FixedUpdateContext,
+        ctx: &mut UpdateContext,
         direction: Vec2,
         pipe_centre: Vec2,
         pipe_instruction: SceneDestination,
@@ -598,6 +598,8 @@ impl SceneObject for Player {
         if self.state == PlayerState::Dying {
             self.speed = 0.0;
             self.v_accel = BASE_GRAVITY;
+            self.centre += self.speed * ctx.delta_60fps() * Vec2::right()
+                + self.v_speed * ctx.delta_60fps() * Vec2::down();
             return;
         }
         if self.state == PlayerState::EnteringPipe {
@@ -628,33 +630,30 @@ impl SceneObject for Player {
         if !self.dir.is_zero() {
             self.last_nonzero_dir = self.dir;
         }
-    }
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
-        self.speed += self.accel;
-        self.v_speed += self.v_accel;
-        self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
 
         if !self.has_control() {
-            self.centre += self.speed * Vec2::right() + self.v_speed * Vec2::down();
+            self.centre += self.speed * ctx.delta_60fps() * Vec2::right()
+                + self.v_speed * ctx.delta_60fps() * Vec2::down();
             return;
         }
 
         self.maybe_start_pipe(ctx);
-        match ctx
-            .object()
-            .test_collision_along(self.dir, self.speed, vec![BLOCK_COLLISION_TAG])
-        {
+        match ctx.object().test_collision_along(
+            self.dir,
+            self.speed * ctx.delta_60fps(),
+            vec![BLOCK_COLLISION_TAG],
+        ) {
             Some(collisions) => {
-                self.centre +=
-                    self.speed * self.dir + collisions.first().mtv.project(Vec2::right());
+                self.centre += self.speed * ctx.delta_60fps() * self.dir
+                    + collisions.first().mtv.project(Vec2::right());
                 self.speed *= 0.9;
             }
-            None => self.centre += self.speed * self.dir,
+            None => self.centre += self.speed * ctx.delta_60fps() * self.dir,
         }
 
         match ctx.object().test_collision_along(
             Vec2::down(),
-            self.v_speed,
+            self.v_speed * ctx.delta_60fps(),
             vec![BLOCK_COLLISION_TAG],
         ) {
             Some(collisions) => {
@@ -667,7 +666,7 @@ impl SceneObject for Player {
                     })
                     .unwrap();
                 let mtv = coll.mtv.project(Vec2::down());
-                self.centre += self.v_speed * Vec2::down() + mtv;
+                self.centre += self.v_speed * ctx.delta_60fps() * Vec2::down() + mtv;
                 self.v_speed = 0.0;
                 if mtv.y < 0.0 {
                     // Collision with the ground.
@@ -682,7 +681,7 @@ impl SceneObject for Player {
                     other.bump(self);
                 }
             }
-            None => self.centre += self.v_speed * Vec2::down(),
+            None => self.centre += self.v_speed * ctx.delta_60fps() * Vec2::down(),
         }
 
         if self.speed < 0.0 {
@@ -694,6 +693,14 @@ impl SceneObject for Player {
                 self.dir = Vec2::zero();
                 self.state = PlayerState::Idle;
             }
+        }
+    }
+
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
+        self.speed += self.accel;
+        self.v_speed += self.v_accel;
+        if self.has_control() {
+            self.v_speed = Self::MAX_VSPEED.min(self.v_speed);
         }
     }
 
@@ -718,6 +725,7 @@ impl SceneObject for Player {
                     self.state = PlayerState::Falling;
                 } else {
                     self.start_die(ctx);
+                    return CollisionResponse::Done;
                 }
             }
         }

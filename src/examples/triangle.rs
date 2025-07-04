@@ -141,11 +141,9 @@ impl SceneObject for SpinningTriangle {
                 ctx.object_mut().remove_this();
             }
         }
-    }
 
-    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
-        self.t += Self::ANGULAR_VELOCITY;
-        let next_pos = self.pos + self.velocity;
+        self.t += Self::ANGULAR_VELOCITY * ctx.delta_60fps();
+        let next_pos = self.pos + self.velocity * ctx.delta_60fps();
         if !ctx.viewport().contains_point(Vec2 {
             x: next_pos.x,
             y: self.pos.y,
@@ -158,7 +156,7 @@ impl SceneObject for SpinningTriangle {
         }) {
             self.velocity.y = -self.velocity.y;
         }
-        self.pos += self.velocity;
+        self.pos += self.velocity * ctx.delta_60fps();
     }
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext) {
