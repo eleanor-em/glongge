@@ -9,9 +9,6 @@ use egui_winit::winit::event_loop::ActiveEventLoop;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Instant;
 use tracing::info;
-use vulkano::command_buffer::allocator::{
-    StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
-};
 use vulkano::descriptor_set::allocator::{
     StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo,
 };
@@ -23,8 +20,6 @@ use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageUsage};
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
-use vulkano::memory::allocator::StandardMemoryAllocator;
-use vulkano::pipeline::GraphicsPipeline;
 use vulkano::swapchain::{
     ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo,
 };
@@ -42,8 +37,6 @@ pub struct VulkanoContext {
     // Should only ever be created once:
     device: Arc<Device>,
     queue: Arc<Queue>,
-    memory_allocator: Arc<StandardMemoryAllocator>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     resources: Arc<Resources>,
     flight_id: Id<Flight>,
@@ -53,7 +46,6 @@ pub struct VulkanoContext {
     images: UniqueShared<Vec<Arc<Image>>>,
     image_views: UniqueShared<Vec<Arc<ImageView>>>,
     image_count: UniqueShared<usize>,
-    pipelines: UniqueShared<Vec<UniqueShared<Option<Arc<GraphicsPipeline>>>>>,
 }
 
 impl VulkanoContext {
@@ -74,11 +66,6 @@ impl VulkanoContext {
         let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
         let physical_device = create_any_physical_device(&instance, &surface)?;
         let (device, queue) = create_any_graphical_queue_family(physical_device.clone())?;
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            device.clone(),
-            StandardCommandBufferAllocatorCreateInfo::default(),
-        ));
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             device.clone(),
             StandardDescriptorSetAllocatorCreateInfo {
@@ -170,8 +157,6 @@ impl VulkanoContext {
         Ok(Self {
             device,
             queue,
-            memory_allocator,
-            command_buffer_allocator,
             descriptor_set_allocator,
             resources,
             flight_id,
@@ -180,7 +165,6 @@ impl VulkanoContext {
             images,
             image_views,
             image_count,
-            pipelines: UniqueShared::new(Vec::new()),
         })
     }
 
@@ -216,12 +200,6 @@ impl VulkanoContext {
     pub fn queue(&self) -> Arc<Queue> {
         self.queue.clone()
     }
-    pub fn memory_allocator(&self) -> Arc<StandardMemoryAllocator> {
-        self.memory_allocator.clone()
-    }
-    pub fn command_buffer_allocator(&self) -> Arc<StandardCommandBufferAllocator> {
-        self.command_buffer_allocator.clone()
-    }
     pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
         self.descriptor_set_allocator.clone()
     }
@@ -245,23 +223,6 @@ impl VulkanoContext {
 
     pub(crate) fn current_image_view(&self, image_idx: usize) -> Arc<ImageView> {
         self.image_views.get()[image_idx].clone()
-    }
-
-    // When the created pipeline is invalidated, it will be destroyed => safe to store this.
-    pub fn create_pipeline<F>(
-        &mut self,
-        f: F,
-    ) -> Result<UniqueShared<Option<Arc<GraphicsPipeline>>>>
-    where
-        F: FnOnce(Arc<Swapchain>) -> Result<Arc<GraphicsPipeline>>,
-    {
-        let pipeline = UniqueShared::new(Some(f(self
-            .resources
-            .swapchain(*self.swapchain.get())?
-            .swapchain()
-            .clone())?));
-        self.pipelines.get().push(pipeline.clone());
-        Ok(pipeline)
     }
     // May change between frames, e.g. due to recreate_swapchain().
     pub fn image_count(&self) -> usize {

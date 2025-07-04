@@ -187,7 +187,7 @@ impl WindowEventHandlerInner {
         while let Ok(event) = self.window_event_rx.try_recv() {
             let _response = self.platform.on_window_event(&self.window.inner, &event);
         }
-        while let Ok(new_scale_factor) = self.scale_factor_rx.try_recv() {
+        if let Some(new_scale_factor) = self.scale_factor_rx.try_iter().last() {
             // Since scale_factor is given by winit, we expect an exact comparison to work.
             #[allow(clippy::float_cmp)]
             if self.scale_factor != new_scale_factor {
@@ -202,7 +202,7 @@ impl WindowEventHandlerInner {
                 self.recreate_swapchain().unwrap();
             }
         }
-        while let Ok(request_time) = self.recreate_swapchain_rx.try_recv() {
+        if let Some(request_time) = self.recreate_swapchain_rx.try_iter().last() {
             info!(
                 "recreating swapchain: {:.2} ms old",
                 request_time.elapsed().as_micros() as f32 / 1000.0
@@ -282,6 +282,7 @@ impl WindowEventHandlerInner {
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
+        _ = self.recreate_swapchain_rx.try_iter().last();
         self.vk_ctx
             .recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;

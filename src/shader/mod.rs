@@ -320,20 +320,9 @@ impl SpriteShader {
             ctx.clone(),
             INITIAL_VERTEX_BUFFER_SIZE,
         )?);
-        // Create materials:
-        let material_data = sprite::vertex_shader::MaterialData {
-            data: [sprite::vertex_shader::Material {
-                uv_top_left: Vec2::zero().into(),
-                uv_bottom_right: Vec2::one().into(),
-                texture_id: 0,
-                dummy1: 0,
-                dummy2: 0,
-                dummy3: 0,
-            }; MAX_MATERIAL_COUNT],
-        };
         let materials = ctx.resources().create_buffer(
             BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER | BufferUsage::TRANSFER_DST,
+                usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
                 ..Default::default()
             },
             AllocationCreateInfo {
@@ -341,7 +330,10 @@ impl SpriteShader {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            DeviceLayout::for_value(&material_data).unwrap(),
+            DeviceLayout::new_unsized::<sprite::vertex_shader::MaterialData>(
+                MAX_MATERIAL_COUNT as DeviceSize,
+            )
+            .unwrap(),
         )?;
         // Create pipeline:
         let pipeline = Self::create_pipeline(&ctx)?;
@@ -477,14 +469,17 @@ impl SpriteShader {
         tcx: &mut TaskContext,
         materials: Vec<(MaterialId, Material)>,
     ) -> Result<()> {
-        let mut data = [sprite::vertex_shader::Material {
-            texture_id: 0,
-            uv_top_left: Vec2::zero().into(),
-            uv_bottom_right: Vec2::one().into(),
-            dummy1: 0,
-            dummy2: 0,
-            dummy3: 0,
-        }; MAX_MATERIAL_COUNT];
+        let mut data = vec![
+            sprite::vertex_shader::Material {
+                texture_id: 0,
+                uv_top_left: Vec2::zero().into(),
+                uv_bottom_right: Vec2::one().into(),
+                dummy1: 0,
+                dummy2: 0,
+                dummy3: 0,
+            };
+            MAX_MATERIAL_COUNT
+        ];
         for (id, mat) in materials {
             let entry = &mut data[id as usize];
             entry.texture_id = mat.texture_id;
@@ -499,7 +494,9 @@ impl SpriteShader {
                 .component_wise_div(mat.texture_extent)
                 .into();
         }
-        *tcx.write_buffer(self.materials, ..)? = sprite::vertex_shader::MaterialData { data };
+        tcx.write_buffer::<sprite::vertex_shader::MaterialData>(self.materials, ..)?
+            .data
+            .copy_from_slice(&data);
         Ok(())
     }
 }

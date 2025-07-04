@@ -53,8 +53,8 @@ pub mod vertex_shader {
                 uint dummy3;
             };
 
-            layout(set = 0, binding = 0) uniform MaterialData {
-                Material data[16 * 1024];
+            layout(set = 0, binding = 0) readonly buffer MaterialData {
+                Material data[];
             } materials;
 
             void main() {
