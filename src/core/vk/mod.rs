@@ -1,10 +1,5 @@
-use egui::{FullOutput, ViewportId, ViewportInfo};
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
-
 use crate::core::render::RenderHandler;
+use crate::core::scene::SceneHandler;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::gui::GuiContext;
 use crate::shader::{Shader, SpriteShader, WireframeShader, ensure_shaders_locked};
@@ -16,12 +11,19 @@ use crate::{
     util::gg_time::TimeIt,
     warn_every_seconds,
 };
+use egui::{FullOutput, ViewportId, ViewportInfo};
 use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::dpi::PhysicalSize;
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::keyboard::PhysicalKey;
 use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
@@ -141,287 +143,104 @@ struct WindowEventHandlerInner {
     vk_ctx: VulkanoContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
+    scene_handler: SceneHandler,
     resource_handler: ResourceHandler,
+    gui_ctx: GuiContext,
     platform: egui_winit::State,
     task_graph: ExecutableTaskGraph<VulkanoContext>,
     virtual_swapchain_id: Id<Swapchain>,
-}
-
-struct WindowEventHandlerCreateInfo<F>
-where
-    F: FnOnce(SceneHandlerBuilder),
-{
-    window_size: Vec2i,
-    create_and_start_scene_handler: Option<F>,
-    global_scale_factor: f32,
-    clear_col: Colour,
-}
-
-pub(crate) struct WindowEventHandler<F>
-where
-    F: FnOnce(SceneHandlerBuilder),
-{
-    create_info: WindowEventHandlerCreateInfo<F>,
-    inner: Option<WindowEventHandlerInner>,
-
-    gui_ctx: GuiContext,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
-
     is_first_window_event: bool,
+
+    window_event_rx: Receiver<WindowEvent>,
+    scale_factor_rx: Receiver<f32>,
+    recreate_swapchain_rx: Receiver<Instant>,
 }
 
-impl<F> WindowEventHandler<F>
-where
-    F: FnOnce(SceneHandlerBuilder),
-{
-    pub(crate) fn create_and_run(
-        window_size: Vec2i,
-        global_scale_factor: f32,
-        clear_col: Colour,
-        gui_ctx: GuiContext,
-        create_and_start_scene_handler: F,
-    ) -> Result<()> {
-        let mut this = Self {
-            create_info: WindowEventHandlerCreateInfo {
-                window_size,
-                global_scale_factor,
-                clear_col,
-                create_and_start_scene_handler: Some(create_and_start_scene_handler),
-            },
-            inner: None,
-
-            gui_ctx,
-            render_stats: RenderPerfStats::new(),
-            last_render_stats: None,
-
-            is_first_window_event: false,
-        };
-
-        let event_loop = EventLoop::new()?;
-        Ok(event_loop.run_app(&mut this)?)
-    }
-
-    fn expect_inner(&mut self) -> &mut WindowEventHandlerInner {
-        self.inner
-            .as_mut()
-            .expect("missing WindowEventHandlerInner")
-    }
-
-    fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        let window = self.expect_inner().window.clone();
-        self.expect_inner()
-            .vk_ctx
-            .recreate_swapchain(&window)
-            .context("could not recreate swapchain")?;
-        self.expect_inner()
-            .render_handler
-            .on_recreate_swapchain(window);
-        Ok(())
-    }
-
-    fn create_inner(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
-        check_is_none!(self.inner);
-
-        let window = GgWindow::new(event_loop, self.create_info.window_size)?;
-        let scale_factor = window.scale_factor();
-        let viewport = UniqueShared::new(window.create_default_viewport());
-
-        let vk_ctx = VulkanoContext::new(event_loop, &window)?;
-        let input_handler = InputHandler::new();
-        let resource_handler = ResourceHandler::new(&vk_ctx)?;
-        // TODO: have preloading somehow.
-
-        // TODO: these need a barrier between executions because they access the current image.
-        //       That means the order of this vector matters. Need some way to let the user decide
-        //       for default shaders too.
-        let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
-            SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
-            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
-        ];
-
-        let render_handler = RenderHandler::new(
-            &vk_ctx,
-            self.gui_ctx.clone(),
-            resource_handler.clone(),
-            window.clone(),
-            viewport.clone(),
-            shaders,
-        )?
-        .with_global_scale_factor(self.create_info.global_scale_factor)
-        .with_clear_col(self.create_info.clear_col);
-        ensure_shaders_locked();
-
-        let platform = egui_winit::State::new(
-            self.gui_ctx.clone(),
-            ViewportId::ROOT,
-            &event_loop,
-            Some(window.scale_factor()),
-            None,
-            None,
-        );
-
-        let (task_graph, virtual_swapchain_id) =
-            Self::build_task_graph(&vk_ctx, &render_handler, &resource_handler)?;
-
-        self.inner = Some(WindowEventHandlerInner {
-            window,
-            scale_factor,
-            vk_ctx,
-            render_handler,
-            input_handler,
-            resource_handler,
-            platform,
-            task_graph,
-            virtual_swapchain_id,
-        });
-        Ok(())
-    }
-
-    fn build_task_graph(
-        vk_ctx: &VulkanoContext,
-        render_handler: &RenderHandler,
-        resource_handler: &ResourceHandler,
-    ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
-        // TODO: verbose!
-        info!("building task graph");
-        let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
-        let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
-        let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);
-        render_handler.build_shader_task_graphs(
-            &mut task_graph,
-            texture_node,
-            virtual_swapchain_id,
-            &images,
-        )?;
-        let task_graph = unsafe {
-            task_graph.compile(&CompileInfo {
-                queues: &[&vk_ctx.queue()],
-                present_queue: Some(&vk_ctx.queue()),
-                flight_id: vk_ctx.flight_id(),
-                ..Default::default()
-            })?
-        };
-        Ok((task_graph, virtual_swapchain_id))
-    }
-}
-
-impl<F> ApplicationHandler for WindowEventHandler<F>
-where
-    F: FnOnce(SceneHandlerBuilder),
-{
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(callback) = self.create_info.create_and_start_scene_handler.take() {
-            // First event. Note winit documentation:
-            // "This is a common indicator that you can create a window."
-            self.create_inner(event_loop).expect("error initialising");
-            callback(SceneHandlerBuilder::new(
-                self.expect_inner().input_handler.clone(),
-                self.expect_inner().resource_handler.clone(),
-                self.expect_inner().render_handler.clone(),
-            ));
-            self.is_first_window_event = true;
+impl WindowEventHandlerInner {
+    fn run_update(&mut self) {
+        self.handle_window_events();
+        self.scene_handler.run_update();
+        if self.resource_handler.texture.wait_textures_dirty() || self.render_handler.is_dirty() {
+            let vk_ctx = self.vk_ctx.clone();
+            let render_handler = self.render_handler.clone();
+            let resource_handler = self.resource_handler.clone();
+            let (task_graph, virtual_swapchain_id) =
+                build_task_graph(&vk_ctx, &render_handler, &resource_handler).unwrap();
+            self.task_graph = task_graph;
+            self.virtual_swapchain_id = virtual_swapchain_id;
         }
-        check_is_some!(self.inner);
+        match self.acquire_and_handle_image() {
+            Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
+                // TODO: verbose_every_seconds!
+                info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
+                self.recreate_swapchain().unwrap();
+            }
+            rv => rv.unwrap(),
+        }
     }
 
-    fn window_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let window = self.expect_inner().window.clone();
-        let _response = self
-            .expect_inner()
-            .platform
-            .on_window_event(&window.inner, &event);
-        match event {
-            WindowEvent::CloseRequested => {
-                info!("received WindowEvent::CloseRequested, calling exit(0)");
-                std::process::exit(0);
-            }
-            WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
-                PhysicalKey::Code(keycode) => {
-                    self.expect_inner()
-                        .input_handler
-                        .lock()
-                        .unwrap()
-                        .queue_key_event(keycode, event.state);
-                }
-                PhysicalKey::Unidentified(keycode) => {
-                    info!("PhysicalKey::Unidentified({keycode:?}), ignoring");
-                }
-            },
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                let scale_factor = scale_factor as f32;
-                // Since scale_factor is given by winit, we expect an exact comparison to work.
-                #[allow(clippy::float_cmp)]
-                if self.expect_inner().scale_factor != scale_factor {
-                    // TODO: verbose_every_seconds!
-                    info_every_seconds!(
-                        1,
-                        "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
-                        self.expect_inner().scale_factor,
-                        scale_factor
-                    );
-                    self.expect_inner().scale_factor = scale_factor;
-                    self.recreate_swapchain().unwrap();
-                }
-            }
-            WindowEvent::Resized(physical_size) => {
+    fn handle_window_events(&mut self) {
+        while let Ok(event) = self.window_event_rx.try_recv() {
+            let _response = self.platform.on_window_event(&self.window.inner, &event);
+        }
+        while let Ok(new_scale_factor) = self.scale_factor_rx.try_recv() {
+            // Since scale_factor is given by winit, we expect an exact comparison to work.
+            #[allow(clippy::float_cmp)]
+            if self.scale_factor != new_scale_factor {
                 // TODO: verbose_every_seconds!
                 info_every_seconds!(
                     1,
-                    "WindowEvent::Resized: {:?}: recreating swapchain",
-                    physical_size
+                    "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
+                    self.scale_factor,
+                    new_scale_factor
                 );
+                self.scale_factor = new_scale_factor;
                 self.recreate_swapchain().unwrap();
             }
-            WindowEvent::RedrawRequested => {
-                if self
-                    .expect_inner()
-                    .resource_handler
-                    .texture
-                    .wait_textures_dirty()
-                    || self.expect_inner().render_handler.is_dirty()
-                {
-                    let vk_ctx = self.expect_inner().vk_ctx.clone();
-                    let render_handler = self.expect_inner().render_handler.clone();
-                    let resource_handler = self.expect_inner().resource_handler.clone();
-                    let (task_graph, virtual_swapchain_id) =
-                        Self::build_task_graph(&vk_ctx, &render_handler, &resource_handler)
-                            .unwrap();
-                    self.expect_inner().task_graph = task_graph;
-                    self.expect_inner().virtual_swapchain_id = virtual_swapchain_id;
-                }
-                match self.acquire_and_handle_image() {
-                    Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
-                        // TODO: verbose_every_seconds!
-                        info_every_seconds!(1, "VulkanError::OutOfDate, recreating swapchain");
-                        self.recreate_swapchain().unwrap();
-                    }
-                    rv => rv.unwrap(),
-                }
-            }
-            _other_event => {}
+        }
+        while let Ok(request_time) = self.recreate_swapchain_rx.try_recv() {
+            info!(
+                "recreating swapchain: {:.2} ms old",
+                request_time.elapsed().as_micros() as f32 / 1000.0
+            );
+            self.recreate_swapchain().unwrap();
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        self.expect_inner().window.inner.request_redraw();
+    fn update_gui(&mut self) -> FullOutput {
+        egui_winit::update_viewport_info(
+            &mut ViewportInfo::default(),
+            &self.gui_ctx.clone(),
+            &self.window.inner,
+            self.is_first_window_event,
+        );
+        self.is_first_window_event = false;
+        let raw_input = self.platform.take_egui_input(&self.window.inner);
+        let stats = self.last_render_stats.clone();
+        let render_handler = self.render_handler.clone();
+        let input = self.input_handler.clone();
+        let full_output = self.gui_ctx.run(raw_input, |ctx| {
+            {
+                let mut input = input.lock().unwrap();
+                input.set_viewport(render_handler.viewport());
+                input.update_mouse(ctx);
+            }
+            render_handler.do_gui(ctx, stats.clone());
+        });
+        // TODO: messy.
+        render_handler.update_full_output(full_output.clone());
+        self.platform
+            .handle_platform_output(&self.window.inner, full_output.platform_output.clone());
+        full_output
     }
-}
 
-impl<F> WindowEventHandler<F>
-where
-    F: FnOnce(SceneHandlerBuilder),
-{
     fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
         self.render_stats.start();
 
         self.render_stats.synchronise.start();
-        let vk_ctx = self.expect_inner().vk_ctx.clone();
+        let vk_ctx = self.vk_ctx.clone();
         vk_ctx
             .resources()
             .flight(vk_ctx.flight_id())
@@ -435,23 +254,21 @@ where
         self.render_stats.update_gui.stop();
 
         self.render_stats.execute.start();
-        let inner = self.expect_inner();
         // TODO: add more stuff to resource_map instead of recreating it all the time. From Marc:
         //  "Or even if you use the same resources all the time, it's useful to use the resource map
         //   for frame-local resources such as uniform buffers. All a ResourceMap is for is to
         //   allow you to specify resources at task graph runtime rather than compile time. If you
         //   use physical resources, you have to recompile the task graph each time."
         let resource_map = resource_map!(
-            &inner.task_graph,
-            inner.virtual_swapchain_id => vk_ctx.swapchain_id(),
+            &self.task_graph,
+            self.virtual_swapchain_id => vk_ctx.swapchain_id(),
         )
         .map_err(gg_err::CatchOutOfDate::from)?;
 
         unsafe {
-            inner
-                .task_graph
+            self.task_graph
                 .execute(resource_map, &vk_ctx, || {
-                    inner.window.inner.pre_present_notify();
+                    self.window.inner.pre_present_notify();
                 })
                 .map_err(gg_err::CatchOutOfDate::from)?;
         }
@@ -461,33 +278,240 @@ where
         Ok(())
     }
 
-    fn update_gui(&mut self) -> FullOutput {
-        let window = self.expect_inner().window.clone();
-        egui_winit::update_viewport_info(
-            &mut ViewportInfo::default(),
-            &self.gui_ctx,
-            &window.inner,
-            self.is_first_window_event,
+    fn recreate_swapchain(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
+        self.vk_ctx
+            .recreate_swapchain(&self.window)
+            .context("could not recreate swapchain")?;
+        self.render_handler
+            .on_recreate_swapchain(self.window.clone());
+        Ok(())
+    }
+}
+
+fn build_task_graph(
+    vk_ctx: &VulkanoContext,
+    render_handler: &RenderHandler,
+    resource_handler: &ResourceHandler,
+) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
+    // TODO: verbose!
+    info!("building task graph");
+    let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
+    let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
+    let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);
+    render_handler.build_shader_task_graphs(
+        &mut task_graph,
+        texture_node,
+        virtual_swapchain_id,
+        &images,
+    )?;
+    let task_graph = unsafe {
+        task_graph.compile(&CompileInfo {
+            queues: &[&vk_ctx.queue()],
+            present_queue: Some(&vk_ctx.queue()),
+            flight_id: vk_ctx.flight_id(),
+            ..Default::default()
+        })?
+    };
+    Ok((task_graph, virtual_swapchain_id))
+}
+
+struct WindowEventHandlerCreateInfo<F>
+where
+    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+{
+    window_size: Vec2i,
+    create_and_start_scene_handler: Option<F>,
+    global_scale_factor: f32,
+    clear_col: Colour,
+}
+
+pub(crate) struct WindowEventHandler<F>
+where
+    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+{
+    create_info: WindowEventHandlerCreateInfo<F>,
+    input_handler: Arc<Mutex<InputHandler>>,
+
+    gui_ctx: Option<GuiContext>,
+
+    window_event_tx: Sender<WindowEvent>,
+    window_event_rx: Option<Receiver<WindowEvent>>,
+    scale_factor_tx: Sender<f32>,
+    scale_factor_rx: Option<Receiver<f32>>,
+    recreate_swapchain_tx: Sender<Instant>,
+    recreate_swapchain_rx: Option<Receiver<Instant>>,
+}
+
+impl<F> WindowEventHandler<F>
+where
+    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+{
+    pub(crate) fn create_and_run(
+        window_size: Vec2i,
+        global_scale_factor: f32,
+        clear_col: Colour,
+        gui_ctx: GuiContext,
+        create_and_start_scene_handler: F,
+    ) -> Result<()> {
+        let (window_event_tx, window_event_rx) = mpsc::channel();
+        let (scale_factor_tx, scale_factor_rx) = mpsc::channel();
+        let (recreate_swapchain_tx, recreate_swapchain_rx) = mpsc::channel();
+        let mut this = Self {
+            create_info: WindowEventHandlerCreateInfo {
+                window_size,
+                global_scale_factor,
+                clear_col,
+                create_and_start_scene_handler: Some(create_and_start_scene_handler),
+            },
+            input_handler: InputHandler::new(),
+            gui_ctx: Some(gui_ctx),
+            window_event_tx,
+            window_event_rx: Some(window_event_rx),
+            scale_factor_tx,
+            scale_factor_rx: Some(scale_factor_rx),
+            recreate_swapchain_tx,
+            recreate_swapchain_rx: Some(recreate_swapchain_rx),
+        };
+
+        let event_loop = EventLoop::new()?;
+        Ok(event_loop.run_app(&mut this)?)
+    }
+
+    fn create_inner(&mut self, event_loop: &ActiveEventLoop, callback: F) -> Result<()> {
+        info!("call create_inner()");
+        let window = GgWindow::new(event_loop, self.create_info.window_size)?;
+        let scale_factor = window.scale_factor();
+        let viewport = UniqueShared::new(window.create_default_viewport());
+
+        let vk_ctx = VulkanoContext::new(event_loop, &window)?;
+        let resource_handler = ResourceHandler::new(&vk_ctx)?;
+        // TODO: have preloading somehow.
+
+        // TODO: these need a barrier between executions because they access the current image.
+        //       That means the order of this vector matters. Need some way to let the user decide
+        //       for default shaders too.
+        let shaders: Vec<UniqueShared<Box<dyn Shader>>> = vec![
+            SpriteShader::create(vk_ctx.clone(), viewport.clone(), resource_handler.clone())?,
+            WireframeShader::create(vk_ctx.clone(), viewport.clone())?,
+        ];
+
+        let gui_ctx = self.gui_ctx.take().unwrap();
+        let render_handler = RenderHandler::new(
+            &vk_ctx,
+            gui_ctx.clone(),
+            resource_handler.clone(),
+            window.clone(),
+            viewport.clone(),
+            shaders,
+        )?
+        .with_global_scale_factor(self.create_info.global_scale_factor)
+        .with_clear_col(self.create_info.clear_col);
+        ensure_shaders_locked();
+
+        let platform = egui_winit::State::new(
+            gui_ctx.clone(),
+            ViewportId::ROOT,
+            &event_loop,
+            Some(window.scale_factor()),
+            None,
+            None,
         );
-        self.is_first_window_event = false;
-        let raw_input = self.expect_inner().platform.take_egui_input(&window.inner);
-        let stats = self.last_render_stats.clone();
-        let render_handler = self.expect_inner().render_handler.clone();
-        let input = self.expect_inner().input_handler.clone();
-        let full_output = self.gui_ctx.run(raw_input, |ctx| {
-            {
-                let mut input = input.lock().unwrap();
-                input.set_viewport(render_handler.viewport());
-                input.update_mouse(ctx);
+
+        let (task_graph, virtual_swapchain_id) =
+            build_task_graph(&vk_ctx, &render_handler, &resource_handler)?;
+
+        let input_handler = self.input_handler.clone();
+        let window_event_rx = self.window_event_rx.take().unwrap();
+        let scale_factor_rx = self.scale_factor_rx.take().unwrap();
+        let recreate_swapchain_rx = self.recreate_swapchain_rx.take().unwrap();
+        info!("start thread");
+        std::thread::spawn(move || {
+            let scene_handler = callback(SceneHandlerBuilder::new(
+                input_handler.clone(),
+                resource_handler.clone(),
+                render_handler.clone(),
+            ));
+            let mut inner = WindowEventHandlerInner {
+                window,
+                scale_factor,
+                vk_ctx,
+                render_handler,
+                input_handler,
+                scene_handler,
+                resource_handler,
+                gui_ctx,
+                platform,
+                task_graph,
+                virtual_swapchain_id,
+                render_stats: RenderPerfStats::new(),
+                last_render_stats: None,
+                is_first_window_event: true,
+                window_event_rx,
+                scale_factor_rx,
+                recreate_swapchain_rx,
+            };
+            loop {
+                inner.run_update();
             }
-            render_handler.do_gui(ctx, stats.clone());
         });
-        // TODO: messy.
-        render_handler.update_full_output(full_output.clone());
-        self.expect_inner()
-            .platform
-            .handle_platform_output(&window.inner, full_output.platform_output.clone());
-        full_output
+        Ok(())
+    }
+}
+
+impl<F> ApplicationHandler for WindowEventHandler<F>
+where
+    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+{
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(callback) = self.create_info.create_and_start_scene_handler.take() {
+            // First event. Note winit documentation:
+            // "This is a common indicator that you can create a window."
+            self.create_inner(event_loop, callback)
+                .expect("error initialising");
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        self.window_event_tx.send(event.clone()).unwrap();
+        match event {
+            WindowEvent::CloseRequested => {
+                info!("received WindowEvent::CloseRequested, calling exit(0)");
+                std::process::exit(0);
+            }
+            WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                PhysicalKey::Code(keycode) => {
+                    self.input_handler
+                        .lock()
+                        .unwrap()
+                        .queue_key_event(keycode, event.state);
+                }
+                PhysicalKey::Unidentified(keycode) => {
+                    info!("PhysicalKey::Unidentified({keycode:?}), ignoring");
+                }
+            },
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.scale_factor_tx.send(scale_factor as f32).unwrap();
+            }
+            WindowEvent::Resized(physical_size) => {
+                // TODO: verbose_every_seconds!
+                info_every_seconds!(
+                    1,
+                    "WindowEvent::Resized: {:?}: recreating swapchain",
+                    physical_size
+                );
+                self.recreate_swapchain_tx.send(Instant::now()).unwrap();
+            }
+            WindowEvent::RedrawRequested => {
+                // self.expect_inner().run_update();
+                // self.expect_inner().window.inner.request_redraw();
+            }
+            _other_event => {}
+        }
     }
 }
 

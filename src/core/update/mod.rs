@@ -428,9 +428,13 @@ pub(crate) struct UpdateHandler {
 
     perf_stats: UpdatePerfStats,
     last_render_perf_stats: Option<RenderPerfStats>,
+    last_update_start: Option<Instant>,
     delta: Duration,
     frame_counter: usize,
     fixed_frame_counter: usize,
+
+    is_running: bool,
+    fixed_update_us: u128,
 }
 
 impl UpdateHandler {
@@ -465,9 +469,12 @@ impl UpdateHandler {
             gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
             last_render_perf_stats: None,
+            last_update_start: None,
             delta: Duration::from_secs(0),
             frame_counter: 0,
             fixed_frame_counter: 0,
+            is_running: true,
+            fixed_update_us: 0,
         };
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
@@ -491,72 +498,71 @@ impl UpdateHandler {
         Ok(rv)
     }
 
-    pub(crate) fn consume(mut self) -> Result<SceneHandlerInstruction> {
-        let mut is_running = true;
-        let mut fixed_update_us = 0;
+    pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
+        if self.is_running {
+            self.delta = self
+                .last_update_start
+                .map_or(Duration::from_secs(0), |i| i.elapsed());
+            self.last_update_start = Some(Instant::now());
+            let now = Instant::now();
+            self.perf_stats.total_stats.start();
 
-        loop {
-            if is_running {
-                let now = Instant::now();
-                self.perf_stats.total_stats.start();
-
-                // Count the number of fixed updates to perform.
-                fixed_update_us += self.delta.as_micros();
-                let fixed_updates = fixed_update_us / FIXED_UPDATE_INTERVAL_US;
-                if fixed_updates > 0 {
-                    fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
-                    if fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
-                        warn!(
-                            "fixed update behind by {:.1} ms",
-                            gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                / 1000.0
-                        );
-                    }
-                    if fixed_update_us >= FIXED_UPDATE_TIMEOUT {
-                        warn!(
-                            "fixed update behind by {:.1} ms, giving up",
-                            gg_float::from_u128_or_inf(fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                                / 1000.0
-                        );
-                        fixed_update_us = 0;
-                    }
+            // Count the number of fixed updates to perform.
+            self.fixed_update_us += self.delta.as_micros();
+            let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
+            if fixed_updates > 0 {
+                self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
+                if self.fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
+                    warn!(
+                        "fixed update behind by {:.1} ms",
+                        gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                            / 1000.0
+                    );
                 }
-
-                // Perform the update.
-                let input_handler = self.input_handler.lock().unwrap().clone();
-                let object_tracker = self.perform_update(&input_handler, fixed_updates);
-                self.complete_update(&input_handler, object_tracker);
-
-                // Update performance statistics.
-                self.perf_stats.total_stats.stop();
-                self.debug_gui
-                    .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
-                if !self.debug_gui.scene_control.is_paused() {
-                    self.frame_counter += 1;
+                if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT {
+                    warn!(
+                        "fixed update behind by {:.1} ms, giving up",
+                        gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_INTERVAL_US)
+                            / 1000.0
+                    );
+                    self.fixed_update_us = 0;
                 }
-                if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
-                    self.perf_stats.totals_s.remove(0);
-                }
-                self.perf_stats.totals_s.push(now.elapsed().as_secs_f32());
-                self.delta = now.elapsed();
             }
 
-            match self.scene_instruction_rx.try_iter().next() {
-                Some(SceneInstruction::Stop) => {
-                    return Ok(SceneHandlerInstruction::Exit);
-                }
-                Some(SceneInstruction::Goto(instruction)) => {
-                    return Ok(SceneHandlerInstruction::Goto(instruction));
-                }
-                Some(SceneInstruction::Pause) => {
-                    is_running = false;
-                }
-                Some(SceneInstruction::Resume) => {
-                    is_running = true;
-                }
-                None => {}
+            // Perform the update.
+            let input_handler = self.input_handler.lock().unwrap().clone();
+            let object_tracker = self.perform_update(&input_handler, fixed_updates);
+            self.complete_update(&input_handler, object_tracker);
+
+            // Update performance statistics.
+            self.perf_stats.total_stats.stop();
+            self.debug_gui
+                .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
+            if !self.debug_gui.scene_control.is_paused() {
+                self.frame_counter += 1;
             }
+            if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
+                self.perf_stats.totals_s.remove(0);
+            }
+            self.perf_stats.totals_s.push(now.elapsed().as_secs_f32());
         }
+
+        match self.scene_instruction_rx.try_iter().next() {
+            Some(SceneInstruction::Stop) => {
+                return Some(Ok(SceneHandlerInstruction::Exit));
+            }
+            Some(SceneInstruction::Goto(instruction)) => {
+                return Some(Ok(SceneHandlerInstruction::Goto(instruction)));
+            }
+            Some(SceneInstruction::Pause) => {
+                self.is_running = false;
+            }
+            Some(SceneInstruction::Resume) => {
+                self.is_running = true;
+            }
+            None => {}
+        }
+        None
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////

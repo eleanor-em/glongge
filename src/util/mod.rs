@@ -764,7 +764,7 @@ impl GgContextBuilder {
 
     pub fn build_and_run_window<F>(self, create_and_start_scene_handler: F) -> Result<()>
     where
-        F: FnOnce(SceneHandlerBuilder),
+        F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
     {
         WindowEventHandler::create_and_run(
             self.window_size,

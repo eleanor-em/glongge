@@ -14,23 +14,22 @@ use crate::{
 };
 use egui::text::LayoutJob;
 use egui::{Color32, TextFormat};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{
     any::Any,
     collections::BTreeMap,
-    sync::{
-        Arc, Mutex, mpsc,
-        mpsc::{Receiver, Sender},
-    },
+    sync::{Arc, Mutex},
 };
 
-#[derive(Clone)]
 struct InternalScene {
     scene: Arc<Mutex<dyn Scene + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    tx: Sender<SceneHandlerInstruction>,
+
+    update_handler: Option<UpdateHandler>,
 }
 
 impl InternalScene {
@@ -39,7 +38,6 @@ impl InternalScene {
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
-        tx: Sender<SceneHandlerInstruction>,
     ) -> Self {
         let name = scene
             .try_lock()
@@ -51,57 +49,45 @@ impl InternalScene {
             input_handler,
             resource_handler,
             render_data_channel,
-            tx,
+            update_handler: None,
         }
     }
 
-    fn run(
-        &self,
-        data: Arc<Mutex<Vec<u8>>>,
-        entrance_id: usize,
-        current_scene_name: Arc<Mutex<Option<SceneName>>>,
-    ) {
-        let existing_name = current_scene_name
-            .try_lock()
-            .expect("scene locked in InternalScene::run()")
-            .replace(self.name);
-        check_eq!(existing_name, None::<SceneName>);
-
-        let this = self.clone();
-        let this_name = self.name;
-        std::thread::spawn(move || {
-            let initial_objects = {
-                let mut scene = this.scene.try_lock().unwrap_or_else(|_| {
-                    panic!("scene locked in InternalScene::run(): {this_name:?}")
-                });
-                scene
-                    .load(&data.try_lock().expect("scene_data still locked?"))
-                    .unwrap_or_else(|_| panic!("could not load data for {this_name:?}"));
-                scene.create_objects(entrance_id)
-            };
-            check_false!(
-                initial_objects.is_empty(),
-                "must create at least one object"
-            );
-            let update_handler = UpdateHandler::new(
+    fn init(&mut self, data: Arc<Mutex<Vec<u8>>>, entrance_id: usize) {
+        let initial_objects = {
+            let mut scene = self.scene.try_lock().unwrap_or_else(|_| {
+                panic!("scene locked in InternalScene::run(): {:?}", self.name)
+            });
+            scene
+                .load(&data.try_lock().expect("scene_data still locked?"))
+                .unwrap_or_else(|_| panic!("could not load data for {:?}", self.name));
+            scene.create_objects(entrance_id)
+        };
+        check_false!(
+            initial_objects.is_empty(),
+            "must create at least one object"
+        );
+        self.update_handler = Some(
+            UpdateHandler::new(
                 initial_objects,
-                this.input_handler,
-                this.resource_handler,
-                this.render_data_channel,
-                this_name,
+                self.input_handler.clone(),
+                self.resource_handler.clone(),
+                self.render_data_channel.clone(),
+                self.name,
                 data,
-            );
-            let instruction = update_handler
-                .context("failed to create scene: {this_name:?}")
-                .unwrap()
-                .consume()
-                .context("scene exited with error: {this_name:?}")
-                .unwrap();
-            current_scene_name.lock().unwrap().take();
-            this.tx
-                .send(instruction)
-                .expect("failed to send scene instruction");
-        });
+            )
+            .context("failed to create scene: {this_name:?}")
+            .unwrap(),
+        );
+    }
+
+    fn run_update(&mut self) -> Option<SceneHandlerInstruction> {
+        let instruction = self.update_handler.as_mut().unwrap().run_update()?;
+        Some(
+            instruction
+                .with_context(|| format!("scene exited with error: {:?}", self.name))
+                .unwrap(),
+        )
     }
 }
 
@@ -285,11 +271,9 @@ pub struct SceneHandler {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_handler: RenderHandler,
-    scenes: BTreeMap<SceneName, InternalScene>,
+    scenes: BTreeMap<SceneName, Rc<RefCell<InternalScene>>>,
     scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
-    current_scene_name: Arc<Mutex<Option<SceneName>>>,
-    tx: Sender<SceneHandlerInstruction>,
-    rx: Receiver<SceneHandlerInstruction>,
+    current_scene: Option<Rc<RefCell<InternalScene>>>,
 }
 
 // #[allow(private_bounds)]
@@ -299,16 +283,13 @@ impl SceneHandler {
         resource_handler: ResourceHandler,
         render_handler: RenderHandler,
     ) -> Self {
-        let (tx, rx) = mpsc::channel();
         Self {
             input_handler,
             resource_handler,
             render_handler,
             scenes: BTreeMap::new(),
-            current_scene_name: Arc::new(Mutex::new(None)),
+            current_scene: None,
             scene_data: BTreeMap::new(),
-            tx,
-            rx,
         }
     }
     /// Creates and registers a new scene. See [`SceneHandler`] example.
@@ -319,46 +300,48 @@ impl SceneHandler {
             .insert(scene.name(), Arc::new(Mutex::new(scene.initial_data())));
         self.scenes.insert(
             scene.name(),
-            InternalScene::new(
+            Rc::new(RefCell::new(InternalScene::new(
                 Arc::new(Mutex::new(scene)),
                 self.input_handler.clone(),
                 self.resource_handler.clone(),
                 self.render_handler.get_receiver(),
-                self.tx.clone(),
-            ),
+            ))),
         );
     }
-    /// Begins the scene handling loop with a particular starting scene.
-    /// See [`SceneHandler`] example.
-    pub fn consume_with_scene(mut self, mut name: SceneName, mut entrance_id: usize) {
+
+    pub fn set_initial_scene(&mut self, name: SceneName, entrance_id: usize) {
         ensure_shaders_locked();
-        loop {
-            self.run_scene(name, entrance_id);
-            match self.rx.recv().expect("failed to receive scene instruction") {
-                SceneHandlerInstruction::Exit => std::process::exit(0),
-                SceneHandlerInstruction::Goto(SceneDestination {
-                    name: next_name,
-                    entrance_id: next_entrance_id,
-                }) => {
-                    name = next_name;
-                    entrance_id = next_entrance_id;
-                }
+        check_is_none!(self.current_scene);
+        self.current_scene = Some(self.init_scene(name, entrance_id));
+    }
+
+    pub fn run_update(&mut self) {
+        let instruction = self
+            .current_scene
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .run_update();
+        match instruction {
+            Some(SceneHandlerInstruction::Exit) => std::process::exit(0),
+            Some(SceneHandlerInstruction::Goto(SceneDestination {
+                name: next_name,
+                entrance_id: next_entrance_id,
+            })) => {
+                self.current_scene = Some(self.init_scene(next_name, next_entrance_id));
             }
+            None => {}
         }
     }
-    fn run_scene(&mut self, name: SceneName, entrance_id: usize) {
-        if let (Some(scene), Some(scene_data)) =
-            (self.scenes.get(&name), self.scene_data.get(&name))
-        {
-            info!("starting scene: {:?} [entrance {}]", name, entrance_id);
-            scene.run(
-                scene_data.clone(),
-                entrance_id,
-                self.current_scene_name.clone(),
-            );
-        } else {
-            error!("could not start scene {:?}: scene missing?", name);
-        }
+    fn init_scene(&mut self, name: SceneName, entrance_id: usize) -> Rc<RefCell<InternalScene>> {
+        let (Some(scene), Some(scene_data)) =
+            (self.scenes.get_mut(&name), self.scene_data.get(&name))
+        else {
+            panic!("could not start scene {name:?}: scene missing?");
+        };
+        info!("starting scene: {name:?} [entrance {entrance_id}]");
+        scene.borrow_mut().init(scene_data.clone(), entrance_id);
+        scene.clone()
     }
 }
 
