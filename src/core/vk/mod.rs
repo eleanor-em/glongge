@@ -20,10 +20,12 @@ use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
 use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+use vulkano::VulkanError;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
@@ -237,18 +239,19 @@ impl WindowEventHandlerInner {
     }
 
     fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        self.render_stats.start();
-
-        self.render_stats.synchronise.start();
-        let vk_ctx = self.vk_ctx.clone();
-        vk_ctx
+        match self
+            .vk_ctx
             .resources()
-            .flight(vk_ctx.flight_id())
+            .flight(self.vk_ctx.flight_id())
             .map_err(gg_err::CatchOutOfDate::from)?
-            .wait(None)
-            .map_err(gg_err::CatchOutOfDate::from)?;
-        self.render_stats.synchronise.stop();
+            .wait(Some(Duration::ZERO))
+        {
+            Ok(()) => {}
+            Err(VulkanError::Timeout) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        }
 
+        self.render_stats.start();
         self.render_stats.update_gui.start();
         let _full_output = self.update_gui();
         self.render_stats.update_gui.stop();
@@ -261,13 +264,13 @@ impl WindowEventHandlerInner {
         //   use physical resources, you have to recompile the task graph each time."
         let resource_map = resource_map!(
             &self.task_graph,
-            self.virtual_swapchain_id => vk_ctx.swapchain_id(),
+            self.virtual_swapchain_id => self.vk_ctx.swapchain_id(),
         )
         .map_err(gg_err::CatchOutOfDate::from)?;
 
         unsafe {
             self.task_graph
-                .execute(resource_map, &vk_ctx, || {
+                .execute(resource_map, &self.vk_ctx, || {
                     self.window.inner.pre_present_notify();
                 })
                 .map_err(gg_err::CatchOutOfDate::from)?;
@@ -517,7 +520,6 @@ where
 
 #[derive(Clone)]
 pub(crate) struct RenderPerfStats {
-    synchronise: TimeIt,
     update_gui: TimeIt,
     execute: TimeIt,
     between_renders: TimeIt,
@@ -537,7 +539,6 @@ pub(crate) struct RenderPerfStats {
 impl RenderPerfStats {
     fn new() -> Self {
         Self {
-            synchronise: TimeIt::new("synchronise"),
             update_gui: TimeIt::new("update_gui"),
             execute: TimeIt::new("execute"),
             between_renders: TimeIt::new("between renders"),
@@ -599,7 +600,6 @@ impl RenderPerfStats {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {
-                synchronise: self.synchronise.report_take(),
                 update_gui: self.update_gui.report_take(),
                 execute: self.execute.report_take(),
                 between_renders: self.between_renders.report_take(),
@@ -625,7 +625,6 @@ impl RenderPerfStats {
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
-            self.synchronise.as_tuple_ms(),
             self.update_gui.as_tuple_ms(),
             self.execute.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),

@@ -504,7 +504,11 @@ impl UpdateHandler {
                 .last_update_start
                 .map_or(Duration::from_secs(0), |i| i.elapsed());
             self.last_update_start = Some(Instant::now());
-            let now = Instant::now();
+
+            if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
+                self.perf_stats.totals_s.remove(0);
+            }
+            self.perf_stats.totals_s.push(self.delta.as_secs_f32());
             self.perf_stats.total_stats.start();
 
             // Count the number of fixed updates to perform.
@@ -541,10 +545,6 @@ impl UpdateHandler {
             if !self.debug_gui.scene_control.is_paused() {
                 self.frame_counter += 1;
             }
-            if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
-                self.perf_stats.totals_s.remove(0);
-            }
-            self.perf_stats.totals_s.push(now.elapsed().as_secs_f32());
         }
 
         match self.scene_instruction_rx.try_iter().next() {
