@@ -2,7 +2,7 @@ use crate::core::input::MouseButton;
 use crate::core::prelude::*;
 use crate::core::scene::{GuiCommand, GuiObject};
 use crate::util::canvas::Canvas;
-use egui::{Align, Layout};
+use egui::{Align, Layout, OutputCommand};
 use glongge_derive::partially_derive_scene_object;
 use rand::Rng;
 use rand::thread_rng;
@@ -222,7 +222,8 @@ impl GuiObject for GgInternalInteractiveSpline {
             ui.with_layout(Layout::top_down(Align::Center), |ui| {
                 if ui.button("Copy as Vec").clicked() {
                     ui.output_mut(|o| {
-                        o.copied_text = format!("vec![\n{string_desc}]\n");
+                        o.commands
+                            .push(OutputCommand::CopyText(format!("vec![\n{string_desc}]\n")));
                     });
                 }
             });

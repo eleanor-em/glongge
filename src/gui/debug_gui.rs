@@ -1158,7 +1158,7 @@ impl DebugGui {
             last_viewport: AdjustedViewport::default(),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
-                .inner_margin(egui::Margin::same(6.0)),
+                .inner_margin(egui::Margin::same(6)),
             wireframe_mouseovers: Vec::new(),
             last_update: Instant::now(),
         })
