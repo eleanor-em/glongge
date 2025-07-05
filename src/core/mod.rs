@@ -32,7 +32,7 @@ pub struct ObjectId(usize);
 
 impl ObjectId {
     fn next() -> Self {
-        ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::Relaxed))
+        ObjectId(NEXT_OBJECT_ID.fetch_add(1, Ordering::SeqCst))
     }
     pub(crate) fn is_root(self) -> bool {
         self.0 == 0

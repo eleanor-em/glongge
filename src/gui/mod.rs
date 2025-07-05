@@ -64,7 +64,7 @@ impl<T: Clone + Default + Display + FromStr> EditCell<T> {
     /// "Live" refers to the actual value being used by the game, e.g. the actual bounding box in a
     /// collider.
     pub fn update_live(&mut self, live_value: T) {
-        if !self.editing.load(Ordering::Relaxed) && self.is_valid.load(Ordering::Relaxed) {
+        if !self.editing.load(Ordering::SeqCst) && self.is_valid.load(Ordering::SeqCst) {
             *self.text.lock().unwrap() = live_value.to_string();
             self.last_value = live_value;
         }
@@ -77,9 +77,9 @@ impl<T: Clone + Default + Display + FromStr> EditCell<T> {
 
     /// Used to forcibly clear the state, e.g. because the selected object changed.
     pub fn clear_state(&mut self) {
-        self.editing.store(false, Ordering::Relaxed);
-        self.dragging.store(false, Ordering::Relaxed);
-        self.is_valid.store(true, Ordering::Relaxed);
+        self.editing.store(false, Ordering::SeqCst);
+        self.dragging.store(false, Ordering::SeqCst);
+        self.is_valid.store(true, Ordering::SeqCst);
     }
 
     pub fn last_value(&self) -> T {
@@ -107,7 +107,7 @@ impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
     /// Returns whether the last text input was valid for type T.
     /// Returns true by default, and false after losing focus if the text couldn't be parsed.
     pub fn is_valid(&self) -> bool {
-        self.is_valid.load(Ordering::Relaxed)
+        self.is_valid.load(Ordering::SeqCst)
     }
 
     pub fn singleline(&mut self, ui: &mut GuiUi, label: impl Into<WidgetText>) -> Response {
@@ -120,19 +120,19 @@ impl<T: Clone + Default + Display + FromStr> EditCellSender<T> {
             };
             let response = egui::TextEdit::singleline(&mut *self.text.lock().unwrap())
                 .text_color(col)
-                .interactive(!self.dragging.load(Ordering::Relaxed))
+                .interactive(!self.dragging.load(Ordering::SeqCst))
                 .desired_width(f32::INFINITY)
                 .show(ui)
                 .response;
             if response.gained_focus() {
-                self.editing.store(true, Ordering::Relaxed);
+                self.editing.store(true, Ordering::SeqCst);
             }
             if response.lost_focus() {
-                self.editing.store(false, Ordering::Relaxed);
+                self.editing.store(false, Ordering::SeqCst);
                 let text = self.text.lock().unwrap();
                 self.tx.send(text.clone()).unwrap();
                 self.is_valid
-                    .store(text.parse::<T>().is_ok(), Ordering::Relaxed);
+                    .store(text.parse::<T>().is_ok(), Ordering::SeqCst);
             }
             response
         })
@@ -158,7 +158,7 @@ impl EditCellSender<f32> {
         label: impl Into<WidgetText>,
     ) {
         let response = self.singleline(ui, label);
-        self.dragging.store(response.dragged(), Ordering::Relaxed);
+        self.dragging.store(response.dragged(), Ordering::SeqCst);
         if let Some(dy) = Self::get_zoom(&response, ui) {
             let mut text = self.text.lock().unwrap();
             if let Ok(mut value) = text.parse::<f32>() {

@@ -71,7 +71,7 @@ static NEXT_SHADER_ID: AtomicU8 = AtomicU8::new(1);
 pub struct ShaderId(u8);
 impl ShaderId {
     fn next() -> Self {
-        ShaderId(NEXT_SHADER_ID.fetch_add(1, Ordering::Relaxed))
+        ShaderId(NEXT_SHADER_ID.fetch_add(1, Ordering::SeqCst))
     }
 
     pub(crate) fn is_valid(self) -> bool {

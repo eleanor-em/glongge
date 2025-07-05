@@ -13,7 +13,7 @@ pub struct CoroutineId(usize);
 
 impl CoroutineId {
     pub(crate) fn next() -> Self {
-        CoroutineId(NEXT_COROUTINE_ID.fetch_add(1, Ordering::Relaxed))
+        CoroutineId(NEXT_COROUTINE_ID.fetch_add(1, Ordering::SeqCst))
     }
 }
 

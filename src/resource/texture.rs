@@ -59,7 +59,7 @@ impl Texture {
         self.duration
     }
     pub fn is_ready(&self) -> bool {
-        self.ready.load(Ordering::Relaxed)
+        self.ready.load(Ordering::SeqCst)
     }
 }
 
@@ -130,7 +130,7 @@ impl InternalTexture {
     }
     fn is_ready(&self) -> bool {
         check_eq!(
-            self.ready.load(Ordering::Relaxed),
+            self.ready.load(Ordering::SeqCst),
             self.uploaded_image_view.is_some()
         );
         self.uploaded_image_view.is_some()
@@ -153,7 +153,7 @@ impl InternalTexture {
             let image_view =
                 ImageView::new_default(ctx.resources().image(self.image)?.image().clone()).unwrap();
             self.uploaded_image_view = Some(image_view);
-            self.ready.store(true, Ordering::Relaxed);
+            self.ready.store(true, Ordering::SeqCst);
         }
         Ok(())
     }
