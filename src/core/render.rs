@@ -381,6 +381,7 @@ impl Task for PreRenderTask {
             *self.handler.gui_shader.gui_enabled.get() = rx.gui_enabled;
             (global_scale_factor, rx.next_frame())
         };
+        world.perf_stats().lap("PreRenderTask: next_frame()");
         if let Some(global_scale_factor) = global_scale_factor {
             self.handler
                 .viewport
@@ -396,6 +397,9 @@ impl Task for PreRenderTask {
                 .map_err(gg_err::CatchOutOfDate::from)
                 .unwrap();
         }
+        world
+            .perf_stats()
+            .lap("PreRenderTask: shader.pre_render_update()");
         let full_output = self
             .handler
             .last_full_output
@@ -405,11 +409,17 @@ impl Task for PreRenderTask {
             .handler
             .gui_ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
+        world
+            .perf_stats()
+            .lap("PreRenderTask: gui_ctx.tessellate()");
         *self.handler.gui_shader.primitives.get() = Some(primitives);
         self.handler
             .gui_shader
             .pre_render_update(cbf, tcx, world, &full_output.textures_delta.set)
             .unwrap();
+        world
+            .perf_stats()
+            .lap("PreRenderTask: gui_shader.pre_render_update()");
         Ok(())
     }
 }
@@ -459,6 +469,7 @@ impl Task for ClearTask {
                 .unwrap();
             cbf.as_raw().end_rendering().unwrap();
         }
+        world.perf_stats().lap("ClearTask: done");
 
         Ok(())
     }

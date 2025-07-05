@@ -767,6 +767,7 @@ impl Task for GuiRenderer {
             )?;
         }
         self.draw_buffer.get().bind(cbf).unwrap();
+        world.perf_stats().lap("GuiRenderer: begin_rendering()");
 
         let mut vertex_cursor = 0;
         let mut index_cursor = 0;
@@ -783,9 +784,11 @@ impl Task for GuiRenderer {
                 .with_context(|| format!("overflowed vertex_cursor: {}", mesh.vertices.len()))
                 .unwrap();
         }
+        world.perf_stats().lap("GuiRenderer: draw_indexed()");
         unsafe {
             cbf.as_raw().end_rendering()?;
         }
+        world.perf_stats().lap("GuiRenderer: end_rendering()");
         Ok(())
     }
 }

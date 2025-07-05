@@ -162,8 +162,11 @@ struct WindowEventHandlerInner {
 
 impl WindowEventHandlerInner {
     fn run_update(&mut self) {
+        self.vk_ctx.perf_stats().lap("start");
         self.handle_window_events();
+        self.vk_ctx.perf_stats().lap("handle_window_event()");
         self.scene_handler.run_update();
+        self.vk_ctx.perf_stats().lap("scene_handler.run_update()");
         if self.resource_handler.texture.wait_textures_dirty() || self.render_handler.is_dirty() {
             let vk_ctx = self.vk_ctx.clone();
             let render_handler = self.render_handler.clone();
@@ -172,6 +175,7 @@ impl WindowEventHandlerInner {
                 build_task_graph(&vk_ctx, &render_handler, &resource_handler).unwrap();
             self.task_graph = task_graph;
             self.virtual_swapchain_id = virtual_swapchain_id;
+            self.vk_ctx.perf_stats().lap("build_task_graph()");
         }
         match self.acquire_and_handle_image() {
             Err(gg_err::CatchOutOfDate::VulkanOutOfDateError) => {
@@ -181,6 +185,9 @@ impl WindowEventHandlerInner {
             }
             rv => rv.unwrap(),
         }
+        self.vk_ctx.perf_stats().lap("acquire_and_handle_image()");
+
+        self.vk_ctx.perf_stats().report(20);
     }
 
     fn handle_window_events(&mut self) {
@@ -255,6 +262,7 @@ impl WindowEventHandlerInner {
         self.render_stats.update_gui.start();
         let _full_output = self.update_gui();
         self.render_stats.update_gui.stop();
+        self.vk_ctx.perf_stats().lap("update_gui()");
 
         self.render_stats.execute.start();
         // TODO: add more stuff to resource_map instead of recreating it all the time. From Marc:
@@ -267,6 +275,7 @@ impl WindowEventHandlerInner {
             self.virtual_swapchain_id => self.vk_ctx.swapchain_id(),
         )
         .map_err(gg_err::CatchOutOfDate::from)?;
+        self.vk_ctx.perf_stats().lap("resource_map!()");
 
         unsafe {
             self.task_graph
@@ -276,6 +285,7 @@ impl WindowEventHandlerInner {
                 .map_err(gg_err::CatchOutOfDate::from)?;
         }
         self.render_stats.execute.stop();
+        self.vk_ctx.perf_stats().lap("render_stats.execute()");
 
         self.last_render_stats = self.render_stats.end();
         Ok(())

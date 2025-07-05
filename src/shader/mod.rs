@@ -627,6 +627,7 @@ impl Task for SpriteShader {
                     ..Default::default()
                 })
                 .unwrap();
+            world.perf_stats().lap("GuiRenderer: begin_rendering()");
 
             cbf.bind_pipeline_graphics(&self.pipeline)?
                 .as_raw()
@@ -638,13 +639,18 @@ impl Task for SpriteShader {
                     &[],
                 )?
                 .push_constants(&layout, 0, &pc)?;
+            world
+                .perf_stats()
+                .lap("GuiRenderer: bind_pipeline_graphics()");
         }
 
         self.vertex_buffer.get().draw(cbf).unwrap();
+        world.perf_stats().lap("GuiRenderer: draw()");
 
         unsafe {
             cbf.as_raw().end_rendering().unwrap();
         }
+        world.perf_stats().lap("GuiRenderer: end_rendering()");
 
         Ok(())
     }

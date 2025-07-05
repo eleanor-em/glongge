@@ -758,6 +758,7 @@ impl Task for UploadTexturesTask {
                 (tex.raw.buf.len() as f32) / 1024.0
             );
         }
+        world.perf_stats().lap("UploadTextureTask: done");
         Ok(())
     }
 }

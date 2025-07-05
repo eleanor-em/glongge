@@ -1,14 +1,14 @@
 // VulkanoContext is in a separate module because the details of handling Swapchain, and objects
 // derived from it, are rather complicated. Don't make stuff here public unless really necessary.
-use crate::check_eq;
 use crate::core::prelude::*;
 use crate::core::vk::GgWindow;
 use crate::util::{UniqueShared, gg_float};
+use crate::{check_eq, info_every_millis};
 use anyhow::{Context, Result};
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::Instant;
-use tracing::info;
+use std::time::{Instant, SystemTime};
+use tracing::{info, info_span};
 use vulkano::descriptor_set::allocator::{
     StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo,
 };
@@ -29,6 +29,65 @@ use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
+#[derive(Clone)]
+pub(crate) struct VulkanoPerfStats {
+    active: bool,
+    stats: Arc<Mutex<Vec<(String, SystemTime)>>>,
+}
+
+impl VulkanoPerfStats {
+    pub fn new() -> Self {
+        Self {
+            active: false,
+            stats: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn lap(&self, name: impl AsRef<str>) {
+        if self.active {
+            if let Some((_, last)) = self.stats.try_lock().unwrap().last().cloned() {
+                check_ge!(SystemTime::now(), last);
+            }
+            self.stats
+                .try_lock()
+                .unwrap()
+                .push((name.as_ref().to_string(), SystemTime::now()));
+        }
+    }
+
+    pub fn report(&self, threshold_ms: u128) {
+        if self.active {
+            let span = info_span!("VulkanoPerfStats");
+            let _enter = span.enter();
+            let stats_ms = self
+                .stats
+                .try_lock()
+                .unwrap()
+                .drain(..)
+                .tuple_windows()
+                .map(|((_, i1), (name, i2))| {
+                    (
+                        name,
+                        i2.duration_since(i1).unwrap().as_micros() as f32 / 1000.0,
+                    )
+                })
+                .collect_vec();
+            let total_ms = stats_ms
+                .iter()
+                .map(|(_, elapsed_ms)| elapsed_ms)
+                .sum::<f32>();
+            if total_ms >= threshold_ms as f32 {
+                for (name, elapsed_ms) in stats_ms {
+                    info!("{name}: {:.2} ms", elapsed_ms);
+                }
+                info!("total: {:.2} ms", total_ms);
+            } else {
+                info_every_millis!(1000, "{total_ms:.2} ms");
+            }
+        }
+    }
+}
+
 /// Provides access to the Vulkan context and resources.
 /// This struct is public to allow custom shader implementations, though this functionality
 /// is currently work-in-progress and incomplete.
@@ -46,6 +105,8 @@ pub struct VulkanoContext {
     images: UniqueShared<Vec<Arc<Image>>>,
     image_views: UniqueShared<Vec<Arc<ImageView>>>,
     image_count: UniqueShared<usize>,
+
+    stats: VulkanoPerfStats,
 }
 
 impl VulkanoContext {
@@ -165,6 +226,7 @@ impl VulkanoContext {
             images,
             image_views,
             image_count,
+            stats: VulkanoPerfStats::new(),
         })
     }
 
@@ -227,6 +289,10 @@ impl VulkanoContext {
     // May change between frames, e.g. due to recreate_swapchain().
     pub fn image_count(&self) -> usize {
         *self.image_count.get()
+    }
+
+    pub(crate) fn perf_stats(&self) -> &VulkanoPerfStats {
+        &self.stats
     }
 }
 
