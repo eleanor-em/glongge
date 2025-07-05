@@ -6,6 +6,7 @@ use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
+use crate::util::gg_float;
 use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 use glongge_derive::partially_derive_scene_object;
@@ -27,13 +28,28 @@ mod internal {
 
 pub struct Font {
     inner: PxScaleFont<FontVec>,
+    max_line_height: f32,
 }
 
 impl Font {
+    fn new(inner: PxScaleFont<FontVec>) -> Self {
+        let mut rv = Self {
+            inner,
+            max_line_height: 0.0,
+        };
+
+        // Get the largest possible dimensions.
+        let all_chars = (0..0x0010_ffff)
+            .filter_map(char::from_u32)
+            .collect::<String>();
+        let glyphs = rv.layout(all_chars, f32::INFINITY, TextWrapMode::default());
+        let reader = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()).unwrap();
+        rv.max_line_height = reader.height() as f32 / SAMPLE_RATIO;
+        rv
+    }
+
     pub fn from_slice(slice: &[u8], size: f32) -> Result<Self> {
-        Ok(Self {
-            inner: internal::font_from_slice(slice, size)?,
-        })
+        Ok(Self::new(internal::font_from_slice(slice, size)?))
     }
 
     pub fn sample_ratio(&self) -> f32 {
@@ -41,6 +57,9 @@ impl Font {
     }
     pub fn height(&self) -> f32 {
         self.inner.height()
+    }
+    pub fn max_line_height(&self) -> f32 {
+        self.max_line_height
     }
 
     fn layout(
@@ -86,31 +105,101 @@ impl Font {
         rv
     }
 
+    pub fn dry_run_render(
+        &self,
+        text: impl AsRef<str>,
+        settings: &FontRenderSettings,
+    ) -> Result<bool> {
+        settings.validate();
+        let glyphs = self.layout(
+            text,
+            settings.max_width * SAMPLE_RATIO,
+            settings.text_wrap_mode,
+        );
+        let reader = GlyphReader::new(self, glyphs, settings.max_glyphs, Colour::white())?;
+        let width = reader.width();
+        let height = reader.height();
+        Ok(!(width as f32 > settings.max_width * SAMPLE_RATIO
+            || height as f32 > settings.max_height * SAMPLE_RATIO))
+    }
+
     pub fn render_to_sprite(
         &self,
         object_ctx: &mut ObjectContext,
         text: impl AsRef<str>,
-        max_width: f32,
-        text_wrap_mode: TextWrapMode,
-    ) -> Result<Sprite> {
-        let glyphs = self.layout(text, max_width * SAMPLE_RATIO, text_wrap_mode);
-        let mut reader = GlyphReader::new(self, glyphs, Colour::white())?;
+        settings: &FontRenderSettings,
+    ) -> Result<Option<Sprite>> {
+        settings.validate();
+        let glyphs = self.layout(
+            text,
+            settings.max_width * SAMPLE_RATIO,
+            settings.text_wrap_mode,
+        );
+        let mut reader = GlyphReader::new(self, glyphs, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        Ok(Sprite::add_from_texture_deferred(
-            object_ctx,
-            Box::new(move |resource_handler| {
-                resource_handler.texture.wait_load_reader_rgba(
-                    "[font]".to_string(),
-                    &mut reader,
-                    width,
-                    height,
-                    Format::R8G8B8A8_UNORM,
-                )
-            }),
-        ))
+        if width as f32 > settings.max_width * SAMPLE_RATIO
+            || height as f32 > settings.max_height * SAMPLE_RATIO
+        {
+            Ok(None)
+        } else {
+            Ok(Some(Sprite::add_from_texture_deferred(
+                object_ctx,
+                Box::new(move |resource_handler| {
+                    resource_handler.texture.wait_load_reader_rgba(
+                        "[font]".to_string(),
+                        &mut reader,
+                        width,
+                        height,
+                        Format::R8G8B8A8_UNORM,
+                    )
+                }),
+            )))
+        }
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct FontRenderSettings {
+    pub max_width: f32,
+    pub max_height: f32,
+    pub max_glyphs: usize,
+    pub text_wrap_mode: TextWrapMode,
+}
+
+impl FontRenderSettings {
+    pub fn validate(&self) {
+        check_gt!(self.max_width, 0.0);
+        check_gt!(self.max_height, 0.0);
+        check!(self.max_glyphs > 0);
+    }
+}
+
+impl Default for FontRenderSettings {
+    fn default() -> Self {
+        Self {
+            max_width: f32::INFINITY,
+            max_height: f32::INFINITY,
+            max_glyphs: usize::MAX,
+            text_wrap_mode: TextWrapMode::default(),
+        }
+    }
+}
+
+impl PartialEq for FontRenderSettings {
+    fn eq(&self, other: &Self) -> bool {
+        gg_float::is_normal_or_zero(self.max_width) == gg_float::is_normal_or_zero(other.max_width)
+            && (!gg_float::is_normal_or_zero(self.max_width) || self.max_width == other.max_width)
+            && gg_float::is_normal_or_zero(self.max_height)
+                == gg_float::is_normal_or_zero(other.max_height)
+            && (!gg_float::is_normal_or_zero(self.max_height)
+                || self.max_height == other.max_height)
+            && self.max_glyphs == other.max_glyphs
+            && self.text_wrap_mode == other.text_wrap_mode
+    }
+}
+
+impl Eq for FontRenderSettings {}
 
 #[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
 pub enum TextWrapMode {
@@ -125,12 +214,13 @@ struct GlyphReader {
 }
 
 impl GlyphReader {
-    fn new(font: &Font, glyphs: Vec<Glyph>, col: Colour) -> Result<Self> {
+    fn new(font: &Font, glyphs: Vec<Glyph>, max_glyphs: usize, col: Colour) -> Result<Self> {
         // to work out the exact size needed for the drawn glyphs we need to outline
         // them and use their `px_bounds` which hold the coords of their render bounds.
         let glyphs = glyphs
             .into_iter()
             .filter_map(|g| font.inner.outline_glyph(g))
+            .take(max_glyphs)
             .collect_vec();
         let all_px_bounds = glyphs
             .iter()
@@ -212,29 +302,36 @@ pub struct Label {
     font: Font,
     sprite: Option<Sprite>,
     next_sprite: Option<Sprite>,
-    max_width: f32,
-    text_wrap_mode: TextWrapMode,
+
+    overflowed: bool,
 
     text_to_set: Option<String>,
     last_text: Option<String>,
+    render_settings: FontRenderSettings,
+    last_render_settings: Option<FontRenderSettings>,
 
     depth: VertexDepth,
     blend_col: Colour,
 }
 
 impl Label {
-    pub fn new(font: Font, max_width: f32) -> Self {
+    pub fn new(font: Font, render_settings: FontRenderSettings) -> Self {
         Self {
             font,
             sprite: None,
             next_sprite: None,
-            max_width,
-            text_wrap_mode: TextWrapMode::WrapAnywhere,
+            overflowed: false,
             text_to_set: None,
             last_text: None,
+            render_settings,
+            last_render_settings: None,
             depth: VertexDepth::default(),
             blend_col: Colour::white(),
         }
+    }
+
+    pub fn font(&self) -> &Font {
+        &self.font
     }
 
     pub fn set_text(&mut self, text: impl AsRef<str>) {
@@ -244,9 +341,58 @@ impl Label {
     pub fn set_depth(&mut self, depth: VertexDepth) {
         self.depth = depth;
     }
-
     pub fn set_blend_col(&mut self, colour: Colour) {
         self.blend_col = colour;
+    }
+    pub fn render_settings(&mut self) -> &mut FontRenderSettings {
+        &mut self.render_settings
+    }
+
+    pub fn would_overflow(&self) -> bool {
+        let Some(text) = self.last_text.as_ref() else {
+            return false;
+        };
+        !self
+            .font
+            .dry_run_render(text, &self.render_settings)
+            .unwrap()
+    }
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    fn changed_render_settings(&self) -> bool {
+        self.last_render_settings
+            .as_ref()
+            .is_none_or(|s| *s != self.render_settings)
+    }
+
+    fn render_text(&mut self, ctx: &mut UpdateContext, text: String) {
+        if text.is_empty() {
+            self.last_text = Some(text);
+            self.last_render_settings = Some(self.render_settings.clone());
+            self.sprite = None;
+            self.next_sprite = None;
+            ctx.object_mut().remove_children();
+        } else if text.as_str() == self.last_text.clone().unwrap_or_default().as_str()
+            && !self.changed_render_settings()
+        {
+            // No update necessary.
+        } else if self.next_sprite.is_none() {
+            self.next_sprite = self
+                .font
+                .render_to_sprite(ctx.object_mut(), &text, &self.render_settings.clone())
+                .unwrap()
+                .map(Sprite::with_hidden);
+            if self.next_sprite.is_some() {
+                self.last_text = Some(text);
+                self.last_render_settings = Some(self.render_settings.clone());
+            }
+            self.overflowed = self.next_sprite.is_none();
+        } else {
+            // Still loading the previous next_sprite, try again next update.
+            self.text_to_set = Some(text);
+        }
     }
 }
 
@@ -280,30 +426,11 @@ impl SceneObject for Label {
 
     fn on_update_end(&mut self, ctx: &mut UpdateContext) {
         if let Some(text) = self.text_to_set.take() {
-            if text.is_empty() {
-                self.last_text = Some(text);
-                self.sprite = None;
-                self.next_sprite = None;
-                ctx.object_mut().remove_children();
-            } else if text.as_str() == self.last_text.clone().unwrap_or_default().as_str() {
-                // No update necessary.
-            } else if self.next_sprite.is_none() {
-                self.last_text = Some(text.clone());
-                self.next_sprite = Some(
-                    self.font
-                        .render_to_sprite(
-                            ctx.object_mut(),
-                            text,
-                            self.max_width,
-                            self.text_wrap_mode,
-                        )
-                        .unwrap()
-                        .with_hidden(),
-                );
-            } else {
-                // Still loading the previous next_sprite, try again next update.
-                self.text_to_set = Some(text);
-            }
+            self.render_text(ctx, text);
+        } else if self.changed_render_settings()
+            && let Some(text) = self.last_text.clone()
+        {
+            self.render_text(ctx, text);
         }
     }
 
@@ -316,16 +443,27 @@ impl GuiObject for Label {
     fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
         if let Some(text) = self.last_text.as_ref() {
             let text = text.clone();
-            let has_next_sprite = self.next_sprite.is_some();
             GuiCommand::new(move |ui| {
                 ui.add(egui::Label::new(text).selectable(false));
-                ui.add(
-                    egui::Label::new(format!("has_next_sprite: {has_next_sprite}"))
-                        .selectable(false),
-                );
             })
         } else {
             GuiCommand::new(move |_ui| {})
         }
+    }
+}
+
+impl AxisAlignedExtent for Label {
+    fn aa_extent(&self) -> Vec2 {
+        self.next_sprite
+            .as_ref()
+            .or(self.sprite.as_ref())
+            .map_or(Vec2::zero(), Sprite::aa_extent)
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.next_sprite
+            .as_ref()
+            .or(self.sprite.as_ref())
+            .map_or(Vec2::zero(), Sprite::centre)
     }
 }

@@ -1,10 +1,8 @@
+use glongge::resource::font::FontRenderSettings;
 use glongge::{
     core::prelude::*,
     include_bytes_root,
-    resource::{
-        font::{Font, TextWrapMode},
-        sprite::Sprite,
-    },
+    resource::{font::Font, sprite::Sprite},
 };
 use glongge_derive::partially_derive_scene_object;
 
@@ -32,8 +30,16 @@ impl SceneObject for WinTextDisplay {
         _resource_handler: &mut ResourceHandler,
     ) -> Result<Option<RenderItem>> {
         let font = Font::from_slice(include_bytes_root!("res/DejaVuSansMono.ttf"), 20.0)?;
-        self.sprite =
-            font.render_to_sprite(object_ctx, "You win!", 200.0, TextWrapMode::WrapAnywhere)?;
+        self.sprite = font
+            .render_to_sprite(
+                object_ctx,
+                "You win!",
+                &FontRenderSettings {
+                    max_width: 200.0,
+                    ..FontRenderSettings::default()
+                },
+            )?
+            .unwrap();
         self.font = Some(font);
         let mut transform = object_ctx.transform_mut();
         transform.centre = self.centre;
