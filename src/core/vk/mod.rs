@@ -20,12 +20,10 @@ use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
 use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::time::Duration;
 use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-use vulkano::VulkanError;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
@@ -243,17 +241,12 @@ impl WindowEventHandlerInner {
     }
 
     fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
-        match self
-            .vk_ctx
+        self.vk_ctx
             .resources()
             .flight(self.vk_ctx.flight_id())
             .map_err(gg_err::CatchOutOfDate::from)?
-            .wait(Some(Duration::ZERO))
-        {
-            Ok(()) => {}
-            Err(VulkanError::Timeout) => return Ok(()),
-            Err(e) => return Err(e.into()),
-        }
+            .wait(None)
+            .map_err(gg_err::CatchOutOfDate::from)?;
 
         self.render_stats.start();
         self.render_stats.update_gui.start();

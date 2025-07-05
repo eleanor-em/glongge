@@ -8,6 +8,7 @@ use crate::resource::texture::MaterialId;
 use crate::shader::{Shader, ShaderId, vertex};
 use crate::util::{UniqueShared, gg_err};
 use egui::FullOutput;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     cmp,
     collections::BTreeMap,
@@ -173,6 +174,7 @@ pub struct ShaderRenderFrame<'a> {
 pub(crate) struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    render_done: Arc<AtomicBool>,
     resource_handler: ResourceHandler,
     window: UniqueShared<GgWindow>,
     viewport: UniqueShared<AdjustedViewport>,
@@ -203,6 +205,7 @@ impl RenderHandler {
         Ok(Self {
             gui_ctx,
             render_data_channel,
+            render_done: Arc::new(AtomicBool::new(true)),
             resource_handler,
             window: UniqueShared::new(window),
             viewport,
@@ -257,8 +260,8 @@ impl RenderHandler {
         }
     }
 
-    pub(crate) fn get_receiver(&self) -> Arc<Mutex<RenderDataChannel>> {
-        self.render_data_channel.clone()
+    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, Arc<AtomicBool>) {
+        (self.render_data_channel.clone(), self.render_done.clone())
     }
 
     pub(crate) fn build_shader_task_graphs(
@@ -337,6 +340,7 @@ impl RenderHandler {
             "post_render_handler",
             QueueFamilyType::Graphics,
             PostRenderTask {
+                handler: self.clone(),
                 resource_handler: self.resource_handler.clone(),
             },
         );
@@ -486,6 +490,7 @@ impl Task for ClearTask {
 }
 
 struct PostRenderTask {
+    handler: RenderHandler,
     resource_handler: ResourceHandler,
 }
 
@@ -503,6 +508,12 @@ impl Task for PostRenderTask {
             return Ok(());
         }
         self.resource_handler.texture.wait_free_unused_files();
+        let _ = self.handler.render_done.compare_exchange(
+            false,
+            true,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
         world
             .perf_stats()
             .lap("PostRenderTask: wait_free_unused_files()");

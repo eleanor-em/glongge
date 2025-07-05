@@ -37,6 +37,7 @@ use collision::{Collision, CollisionHandler, CollisionNotification, CollisionRes
 use serde::{Serialize, de::DeserializeOwned};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     cell::{Ref, RefMut},
     collections::{BTreeMap, BTreeSet},
@@ -415,6 +416,7 @@ pub(crate) struct UpdateHandler {
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    render_done: Arc<AtomicBool>,
     clear_col: Colour,
 
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine>>,
@@ -429,6 +431,7 @@ pub(crate) struct UpdateHandler {
     perf_stats: UpdatePerfStats,
     last_render_perf_stats: Option<RenderPerfStats>,
     last_update_start: Option<Instant>,
+    last_delta_set: Option<Instant>,
     delta: Duration,
     frame_counter: usize,
     fixed_frame_counter: usize,
@@ -443,6 +446,7 @@ impl UpdateHandler {
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
+        render_done: Arc<AtomicBool>,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>,
     ) -> Result<Self> {
@@ -459,6 +463,7 @@ impl UpdateHandler {
                 .current_viewport(),
             resource_handler,
             render_data_channel,
+            render_done,
             clear_col,
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
@@ -470,6 +475,7 @@ impl UpdateHandler {
             perf_stats: UpdatePerfStats::new(),
             last_render_perf_stats: None,
             last_update_start: None,
+            last_delta_set: None,
             delta: Duration::from_secs(0),
             frame_counter: 0,
             fixed_frame_counter: 0,
@@ -499,20 +505,30 @@ impl UpdateHandler {
     }
 
     pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
+        let fixed_update_only = SYNC_UPDATE_TO_RENDER
+            && self
+                .render_done
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err();
         if self.is_running {
             self.delta = self
-                .last_update_start
+                .last_delta_set
                 .map_or(Duration::from_secs(0), |i| i.elapsed());
-            self.last_update_start = Some(Instant::now());
+            if !fixed_update_only {
+                self.last_delta_set = Some(Instant::now());
 
-            if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
-                self.perf_stats.totals_s.remove(0);
+                if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
+                    self.perf_stats.totals_s.remove(0);
+                }
+                self.perf_stats.totals_s.push(self.delta.as_secs_f32());
+                self.perf_stats.total_stats.start();
             }
-            self.perf_stats.totals_s.push(self.delta.as_secs_f32());
-            self.perf_stats.total_stats.start();
 
             // Count the number of fixed updates to perform.
-            self.fixed_update_us += self.delta.as_micros();
+            self.fixed_update_us += self
+                .last_update_start
+                .map_or(Duration::from_secs(0), |i| i.elapsed())
+                .as_micros();
             let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
             if fixed_updates > 0 {
                 self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
@@ -535,14 +551,16 @@ impl UpdateHandler {
 
             // Perform the update.
             let input_handler = self.input_handler.lock().unwrap().clone();
-            let object_tracker = self.perform_update(&input_handler, fixed_updates);
-            self.complete_update(&input_handler, object_tracker);
+            self.last_update_start = Some(Instant::now());
+            let object_tracker =
+                self.perform_update(fixed_update_only, &input_handler, fixed_updates);
+            self.complete_update(fixed_update_only, &input_handler, object_tracker);
 
             // Update performance statistics.
             self.perf_stats.total_stats.stop();
             self.debug_gui
                 .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
-            if !self.debug_gui.scene_control.is_paused() {
+            if !fixed_update_only && !self.debug_gui.scene_control.is_paused() {
                 self.frame_counter += 1;
             }
         }
@@ -580,6 +598,7 @@ impl UpdateHandler {
     ////////////////////////////////////////////////////////////////////////////////////////////////
     fn perform_update(
         &mut self,
+        fixed_update_only: bool,
         input_handler: &InputHandler,
         original_fixed_updates: u128,
     ) -> ObjectTracker {
@@ -589,7 +608,9 @@ impl UpdateHandler {
             pending_remove: BTreeSet::new(),
             pending_move: BTreeMap::new(),
         };
-        if let Some(fixed_updates) =
+        if fixed_update_only {
+            self.call_on_fixed_update(original_fixed_updates, &mut object_tracker);
+        } else if let Some(fixed_updates) =
             self.call_on_update(input_handler, original_fixed_updates, &mut object_tracker)
         {
             self.call_on_fixed_update(fixed_updates, &mut object_tracker);
@@ -792,6 +813,9 @@ impl UpdateHandler {
         mut fixed_updates: u128,
         object_tracker: &mut ObjectTracker,
     ) {
+        if fixed_updates == 0 {
+            return;
+        }
         self.perf_stats.fixed_update.start();
         for _ in 0..fixed_updates.min(MAX_FIXED_UPDATES) {
             let update_span = span!(
@@ -900,7 +924,12 @@ impl UpdateHandler {
     /// 2. updating the GUI;
     /// 3. sending the render infos.
     ////////////////////////////////////////////////////////////////////////////////////////////////
-    fn complete_update(&mut self, input_handler: &InputHandler, object_tracker: ObjectTracker) {
+    fn complete_update(
+        &mut self,
+        fixed_update_only: bool,
+        input_handler: &InputHandler,
+        object_tracker: ObjectTracker,
+    ) {
         let update_span = span!(
             tracing::Level::INFO,
             "complete_update",
@@ -925,8 +954,10 @@ impl UpdateHandler {
         self.debug_gui
             .complete_update(input_handler, &mut self.viewport);
 
-        self.complete_update_with_render_infos();
-        self.input_handler.lock().unwrap().complete_update();
+        if !fixed_update_only {
+            self.complete_update_with_render_infos();
+            self.input_handler.lock().unwrap().complete_update();
+        }
     }
     fn complete_update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.perf_stats.remove_objects.start();

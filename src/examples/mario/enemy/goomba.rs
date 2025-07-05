@@ -99,10 +99,14 @@ impl SceneObject for Goomba {
             } else {
                 self.v_accel = 0.0;
             }
-            self.vel.y += self.v_accel;
             ctx.object().transform_mut().centre += self.vel * ctx.delta_60fps();
         }
     }
+
+    fn on_fixed_update(&mut self, _ctx: &mut FixedUpdateContext) {
+        self.vel.y += self.v_accel;
+    }
+
     fn on_collision(
         &mut self,
         ctx: &mut UpdateContext,

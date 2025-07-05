@@ -159,10 +159,21 @@ impl VulkanoContext {
             (
                 caps.max_image_count
                     .unwrap_or(3.max(caps.min_image_count + 1)),
-                PresentMode::Mailbox,
+                if USE_VSYNC {
+                    PresentMode::Mailbox
+                } else {
+                    PresentMode::Immediate
+                },
             )
         } else {
-            (3.max(caps.min_image_count), PresentMode::Fifo)
+            (
+                3.max(caps.min_image_count),
+                if USE_VSYNC {
+                    PresentMode::Fifo
+                } else {
+                    PresentMode::Immediate
+                },
+            )
         };
         if let Some(max_image_count) = caps.max_image_count {
             check_le!(min_image_count, max_image_count);
