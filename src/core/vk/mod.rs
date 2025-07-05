@@ -145,7 +145,6 @@ struct WindowEventHandlerInner {
     vk_ctx: VulkanoContext,
     render_handler: RenderHandler,
     input_handler: Arc<Mutex<InputHandler>>,
-    scene_handler: SceneHandler,
     resource_handler: ResourceHandler,
     gui_ctx: GuiContext,
     platform: egui_winit::State,
@@ -165,8 +164,6 @@ impl WindowEventHandlerInner {
         self.vk_ctx.perf_stats().lap("start");
         self.handle_window_events();
         self.vk_ctx.perf_stats().lap("handle_window_event()");
-        self.scene_handler.run_update();
-        self.vk_ctx.perf_stats().lap("scene_handler.run_update()");
         if self.resource_handler.texture.wait_textures_dirty() || self.render_handler.is_dirty() {
             let vk_ctx = self.vk_ctx.clone();
             let render_handler = self.render_handler.clone();
@@ -334,7 +331,7 @@ where
     F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
 {
     window_size: Vec2i,
-    create_and_start_scene_handler: Option<F>,
+    scene_handler_builder_callback: Option<F>,
     global_scale_factor: f32,
     clear_col: Colour,
 }
@@ -356,16 +353,16 @@ where
     recreate_swapchain_rx: Option<Receiver<Instant>>,
 }
 
-impl<F> WindowEventHandler<F>
+impl<SceneHandlerBuilderCallback> WindowEventHandler<SceneHandlerBuilderCallback>
 where
-    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+    SceneHandlerBuilderCallback: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
 {
     pub(crate) fn create_and_run(
         window_size: Vec2i,
         global_scale_factor: f32,
         clear_col: Colour,
         gui_ctx: GuiContext,
-        create_and_start_scene_handler: F,
+        scene_handler_builder_callback: SceneHandlerBuilderCallback,
     ) -> Result<()> {
         let (window_event_tx, window_event_rx) = mpsc::channel();
         let (scale_factor_tx, scale_factor_rx) = mpsc::channel();
@@ -375,7 +372,7 @@ where
                 window_size,
                 global_scale_factor,
                 clear_col,
-                create_and_start_scene_handler: Some(create_and_start_scene_handler),
+                scene_handler_builder_callback: Some(scene_handler_builder_callback),
             },
             input_handler: InputHandler::new(),
             gui_ctx: Some(gui_ctx),
@@ -391,7 +388,11 @@ where
         Ok(event_loop.run_app(&mut this)?)
     }
 
-    fn create_inner(&mut self, event_loop: &ActiveEventLoop, callback: F) -> Result<()> {
+    fn create_inner(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        scene_handler_builder_callback: SceneHandlerBuilderCallback,
+    ) -> Result<()> {
         info!("call create_inner()");
         let window = GgWindow::new(event_loop, self.create_info.window_size)?;
         let scale_factor = window.scale_factor();
@@ -438,20 +439,26 @@ where
         let window_event_rx = self.window_event_rx.take().unwrap();
         let scale_factor_rx = self.scale_factor_rx.take().unwrap();
         let recreate_swapchain_rx = self.recreate_swapchain_rx.take().unwrap();
-        info!("start thread");
+
+        let scene_handler_builder = SceneHandlerBuilder::new(
+            input_handler.clone(),
+            resource_handler.clone(),
+            render_handler.clone(),
+        );
         std::thread::spawn(move || {
-            let scene_handler = callback(SceneHandlerBuilder::new(
-                input_handler.clone(),
-                resource_handler.clone(),
-                render_handler.clone(),
-            ));
+            let mut scene_handler = scene_handler_builder_callback(scene_handler_builder);
+            loop {
+                scene_handler.run_update();
+            }
+        });
+
+        std::thread::spawn(move || {
             let mut inner = WindowEventHandlerInner {
                 window,
                 scale_factor,
                 vk_ctx,
                 render_handler,
                 input_handler,
-                scene_handler,
                 resource_handler,
                 gui_ctx,
                 platform,
@@ -477,10 +484,12 @@ where
     F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(callback) = self.create_info.create_and_start_scene_handler.take() {
+        if let Some(scene_handler_builder_callback) =
+            self.create_info.scene_handler_builder_callback.take()
+        {
             // First event. Note winit documentation:
             // "This is a common indicator that you can create a window."
-            self.create_inner(event_loop, callback)
+            self.create_inner(event_loop, scene_handler_builder_callback)
                 .expect("error initialising");
         }
     }
