@@ -386,7 +386,6 @@ where
         event_loop: &ActiveEventLoop,
         scene_handler_builder_callback: SceneHandlerBuilderCallback,
     ) -> Result<()> {
-        info!("call create_inner()");
         let window = GgWindow::new(event_loop, self.create_info.window_size)?;
         let scale_factor = window.scale_factor();
         let viewport = UniqueShared::new(window.create_default_viewport());

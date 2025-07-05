@@ -145,6 +145,15 @@ impl VulkanoContext {
                 },
             )
             .is_ok();
+        let has_immediate = physical_device
+            .surface_capabilities(
+                &surface,
+                SurfaceInfo {
+                    present_mode: Some(PresentMode::Immediate),
+                    ..SurfaceInfo::default()
+                },
+            )
+            .is_ok();
         let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
         let supported_formats =
             physical_device.surface_formats(&surface, SurfaceInfo::default())?;
@@ -159,7 +168,7 @@ impl VulkanoContext {
             (
                 caps.max_image_count
                     .unwrap_or(3.max(caps.min_image_count + 1)),
-                if USE_VSYNC {
+                if USE_VSYNC || !has_immediate {
                     PresentMode::Mailbox
                 } else {
                     PresentMode::Immediate
@@ -168,7 +177,7 @@ impl VulkanoContext {
         } else {
             (
                 3.max(caps.min_image_count),
-                if USE_VSYNC {
+                if USE_VSYNC || !has_immediate {
                     PresentMode::Fifo
                 } else {
                     PresentMode::Immediate
@@ -311,6 +320,8 @@ impl VulkanoContext {
 fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtensions> {
     let mut extensions = Surface::required_extensions(&event_loop)?;
     extensions.ext_debug_utils = true;
+    // Required to query for PresentMode::Mailbox support:
+    extensions.ext_surface_maintenance1 = true;
     Ok(extensions)
 }
 fn device_extensions() -> DeviceExtensions {
