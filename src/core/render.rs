@@ -504,7 +504,7 @@ impl Task for PostRenderTask {
         world: &Self::World,
     ) -> TaskResult {
         if self.resource_handler.texture.is_not_yet_initialised() {
-            warn!("resource handler not yet initialised, skip PreRenderTask::execute()");
+            warn!("resource handler not yet initialised, skip PostRenderTask::execute()");
             return Ok(());
         }
         self.resource_handler.texture.wait_free_unused_files();

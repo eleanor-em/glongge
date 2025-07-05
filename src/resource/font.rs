@@ -11,7 +11,7 @@ use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 use glongge_derive::partially_derive_scene_object;
 
-const SAMPLE_RATIO: f32 = 2.0;
+const SAMPLE_RATIO: f32 = 1.0;
 
 mod internal {
     use crate::resource::font::SAMPLE_RATIO;
@@ -458,6 +458,7 @@ impl AxisAlignedExtent for Label {
             .as_ref()
             .or(self.sprite.as_ref())
             .map_or(Vec2::zero(), Sprite::aa_extent)
+            / SAMPLE_RATIO
     }
 
     fn centre(&self) -> Vec2 {
