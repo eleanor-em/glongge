@@ -2,7 +2,12 @@ use crate::core::render::ShaderRenderFrame;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::resource::texture::{Material, MaterialId};
 use crate::shader::glsl::basic;
-use crate::{core::{prelude::*, vk::AdjustedViewport}, info_every_seconds, shader::glsl::sprite, util::UniqueShared};
+use crate::{
+    core::{prelude::*, vk::AdjustedViewport},
+    info_every_seconds,
+    shader::glsl::sprite,
+    util::UniqueShared,
+};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use num_traits::Zero;
@@ -419,7 +424,8 @@ impl SpriteShader {
         let samplers = vec![sampler.clone(); MAX_TEXTURE_COUNT];
 
         if let Some(materials) = maybe_materials {
-            info_every_seconds!(1,
+            info_every_seconds!(
+                1,
                 "updating materials: materials.len() = {}, texture count: {}",
                 materials.len(),
                 nonempty_texture_ids.len()
@@ -514,7 +520,6 @@ impl Shader for SpriteShader {
         render_frame: ShaderRenderFrame,
         tcx: &mut TaskContext,
     ) -> Result<()> {
-        self.resource_handler.texture.wait_free_unused_files();
         self.maybe_update_desc_sets(tcx)?;
         let render_infos = render_frame
             .render_infos
@@ -623,7 +628,7 @@ impl Task for SpriteShader {
                     ..Default::default()
                 })
                 .unwrap();
-            world.perf_stats().lap("GuiRenderer: begin_rendering()");
+            world.perf_stats().lap("SpriteShader: begin_rendering()");
 
             cbf.bind_pipeline_graphics(&self.pipeline)?
                 .as_raw()
@@ -637,16 +642,16 @@ impl Task for SpriteShader {
                 .push_constants(&layout, 0, &pc)?;
             world
                 .perf_stats()
-                .lap("GuiRenderer: bind_pipeline_graphics()");
+                .lap("SpriteShader: bind_pipeline_graphics()");
         }
 
         self.vertex_buffer.get().draw(cbf).unwrap();
-        world.perf_stats().lap("GuiRenderer: draw()");
+        world.perf_stats().lap("SpriteShader: draw()");
 
         unsafe {
             cbf.as_raw().end_rendering().unwrap();
         }
-        world.perf_stats().lap("GuiRenderer: end_rendering()");
+        world.perf_stats().lap("SpriteShader: end_rendering()");
 
         Ok(())
     }

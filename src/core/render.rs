@@ -333,6 +333,16 @@ impl RenderHandler {
             .build_task_graph(task_graph, virtual_swapchain_id);
         task_graph.add_edge(last_non_gui_node, gui_node)?;
 
+        let mut post_render_node = task_graph.create_task_node(
+            "post_render_handler",
+            QueueFamilyType::Graphics,
+            PostRenderTask {
+                resource_handler: self.resource_handler.clone(),
+            },
+        );
+        let post_render_node = post_render_node.build();
+        task_graph.add_edge(gui_node, post_render_node)?;
+
         Ok(())
     }
 
@@ -471,6 +481,31 @@ impl Task for ClearTask {
         }
         world.perf_stats().lap("ClearTask: done");
 
+        Ok(())
+    }
+}
+
+struct PostRenderTask {
+    resource_handler: ResourceHandler,
+}
+
+impl Task for PostRenderTask {
+    type World = VulkanoContext;
+
+    unsafe fn execute(
+        &self,
+        _cbf: &mut RecordingCommandBuffer,
+        _tcx: &mut TaskContext,
+        world: &Self::World,
+    ) -> TaskResult {
+        if self.resource_handler.texture.is_not_yet_initialised() {
+            warn!("resource handler not yet initialised, skip PreRenderTask::execute()");
+            return Ok(());
+        }
+        self.resource_handler.texture.wait_free_unused_files();
+        world
+            .perf_stats()
+            .lap("PostRenderTask: wait_free_unused_files()");
         Ok(())
     }
 }

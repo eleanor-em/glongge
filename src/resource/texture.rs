@@ -1,6 +1,6 @@
 use asefile::AsepriteFile;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{
     collections::{BTreeMap, HashMap},
     default::Default,
@@ -20,6 +20,7 @@ use vulkano::{
 
 use crate::core::prelude::*;
 use crate::core::vk::vk_ctx::VulkanoContext;
+use crate::info_every_seconds;
 use crate::util::UniqueShared;
 use png::ColorType;
 use vulkano::image::Image;
@@ -29,7 +30,6 @@ use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandB
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
 use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
-use crate::info_every_seconds;
 
 #[derive(Clone)]
 struct RawTexture {
@@ -184,7 +184,6 @@ struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
     material_handler: Arc<Mutex<MaterialHandler>>,
-    last_freed_textures: Instant,
 }
 
 impl TextureHandlerInner {
@@ -247,7 +246,6 @@ impl TextureHandlerInner {
             loaded_files: BTreeMap::new(),
             textures,
             material_handler,
-            last_freed_textures: Instant::now(),
         })
     }
 
@@ -327,12 +325,6 @@ impl TextureHandlerInner {
     }
 
     fn free_unused_textures(&mut self) {
-        if self.last_freed_textures.elapsed().as_millis() < 1000
-            && self.textures.len() < MAX_TEXTURE_COUNT
-        {
-            return;
-        }
-        self.last_freed_textures = Instant::now();
         let unused_ids = self
             .textures
             .iter()
@@ -343,8 +335,11 @@ impl TextureHandlerInner {
             return;
         }
         let mut material_handler = self.material_handler.lock().unwrap();
-        info!("freeing texture ids: {unused_ids:?}");
+        info_every_seconds!(1, "freeing texture ids: {unused_ids:?}");
         for unused_id in unused_ids {
+            for file_textures in self.loaded_files.values() {
+                check!(file_textures.iter().all(|tex| tex.id != unused_id));
+            }
             self.textures.remove(&unused_id);
             material_handler.on_remove_texture(unused_id);
         }
@@ -753,7 +748,8 @@ impl Task for UploadTexturesTask {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
-            info_every_seconds!(1,
+            info_every_seconds!(
+                1,
                 "created image view for: {} (id {id:?}, {:.1} KiB)",
                 tex.filename,
                 (tex.raw.buf.len() as f32) / 1024.0
