@@ -7,6 +7,7 @@ use vulkano::format::Format;
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
 use crate::util::gg_float;
+use crate::util::gg_iter::GgFloatIter;
 use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 use glongge_derive::partially_derive_scene_object;
@@ -28,6 +29,7 @@ mod internal {
 
 pub struct Font {
     inner: PxScaleFont<FontVec>,
+    max_glyph_width: f32,
     max_line_height: f32,
 }
 
@@ -35,16 +37,27 @@ impl Font {
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
             inner,
+            max_glyph_width: 0.0,
             max_line_height: 0.0,
         };
 
         // Get the largest possible dimensions.
-        let all_chars = (0..0x0010_ffff)
+        rv.max_glyph_width = (0..0xffff)
             .filter_map(char::from_u32)
-            .collect::<String>();
+            .map(|c| {
+                let glyphs = rv.layout(c.to_string(), f32::INFINITY, TextWrapMode::default());
+                let Ok(reader) = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()) else {
+                    return 0.0;
+                };
+                reader.width() as f32 / SAMPLE_RATIO
+            })
+            .max_f32()
+            .unwrap_or(0.0);
+        let all_chars = (0..0xffff).filter_map(char::from_u32).collect::<String>();
         let glyphs = rv.layout(all_chars, f32::INFINITY, TextWrapMode::default());
         let reader = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()).unwrap();
         rv.max_line_height = reader.height() as f32 / SAMPLE_RATIO;
+
         rv
     }
 
@@ -58,6 +71,9 @@ impl Font {
     pub fn height(&self) -> f32 {
         self.inner.height()
     }
+    pub fn max_glyph_width(&self) -> f32 {
+        self.max_glyph_width
+    }
     pub fn max_line_height(&self) -> f32 {
         self.max_line_height
     }
@@ -67,14 +83,16 @@ impl Font {
         text: impl AsRef<str>,
         max_width: f32,
         text_wrap_mode: TextWrapMode,
-    ) -> Vec<Glyph> {
+    ) -> Layout {
         match text_wrap_mode {
             TextWrapMode::WrapAnywhere => self.layout_wrap_anywhere(text, max_width),
+            TextWrapMode::WrapAtWordBoundary => unimplemented!(),
         }
     }
 
-    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Vec<Glyph> {
-        let mut rv = Vec::new();
+    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
+        let mut glyphs = Vec::new();
+        let mut line_breaks = vec![0];
         let v_advance = self.height() + self.inner.line_gap();
         let mut caret = point(0.0, self.inner.ascent());
         let mut last_glyph: Option<Glyph> = None;
@@ -83,6 +101,7 @@ impl Font {
                 if c == '\n' {
                     caret.x = 0.0;
                     caret.y += v_advance;
+                    line_breaks.push(glyphs.len());
                     last_glyph = None;
                 }
                 continue;
@@ -97,12 +116,16 @@ impl Font {
             if !c.is_whitespace() && next_x > max_width {
                 caret.x = 0.0;
                 caret.y += v_advance;
+                line_breaks.push(glyphs.len());
             }
             glyph.position = caret;
             last_glyph = Some(glyph.clone());
-            rv.push(glyph);
+            glyphs.push(glyph);
         }
-        rv
+        Layout {
+            glyphs,
+            line_breaks,
+        }
     }
 
     pub fn dry_run_render(
@@ -130,12 +153,12 @@ impl Font {
         settings: &FontRenderSettings,
     ) -> Result<Option<Sprite>> {
         settings.validate();
-        let glyphs = self.layout(
+        let layout = self.layout(
             text,
             settings.max_width * SAMPLE_RATIO,
             settings.text_wrap_mode,
         );
-        let mut reader = GlyphReader::new(self, glyphs, settings.max_glyphs, Colour::white())?;
+        let mut reader = GlyphReader::new(self, layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
         if width as f32 > settings.max_width * SAMPLE_RATIO
@@ -157,6 +180,11 @@ impl Font {
             )))
         }
     }
+}
+
+struct Layout {
+    glyphs: Vec<Glyph>,
+    line_breaks: Vec<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -205,26 +233,27 @@ impl Eq for FontRenderSettings {}
 pub enum TextWrapMode {
     #[default]
     WrapAnywhere,
+    // TODO:
+    WrapAtWordBoundary,
 }
 
 struct GlyphReader {
+    _layout: Layout,
     inner: Option<Vec<OutlinedGlyph>>,
     col: [u8; 4],
     all_px_bounds: ab_glyph::Rect,
 }
 
 impl GlyphReader {
-    fn new(font: &Font, glyphs: Vec<Glyph>, max_glyphs: usize, col: Colour) -> Result<Self> {
+    fn new(font: &Font, layout: Layout, max_glyphs: usize, col: Colour) -> Result<Self> {
         // to work out the exact size needed for the drawn glyphs we need to outline
         // them and use their `px_bounds` which hold the coords of their render bounds.
-        let glyphs = glyphs
-            .into_iter()
-            .filter_map(|g| font.inner.outline_glyph(g))
-            .take(max_glyphs)
-            .collect_vec();
-        let all_px_bounds = glyphs
+        // Use all lines to find the width:
+        let all_px_bounds_x = layout
+            .glyphs
             .iter()
-            .map(ab_glyph::OutlinedGlyph::px_bounds)
+            .filter_map(|g| font.inner.outline_glyph(g.clone()))
+            .map(|g| g.px_bounds())
             .reduce(|mut b, next| {
                 b.min.x = b.min.x.min(next.min.x);
                 b.max.x = b.max.x.max(next.max.x);
@@ -233,11 +262,46 @@ impl GlyphReader {
                 b
             })
             .context("could not get outline of glyphs")?;
-        check_ge!(all_px_bounds.min.x, 0.0);
-        check_ge!(all_px_bounds.min.y, 0.0);
-        check_ge!(all_px_bounds.max.x, 0.0);
-        check_ge!(all_px_bounds.max.y, 0.0);
+        // Use until the next line break to find the height:
+        let next_line_break = *layout
+            .line_breaks
+            .iter()
+            .find(|i| **i >= max_glyphs)
+            .unwrap_or(&layout.glyphs.len());
+        let all_px_bounds_y = layout
+            .glyphs
+            .iter()
+            .take(next_line_break)
+            .filter_map(|g| font.inner.outline_glyph(g.clone()))
+            .map(|g| g.px_bounds())
+            .reduce(|mut b, next| {
+                b.min.x = b.min.x.min(next.min.x);
+                b.max.x = b.max.x.max(next.max.x);
+                b.min.y = b.min.y.min(next.min.y);
+                b.max.y = b.max.y.max(next.max.y);
+                b
+            })
+            .context("could not get outline of glyphs")?;
+        let all_px_bounds = ab_glyph::Rect {
+            min: ab_glyph::Point {
+                x: all_px_bounds_x.min.x,
+                y: all_px_bounds_y.min.y,
+            },
+            max: ab_glyph::Point {
+                x: all_px_bounds_x.max.x,
+                y: all_px_bounds_y.max.y,
+            },
+        };
+        // Now get the actual glyphs we will use:
+        let glyphs = layout
+            .glyphs
+            .iter()
+            .take(max_glyphs)
+            .filter_map(|g| font.inner.outline_glyph(g.clone()))
+            .collect_vec();
+
         Ok(Self {
+            _layout: layout,
             inner: Some(glyphs),
             col: col.as_bytes(),
             all_px_bounds,
