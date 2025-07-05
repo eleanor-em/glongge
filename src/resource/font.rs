@@ -246,11 +246,11 @@ impl GlyphReader {
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn width(&self) -> u32 {
-        self.all_px_bounds.max.x as u32
+        self.all_px_bounds.max.x as u32 - self.all_px_bounds.min.x as u32
     }
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn height(&self) -> u32 {
-        self.all_px_bounds.max.y as u32
+        self.all_px_bounds.max.y as u32 - self.all_px_bounds.min.y as u32
     }
 }
 
