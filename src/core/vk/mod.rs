@@ -308,7 +308,7 @@ fn build_task_graph(
     resource_handler: &ResourceHandler,
 ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
     // TODO: verbose!
-    info!("building task graph");
+    info_every_seconds!(1, "building task graph");
     let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
     let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
     let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);

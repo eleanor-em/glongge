@@ -29,6 +29,7 @@ use vulkano_taskgraph::command_buffer::{CopyBufferToImageInfo, RecordingCommandB
 use vulkano_taskgraph::graph::{NodeId, TaskGraph};
 use vulkano_taskgraph::resource::{AccessTypes, HostAccessType, ImageLayoutType};
 use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
+use crate::info_every_seconds;
 
 #[derive(Clone)]
 struct RawTexture {
@@ -315,7 +316,7 @@ impl TextureHandlerInner {
                 existing.ref_count.get()
             );
         }
-        info!("created texture id {id}");
+        info_every_seconds!(1, "created texture id {id}");
         Ok(Texture {
             id,
             duration,
@@ -752,7 +753,7 @@ impl Task for UploadTexturesTask {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
             tex.create_image_view(world, cbf, tcx)?;
-            info!(
+            info_every_seconds!(1,
                 "created image view for: {} (id {id:?}, {:.1} KiB)",
                 tex.filename,
                 (tex.raw.buf.len() as f32) / 1024.0

@@ -2,11 +2,7 @@ use crate::core::render::ShaderRenderFrame;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::resource::texture::{Material, MaterialId};
 use crate::shader::glsl::basic;
-use crate::{
-    core::{prelude::*, vk::AdjustedViewport},
-    shader::glsl::sprite,
-    util::UniqueShared,
-};
+use crate::{core::{prelude::*, vk::AdjustedViewport}, info_every_seconds, shader::glsl::sprite, util::UniqueShared};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use num_traits::Zero;
@@ -423,10 +419,10 @@ impl SpriteShader {
         let samplers = vec![sampler.clone(); MAX_TEXTURE_COUNT];
 
         if let Some(materials) = maybe_materials {
-            info!(
+            info_every_seconds!(1,
                 "updating materials: materials.len() = {}, texture count: {}",
                 materials.len(),
-                nonempty_texture_ids.len(),
+                nonempty_texture_ids.len()
             );
             self.update_materials(tcx, materials)?;
         }
