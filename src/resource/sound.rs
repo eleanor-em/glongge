@@ -4,7 +4,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use rand::{Rng, thread_rng};
+use rand::{Rng, rng};
 
 use crate::core::prelude::*;
 use fyrox_sound::{
@@ -37,8 +37,8 @@ impl Sound {
             source
                 .stop()
                 .expect("should only be fallible for streaming buffers (see source)");
-            let mut rng = thread_rng();
-            source.set_pitch(linalg::eerp(1.0 - mag, 1.0 + mag, rng.gen_range(0.0..1.0)).into());
+            let mut rng = rng();
+            source.set_pitch(linalg::eerp(1.0 - mag, 1.0 + mag, rng.random_range(0.0..1.0)).into());
             source.play();
         } else {
             warn!("tried to play non-loaded sound");

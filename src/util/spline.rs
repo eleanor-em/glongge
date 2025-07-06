@@ -5,7 +5,7 @@ use crate::util::canvas::Canvas;
 use egui::{Align, Layout, OutputCommand};
 use glongge_derive::partially_derive_scene_object;
 use rand::Rng;
-use rand::thread_rng;
+use rand::rng;
 
 #[derive(Clone, Default)]
 pub struct GgInternalSpline {
@@ -136,7 +136,7 @@ impl SceneObject for GgInternalInteractiveSpline {
         "InteractiveSpline".to_string()
     }
     fn on_ready(&mut self, _ctx: &mut UpdateContext) {
-        self.colour = match thread_rng().gen_range(0..6) {
+        self.colour = match rng().random_range(0..6) {
             0 => Colour::red(),
             1 => Colour::green(),
             2 => Colour::blue(),

@@ -8,10 +8,8 @@ use glongge::{
 };
 use glongge_derive::partially_derive_scene_object;
 use num_traits::FloatConst;
-use rand::{
-    Rng,
-    distributions::{Distribution, Uniform},
-};
+use rand::Rng;
+use rand::distr::{Distribution, Uniform};
 use std::time::Instant;
 
 #[allow(dead_code)]
@@ -25,10 +23,11 @@ impl Scene for RectangleScene {
     fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 10;
         let mut objects = Uniform::new(50.0, 350.0)
-            .sample_iter(rand::thread_rng())
-            .zip(Uniform::new(50.0, 350.0).sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0).sample_iter(rand::thread_rng()))
-            .zip(Uniform::new(-1.0, 1.0).sample_iter(rand::thread_rng()))
+            .unwrap()
+            .sample_iter(rand::rng())
+            .zip(Uniform::new(50.0, 350.0).unwrap().sample_iter(rand::rng()))
+            .zip(Uniform::new(-1.0, 1.0).unwrap().sample_iter(rand::rng()))
+            .zip(Uniform::new(-1.0, 1.0).unwrap().sample_iter(rand::rng()))
             .take(N)
             .map(|(((x, y), vx), vy)| {
                 let pos = Vec2 { x, y };
@@ -119,8 +118,8 @@ impl SpinningRectangle {
     // const ANGULAR_VELOCITY: f32 = 2.0;
 
     pub fn new(pos: Vec2, vel_normed: Vec2) -> Self {
-        let mut rng = rand::thread_rng();
-        let col = match rng.gen_range(0..6) {
+        let mut rng = rand::rng();
+        let col = match rng.random_range(0..6) {
             0 => Colour::red(),
             1 => Colour::blue(),
             2 => Colour::green(),
@@ -173,8 +172,8 @@ impl SceneObject for SpinningRectangle {
     }
     fn on_update(&mut self, ctx: &mut UpdateContext) {
         if ctx.input().pressed(KeyCode::Space) {
-            let mut rng = rand::thread_rng();
-            let angle = rng.gen_range(0.0..(2.0 * f32::PI()));
+            let mut rng = rand::rng();
+            let angle = rng.random_range(0.0..(2.0 * f32::PI()));
             ctx.object_mut()
                 .add_sibling(SpinningRectangle::new(self.pos, Vec2::one().rotated(angle)));
             self.velocity = -Self::VELOCITY * Vec2::one().rotated(angle);

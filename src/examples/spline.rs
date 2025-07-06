@@ -19,10 +19,10 @@ impl Scene for SplineScene {
     fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut spline = InteractiveSpline::default();
         {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             for point in iter::from_fn(|| {
                 Some(
-                    Vec2::from([rng.gen_range(0.0..200.0), rng.gen_range(0.0..200.0)])
+                    Vec2::from([rng.random_range(0.0..200.0), rng.random_range(0.0..200.0)])
                         + 200. * Vec2::one(),
                 )
             })

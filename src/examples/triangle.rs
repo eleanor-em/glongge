@@ -4,10 +4,9 @@ use glongge::core::{
 };
 use glongge_derive::partially_derive_scene_object;
 use num_traits::FloatConst;
-use rand::{
-    Rng,
-    distributions::{Distribution, Uniform},
-};
+use rand::Rng;
+use rand::distr::Distribution;
+use rand::distr::Uniform;
 use std::time::Instant;
 
 #[allow(dead_code)]
@@ -20,20 +19,24 @@ impl Scene for TriangleScene {
 
     fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 1;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let xs: Vec<f32> = Uniform::new(0.0, 200.0)
+            .unwrap()
             .sample_iter(&mut rng)
             .take(N)
             .collect();
         let ys: Vec<f32> = Uniform::new(0.0, 200.0)
+            .unwrap()
             .sample_iter(&mut rng)
             .take(N)
             .collect();
         let vxs: Vec<f32> = Uniform::new(-1.0, 1.0)
+            .unwrap()
             .sample_iter(&mut rng)
             .take(N)
             .collect();
         let vys: Vec<f32> = Uniform::new(-1.0, 1.0)
+            .unwrap()
             .sample_iter(&mut rng)
             .take(N)
             .collect();
@@ -124,11 +127,11 @@ impl SceneObject for SpinningTriangle {
             && ctx.object().others().len() < 2500
             && ctx.viewport().contains_point(self.pos)
         {
-            let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.2) {
+            let mut rng = rand::rng();
+            if rng.random_bool(0.2) {
                 let vel = Vec2 {
-                    x: rng.gen_range(-1.0..1.0),
-                    y: rng.gen_range(-1.0..1.0),
+                    x: rng.random_range(-1.0..1.0),
+                    y: rng.random_range(-1.0..1.0),
                 };
                 ctx.object_mut().add_sibling(SpinningTriangle::new(
                     self.pos,
