@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read};
 use std::rc::Rc;
 use vulkano::format::Format;
@@ -49,7 +50,7 @@ impl Font {
             .filter_map(char::from_u32)
             .map(|c| {
                 let glyphs = rv.layout_no_cache(c.to_string(), &FontRenderSettings::default());
-                let Ok(reader) = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()) else {
+                let Ok(reader) = GlyphReader::new(glyphs, usize::MAX, Colour::white()) else {
                     return 0.0;
                 };
                 reader.width() as f32 / SAMPLE_RATIO
@@ -57,8 +58,8 @@ impl Font {
             .max_f32()
             .unwrap_or(0.0);
         let all_chars = (0..0xffff).filter_map(char::from_u32).collect::<String>();
-        let glyphs = rv.layout_no_cache(all_chars, &FontRenderSettings::default());
-        let reader = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()).unwrap();
+        let layout = rv.layout_no_cache(all_chars, &FontRenderSettings::default());
+        let reader = GlyphReader::new(layout, usize::MAX, Colour::white()).unwrap();
         rv.max_line_height = reader.height() as f32 / SAMPLE_RATIO;
 
         rv
@@ -108,7 +109,7 @@ impl Font {
 
     fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
         let mut glyphs = Vec::new();
-        let mut line_breaks = vec![0];
+        let mut line_breaks = Vec::new();
         let v_advance = self.height() + self.inner.line_gap();
         let mut caret = point(0.0, self.inner.ascent());
         let mut last_glyph: Option<Glyph> = None;
@@ -138,6 +139,11 @@ impl Font {
             last_glyph = Some(glyph.clone());
             glyphs.push(glyph);
         }
+        let glyphs = glyphs
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, g)| self.inner.outline_glyph(g).map(|g| (i, g)))
+            .collect();
         Layout {
             glyphs,
             line_breaks,
@@ -150,8 +156,8 @@ impl Font {
         settings: &FontRenderSettings,
     ) -> Result<bool> {
         settings.validate();
-        let glyphs = self.layout(text, settings.clone());
-        let reader = GlyphReader::new(self, glyphs, settings.max_glyphs, Colour::white())?;
+        let layout = self.layout(text, settings.clone());
+        let reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
         Ok(!(width as f32 > settings.max_width * SAMPLE_RATIO
@@ -166,7 +172,7 @@ impl Font {
     ) -> Result<Option<Sprite>> {
         settings.validate();
         let layout = self.layout(text, settings.clone());
-        let mut reader = GlyphReader::new(self, layout, settings.max_glyphs, Colour::white())?;
+        let mut reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
         if width as f32 > settings.max_width * SAMPLE_RATIO
@@ -192,7 +198,7 @@ impl Font {
 
 #[derive(Clone)]
 struct Layout {
-    glyphs: Vec<Glyph>,
+    glyphs: BTreeMap<usize, OutlinedGlyph>,
     line_breaks: Vec<usize>,
 }
 
@@ -261,59 +267,37 @@ struct GlyphReader {
 }
 
 impl GlyphReader {
-    fn new(font: &Font, layout: Layout, max_glyphs: usize, col: Colour) -> Result<Self> {
-        // to work out the exact size needed for the drawn glyphs we need to outline
-        // them and use their `px_bounds` which hold the coords of their render bounds.
-        // Use all lines to find the width:
-        let all_px_bounds_x = layout
-            .glyphs
-            .iter()
-            .filter_map(|g| font.inner.outline_glyph(g.clone()))
-            .map(|g| g.px_bounds())
-            .reduce(|mut b, next| {
-                b.min.x = b.min.x.min(next.min.x);
-                b.max.x = b.max.x.max(next.max.x);
-                b.min.y = b.min.y.min(next.min.y);
-                b.max.y = b.max.y.max(next.max.y);
-                b
-            })
-            .context("could not get outline of glyphs")?;
-        // Use until the next line break to find the height:
+    fn new(layout: Layout, max_glyphs: usize, col: Colour) -> Result<Self> {
+        // To work out the exact size needed for the drawn glyphs, we need to outline
+        // them and use their px_bounds which hold the coordinates of their render bounds.
         let next_line_break = *layout
             .line_breaks
             .iter()
             .find(|i| **i >= max_glyphs)
-            .unwrap_or(&layout.glyphs.len());
-        let all_px_bounds_y = layout
+            .unwrap_or(&usize::MAX);
+        let (_, all_px_bounds) = layout
             .glyphs
             .iter()
-            .take(next_line_break)
-            .filter_map(|g| font.inner.outline_glyph(g.clone()))
-            .map(|g| g.px_bounds())
-            .reduce(|mut b, next| {
-                b.min.x = b.min.x.min(next.min.x);
-                b.max.x = b.max.x.max(next.max.x);
-                b.min.y = b.min.y.min(next.min.y);
-                b.max.y = b.max.y.max(next.max.y);
-                b
+            .map(|(i, g)| (i, g.px_bounds()))
+            .reduce(|(_i, mut bounds), (j, next)| {
+                // Use all lines to find the width:
+                bounds.min.x = bounds.min.x.min(next.min.x);
+                bounds.max.x = bounds.max.x.max(next.max.x);
+                // Use until the next line break to find the height:
+                if *j < next_line_break {
+                    bounds.min.y = bounds.min.y.min(next.min.y);
+                    bounds.max.y = bounds.max.y.max(next.max.y);
+                }
+                (j, bounds)
             })
             .context("could not get outline of glyphs")?;
-        let all_px_bounds = ab_glyph::Rect {
-            min: ab_glyph::Point {
-                x: all_px_bounds_x.min.x,
-                y: all_px_bounds_y.min.y,
-            },
-            max: ab_glyph::Point {
-                x: all_px_bounds_x.max.x,
-                y: all_px_bounds_y.max.y,
-            },
-        };
         // Now get the actual glyphs we will use:
         let glyphs = layout
             .glyphs
             .iter()
-            .take(max_glyphs)
-            .filter_map(|g| font.inner.outline_glyph(g.clone()))
+            .filter(|(i, _)| **i < max_glyphs)
+            .map(|(_, g)| g)
+            .cloned()
             .collect_vec();
 
         Ok(Self {
