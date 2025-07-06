@@ -1,6 +1,7 @@
 use asefile::AsepriteFile;
+use num_traits::Zero;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{
     collections::{BTreeMap, HashMap},
     default::Default,
@@ -47,7 +48,6 @@ pub struct Texture {
     duration: Option<Duration>,
     extent: Vec2,
     ref_count: UniqueShared<usize>,
-    death_timer: UniqueShared<Option<Instant>>,
     ready: Arc<AtomicBool>,
 }
 
@@ -76,13 +76,11 @@ impl AxisAlignedExtent for Texture {
 impl Clone for Texture {
     fn clone(&self) -> Self {
         *self.ref_count.get() += 1;
-        *self.death_timer.get() = None;
         Self {
             id: self.id,
             duration: self.duration,
             extent: self.extent,
             ref_count: self.ref_count.clone(),
-            death_timer: self.death_timer.clone(),
             ready: self.ready.clone(),
         }
     }
@@ -101,9 +99,6 @@ impl Display for Texture {
 impl Drop for Texture {
     fn drop(&mut self) {
         *self.ref_count.get() -= 1;
-        if *self.ref_count.get() == 0 {
-            self.death_timer.get().replace(Instant::now());
-        }
     }
 }
 
@@ -116,7 +111,6 @@ pub(crate) struct InternalTexture {
     image: Id<Image>,
     uploaded_image_view: Option<Arc<ImageView>>,
     ref_count: UniqueShared<usize>,
-    death_timer: UniqueShared<Option<Instant>>,
     has_write_access: bool,
     ready: Arc<AtomicBool>,
 }
@@ -244,7 +238,6 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: UniqueShared::new(1),
-            death_timer: UniqueShared::new(None),
             has_write_access: false,
             ready: Arc::new(AtomicBool::new(false)),
         };
@@ -303,7 +296,6 @@ impl TextureHandlerInner {
             )
             .map_err(Validated::unwrap)?;
         let ref_count = UniqueShared::new(1);
-        let death_timer = UniqueShared::new(None);
         let ready = Arc::new(AtomicBool::new(false));
         let internal_texture = InternalTexture {
             filename,
@@ -313,7 +305,6 @@ impl TextureHandlerInner {
             image,
             uploaded_image_view: None,
             ref_count: ref_count.clone(),
-            death_timer: death_timer.clone(),
             has_write_access: false,
             ready: ready.clone(),
         };
@@ -330,7 +321,6 @@ impl TextureHandlerInner {
             duration,
             extent,
             ref_count,
-            death_timer: death_timer.clone(),
             ready,
         })
     }
@@ -339,13 +329,7 @@ impl TextureHandlerInner {
         let unused_ids = self
             .textures
             .iter()
-            .filter(|(_, tex)| {
-                tex.is_ready()
-                    && tex
-                        .death_timer
-                        .get()
-                        .is_some_and(|t| t.elapsed().as_secs() >= 1)
-            })
+            .filter(|(_, tex)| tex.is_ready() && tex.ref_count.get().is_zero())
             .map(|(id, _)| *id)
             .collect_vec();
         if unused_ids.is_empty() {

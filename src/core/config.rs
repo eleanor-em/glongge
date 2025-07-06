@@ -11,5 +11,4 @@ pub const EPSILON: f32 = 1e-5;
 pub const DISABLE_SOUND: bool = true;
 
 pub const USE_VSYNC: bool = true;
-// TOOD: sync render both ways? Might improve font flickering without vsync.
 pub const SYNC_UPDATE_TO_RENDER: bool = true;
