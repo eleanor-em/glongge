@@ -1,6 +1,7 @@
 pub mod collision;
 
 use crate::core::TreeObjectOfType;
+use crate::core::render::UpdateSync;
 use crate::shader::SpriteShader;
 use crate::util::{InspectMut, gg_float};
 use crate::{
@@ -37,7 +38,6 @@ use collision::{Collision, CollisionHandler, CollisionNotification, CollisionRes
 use serde::{Serialize, de::DeserializeOwned};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     cell::{Ref, RefMut},
     collections::{BTreeMap, BTreeSet},
@@ -416,7 +416,7 @@ pub(crate) struct UpdateHandler {
     viewport: AdjustedViewport,
     resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    render_done: Arc<AtomicBool>,
+    update_sync: UpdateSync,
     clear_col: Colour,
 
     coroutines: BTreeMap<ObjectId, BTreeMap<CoroutineId, Coroutine>>,
@@ -446,7 +446,7 @@ impl UpdateHandler {
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
-        render_done: Arc<AtomicBool>,
+        update_sync: UpdateSync,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>,
     ) -> Result<Self> {
@@ -463,7 +463,7 @@ impl UpdateHandler {
                 .current_viewport(),
             resource_handler,
             render_data_channel,
-            render_done,
+            update_sync,
             clear_col,
             coroutines: BTreeMap::new(),
             scene_instruction_tx,
@@ -505,11 +505,7 @@ impl UpdateHandler {
     }
 
     pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
-        let fixed_update_only = SYNC_UPDATE_TO_RENDER
-            && self
-                .render_done
-                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
-                .is_err();
+        let fixed_update_only = self.update_sync.try_render_done();
         if self.is_running {
             self.delta = self
                 .last_delta_set
@@ -532,18 +528,20 @@ impl UpdateHandler {
             let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
             if fixed_updates > 0 {
                 self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
-                if self.fixed_update_us >= FIXED_UPDATE_INTERVAL_US {
+                if self.fixed_update_us >= FIXED_UPDATE_WARN_DELAY_US {
                     warn!(
                         "fixed update behind by {:.1} ms",
-                        gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                            / 1000.0
+                        gg_float::from_u128_or_inf(
+                            self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US
+                        ) / 1000.0
                     );
                 }
-                if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT {
+                if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT_US {
                     warn!(
                         "fixed update behind by {:.1} ms, giving up",
-                        gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_INTERVAL_US)
-                            / 1000.0
+                        gg_float::from_u128_or_inf(
+                            self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US
+                        ) / 1000.0
                     );
                     self.fixed_update_us = 0;
                 }
@@ -1187,6 +1185,7 @@ impl UpdateHandler {
         render_data_channel.set_clear_col(self.clear_col);
         render_data_channel.set_translation(self.viewport.translation);
         self.viewport = render_data_channel.current_viewport();
+        self.update_sync.mark_update_done();
 
         self.perf_stats.render_infos.stop();
     }

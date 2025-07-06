@@ -36,7 +36,8 @@ const fn from_nes(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: 
 }
 const fn from_nes_accel(pixels: u8, subpixels: u8, subsubpixels: u8, subsubsubpixels: u8) -> f32 {
     // fixed update at 50 fps
-    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels) * (60.0 / 50.0)
+    from_nes(pixels, subpixels, subsubpixels, subsubsubpixels)
+        * (60.0 / (1_000_000.0 / FIXED_UPDATE_INTERVAL_US as f32))
 }
 const BASE_GRAVITY: f32 = from_nes_accel(0, 7, 0, 0);
 const BLOCK_COLLISION_TAG: &str = "BLOCK";

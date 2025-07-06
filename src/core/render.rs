@@ -171,10 +171,56 @@ pub struct ShaderRenderFrame<'a> {
 }
 
 #[derive(Clone)]
+pub(crate) struct UpdateSync {
+    update_done: Arc<AtomicBool>,
+    render_done: Arc<AtomicBool>,
+}
+
+impl UpdateSync {
+    pub fn new() -> Self {
+        Self {
+            update_done: Arc::new(AtomicBool::new(false)),
+            render_done: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub(crate) fn mark_update_done(&self) {
+        let _ = self
+            .update_done
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+    }
+    pub(crate) fn mark_render_done(&self) {
+        let _ = self
+            .render_done
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+    }
+
+    pub(crate) fn try_render_done(&self) -> bool {
+        SYNC_UPDATE_TO_RENDER
+            && self
+                .render_done
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+    }
+
+    pub(crate) fn wait_update_done(&self) {
+        if SYNC_UPDATE_TO_RENDER {
+            while self
+                .update_done
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                // spin
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct RenderHandler {
     gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    render_done: Arc<AtomicBool>,
+    pub(crate) update_sync: UpdateSync,
     resource_handler: ResourceHandler,
     window: UniqueShared<GgWindow>,
     viewport: UniqueShared<AdjustedViewport>,
@@ -205,7 +251,7 @@ impl RenderHandler {
         Ok(Self {
             gui_ctx,
             render_data_channel,
-            render_done: Arc::new(AtomicBool::new(true)),
+            update_sync: UpdateSync::new(),
             resource_handler,
             window: UniqueShared::new(window),
             viewport,
@@ -260,8 +306,8 @@ impl RenderHandler {
         }
     }
 
-    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, Arc<AtomicBool>) {
-        (self.render_data_channel.clone(), self.render_done.clone())
+    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
+        (self.render_data_channel.clone(), self.update_sync.clone())
     }
 
     pub(crate) fn build_shader_task_graphs(
@@ -508,12 +554,8 @@ impl Task for PostRenderTask {
             return Ok(());
         }
         self.resource_handler.texture.wait_free_unused_files();
-        let _ = self.handler.render_done.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
+        self.handler.update_sync.mark_render_done();
+
         world
             .perf_stats()
             .lap("PostRenderTask: wait_free_unused_files()");

@@ -159,6 +159,7 @@ struct WindowEventHandlerInner {
 
 impl WindowEventHandlerInner {
     fn run_update(&mut self) {
+        self.render_handler.update_sync.wait_update_done();
         self.vk_ctx.perf_stats().lap("start");
         self.handle_window_events();
         self.vk_ctx.perf_stats().lap("handle_window_event()");

@@ -1,4 +1,4 @@
-use crate::core::render::RenderHandler;
+use crate::core::render::{RenderHandler, UpdateSync};
 use crate::core::update::RenderContext;
 use crate::gui::{GuiContext, GuiUi};
 use crate::shader::ensure_shaders_locked;
@@ -16,7 +16,6 @@ use egui::text::LayoutJob;
 use egui::{Color32, TextFormat};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
 use std::{
     any::Any,
     collections::BTreeMap,
@@ -29,7 +28,7 @@ struct InternalScene {
     input_handler: Arc<Mutex<InputHandler>>,
     resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    render_done: Arc<AtomicBool>,
+    update_sync: UpdateSync,
 
     update_handler: Option<UpdateHandler>,
 }
@@ -40,7 +39,7 @@ impl InternalScene {
         input_handler: Arc<Mutex<InputHandler>>,
         resource_handler: ResourceHandler,
         render_data_channel: Arc<Mutex<RenderDataChannel>>,
-        render_done: Arc<AtomicBool>,
+        update_sync: UpdateSync,
     ) -> Self {
         let name = scene
             .try_lock()
@@ -52,7 +51,7 @@ impl InternalScene {
             input_handler,
             resource_handler,
             render_data_channel,
-            render_done,
+            update_sync,
             update_handler: None,
         }
     }
@@ -77,7 +76,7 @@ impl InternalScene {
                 self.input_handler.clone(),
                 self.resource_handler.clone(),
                 self.render_data_channel.clone(),
-                self.render_done.clone(),
+                self.update_sync.clone(),
                 self.name,
                 data,
             )
@@ -303,7 +302,7 @@ impl SceneHandler {
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
             .insert(scene.name(), Arc::new(Mutex::new(scene.initial_data())));
-        let (render_data_channel, render_done) = self.render_handler.get_receiver();
+        let (render_data_channel, update_sync) = self.render_handler.get_receiver();
         self.scenes.insert(
             scene.name(),
             Rc::new(RefCell::new(InternalScene::new(
@@ -311,7 +310,7 @@ impl SceneHandler {
                 self.input_handler.clone(),
                 self.resource_handler.clone(),
                 render_data_channel,
-                render_done,
+                update_sync,
             ))),
         );
     }
