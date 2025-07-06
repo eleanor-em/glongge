@@ -1,7 +1,8 @@
-use std::io::{ErrorKind, Read};
-
 use itertools::Itertools;
 use num_traits::ToPrimitive;
+use std::cell::RefCell;
+use std::io::{ErrorKind, Read};
+use std::rc::Rc;
 use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
@@ -29,6 +30,7 @@ mod internal {
 
 pub struct Font {
     inner: PxScaleFont<FontVec>,
+    cached_layout: Rc<RefCell<Option<(String, FontRenderSettings, Layout)>>>,
     max_glyph_width: f32,
     max_line_height: f32,
 }
@@ -37,6 +39,7 @@ impl Font {
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
             inner,
+            cached_layout: Rc::new(RefCell::new(None)),
             max_glyph_width: 0.0,
             max_line_height: 0.0,
         };
@@ -45,7 +48,7 @@ impl Font {
         rv.max_glyph_width = (0..0xffff)
             .filter_map(char::from_u32)
             .map(|c| {
-                let glyphs = rv.layout(c.to_string(), f32::INFINITY, TextWrapMode::default());
+                let glyphs = rv.layout_no_cache(c.to_string(), &FontRenderSettings::default());
                 let Ok(reader) = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()) else {
                     return 0.0;
                 };
@@ -54,7 +57,7 @@ impl Font {
             .max_f32()
             .unwrap_or(0.0);
         let all_chars = (0..0xffff).filter_map(char::from_u32).collect::<String>();
-        let glyphs = rv.layout(all_chars, f32::INFINITY, TextWrapMode::default());
+        let glyphs = rv.layout_no_cache(all_chars, &FontRenderSettings::default());
         let reader = GlyphReader::new(&rv, glyphs, usize::MAX, Colour::white()).unwrap();
         rv.max_line_height = reader.height() as f32 / SAMPLE_RATIO;
 
@@ -78,14 +81,27 @@ impl Font {
         self.max_line_height
     }
 
-    fn layout(
-        &self,
-        text: impl AsRef<str>,
-        max_width: f32,
-        text_wrap_mode: TextWrapMode,
-    ) -> Layout {
-        match text_wrap_mode {
-            TextWrapMode::WrapAnywhere => self.layout_wrap_anywhere(text, max_width),
+    fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> Layout {
+        let text = text.as_ref();
+        if let Some((cached_text, cached_settings, cached_layout)) =
+            self.cached_layout.borrow().as_ref()
+            && cached_text == text
+            && cached_settings.is_same_layout(&settings)
+        {
+            cached_layout.clone()
+        } else {
+            let layout = self.layout_no_cache(text, &settings);
+            self.cached_layout
+                .borrow_mut()
+                .replace((text.to_string(), settings, layout.clone()));
+            layout
+        }
+    }
+    fn layout_no_cache(&self, text: impl AsRef<str>, settings: &FontRenderSettings) -> Layout {
+        match settings.text_wrap_mode {
+            TextWrapMode::WrapAnywhere => {
+                self.layout_wrap_anywhere(text, settings.max_width * self.sample_ratio())
+            }
             TextWrapMode::WrapAtWordBoundary => unimplemented!(),
         }
     }
@@ -134,11 +150,7 @@ impl Font {
         settings: &FontRenderSettings,
     ) -> Result<bool> {
         settings.validate();
-        let glyphs = self.layout(
-            text,
-            settings.max_width * SAMPLE_RATIO,
-            settings.text_wrap_mode,
-        );
+        let glyphs = self.layout(text, settings.clone());
         let reader = GlyphReader::new(self, glyphs, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
@@ -153,11 +165,7 @@ impl Font {
         settings: &FontRenderSettings,
     ) -> Result<Option<Sprite>> {
         settings.validate();
-        let layout = self.layout(
-            text,
-            settings.max_width * SAMPLE_RATIO,
-            settings.text_wrap_mode,
-        );
+        let layout = self.layout(text, settings.clone());
         let mut reader = GlyphReader::new(self, layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
@@ -182,6 +190,7 @@ impl Font {
     }
 }
 
+#[derive(Clone)]
 struct Layout {
     glyphs: Vec<Glyph>,
     line_breaks: Vec<usize>,
@@ -200,6 +209,13 @@ impl FontRenderSettings {
         check_gt!(self.max_width, 0.0);
         check_gt!(self.max_height, 0.0);
         check!(self.max_glyphs > 0);
+    }
+
+    #[allow(clippy::float_cmp)]
+    fn is_same_layout(&self, other: &Self) -> bool {
+        self.max_width == other.max_width
+            && self.max_height == other.max_height
+            && self.text_wrap_mode == other.text_wrap_mode
     }
 }
 
