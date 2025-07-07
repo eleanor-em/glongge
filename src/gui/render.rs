@@ -140,6 +140,7 @@ struct GuiVertexIndexBuffers {
     last_index_count: usize,
     num_sets: usize,
     elements_per_set: usize,
+    is_dirty: bool,
 }
 
 fn image_size_bytes(delta: &egui::epaint::ImageDelta) -> u64 {
@@ -157,11 +158,11 @@ impl GuiVertexIndexBuffers {
         let num_sets = ctx.image_count();
         let vertices = Self::create_vertex_buffer(
             &ctx,
-            (size * std::mem::size_of::<egui::epaint::Vertex>() * num_sets) as DeviceSize,
+            (size * size_of::<egui::epaint::Vertex>() * num_sets) as DeviceSize,
         )?;
         let indices = Self::create_index_buffer(
             &ctx,
-            (size * std::mem::size_of::<u32>() * num_sets) as DeviceSize,
+            (size * size_of::<u32>() * num_sets) as DeviceSize,
         )?;
         let rv = Self {
             ctx,
@@ -172,6 +173,7 @@ impl GuiVertexIndexBuffers {
             last_index_count: 0,
             num_sets,
             elements_per_set: size,
+            is_dirty: true,
         };
         info!(
             "created GUI vertex/index buffer: {} KiB",
@@ -218,6 +220,7 @@ impl GuiVertexIndexBuffers {
         self.indices =
             Self::create_index_buffer(&self.ctx, (self.index_size_in_bytes() * 2) as DeviceSize)?;
         self.elements_per_set *= 2;
+        self.is_dirty = true;
         Ok(())
     }
 
@@ -279,27 +282,30 @@ impl GuiVertexIndexBuffers {
         }
 
         // Reallocate if needed:
-        while vertices.len() * self.num_sets * std::mem::size_of::<egui::epaint::Vertex>()
+        while vertices.len() * self.num_sets * size_of::<egui::epaint::Vertex>()
             > self.vertex_size_in_bytes()
         {
             self.realloc()?;
         }
-        while indices.len() * self.num_sets * std::mem::size_of::<u32>()
+        while indices.len() * self.num_sets * size_of::<u32>()
             > self.index_size_in_bytes()
         {
             self.realloc()?;
+        }
+        if self.is_dirty {
+            return Ok(());
         }
 
         // Write buffers:
         let start = (self.last_image_idx
             * self.elements_per_set
-            * std::mem::size_of::<egui::epaint::Vertex>()) as DeviceSize;
-        let end = start + std::mem::size_of_val(vertices) as DeviceSize;
+            * size_of::<egui::epaint::Vertex>()) as DeviceSize;
+        let end = start + size_of_val(vertices) as DeviceSize;
         tcx.write_buffer::<[egui::epaint::Vertex]>(self.vertices, start..end)?
             .copy_from_slice(vertices);
-        let start = (self.last_image_idx * self.elements_per_set * std::mem::size_of::<u32>())
+        let start = (self.last_image_idx * self.elements_per_set * size_of::<u32>())
             as DeviceSize;
-        let end = start + std::mem::size_of_val(indices) as DeviceSize;
+        let end = start + size_of_val(indices) as DeviceSize;
         tcx.write_buffer::<[u32]>(self.indices, start..end)?
             .copy_from_slice(indices);
         Ok(())
@@ -308,9 +314,9 @@ impl GuiVertexIndexBuffers {
     fn bind(&self, cbf: &mut RecordingCommandBuffer) -> Result<()> {
         let start = (self.last_image_idx
             * self.elements_per_set
-            * std::mem::size_of::<egui::epaint::Vertex>()) as DeviceSize;
+            * size_of::<egui::epaint::Vertex>()) as DeviceSize;
         let end = start
-            + (self.last_vertex_count * std::mem::size_of::<egui::epaint::Vertex>()) as DeviceSize;
+            + (self.last_vertex_count * size_of::<egui::epaint::Vertex>()) as DeviceSize;
         unsafe {
             cbf.bind_vertex_buffers(
                 0,
@@ -320,9 +326,9 @@ impl GuiVertexIndexBuffers {
                 &[],
             )?;
 
-            let start = (self.last_image_idx * self.elements_per_set * std::mem::size_of::<u32>())
+            let start = (self.last_image_idx * self.elements_per_set * size_of::<u32>())
                 as DeviceSize;
-            let end = start + (self.last_index_count * std::mem::size_of::<u32>()) as DeviceSize;
+            let end = start + (self.last_index_count * size_of::<u32>()) as DeviceSize;
             cbf.bind_index_buffer(
                 self.indices,
                 start,
@@ -346,8 +352,6 @@ pub(crate) struct GuiRenderer {
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: UniqueShared<Option<Arc<GraphicsPipeline>>>,
 
-    font_sampler: Arc<Sampler>,
-
     texture_desc_sets:
         UniqueShared<BTreeMap<egui::TextureId, (RawDescriptorSet, Vec<WriteDescriptorSet>)>>,
     texture_images: UniqueShared<BTreeMap<egui::TextureId, Id<Image>>>,
@@ -369,16 +373,6 @@ impl GuiRenderer {
         viewport: UniqueShared<AdjustedViewport>,
     ) -> Result<Self> {
         let device = vk_ctx.device();
-        let font_sampler = Sampler::new(
-            vk_ctx.device(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Linear,
-                min_filter: Filter::Linear,
-                address_mode: [SamplerAddressMode::ClampToEdge; 3],
-                mipmap_mode: SamplerMipmapMode::Linear,
-                ..Default::default()
-            },
-        )?;
         let staging_buffer = vk_ctx.resources().create_buffer(
             BufferCreateInfo {
                 usage: BufferUsage::TRANSFER_SRC,
@@ -403,7 +397,6 @@ impl GuiRenderer {
             fs: fs::load(device).context("failed to create shader module")?,
             viewport,
             pipeline: UniqueShared::default(),
-            font_sampler,
             texture_desc_sets: UniqueShared::new(BTreeMap::new()),
             texture_images: UniqueShared::new(BTreeMap::new()),
             texture_images_dirty: UniqueShared::new(false),
@@ -502,7 +495,16 @@ impl GuiRenderer {
         let desc_writes = vec![WriteDescriptorSet::image_view_sampler(
             0,
             view.clone(),
-            self.font_sampler.clone(),
+            Sampler::new(
+                self.vk_ctx.device(),
+                SamplerCreateInfo {
+                    mag_filter: Filter::Linear,
+                    min_filter: Filter::Linear,
+                    address_mode: [SamplerAddressMode::ClampToEdge; 3],
+                    mipmap_mode: SamplerMipmapMode::Linear,
+                    ..Default::default()
+                },
+            )?,
         )];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
@@ -682,10 +684,11 @@ impl GuiRenderer {
             );
         }
         *self.texture_images_dirty.get() = false;
+        self.draw_buffer.get().is_dirty = false;
         node.build()
     }
     pub(crate) fn is_dirty(&self) -> bool {
-        *self.texture_images_dirty.get()
+        *self.texture_images_dirty.get() || self.draw_buffer.get().is_dirty
     }
 }
 

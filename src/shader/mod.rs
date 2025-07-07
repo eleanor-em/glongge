@@ -170,7 +170,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
         let num_vertex_sets = ctx.image_count();
         let inner = Self::create_vertex_buffer(
             &ctx,
-            (size * std::mem::size_of::<T>() * num_vertex_sets) as DeviceSize,
+            (size * size_of::<T>() * num_vertex_sets) as DeviceSize,
         )?;
         let rv = Self {
             ctx,
@@ -193,7 +193,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             .size() as usize
     }
     fn len(&self) -> usize {
-        self.size_in_bytes() / std::mem::size_of::<T>()
+        self.size_in_bytes() / size_of::<T>()
     }
     fn single_len(&self) -> usize {
         self.len() / self.num_vertex_sets
@@ -228,9 +228,9 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             while self.next_vertex_idx + vertices.len() > self.len() {
                 self.realloc()?;
             }
-            let start = (self.next_vertex_idx * std::mem::size_of::<T>()) as DeviceSize;
+            let start = (self.next_vertex_idx * size_of::<T>()) as DeviceSize;
             let end =
-                ((self.next_vertex_idx + vertices.len()) * std::mem::size_of::<T>()) as DeviceSize;
+                ((self.next_vertex_idx + vertices.len()) * size_of::<T>()) as DeviceSize;
             tcx.write_buffer::<[T]>(self.inner, start..end)?
                 .copy_from_slice(vertices);
         }
@@ -269,9 +269,9 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
                 self.next_vertex_idx + self.vertex_count
             );
         }
-        let start = (self.next_vertex_idx * std::mem::size_of::<T>()) as DeviceSize;
+        let start = (self.next_vertex_idx * size_of::<T>()) as DeviceSize;
         let end =
-            ((self.next_vertex_idx + self.vertex_count) * std::mem::size_of::<T>()) as DeviceSize;
+            ((self.next_vertex_idx + self.vertex_count) * size_of::<T>()) as DeviceSize;
         let vertex_count = u32::try_from(self.vertex_count)
             .with_context(|| format!("tried to draw too many vertices: {}", self.vertex_count))?;
         unsafe {
