@@ -238,12 +238,10 @@ impl Default for FontRenderSettings {
 
 impl PartialEq for FontRenderSettings {
     fn eq(&self, other: &Self) -> bool {
-        gg_float::is_normal_or_zero(self.max_width) == gg_float::is_normal_or_zero(other.max_width)
-            && (!gg_float::is_normal_or_zero(self.max_width) || self.max_width == other.max_width)
-            && gg_float::is_normal_or_zero(self.max_height)
-                == gg_float::is_normal_or_zero(other.max_height)
-            && (!gg_float::is_normal_or_zero(self.max_height)
-                || self.max_height == other.max_height)
+        gg_float::is_finite(self.max_width) == gg_float::is_finite(other.max_width)
+            && (!gg_float::is_finite(self.max_width) || self.max_width == other.max_width)
+            && gg_float::is_finite(self.max_height) == gg_float::is_finite(other.max_height)
+            && (!gg_float::is_finite(self.max_height) || self.max_height == other.max_height)
             && self.max_glyphs == other.max_glyphs
             && self.text_wrap_mode == other.text_wrap_mode
     }

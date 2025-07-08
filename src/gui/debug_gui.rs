@@ -905,9 +905,10 @@ impl GuiConsoleLog {
                     egui::Grid::new("perf-update-data")
                         .num_columns(3)
                         .show(ui, |ui| {
-                            for (tag, mean, max) in perf_stats.as_tuples_ms() {
+                            for (tag, min, mean, max) in perf_stats.as_tuples_ms() {
                                 let is_total = tag == "total";
                                 ui.add(egui::Label::new(tag).selectable(false));
+                                ui.add(egui::Label::new(format!("{min:.1}")).selectable(false));
                                 ui.add(egui::Label::new(format!("{mean:.1}")).selectable(false));
                                 ui.add(egui::Label::new(format!("{max:.1}")).selectable(false));
                                 ui.end_row();
@@ -952,9 +953,10 @@ impl GuiConsoleLog {
                     egui::Grid::new("perf-render-data")
                         .num_columns(3)
                         .show(ui, |ui| {
-                            for (tag, mean, max) in perf_stats.as_tuples_ms() {
+                            for (tag, min, mean, max) in perf_stats.as_tuples_ms() {
                                 let is_total = tag == "total";
                                 ui.add(egui::Label::new(tag).selectable(false));
+                                ui.add(egui::Label::new(format!("{min:.1}")).selectable(false));
                                 ui.add(egui::Label::new(format!("{mean:.1}")).selectable(false));
                                 ui.add(egui::Label::new(format!("{max:.1}")).selectable(false));
                                 ui.end_row();

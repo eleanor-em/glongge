@@ -639,15 +639,6 @@ impl Vec2 {
         }
     }
 
-    /// Checks if both components of the vector are either normal floating point numbers or zero.
-    ///
-    /// This is useful for detecting NaN, infinity, or other irregular floating point values
-    /// that could cause problems in calculations.
-    #[must_use]
-    pub fn is_normal_or_zero(&self) -> bool {
-        gg_float::is_normal_or_zero(self.x) && gg_float::is_normal_or_zero(self.y)
-    }
-
     /// Compares two vectors based on their squared length.
     ///
     /// This function first attempts to compare using [`partial_cmp()`](f32::partial_cmp), which may

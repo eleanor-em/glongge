@@ -623,7 +623,7 @@ impl RenderPerfStats {
         self.last_perf_stats.clone().map(|s| *s)
     }
 
-    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
             self.update_gui.as_tuple_ms(),

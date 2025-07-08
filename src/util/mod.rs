@@ -40,7 +40,6 @@ macro_rules! include_bytes_root {
 #[allow(dead_code)]
 pub mod gg_time {
     use crate::util::gg_float;
-    use std::cmp;
     use std::time::{Duration, Instant};
     use tracing::info;
 
@@ -57,6 +56,7 @@ pub mod gg_time {
         tag: String,
         n: u128,
         total_ns: u128,
+        min_ns: u128,
         max_ns: u128,
         last_ns: u128,
         last_wall: Instant,
@@ -70,6 +70,7 @@ pub mod gg_time {
                 tag: tag.to_string(),
                 n: 0,
                 total_ns: 0,
+                min_ns: u128::MAX,
                 max_ns: 0,
                 last_ns: 0,
                 last_wall: Instant::now(),
@@ -89,7 +90,8 @@ pub mod gg_time {
                 self.n += 1;
                 self.total_ns += delta;
                 self.last_ns += delta;
-                self.max_ns = cmp::max(self.max_ns, self.last_ns);
+                self.min_ns = self.min_ns.min(self.last_ns);
+                self.max_ns = self.max_ns.max(self.last_ns);
                 self.running = false;
             }
         }
@@ -108,12 +110,21 @@ pub mod gg_time {
             *self = Self::new(&self.tag);
             self.last_report = Instant::now();
         }
+        fn min_ms(&self) -> f32 {
+            let min_ns = gg_float::from_u128_or_inf(self.min_ns);
+            min_ns / 1_000_000.0
+        }
         fn max_ms(&self) -> f32 {
             let max_ns = gg_float::from_u128_or_inf(self.max_ns);
             max_ns / 1_000_000.0
         }
-        pub fn as_tuple_ms(&self) -> (String, f32, f32) {
-            (self.tag.clone(), self.mean_ms(), self.max_ms())
+        pub fn as_tuple_ms(&self) -> (String, f32, f32, f32) {
+            (
+                self.tag.clone(),
+                self.min_ms(),
+                self.mean_ms(),
+                self.max_ms(),
+            )
         }
         #[must_use]
         pub fn report_take(&mut self) -> TimeIt {
@@ -123,9 +134,10 @@ pub mod gg_time {
         }
         pub fn report_ms(&mut self) {
             info!(
-                "TimeIt [{:>18}]: {} events, mean={:.2} ms, max={:.2} ms",
+                "TimeIt [{:>18}]: {} events, min={:.2} ms, mean={:.2} ms, max={:.2} ms",
                 self.tag,
                 self.n,
+                self.min_ms(),
                 self.mean_ms(),
                 self.max_ms()
             );
@@ -394,29 +406,27 @@ pub mod gg_float {
     use std::time::Duration;
 
     pub trait GgFloat {
-        fn is_normal_or_zero(&self) -> bool;
+        fn is_finite(&self) -> bool;
     }
 
     impl GgFloat for f32 {
-        fn is_normal_or_zero(&self) -> bool {
+        fn is_finite(&self) -> bool {
             self.is_normal() || self.is_zero()
         }
     }
 
     impl GgFloat for Vec2 {
-        fn is_normal_or_zero(&self) -> bool {
-            self.x.is_normal_or_zero() && self.y.is_normal_or_zero()
+        fn is_finite(&self) -> bool {
+            self.x.is_finite() && self.y.is_finite()
         }
     }
 
     impl GgFloat for Transform {
-        fn is_normal_or_zero(&self) -> bool {
-            self.centre.is_normal_or_zero()
-                && self.rotation.is_normal_or_zero()
-                && self.scale.is_normal_or_zero()
+        fn is_finite(&self) -> bool {
+            self.centre.is_finite() && self.rotation.is_finite() && self.scale.is_finite()
         }
     }
-    pub fn is_normal_or_zero(x: f32) -> bool {
+    pub fn is_finite(x: f32) -> bool {
         matches!(x.classify(), FpCategory::Zero | FpCategory::Normal)
     }
 

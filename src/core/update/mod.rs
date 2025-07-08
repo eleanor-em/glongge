@@ -484,7 +484,6 @@ impl UpdateHandler {
         };
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
-        rv.perf_stats.add_objects.start();
         let mut pending_move_objects = BTreeMap::new();
         rv.complete_update_with_added_objects(
             &input_handler,
@@ -498,7 +497,6 @@ impl UpdateHandler {
                 .collect(),
             &mut pending_move_objects,
         );
-        rv.perf_stats.add_objects.stop();
         rv.complete_update_with_moved_objects(pending_move_objects);
         rv.complete_update_with_render_infos();
         Ok(rv)
@@ -935,19 +933,17 @@ impl UpdateHandler {
             ffc = self.fixed_frame_counter
         );
         let _enter = update_span.enter();
+        self.perf_stats.complete_update.start();
 
         let (pending_add_objects, pending_remove_objects, mut pending_move_objects) =
             object_tracker.into_pending();
         self.complete_update_with_removed_objects(pending_remove_objects);
         // Note: complete_update_with_added_objects() is recursive.
-        self.perf_stats.add_objects.start();
         self.complete_update_with_added_objects(
             input_handler,
             pending_add_objects,
             &mut pending_move_objects,
         );
-        self.perf_stats.add_objects.stop();
-        // TODO: add perf stats.
         self.complete_update_with_moved_objects(pending_move_objects);
         self.debug_gui
             .complete_update(input_handler, &mut self.viewport);
@@ -956,9 +952,10 @@ impl UpdateHandler {
             self.complete_update_with_render_infos();
             self.input_handler.lock().unwrap().complete_update();
         }
+
+        self.perf_stats.complete_update.stop();
     }
     fn complete_update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
-        self.perf_stats.remove_objects.start();
         self.object_handler
             .collision_handler
             .remove_objects(&pending_remove_objects);
@@ -980,7 +977,6 @@ impl UpdateHandler {
             self.vertex_map.remove(remove_id);
             self.coroutines.remove(&remove_id);
         }
-        self.perf_stats.remove_objects.stop();
     }
     fn complete_update_with_added_objects(
         &mut self,
@@ -1157,8 +1153,6 @@ impl UpdateHandler {
         }
     }
     fn complete_update_with_render_infos(&mut self) {
-        self.perf_stats.render_infos.start();
-
         let shader_execs = self
             .object_handler
             .create_shader_execs(&mut self.vertex_map);
@@ -1186,8 +1180,6 @@ impl UpdateHandler {
         render_data_channel.set_translation(self.viewport.translation);
         self.viewport = render_data_channel.current_viewport();
         self.update_sync.mark_update_done();
-
-        self.perf_stats.render_infos.stop();
     }
 }
 
@@ -1202,9 +1194,7 @@ pub(crate) struct UpdatePerfStats {
     fixed_update: TimeIt,
     detect_collision: TimeIt,
     on_collision: TimeIt,
-    remove_objects: TimeIt,
-    add_objects: TimeIt,
-    render_infos: TimeIt,
+    complete_update: TimeIt,
     extra_debug: TimeIt,
     last_perf_stats: Option<Box<UpdatePerfStats>>,
     last_report: Instant,
@@ -1223,9 +1213,7 @@ impl UpdatePerfStats {
             fixed_update: TimeIt::new("fixed_update"),
             detect_collision: TimeIt::new("detect collisions"),
             on_collision: TimeIt::new("on_collision"),
-            remove_objects: TimeIt::new("remove objects"),
-            add_objects: TimeIt::new("add objects"),
-            render_infos: TimeIt::new("render_infos"),
+            complete_update: TimeIt::new("complete_update"),
             extra_debug: TimeIt::new("extra_debug"),
             last_perf_stats: None,
             last_report: Instant::now(),
@@ -1245,9 +1233,7 @@ impl UpdatePerfStats {
                 fixed_update: self.fixed_update.report_take(),
                 detect_collision: self.detect_collision.report_take(),
                 on_collision: self.on_collision.report_take(),
-                remove_objects: self.remove_objects.report_take(),
-                add_objects: self.add_objects.report_take(),
-                render_infos: self.render_infos.report_take(),
+                complete_update: self.complete_update.report_take(),
                 extra_debug: self.extra_debug.report_take(),
                 last_perf_stats: None,
                 last_report: Instant::now(),
@@ -1258,7 +1244,7 @@ impl UpdatePerfStats {
         self.last_perf_stats.clone().map(|s| *s)
     }
 
-    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32)> {
+    pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32, f32)> {
         let mut default = vec![
             self.total_stats.as_tuple_ms(),
             self.on_gui.as_tuple_ms(),
@@ -1268,9 +1254,7 @@ impl UpdatePerfStats {
             self.on_update_end.as_tuple_ms(),
             self.fixed_update.as_tuple_ms(),
             self.detect_collision.as_tuple_ms(),
-            self.remove_objects.as_tuple_ms(),
-            self.add_objects.as_tuple_ms(),
-            self.render_infos.as_tuple_ms(),
+            self.complete_update.as_tuple_ms(),
         ];
         if self.extra_debug.last_ms() != 0.0 {
             default.push(self.extra_debug.as_tuple_ms());
