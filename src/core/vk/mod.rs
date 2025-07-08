@@ -11,7 +11,7 @@ use crate::{
     util::gg_time::TimeIt,
     warn_every_seconds,
 };
-use egui::{FullOutput, ViewportId, ViewportInfo};
+use egui::{ViewportId, ViewportInfo};
 use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::dpi::PhysicalSize;
 use egui_winit::winit::event_loop::ActiveEventLoop;
@@ -34,7 +34,7 @@ pub mod vk_ctx;
 
 #[derive(Clone)]
 pub(crate) struct GgWindow {
-    inner: Arc<Window>,
+    pub(crate) inner: Arc<Window>,
 }
 
 impl GgWindow {
@@ -214,7 +214,7 @@ impl WindowEventHandlerInner {
         }
     }
 
-    fn update_gui(&mut self) -> FullOutput {
+    fn update_gui(&mut self) {
         egui_winit::update_viewport_info(
             &mut ViewportInfo::default(),
             &self.gui_ctx.clone(),
@@ -222,23 +222,12 @@ impl WindowEventHandlerInner {
             self.is_first_window_event,
         );
         self.is_first_window_event = false;
-        let raw_input = self.platform.take_egui_input(&self.window.inner);
-        let stats = self.last_render_stats.clone();
-        let render_handler = self.render_handler.clone();
-        let input = self.input_handler.clone();
-        let full_output = self.gui_ctx.run(raw_input, |ctx| {
-            {
-                let mut input = input.lock().unwrap();
-                input.set_viewport(render_handler.viewport());
-                input.update_mouse(ctx);
-            }
-            render_handler.do_gui(ctx, stats.clone());
-        });
-        // TODO: messy.
-        render_handler.update_full_output(full_output.clone());
-        self.platform
-            .handle_platform_output(&self.window.inner, full_output.platform_output.clone());
-        full_output
+        self.render_handler.do_gui(
+            &self.gui_ctx,
+            &mut self.platform,
+            &self.input_handler,
+            self.last_render_stats.as_ref(),
+        );
     }
 
     fn acquire_and_handle_image(&mut self) -> Result<(), gg_err::CatchOutOfDate> {
@@ -251,7 +240,7 @@ impl WindowEventHandlerInner {
 
         self.render_stats.start();
         self.render_stats.update_gui.start();
-        let _full_output = self.update_gui();
+        self.update_gui();
         self.render_stats.update_gui.stop();
         self.vk_ctx.perf_stats().lap("update_gui()");
 
@@ -287,8 +276,7 @@ impl WindowEventHandlerInner {
         self.vk_ctx
             .recreate_swapchain(&self.window)
             .context("could not recreate swapchain")?;
-        self.render_handler
-            .on_recreate_swapchain(self.window.clone());
+        self.render_handler.on_recreate_swapchain();
         Ok(())
     }
 }

@@ -229,8 +229,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
                 self.realloc()?;
             }
             let start = (self.next_vertex_idx * size_of::<T>()) as DeviceSize;
-            let end =
-                ((self.next_vertex_idx + vertices.len()) * size_of::<T>()) as DeviceSize;
+            let end = ((self.next_vertex_idx + vertices.len()) * size_of::<T>()) as DeviceSize;
             tcx.write_buffer::<[T]>(self.inner, start..end)?
                 .copy_from_slice(vertices);
         }
@@ -270,8 +269,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             );
         }
         let start = (self.next_vertex_idx * size_of::<T>()) as DeviceSize;
-        let end =
-            ((self.next_vertex_idx + self.vertex_count) * size_of::<T>()) as DeviceSize;
+        let end = ((self.next_vertex_idx + self.vertex_count) * size_of::<T>()) as DeviceSize;
         let vertex_count = u32::try_from(self.vertex_count)
             .with_context(|| format!("tried to draw too many vertices: {}", self.vertex_count))?;
         unsafe {

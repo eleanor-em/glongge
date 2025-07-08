@@ -160,10 +160,8 @@ impl GuiVertexIndexBuffers {
             &ctx,
             (size * size_of::<egui::epaint::Vertex>() * num_sets) as DeviceSize,
         )?;
-        let indices = Self::create_index_buffer(
-            &ctx,
-            (size * size_of::<u32>() * num_sets) as DeviceSize,
-        )?;
+        let indices =
+            Self::create_index_buffer(&ctx, (size * size_of::<u32>() * num_sets) as DeviceSize)?;
         let rv = Self {
             ctx,
             vertices,
@@ -287,9 +285,7 @@ impl GuiVertexIndexBuffers {
         {
             self.realloc()?;
         }
-        while indices.len() * self.num_sets * size_of::<u32>()
-            > self.index_size_in_bytes()
-        {
+        while indices.len() * self.num_sets * size_of::<u32>() > self.index_size_in_bytes() {
             self.realloc()?;
         }
         if self.is_dirty {
@@ -303,8 +299,7 @@ impl GuiVertexIndexBuffers {
         let end = start + size_of_val(vertices) as DeviceSize;
         tcx.write_buffer::<[egui::epaint::Vertex]>(self.vertices, start..end)?
             .copy_from_slice(vertices);
-        let start = (self.last_image_idx * self.elements_per_set * size_of::<u32>())
-            as DeviceSize;
+        let start = (self.last_image_idx * self.elements_per_set * size_of::<u32>()) as DeviceSize;
         let end = start + size_of_val(indices) as DeviceSize;
         tcx.write_buffer::<[u32]>(self.indices, start..end)?
             .copy_from_slice(indices);
@@ -315,8 +310,8 @@ impl GuiVertexIndexBuffers {
         let start = (self.last_image_idx
             * self.elements_per_set
             * size_of::<egui::epaint::Vertex>()) as DeviceSize;
-        let end = start
-            + (self.last_vertex_count * size_of::<egui::epaint::Vertex>()) as DeviceSize;
+        let end =
+            start + (self.last_vertex_count * size_of::<egui::epaint::Vertex>()) as DeviceSize;
         unsafe {
             cbf.bind_vertex_buffers(
                 0,
@@ -326,8 +321,8 @@ impl GuiVertexIndexBuffers {
                 &[],
             )?;
 
-            let start = (self.last_image_idx * self.elements_per_set * size_of::<u32>())
-                as DeviceSize;
+            let start =
+                (self.last_image_idx * self.elements_per_set * size_of::<u32>()) as DeviceSize;
             let end = start + (self.last_index_count * size_of::<u32>()) as DeviceSize;
             cbf.bind_index_buffer(
                 self.indices,

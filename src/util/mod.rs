@@ -684,6 +684,12 @@ impl<T: Clone> UniqueShared<T> {
     }
 }
 
+impl<T> UniqueShared<Option<T>> {
+    pub fn take_inner(&self) -> Option<T> {
+        self.get().take()
+    }
+}
+
 impl<T: Debug> Debug for UniqueShared<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "UniqueShared[{:?}]", self.get())

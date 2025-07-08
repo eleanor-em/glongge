@@ -1,3 +1,4 @@
+use crate::core::input::InputHandler;
 use crate::core::scene::GuiClosure;
 use crate::core::vk::vk_ctx::VulkanoContext;
 use crate::core::vk::{GgWindow, RenderPerfStats};
@@ -222,11 +223,10 @@ pub(crate) struct RenderHandler {
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     pub(crate) update_sync: UpdateSync,
     resource_handler: ResourceHandler,
-    window: UniqueShared<GgWindow>,
+    window: GgWindow,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: GuiRenderer,
-    last_gui_commands_was_empty: UniqueShared<bool>,
     last_full_output: UniqueShared<Option<FullOutput>>,
 }
 
@@ -253,10 +253,9 @@ impl RenderHandler {
             render_data_channel,
             update_sync: UpdateSync::new(),
             resource_handler,
-            window: UniqueShared::new(window),
+            window,
             viewport,
             shaders,
-            last_gui_commands_was_empty: UniqueShared::new(true),
             last_full_output: UniqueShared::new(None),
             gui_shader,
         })
@@ -288,22 +287,35 @@ impl RenderHandler {
         self.viewport.get().clone()
     }
 
-    pub(crate) fn on_recreate_swapchain(&self, window: GgWindow) {
-        *self.window.get() = window;
-        self.viewport.get().update_from_window(&self.window.get());
+    pub(crate) fn on_recreate_swapchain(&self) {
+        self.viewport.get().update_from_window(&self.window);
         self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
     }
 
-    pub(crate) fn do_gui(&self, ctx: &GuiContext, last_render_stats: Option<RenderPerfStats>) {
-        let gui_commands = {
-            let mut channel = self.render_data_channel.lock().unwrap();
-            channel.last_render_stats = last_render_stats;
-            channel.gui_commands.drain(..).collect_vec()
-        };
-        *self.last_gui_commands_was_empty.get() = gui_commands.is_empty();
-        for cmd in gui_commands {
-            cmd(ctx);
-        }
+    pub(crate) fn do_gui(
+        &self,
+        ctx: &GuiContext,
+        platform: &mut egui_winit::State,
+        input: &Arc<Mutex<InputHandler>>,
+        last_render_stats: Option<&RenderPerfStats>,
+    ) {
+        let full_output = ctx.run(platform.take_egui_input(&self.window.inner), |ctx| {
+            {
+                let mut input = input.lock().unwrap();
+                input.set_viewport(self.viewport());
+                input.update_mouse(ctx);
+            }
+            let gui_commands = {
+                let mut channel = self.render_data_channel.lock().unwrap();
+                channel.last_render_stats = last_render_stats.cloned();
+                channel.gui_commands.drain(..).collect_vec()
+            };
+            for cmd in gui_commands {
+                cmd(ctx);
+            }
+        });
+        platform.handle_platform_output(&self.window.inner, full_output.platform_output.clone());
+        self.last_full_output.get().replace(full_output);
     }
 
     pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
@@ -396,12 +408,6 @@ impl RenderHandler {
         Ok(())
     }
 
-    pub(crate) fn update_full_output(&self, full_output: FullOutput) {
-        if self.last_full_output.get().is_none() || !*self.last_gui_commands_was_empty.get() {
-            *self.last_full_output.get() = Some(full_output);
-        }
-    }
-
     pub(crate) fn is_dirty(&self) -> bool {
         self.gui_shader.is_dirty()
     }
@@ -447,8 +453,7 @@ impl Task for PreRenderTask {
                 .viewport
                 .get()
                 .set_global_scale_factor(global_scale_factor);
-            self.handler
-                .on_recreate_swapchain(self.handler.window.get().clone());
+            self.handler.on_recreate_swapchain();
         }
         for mut shader in self.handler.shaders.iter().map(|s| s.get()) {
             let shader_id = shader.id();
@@ -463,7 +468,7 @@ impl Task for PreRenderTask {
         let full_output = self
             .handler
             .last_full_output
-            .clone_inner()
+            .take_inner()
             .expect("GUI output missing");
         let primitives = self
             .handler
