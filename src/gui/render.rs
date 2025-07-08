@@ -335,10 +335,6 @@ impl GuiVertexIndexBuffers {
     }
 }
 
-struct GuiFrame {
-    meshes: Vec<Mesh>,
-}
-
 #[derive(Clone)]
 pub(crate) struct GuiRenderer {
     vk_ctx: VulkanoContext,
@@ -352,7 +348,8 @@ pub(crate) struct GuiRenderer {
     texture_images: UniqueShared<BTreeMap<egui::TextureId, Id<Image>>>,
     texture_images_dirty: UniqueShared<bool>,
 
-    next_frame: UniqueShared<Option<GuiFrame>>,
+    next_frame: UniqueShared<Option<Vec<Mesh>>>,
+    last_nonempty_frame: UniqueShared<Vec<Mesh>>,
     pub(crate) primitives: UniqueShared<Option<Vec<ClippedPrimitive>>>,
     pub(crate) gui_enabled: UniqueShared<bool>,
 
@@ -396,6 +393,7 @@ impl GuiRenderer {
             texture_images: UniqueShared::new(BTreeMap::new()),
             texture_images_dirty: UniqueShared::new(false),
             next_frame: UniqueShared::new(None),
+            last_nonempty_frame: UniqueShared::new(Vec::new()),
             primitives: UniqueShared::new(None),
             gui_enabled: UniqueShared::new(false),
             staging_buffer,
@@ -598,14 +596,21 @@ impl GuiRenderer {
         sets: &[(egui::TextureId, egui::epaint::ImageDelta)],
     ) -> Result<()> {
         let primitives = self.primitives.get().take().expect("no GUI primitives");
-        let meshes = primitives
+        let mut meshes = primitives
             .iter()
             .filter_map(|mesh| match &mesh.primitive {
                 Primitive::Mesh(m) => Some(m),
-                Primitive::Callback(_) => None,
+                Primitive::Callback(_) => unimplemented!(),
             })
             .cloned()
             .collect_vec();
+        if meshes.is_empty() {
+            // There is some jank whereby the meshes can be empty while updating the textures.
+            // This is a hack to prevent the GUI from flickering in this case.
+            meshes = self.last_nonempty_frame.clone_inner();
+        } else {
+            self.last_nonempty_frame.get().clone_from(&meshes);
+        }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()
@@ -618,7 +623,7 @@ impl GuiRenderer {
             tcx,
         )?;
         let mut next_frame = self.next_frame.get();
-        *next_frame = Some(GuiFrame { meshes });
+        *next_frame = Some(meshes);
 
         for (id, image) in self.texture_images.get().iter() {
             if !self.texture_desc_sets.get().contains_key(id) {
@@ -769,7 +774,7 @@ impl Task for GuiRenderer {
 
         let mut vertex_cursor = 0;
         let mut index_cursor = 0;
-        for mesh in &frame.meshes {
+        for mesh in &frame {
             if let Err(e) = self.prepare_mesh_draw(cbf, pipeline.layout(), mesh) {
                 error!("{}", e.root_cause());
             } else {
