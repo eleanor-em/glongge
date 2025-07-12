@@ -604,7 +604,7 @@ impl GuiRenderer {
             })
             .cloned()
             .collect_vec();
-        if meshes.is_empty() {
+        if *self.gui_enabled.get() && meshes.is_empty() {
             // There is some jank whereby the meshes can be empty while updating the textures.
             // This is a hack to prevent the GUI from flickering in this case.
             meshes = self.last_nonempty_frame.clone_inner();

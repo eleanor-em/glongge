@@ -24,6 +24,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+use tracing::info_span;
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::graph::{CompileInfo, ExecutableTaskGraph, TaskGraph};
@@ -155,15 +156,21 @@ struct WindowEventHandlerInner {
     window_event_rx: Receiver<WindowEvent>,
     scale_factor_rx: Receiver<f32>,
     recreate_swapchain_rx: Receiver<Instant>,
+    render_count: usize,
 }
 
 impl WindowEventHandlerInner {
-    fn run_update(&mut self) {
+    fn render_update(&mut self) {
+        let n = self.render_count;
+        let span = info_span!("render_update", n);
+        let _enter = span.enter();
         self.render_handler.update_sync.wait_update_done();
         self.vk_ctx.perf_stats().lap("start");
         self.handle_window_events();
         self.vk_ctx.perf_stats().lap("handle_window_event()");
-        if self.resource_handler.texture.wait_textures_dirty() || self.render_handler.is_dirty() {
+        if self.resource_handler.texture.should_build_task_graph()
+            || self.render_handler.should_build_task_graph()
+        {
             let vk_ctx = self.vk_ctx.clone();
             let render_handler = self.render_handler.clone();
             let resource_handler = self.resource_handler.clone();
@@ -184,6 +191,7 @@ impl WindowEventHandlerInner {
         self.vk_ctx.perf_stats().lap("acquire_and_handle_image()");
 
         self.vk_ctx.perf_stats().report(20);
+        self.render_count += 1;
     }
 
     fn handle_window_events(&mut self) {
@@ -286,7 +294,6 @@ fn build_task_graph(
     render_handler: &RenderHandler,
     resource_handler: &ResourceHandler,
 ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
-    // TODO: verbose!
     info_every_seconds!(1, "building task graph");
     let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
     let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
@@ -451,9 +458,10 @@ where
                 window_event_rx,
                 scale_factor_rx,
                 recreate_swapchain_rx,
+                render_count: 0,
             };
             loop {
-                inner.run_update();
+                inner.render_update();
             }
         });
         Ok(())

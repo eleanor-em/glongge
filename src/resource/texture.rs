@@ -130,7 +130,7 @@ impl InternalTexture {
         self.uploaded_image_view.is_some()
     }
 
-    fn create_image_view(
+    fn upload(
         &mut self,
         ctx: &VulkanoContext,
         cbf: &mut RecordingCommandBuffer,
@@ -149,10 +149,17 @@ impl InternalTexture {
             self.uploaded_image_view = Some(image_view);
             self.ready.store(true, Ordering::SeqCst);
         }
+        info_every_seconds!(
+            1,
+            "uploaded: {} (id {:?}, {:.1} KiB)",
+            self.filename,
+            self.id(),
+            (self.raw.buf.len() as f32) / 1024.0
+        );
         Ok(())
     }
 
-    fn can_upload(&self) -> bool {
+    fn should_upload(&self) -> bool {
         self.has_write_access && !self.is_ready()
     }
 }
@@ -256,15 +263,21 @@ impl TextureHandlerInner {
         filename: String,
         loaded: RawTexture,
     ) -> Result<Texture> {
-        let id = self
+        let mut id = self
             .textures
-            .keys()
-            .copied()
-            .tuple_windows()
-            .find(|(a, b)| *a + 1 != *b)
-            .map(|(a, _)| a + 1)
-            .or_else(|| self.textures.last_key_value().map(|(id, _)| id + 1))
-            .expect("empty textures? (blank texture missing)");
+            .last_key_value()
+            .expect("empty textures? (blank texture missing)")
+            .0 + 1;
+        if id as usize == MAX_TEXTURE_COUNT {
+            id = self.textures
+                .keys()
+                .copied()
+                .tuple_windows()
+                .find(|(a, b)| *a + 1 != *b)
+                .map(|(a, _)| a + 1)
+                .or_else(|| self.textures.last_key_value().map(|(id, _)| id + 1))
+                .expect("empty textures? (blank texture missing)");
+        }
         let buf = ctx
             .resources()
             .create_buffer(
@@ -403,15 +416,21 @@ impl MaterialHandler {
         if let Some(id) = self.materials_inverse.get(&material) {
             *id
         } else {
-            let id = self
+            let mut id = self
                 .materials
-                .keys()
-                .copied()
-                .tuple_windows()
-                .find(|(a, b)| *a + 1 != *b)
-                .map(|(a, _)| a + 1)
-                .or_else(|| self.materials.last_key_value().map(|(id, _)| id + 1))
-                .unwrap_or_default();
+                .last_key_value()
+                .expect("materials empty? should have blank material")
+                .0 + 1;
+            if id as usize == MAX_MATERIAL_COUNT {
+                id = self.materials
+                    .keys()
+                    .copied()
+                    .tuple_windows()
+                    .find(|(a, b)| *a + 1 != *b)
+                    .map(|(a, _)| a + 1)
+                    .or_else(|| self.materials.last_key_value().map(|(id, _)| id + 1))
+                    .unwrap_or_default();
+            }
             self.materials.insert(id, material.clone());
             self.materials_inverse.insert(material, id);
             self.dirty = true;
@@ -688,7 +707,7 @@ impl TextureHandler {
         Ok(Some(rv))
     }
 
-    pub(crate) fn wait_textures_dirty(&self) -> bool {
+    pub(crate) fn should_build_task_graph(&self) -> bool {
         self.inner
             .lock()
             .unwrap()
@@ -708,7 +727,7 @@ impl TextureHandler {
             "texture_handler_upload",
             QueueFamilyType::Transfer,
             UploadTexturesTask {
-                inner: Arc::new(self.clone()),
+                texture: Arc::new(self.clone()),
             },
         );
         let mut images = Vec::new();
@@ -728,7 +747,7 @@ impl TextureHandler {
 }
 
 pub(crate) struct UploadTexturesTask {
-    pub(crate) inner: Arc<TextureHandler>,
+    pub(crate) texture: Arc<TextureHandler>,
 }
 
 impl Task for UploadTexturesTask {
@@ -740,21 +759,15 @@ impl Task for UploadTexturesTask {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
-        let mut inner = self.inner.inner.lock().unwrap();
-        for (id, tex) in inner
+        let mut inner = self.texture.inner.lock().unwrap();
+        for tex in inner
             .textures
-            .iter_mut()
-            .filter(|(_, tex)| tex.can_upload())
+            .values_mut()
+            .filter(|tex| tex.should_upload())
         {
             tcx.write_buffer::<[u8]>(tex.buf, ..)?
                 .clone_from_slice(&tex.raw.buf);
-            tex.create_image_view(world, cbf, tcx)?;
-            info_every_seconds!(
-                1,
-                "created image view for: {} (id {id:?}, {:.1} KiB)",
-                tex.filename,
-                (tex.raw.buf.len() as f32) / 1024.0
-            );
+            tex.upload(world, cbf, tcx)?;
         }
         world.perf_stats().lap("UploadTextureTask: done");
         Ok(())

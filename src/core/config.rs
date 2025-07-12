@@ -11,4 +11,6 @@ pub const EPSILON: f32 = 1e-5;
 pub const DISABLE_SOUND: bool = true;
 
 pub const USE_VSYNC: bool = true;
+// Breaks a lot of stuff if set to false, these are arguably bugs but probably not worth fixing
+// (right now).
 pub const SYNC_UPDATE_TO_RENDER: bool = true;

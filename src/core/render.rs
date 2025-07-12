@@ -408,7 +408,7 @@ impl RenderHandler {
         Ok(())
     }
 
-    pub(crate) fn is_dirty(&self) -> bool {
+    pub(crate) fn should_build_task_graph(&self) -> bool {
         self.gui_shader.is_dirty()
     }
 }
