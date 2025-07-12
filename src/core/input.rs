@@ -7,7 +7,6 @@ use std::{
 
 use crate::core::prelude::*;
 use crate::core::vk::AdjustedViewport;
-use crate::gui::GuiContext;
 pub use egui_winit::winit::keyboard::KeyCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +149,7 @@ impl InputHandler {
         self.mod_super
     }
 
-    pub(crate) fn update_mouse(&mut self, ctx: &GuiContext) {
+    pub(crate) fn update_mouse(&mut self, ctx: &egui::Context) {
         self.mouse_pos = ctx.pointer_latest_pos().map(|p| Vec2 { x: p.x, y: p.y });
         ctx.input(|input| {
             if input.pointer.primary_pressed() {

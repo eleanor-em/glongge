@@ -750,7 +750,7 @@ pub struct GgContextBuilder {
 impl GgContextBuilder {
     pub fn new(window_size: impl Into<Vec2i>) -> Result<Self> {
         setup_log()?;
-        let gui_ctx = GuiContext::default();
+        let gui_ctx = GuiContext::new();
         Ok(Self {
             window_size: window_size.into(),
             gui_ctx,
@@ -793,30 +793,27 @@ impl GgContextBuilder {
 }
 
 pub struct SceneHandlerBuilder {
-    input: Arc<Mutex<InputHandler>>,
-    resource: ResourceHandler,
-    render: RenderHandler,
+    input_handler: Arc<Mutex<InputHandler>>,
+    render_handler: RenderHandler,
 }
 
 impl SceneHandlerBuilder {
     pub(crate) fn new(
-        input: Arc<Mutex<InputHandler>>,
-        resource: ResourceHandler,
-        render: RenderHandler,
+        input_handler: Arc<Mutex<InputHandler>>,
+        render_handler: RenderHandler,
     ) -> Self {
         Self {
-            input,
-            resource,
-            render,
+            input_handler,
+            render_handler,
         }
     }
 
     pub fn resource_handler(&self) -> &ResourceHandler {
-        &self.resource
+        &self.render_handler.resource_handler
     }
 
     pub fn build(self) -> SceneHandler {
-        SceneHandler::new(self.input, self.resource, self.render)
+        SceneHandler::new(self.input_handler, self.render_handler)
     }
 }
 

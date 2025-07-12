@@ -164,7 +164,7 @@ impl WindowEventHandlerInner {
         let n = self.render_count;
         let span = info_span!("render_update", n);
         let _enter = span.enter();
-        self.render_handler.update_sync.wait_update_done();
+        self.render_handler.wait_update_done();
         self.vk_ctx.perf_stats().lap("start");
         self.handle_window_events();
         self.vk_ctx.perf_stats().lap("handle_window_event()");
@@ -225,7 +225,7 @@ impl WindowEventHandlerInner {
     fn update_gui(&mut self) {
         egui_winit::update_viewport_info(
             &mut ViewportInfo::default(),
-            &self.gui_ctx.clone(),
+            &self.gui_ctx.inner.clone(),
             &self.window.inner,
             self.is_first_window_event,
         );
@@ -247,10 +247,12 @@ impl WindowEventHandlerInner {
             .map_err(gg_err::CatchOutOfDate::from)?;
 
         self.render_stats.start();
-        self.render_stats.update_gui.start();
-        self.update_gui();
-        self.render_stats.update_gui.stop();
-        self.vk_ctx.perf_stats().lap("update_gui()");
+        if self.gui_ctx.is_ever_enabled() {
+            self.render_stats.update_gui.start();
+            self.update_gui();
+            self.render_stats.update_gui.stop();
+            self.vk_ctx.perf_stats().lap("update_gui()");
+        }
 
         self.render_stats.execute.start();
         // TODO: add more stuff to resource_map instead of recreating it all the time. From Marc:
@@ -412,7 +414,7 @@ where
         ensure_shaders_locked();
 
         let platform = egui_winit::State::new(
-            gui_ctx.clone(),
+            gui_ctx.inner.clone(),
             ViewportId::ROOT,
             &event_loop,
             Some(window.scale_factor()),
@@ -428,11 +430,8 @@ where
         let scale_factor_rx = self.scale_factor_rx.take().unwrap();
         let recreate_swapchain_rx = self.recreate_swapchain_rx.take().unwrap();
 
-        let scene_handler_builder = SceneHandlerBuilder::new(
-            input_handler.clone(),
-            resource_handler.clone(),
-            render_handler.clone(),
-        );
+        let scene_handler_builder =
+            SceneHandlerBuilder::new(input_handler.clone(), render_handler.clone());
         std::thread::spawn(move || {
             let mut scene_handler = scene_handler_builder_callback(scene_handler_builder);
             loop {

@@ -79,10 +79,10 @@ impl RenderDataChannel {
         }))
     }
 
-    pub(crate) fn next_frame(&self) -> RenderFrame {
+    pub(crate) fn next_frame(&self) -> RenderFrame<'_> {
         RenderFrame {
-            vertices: self.vertices.clone(),
-            shader_execs: self.shader_execs.clone(),
+            vertices: &self.vertices,
+            shader_execs: &self.shader_execs,
             clear_col: self.clear_col,
         }
     }
@@ -122,14 +122,15 @@ impl RenderDataChannel {
 
 /// Public for the work-in-progress custom shader system.
 #[derive(Clone)]
-pub struct RenderFrame {
-    pub vertices: Vec<VertexWithCol>,
-    pub shader_execs: Vec<ShaderExecWithVertexData>,
+pub struct RenderFrame<'a> {
+    pub vertices: &'a Vec<VertexWithCol>,
+    pub shader_execs: &'a Vec<ShaderExecWithVertexData>,
     pub clear_col: Colour,
 }
 
-impl RenderFrame {
+impl RenderFrame<'_> {
     fn for_shader(&self, id: ShaderId) -> ShaderRenderFrame<'_> {
+        // TODO: we could probably borrow shader_execs somehow.
         let shader_execs = self
             .shader_execs
             .clone()
@@ -144,7 +145,7 @@ impl RenderFrame {
             })
             .collect_vec();
         ShaderRenderFrame {
-            vertices: &self.vertices,
+            vertices: self.vertices,
             render_infos: shader_execs,
         }
     }
@@ -219,10 +220,10 @@ impl UpdateSync {
 
 #[derive(Clone)]
 pub(crate) struct RenderHandler {
-    gui_ctx: GuiContext,
+    pub(crate) gui_ctx: GuiContext,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    pub(crate) update_sync: UpdateSync,
-    resource_handler: ResourceHandler,
+    update_sync: UpdateSync,
+    pub(crate) resource_handler: ResourceHandler,
     window: GgWindow,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
@@ -283,8 +284,16 @@ impl RenderHandler {
         self
     }
 
-    pub(crate) fn viewport(&self) -> AdjustedViewport {
+    pub(crate) fn get_viewport(&self) -> AdjustedViewport {
         self.viewport.get().clone()
+    }
+
+    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
+        (self.render_data_channel.clone(), self.update_sync.clone())
+    }
+
+    pub(crate) fn wait_update_done(&self) {
+        self.update_sync.wait_update_done();
     }
 
     pub(crate) fn on_recreate_swapchain(&self) {
@@ -299,27 +308,28 @@ impl RenderHandler {
         input: &Arc<Mutex<InputHandler>>,
         last_render_stats: Option<&RenderPerfStats>,
     ) {
-        let full_output = ctx.run(platform.take_egui_input(&self.window.inner), |ctx| {
-            {
-                let mut input = input.lock().unwrap();
-                input.set_viewport(self.viewport());
-                input.update_mouse(ctx);
-            }
-            let gui_commands = {
-                let mut channel = self.render_data_channel.lock().unwrap();
-                channel.last_render_stats = last_render_stats.cloned();
-                channel.gui_commands.drain(..).collect_vec()
-            };
-            for cmd in gui_commands {
-                cmd(ctx);
-            }
-        });
+        if !ctx.is_ever_enabled() {
+            return;
+        }
+        let full_output = ctx
+            .inner
+            .run(platform.take_egui_input(&self.window.inner), |ctx| {
+                {
+                    let mut input = input.lock().unwrap();
+                    input.set_viewport(self.get_viewport());
+                    input.update_mouse(ctx);
+                }
+                let gui_commands = {
+                    let mut channel = self.render_data_channel.lock().unwrap();
+                    channel.last_render_stats = last_render_stats.cloned();
+                    channel.gui_commands.drain(..).collect_vec()
+                };
+                for cmd in gui_commands {
+                    cmd(ctx);
+                }
+            });
         platform.handle_platform_output(&self.window.inner, full_output.platform_output.clone());
         self.last_full_output.get().replace(full_output);
-    }
-
-    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
-        (self.render_data_channel.clone(), self.update_sync.clone())
     }
 
     pub(crate) fn build_shader_task_graphs(
@@ -439,9 +449,8 @@ impl Task for PreRenderTask {
             .unwrap()
             .current_image_index()
             .unwrap() as usize;
-
+        let mut rx = self.handler.render_data_channel.lock().unwrap();
         let (global_scale_factor, render_frame) = {
-            let mut rx = self.handler.render_data_channel.lock().unwrap();
             self.handler.viewport.get().translation = rx.viewport.translation;
             let global_scale_factor = rx.should_resize_with_scale_factor();
             *self.handler.gui_shader.gui_enabled.get() = rx.gui_enabled;
@@ -465,26 +474,29 @@ impl Task for PreRenderTask {
         world
             .perf_stats()
             .lap("PreRenderTask: shader.pre_render_update()");
-        let full_output = self
-            .handler
-            .last_full_output
-            .take_inner()
-            .expect("GUI output missing");
-        let primitives = self
-            .handler
-            .gui_ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
-        world
-            .perf_stats()
-            .lap("PreRenderTask: gui_ctx.tessellate()");
-        *self.handler.gui_shader.primitives.get() = Some(primitives);
-        self.handler
-            .gui_shader
-            .pre_render_update(cbf, tcx, world, &full_output.textures_delta.set)
-            .unwrap();
-        world
-            .perf_stats()
-            .lap("PreRenderTask: gui_shader.pre_render_update()");
+        if self.handler.gui_ctx.is_ever_enabled() {
+            let full_output = self
+                .handler
+                .last_full_output
+                .take_inner()
+                .expect("GUI output missing");
+            let primitives = self
+                .handler
+                .gui_ctx
+                .inner
+                .tessellate(full_output.shapes, full_output.pixels_per_point);
+            world
+                .perf_stats()
+                .lap("PreRenderTask: gui_ctx.tessellate()");
+            *self.handler.gui_shader.primitives.get() = Some(primitives);
+            self.handler
+                .gui_shader
+                .pre_render_update(cbf, tcx, world, &full_output.textures_delta.set)
+                .unwrap();
+            world
+                .perf_stats()
+                .lap("PreRenderTask: gui_shader.pre_render_update()");
+        }
         Ok(())
     }
 }

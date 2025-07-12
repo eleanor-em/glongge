@@ -9,7 +9,7 @@ use std::{
     fs,
     io::{Cursor, Read},
     path::Path,
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{Arc, atomic::Ordering},
 };
 use vulkano::{
     NonZeroDeviceSize, Validated,
@@ -191,11 +191,11 @@ impl<R: Read> Read for WrappedPngReader<R> {
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<Texture>>,
     textures: BTreeMap<TextureId, InternalTexture>,
-    material_handler: Arc<Mutex<MaterialHandler>>,
+    material_handler: UniqueShared<MaterialHandler>,
 }
 
 impl TextureHandlerInner {
-    fn new(ctx: &VulkanoContext, material_handler: Arc<Mutex<MaterialHandler>>) -> Result<Self> {
+    fn new(ctx: &VulkanoContext, material_handler: UniqueShared<MaterialHandler>) -> Result<Self> {
         let mut textures = BTreeMap::new();
 
         // Create blank texture
@@ -267,9 +267,11 @@ impl TextureHandlerInner {
             .textures
             .last_key_value()
             .expect("empty textures? (blank texture missing)")
-            .0 + 1;
+            .0
+            + 1;
         if id as usize == MAX_TEXTURE_COUNT {
-            id = self.textures
+            id = self
+                .textures
                 .keys()
                 .copied()
                 .tuple_windows()
@@ -348,7 +350,7 @@ impl TextureHandlerInner {
         if unused_ids.is_empty() {
             return;
         }
-        let mut material_handler = self.material_handler.lock().unwrap();
+        let mut material_handler = self.material_handler.get();
         info_every_seconds!(1, "freeing texture ids: {unused_ids:?}");
         for unused_id in unused_ids {
             for file_textures in self.loaded_files.values() {
@@ -420,9 +422,11 @@ impl MaterialHandler {
                 .materials
                 .last_key_value()
                 .expect("materials empty? should have blank material")
-                .0 + 1;
+                .0
+                + 1;
             if id as usize == MAX_MATERIAL_COUNT {
-                id = self.materials
+                id = self
+                    .materials
                     .keys()
                     .copied()
                     .tuple_windows()
@@ -453,17 +457,14 @@ impl MaterialHandler {
 #[derive(Clone)]
 pub struct TextureHandler {
     ctx: VulkanoContext,
-    inner: Arc<Mutex<TextureHandlerInner>>,
-    material_handler: Arc<Mutex<MaterialHandler>>,
+    inner: UniqueShared<TextureHandlerInner>,
+    material_handler: UniqueShared<MaterialHandler>,
 }
 
 impl TextureHandler {
     pub(crate) fn new(ctx: VulkanoContext) -> Result<Self> {
-        let material_handler = Arc::new(Mutex::new(MaterialHandler::new()));
-        let inner = Arc::new(Mutex::new(TextureHandlerInner::new(
-            &ctx,
-            material_handler.clone(),
-        )?));
+        let material_handler = UniqueShared::new(MaterialHandler::new());
+        let inner = UniqueShared::new(TextureHandlerInner::new(&ctx, material_handler.clone())?);
         Ok(Self {
             ctx,
             inner,
@@ -473,8 +474,7 @@ impl TextureHandler {
 
     pub fn material_from_texture(&self, texture: &Texture, area: &Rect) -> MaterialId {
         self.material_handler
-            .lock()
-            .unwrap()
+            .get()
             .material_from_texture(texture, area)
     }
 
@@ -484,8 +484,7 @@ impl TextureHandler {
         // Beware: do not lock `inner` longer than necessary.
         if let Some(texture) = self
             .inner
-            .lock()
-            .unwrap()
+            .get()
             .loaded_files
             .get(&filename)
             .and_then(|v| v.first())
@@ -493,7 +492,7 @@ impl TextureHandler {
             return Ok(texture.clone());
         }
         let loaded = Self::load_file_inner(&filename)?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.get();
         let texture = inner.create_texture(&self.ctx, filename.to_string(), loaded)?;
         info!("loaded texture: {} = {:?}", filename, texture.id());
         inner.loaded_files.insert(filename, vec![texture.clone()]);
@@ -564,11 +563,11 @@ impl TextureHandler {
     pub fn wait_load_file_animated(&self, filename: impl AsRef<str>) -> Result<Vec<Texture>> {
         let filename = filename.as_ref().to_string();
         // Beware: do not lock `inner` longer than necessary.
-        if let Some(texture) = self.inner.lock().unwrap().loaded_files.get(&filename) {
+        if let Some(texture) = self.inner.get().loaded_files.get(&filename) {
             return Ok(texture.clone());
         }
         let results = Self::load_file_inner_animated(&filename)?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.get();
         let textures = results
             .into_iter()
             .map(|loaded| inner.create_texture(&self.ctx, filename.to_string(), loaded))
@@ -616,7 +615,7 @@ impl TextureHandler {
         format: Format,
     ) -> Result<Texture> {
         let loaded = Self::load_reader_rgba_inner(reader, width, height, format)?;
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.get();
         inner.create_texture(&self.ctx, filename, loaded)
     }
     fn load_reader_rgba_inner<R: Read>(
@@ -645,14 +644,13 @@ impl TextureHandler {
     }
 
     pub fn wait_free_unused_files(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.get();
         inner.free_unused_files();
     }
 
     pub(crate) fn ready_values(&self) -> Vec<InternalTexture> {
         self.inner
-            .lock()
-            .unwrap()
+            .get()
             .textures
             .values()
             .filter(|t| t.is_ready())
@@ -665,7 +663,7 @@ impl TextureHandler {
     }
 
     pub(crate) fn get_updated_materials(&self) -> Option<Vec<(MaterialId, Material)>> {
-        let mut material_handler = self.material_handler.lock().unwrap();
+        let mut material_handler = self.material_handler.get();
         if material_handler.dirty {
             let rv = material_handler
                 .materials
@@ -680,14 +678,7 @@ impl TextureHandler {
     }
 
     pub fn wait_get_raw(&self, texture_id: TextureId) -> Result<Option<Vec<Vec<Colour>>>> {
-        let Some(tex) = self
-            .inner
-            .lock()
-            .unwrap()
-            .textures
-            .get(&texture_id)
-            .cloned()
-        else {
+        let Some(tex) = self.inner.get().textures.get(&texture_id).cloned() else {
             return Ok(None);
         };
         let w = tex.raw.info.extent[0] as usize;
@@ -709,8 +700,7 @@ impl TextureHandler {
 
     pub(crate) fn should_build_task_graph(&self) -> bool {
         self.inner
-            .lock()
-            .unwrap()
+            .get()
             .textures
             .values()
             .any(|t| !t.has_write_access)
@@ -719,7 +709,7 @@ impl TextureHandler {
         &self,
         task_graph: &mut TaskGraph<VulkanoContext>,
     ) -> (NodeId, Vec<Id<Image>>) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.get();
         for tex in inner.textures.values() {
             task_graph.add_host_buffer_access(tex.buf, HostAccessType::Write);
         }
@@ -759,7 +749,7 @@ impl Task for UploadTexturesTask {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
-        let mut inner = self.texture.inner.lock().unwrap();
+        let mut inner = self.texture.inner.get();
         for tex in inner
             .textures
             .values_mut()

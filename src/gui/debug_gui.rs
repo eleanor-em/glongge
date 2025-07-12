@@ -1169,7 +1169,7 @@ impl DebugGui {
     pub fn toggle(&mut self) {
         self.enabled = !self.enabled;
     }
-    pub fn enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         self.enabled
     }
     pub fn selected_object(&self) -> Option<ObjectId> {

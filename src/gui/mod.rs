@@ -11,7 +11,27 @@ use std::sync::{Arc, Mutex, mpsc};
 pub mod debug_gui;
 pub mod render;
 
-pub type GuiContext = egui::Context;
+#[derive(Clone)]
+pub struct GuiContext {
+    pub(crate) inner: egui::Context,
+    ever_enabled: Arc<AtomicBool>,
+}
+
+impl GuiContext {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: egui::Context::default(),
+            ever_enabled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub(crate) fn mark_enabled(&self) {
+        self.ever_enabled.store(true, Ordering::SeqCst);
+    }
+    pub(crate) fn is_ever_enabled(&self) -> bool {
+        self.ever_enabled.load(Ordering::SeqCst)
+    }
+}
 
 pub type GuiUi = egui::Ui;
 

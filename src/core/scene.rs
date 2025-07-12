@@ -1,13 +1,13 @@
-use crate::core::render::{RenderHandler, UpdateSync};
+use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
-use crate::gui::{GuiContext, GuiUi};
+use crate::gui::GuiUi;
 use crate::shader::ensure_shaders_locked;
 use crate::{
     core::{
         SceneObjectWrapper, TreeSceneObject,
         input::InputHandler,
         prelude::*,
-        render::{RenderDataChannel, RenderItem, ShaderExec},
+        render::{RenderItem, ShaderExec},
         update::{ObjectContext, UpdateContext, UpdateHandler, collision::CollisionResponse},
     },
     resource::ResourceHandler,
@@ -26,10 +26,7 @@ struct InternalScene {
     scene: Arc<Mutex<dyn Scene + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
-    resource_handler: ResourceHandler,
-    render_data_channel: Arc<Mutex<RenderDataChannel>>,
-    update_sync: UpdateSync,
-
+    render_handler: RenderHandler,
     update_handler: Option<UpdateHandler>,
 }
 
@@ -37,9 +34,7 @@ impl InternalScene {
     fn new(
         scene: Arc<Mutex<dyn Scene + Send>>,
         input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: ResourceHandler,
-        render_data_channel: Arc<Mutex<RenderDataChannel>>,
-        update_sync: UpdateSync,
+        render_handler: RenderHandler,
     ) -> Self {
         let name = scene
             .try_lock()
@@ -49,9 +44,7 @@ impl InternalScene {
             scene,
             name,
             input_handler,
-            resource_handler,
-            render_data_channel,
-            update_sync,
+            render_handler,
             update_handler: None,
         }
     }
@@ -74,9 +67,7 @@ impl InternalScene {
             UpdateHandler::new(
                 initial_objects,
                 self.input_handler.clone(),
-                self.resource_handler.clone(),
-                self.render_data_channel.clone(),
-                self.update_sync.clone(),
+                &self.render_handler,
                 self.name,
                 data,
             )
@@ -273,7 +264,6 @@ pub(crate) enum SceneHandlerInstruction {
 /// ```
 pub struct SceneHandler {
     input_handler: Arc<Mutex<InputHandler>>,
-    resource_handler: ResourceHandler,
     render_handler: RenderHandler,
     scenes: BTreeMap<SceneName, Rc<RefCell<InternalScene>>>,
     scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
@@ -284,12 +274,10 @@ pub struct SceneHandler {
 impl SceneHandler {
     pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: ResourceHandler,
         render_handler: RenderHandler,
     ) -> Self {
         Self {
             input_handler,
-            resource_handler,
             render_handler,
             scenes: BTreeMap::new(),
             current_scene: None,
@@ -302,15 +290,12 @@ impl SceneHandler {
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
             .insert(scene.name(), Arc::new(Mutex::new(scene.initial_data())));
-        let (render_data_channel, update_sync) = self.render_handler.get_receiver();
         self.scenes.insert(
             scene.name(),
             Rc::new(RefCell::new(InternalScene::new(
                 Arc::new(Mutex::new(scene)),
                 self.input_handler.clone(),
-                self.resource_handler.clone(),
-                render_data_channel,
-                update_sync,
+                self.render_handler.clone(),
             ))),
         );
     }
@@ -721,7 +706,7 @@ pub trait RenderableObject: SceneObject {
     fn shader_execs(&self) -> Vec<ShaderExec>;
 }
 
-pub(crate) type GuiClosure = dyn FnOnce(&GuiContext) + Send;
+pub(crate) type GuiClosure = dyn FnOnce(&egui::Context) + Send;
 pub struct GuiCommand {
     func: Box<dyn FnOnce(&mut GuiUi) + Send>,
     title: Option<String>,

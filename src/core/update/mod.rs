@@ -1,7 +1,8 @@
 pub mod collision;
 
 use crate::core::TreeObjectOfType;
-use crate::core::render::UpdateSync;
+use crate::core::render::{RenderHandler, UpdateSync};
+use crate::gui::GuiContext;
 use crate::shader::SpriteShader;
 use crate::util::{InspectMut, gg_float};
 use crate::{
@@ -425,6 +426,7 @@ pub(crate) struct UpdateHandler {
     scene_name: SceneName,
     scene_data: Arc<Mutex<Vec<u8>>>,
 
+    gui_ctx: GuiContext,
     debug_gui: DebugGui,
     gui_cmd: Option<Box<GuiClosure>>,
 
@@ -444,13 +446,12 @@ impl UpdateHandler {
     pub(crate) fn new(
         objects: Vec<SceneObjectWrapper>,
         input_handler: Arc<Mutex<InputHandler>>,
-        resource_handler: ResourceHandler,
-        render_data_channel: Arc<Mutex<RenderDataChannel>>,
-        update_sync: UpdateSync,
+        render_handler: &RenderHandler,
         scene_name: SceneName,
         scene_data: Arc<Mutex<Vec<u8>>>,
     ) -> Result<Self> {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
+        let (render_data_channel, update_sync) = render_handler.get_receiver();
         let clear_col = render_data_channel.lock().unwrap().get_clear_col();
         let mut rv = Self {
             input_handler,
@@ -461,7 +462,7 @@ impl UpdateHandler {
                 .lock()
                 .unwrap()
                 .current_viewport(),
-            resource_handler,
+            resource_handler: render_handler.resource_handler.clone(),
             render_data_channel,
             update_sync,
             clear_col,
@@ -470,6 +471,7 @@ impl UpdateHandler {
             scene_instruction_rx,
             scene_name,
             scene_data,
+            gui_ctx: render_handler.gui_ctx.clone(),
             debug_gui: DebugGui::new()?,
             gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
@@ -598,12 +600,7 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         original_fixed_updates: u128,
     ) -> ObjectTracker {
-        let mut object_tracker = ObjectTracker {
-            objects: self.object_handler.objects.clone(),
-            pending_add: Vec::new(),
-            pending_remove: BTreeSet::new(),
-            pending_move: BTreeMap::new(),
-        };
+        let mut object_tracker = ObjectTracker::new(&self.object_handler);
         if fixed_update_only {
             self.call_on_fixed_update(original_fixed_updates, &mut object_tracker);
         } else if let Some(fixed_updates) =
@@ -686,16 +683,16 @@ impl UpdateHandler {
             ffc = self.fixed_frame_counter
         );
         let _enter = update_span.enter();
-        self.perf_stats.on_gui.start();
         if !USE_DEBUG_GUI {
-            self.perf_stats.on_gui.stop();
             return;
         }
-        if input_handler.pressed(KeyCode::Backquote) {
-            self.debug_gui.toggle();
+        self.maybe_enable_debug_gui(input_handler);
+        if !self.gui_ctx.is_ever_enabled() {
+            return;
         }
 
-        if self.debug_gui.enabled() {
+        self.perf_stats.on_gui.start();
+        if self.debug_gui.is_enabled() {
             // Handle mouseovers.
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
@@ -739,6 +736,16 @@ impl UpdateHandler {
         self.object_handler.update_all_transforms();
         self.perf_stats.on_gui.stop();
     }
+
+    fn maybe_enable_debug_gui(&mut self, input_handler: &InputHandler) {
+        if input_handler.pressed(KeyCode::Backquote) {
+            self.debug_gui.toggle();
+            if self.debug_gui.is_enabled() {
+                self.gui_ctx.mark_enabled();
+            }
+        }
+    }
+
     fn call_on_update_begin(
         &mut self,
         input_handler: &InputHandler,
@@ -1081,7 +1088,7 @@ impl UpdateHandler {
                 collision_handler: &self.object_handler.collision_handler,
                 this_id: new_obj.object_id,
                 this_parent: parent,
-                this_children: Vec::new(),
+                this_children: &Vec::new(),
                 object_tracker,
                 all_absolute_transforms: &self.object_handler.absolute_transforms,
                 all_parents: &self.object_handler.parents,
@@ -1170,7 +1177,7 @@ impl UpdateHandler {
         let mut render_data_channel = self.render_data_channel.lock().unwrap();
         self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
         render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
-        render_data_channel.gui_enabled = self.debug_gui.enabled();
+        render_data_channel.gui_enabled = self.debug_gui.is_enabled();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;
         }
@@ -1326,8 +1333,7 @@ impl<'a> UpdateContext<'a> {
         let children = caller
             .object_handler
             .get_children(this_id)
-            .context("UpdateContext::new()")?
-            .clone();
+            .context("UpdateContext::new()")?;
         Ok(Self {
             input: input_handler,
             scene: SceneContext {
@@ -1642,7 +1648,7 @@ impl<'a> FixedUpdateContext<'a> {
             .object_handler
             .get_parent_by_id(this_id)
             .context("FixedUpdateContext::new()")?;
-        let children = caller.object_handler.get_children(this_id)?.clone();
+        let children = caller.object_handler.get_children(this_id)?;
         Ok(Self {
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),
@@ -1992,7 +1998,7 @@ pub struct ObjectContext<'a> {
     collision_handler: &'a CollisionHandler,
     this_id: ObjectId,
     this_parent: Option<TreeSceneObject>,
-    this_children: Vec<TreeSceneObject>,
+    this_children: &'a Vec<TreeSceneObject>,
     object_tracker: &'a mut ObjectTracker,
     all_absolute_transforms: &'a BTreeMap<ObjectId, Transform>,
     all_parents: &'a BTreeMap<ObjectId, ObjectId>,
@@ -2048,7 +2054,7 @@ impl ObjectContext<'_> {
     ///     .collect::<Vec<_>>();
     /// ```
     pub fn children(&self) -> &Vec<TreeSceneObject> {
-        &self.this_children
+        self.this_children
     }
 
     /// Returns a reference to the vector of child objects for the given scene object.
@@ -2070,7 +2076,7 @@ impl ObjectContext<'_> {
     }
     pub fn children_of_inner(&self, object_id: ObjectId) -> Result<&Vec<TreeSceneObject>> {
         if object_id == self.this_id {
-            Ok(&self.this_children)
+            Ok(self.this_children)
         } else {
             self.all_children
                 .get(&object_id)
@@ -2559,7 +2565,7 @@ impl ObjectContext<'_> {
     ///
     /// This object remains in the scene.
     pub fn remove_children(&mut self) {
-        for child in &self.this_children {
+        for child in self.this_children {
             self.object_tracker.pending_remove.insert(child.object_id);
         }
     }
