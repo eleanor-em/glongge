@@ -77,7 +77,7 @@ impl SceneObject for Goomba {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        let mut data = ctx.scene_mut().data::<AliveEnemyMap>().unwrap();
+        let mut data = ctx.scene_mut().data::<AliveEnemyMap>();
         data.write().register(self.initial_coord);
         if !data.write().is_alive(self.initial_coord) {
             ctx.object_mut().remove_this();
@@ -144,7 +144,6 @@ impl SceneObject for Goomba {
             self.started_death = true;
             ctx.scene_mut()
                 .data::<AliveEnemyMap>()
-                .unwrap()
                 .write()
                 .set_dead(self.initial_coord);
             self.sprite.hide();

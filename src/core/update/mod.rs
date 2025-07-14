@@ -4,7 +4,7 @@ use crate::core::TreeObjectOfType;
 use crate::core::render::{RenderHandler, UpdateSync};
 use crate::gui::GuiContext;
 use crate::shader::SpriteShader;
-use crate::util::{InspectMut, gg_float};
+use crate::util::{InspectMut, UniqueShared, gg_float};
 use crate::{
     core::render::StoredRenderItem,
     core::scene::GuiClosure,
@@ -424,7 +424,7 @@ pub(crate) struct UpdateHandler {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: Arc<Mutex<Vec<u8>>>,
+    scene_data: UniqueShared<Vec<u8>>,
 
     gui_ctx: GuiContext,
     debug_gui: DebugGui,
@@ -448,7 +448,7 @@ impl UpdateHandler {
         input_handler: Arc<Mutex<InputHandler>>,
         render_handler: &RenderHandler,
         scene_name: SceneName,
-        scene_data: Arc<Mutex<Vec<u8>>>,
+        scene_data: UniqueShared<Vec<u8>>,
     ) -> Result<Self> {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         let (render_data_channel, update_sync) = render_handler.get_receiver();
@@ -1748,7 +1748,7 @@ pub struct SceneData<T>
 where
     T: Default + Serialize + DeserializeOwned,
 {
-    raw: Arc<Mutex<Vec<u8>>>,
+    raw: UniqueShared<Vec<u8>>,
     deserialized: T,
     modified: bool,
 }
@@ -1757,19 +1757,20 @@ impl<T> SceneData<T>
 where
     T: Default + Serialize + DeserializeOwned,
 {
-    fn new(raw: Arc<Mutex<Vec<u8>>>) -> Result<Option<Self>> {
+    fn new(raw: UniqueShared<Vec<u8>>) -> Result<Self> {
         let deserialized = {
-            let raw = raw.try_lock().expect("scene_data locked?");
+            let raw = raw.get();
             if raw.is_empty() {
-                return Ok(None);
+                T::default()
+            } else {
+                bincode::deserialize::<T>(&raw)?
             }
-            bincode::deserialize::<T>(&raw)?
         };
-        Ok(Some(Self {
+        Ok(Self {
             raw,
             deserialized,
             modified: false,
-        }))
+        })
     }
 
     pub fn reset(&mut self) {
@@ -1791,7 +1792,7 @@ where
 {
     fn drop(&mut self) {
         if self.modified {
-            *self.raw.try_lock().expect("scene_data locked?") =
+            *self.raw.get() =
                 bincode::serialize(&self.deserialized).expect("failed to serialize scene data");
         }
     }
@@ -1801,7 +1802,7 @@ where
 pub struct SceneContext<'a> {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: Arc<Mutex<Vec<u8>>>,
+    scene_data: UniqueShared<Vec<u8>>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine>,
     pending_removed_coroutines: BTreeSet<CoroutineId>,
 }
@@ -1822,7 +1823,7 @@ impl SceneContext<'_> {
     pub fn name(&self) -> SceneName {
         self.scene_name
     }
-    pub fn data<T>(&mut self) -> Option<SceneData<T>>
+    pub fn data<T>(&mut self) -> SceneData<T>
     where
         T: Default + Serialize + DeserializeOwned,
     {

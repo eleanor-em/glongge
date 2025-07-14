@@ -2,6 +2,7 @@ use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
 use crate::gui::GuiUi;
 use crate::shader::ensure_shaders_locked;
+use crate::util::UniqueShared;
 use crate::{
     core::{
         SceneObjectWrapper, TreeSceneObject,
@@ -49,13 +50,13 @@ impl InternalScene {
         }
     }
 
-    fn init(&mut self, data: Arc<Mutex<Vec<u8>>>, entrance_id: usize) {
+    fn init(&mut self, data: UniqueShared<Vec<u8>>, entrance_id: usize) {
         let initial_objects = {
             let mut scene = self.scene.try_lock().unwrap_or_else(|_| {
                 panic!("scene locked in InternalScene::run(): {:?}", self.name)
             });
             scene
-                .load(&data.try_lock().expect("scene_data still locked?"))
+                .load(&data.get())
                 .unwrap_or_else(|_| panic!("could not load data for {:?}", self.name));
             scene.create_objects(entrance_id)
         };
@@ -266,7 +267,7 @@ pub struct SceneHandler {
     input_handler: Arc<Mutex<InputHandler>>,
     render_handler: RenderHandler,
     scenes: BTreeMap<SceneName, Rc<RefCell<InternalScene>>>,
-    scene_data: BTreeMap<SceneName, Arc<Mutex<Vec<u8>>>>,
+    scene_data: BTreeMap<SceneName, UniqueShared<Vec<u8>>>,
     current_scene: Option<Rc<RefCell<InternalScene>>>,
 }
 
@@ -289,7 +290,7 @@ impl SceneHandler {
         check_false!(self.scenes.contains_key(&scene.name()));
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
-            .insert(scene.name(), Arc::new(Mutex::new(scene.initial_data())));
+            .insert(scene.name(), UniqueShared::new(scene.initial_data()));
         self.scenes.insert(
             scene.name(),
             Rc::new(RefCell::new(InternalScene::new(

@@ -469,7 +469,7 @@ impl Player {
                 }
                 CoroutineState::Waiting => {
                     if ctx.scene().name() == MarioOverworldScene.name() {
-                        ctx.scene_mut().data::<AliveEnemyMap>().unwrap().reset();
+                        ctx.scene_mut().data::<AliveEnemyMap>().reset();
                     }
                     ctx.scene_mut().goto(MarioOverworldScene.at_entrance(0));
                     CoroutineResponse::Complete
