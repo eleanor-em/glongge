@@ -2549,10 +2549,14 @@ impl ObjectContext<'_> {
     /// * `obj` - The scene object to remove
     pub fn remove(&mut self, obj: &TreeSceneObject) {
         self.object_tracker.pending_remove.insert(obj.object_id);
-        if let Some(children) = self.children_of(obj).cloned() {
-            for child in children {
-                self.object_tracker.pending_remove.insert(child.object_id);
-            }
+        if let Some(ids_to_remove) = self.children_of(obj).map(|children| {
+            children
+                .iter()
+                .map(|child| &child.object_id)
+                .copied()
+                .collect_vec()
+        }) {
+            self.object_tracker.pending_remove.extend(ids_to_remove);
         }
     }
 
@@ -2567,7 +2571,7 @@ impl ObjectContext<'_> {
     /// This object remains in the scene.
     pub fn remove_children(&mut self) {
         for child in self.this_children {
-            self.object_tracker.pending_remove.insert(child.object_id);
+            self.remove(child);
         }
     }
 
