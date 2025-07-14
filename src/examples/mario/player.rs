@@ -602,9 +602,6 @@ impl SceneObject for Player {
                 + self.v_speed * ctx.delta_60fps() * Vec2::down();
             return;
         }
-        if self.state == PlayerState::EnteringPipe {
-            return;
-        }
         let new_dir = if ctx.input().down(KeyCode::ArrowLeft)
             && !ctx.input().down(KeyCode::ArrowRight)
         {
@@ -624,7 +621,7 @@ impl SceneObject for Player {
             PlayerState::Running => self.update_as_running(ctx, new_dir, hold_run),
             PlayerState::Skidding => self.update_as_skidding(new_dir, hold_run),
             PlayerState::Falling => self.update_as_falling(new_dir),
-            _ => return,
+            _ => {}
         }
 
         if !self.dir.is_zero() {
