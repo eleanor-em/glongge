@@ -14,17 +14,15 @@ use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{FontVec, Glyph, OutlinedGlyph, PxScaleFont, ScaleFont, point};
 use glongge_derive::partially_derive_scene_object;
 
-const SAMPLE_RATIO: f32 = 1.0;
-
 mod internal {
-    use crate::resource::font::SAMPLE_RATIO;
+    use crate::core::config::FONT_SAMPLE_RATIO;
     use ab_glyph::{Font, FontVec, PxScale, PxScaleFont};
     use anyhow::Result;
     use itertools::Itertools;
 
     pub fn font_from_slice(slice: &[u8], size: f32) -> Result<PxScaleFont<FontVec>> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
-        let scale = PxScale::from(size * SAMPLE_RATIO);
+        let scale = PxScale::from(size * FONT_SAMPLE_RATIO);
         Ok(font.into_scaled(scale))
     }
 }
@@ -53,14 +51,14 @@ impl Font {
                 let Ok(reader) = GlyphReader::new(glyphs, usize::MAX, Colour::white()) else {
                     return 0.0;
                 };
-                reader.width() as f32 / SAMPLE_RATIO
+                reader.width() as f32 / rv.sample_ratio()
             })
             .max_f32()
             .unwrap_or(0.0);
         let all_chars = (0..0xffff).filter_map(char::from_u32).collect::<String>();
         let layout = rv.layout_no_cache(all_chars, &FontRenderSettings::default());
         let reader = GlyphReader::new(layout, usize::MAX, Colour::white()).unwrap();
-        rv.max_line_height = reader.height() as f32 / SAMPLE_RATIO;
+        rv.max_line_height = reader.height() as f32 / rv.sample_ratio();
 
         rv
     }
@@ -70,7 +68,7 @@ impl Font {
     }
 
     pub fn sample_ratio(&self) -> f32 {
-        SAMPLE_RATIO
+        FONT_SAMPLE_RATIO
     }
     pub fn height(&self) -> f32 {
         self.inner.height()
@@ -160,8 +158,8 @@ impl Font {
         let reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        Ok(!(width as f32 > settings.max_width * SAMPLE_RATIO
-            || height as f32 > settings.max_height * SAMPLE_RATIO))
+        Ok(!(width as f32 > settings.max_width * self.sample_ratio()
+            || height as f32 > settings.max_height * self.sample_ratio()))
     }
 
     pub fn render_to_sprite(
@@ -175,8 +173,8 @@ impl Font {
         let mut reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
         let width = reader.width();
         let height = reader.height();
-        if width as f32 > settings.max_width * SAMPLE_RATIO
-            || height as f32 > settings.max_height * SAMPLE_RATIO
+        if width as f32 > settings.max_width * self.sample_ratio()
+            || height as f32 > settings.max_height * self.sample_ratio()
         {
             Ok(None)
         } else {
@@ -520,7 +518,7 @@ impl AxisAlignedExtent for Label {
             .as_ref()
             .or(self.sprite.as_ref())
             .map_or(Vec2::zero(), Sprite::aa_extent)
-            / SAMPLE_RATIO
+            / self.font.sample_ratio()
     }
 
     fn centre(&self) -> Vec2 {

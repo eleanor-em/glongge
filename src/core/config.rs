@@ -14,3 +14,5 @@ pub const USE_VSYNC: bool = true;
 // Breaks a lot of stuff if set to false, these are arguably bugs but probably not worth fixing
 // (right now).
 pub const SYNC_UPDATE_TO_RENDER: bool = true;
+
+pub const FONT_SAMPLE_RATIO: f32 = 4.0;

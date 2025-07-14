@@ -18,6 +18,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use vulkano::command_buffer::{RenderingAttachmentInfo, RenderingInfo};
 use vulkano::descriptor_set::sys::RawDescriptorSet;
 use vulkano::image::Image;
+use vulkano::image::sampler::{Filter, SamplerMipmapMode};
 use vulkano::memory::DeviceAlignment;
 use vulkano::memory::allocator::DeviceLayout;
 use vulkano::pipeline::DynamicState;
@@ -416,7 +417,12 @@ impl SpriteShader {
             .map(|t| t.unwrap_or(blank.clone()))
             .collect_vec();
 
-        let sampler_create_info = SamplerCreateInfo::default();
+        let sampler_create_info = SamplerCreateInfo {
+            min_filter: Filter::Linear,
+            mipmap_mode: SamplerMipmapMode::Linear,
+            lod: 0.0..=(FONT_SAMPLE_RATIO.log2() + 1.0),
+            ..SamplerCreateInfo::default()
+        };
         let sampler = Sampler::new(self.ctx.device(), sampler_create_info.clone())
             .map_err(Validated::unwrap)?;
         let samplers = vec![sampler.clone(); MAX_TEXTURE_COUNT];
