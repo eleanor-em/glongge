@@ -372,6 +372,7 @@ impl Sprite {
     ) -> Sprite {
         GgInternalSprite::add_from_texture_deferred(object_ctx, get_texture)
     }
+
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
         self.inner_unwrap().render_item.depth = depth;
@@ -431,6 +432,11 @@ impl Sprite {
         }
         self
     }
+    #[must_use]
+    pub fn with_translated(self, by: Vec2) -> Self {
+        self.translate(by);
+        self
+    }
 
     pub fn reset(&mut self) {
         self.inner_unwrap().elapsed_us = 0;
@@ -458,6 +464,10 @@ impl Sprite {
 
     pub fn set_blend_col(&self, col: Colour) {
         self.inner_unwrap().set_blend_col(col);
+    }
+
+    pub fn translate(&self, by: Vec2) {
+        self.inner.as_ref().unwrap().transform_mut().centre += by;
     }
 
     pub(crate) fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
