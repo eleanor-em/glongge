@@ -27,8 +27,9 @@ mod internal {
     }
 }
 
+#[derive(Clone)]
 pub struct Font {
-    inner: PxScaleFont<FontVec>,
+    inner: Rc<RefCell<PxScaleFont<FontVec>>>,
     cached_layout: Rc<RefCell<Option<(String, FontRenderSettings, Layout)>>>,
     max_glyph_width: f32,
     max_line_height: f32,
@@ -37,7 +38,7 @@ pub struct Font {
 impl Font {
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
-            inner,
+            inner: Rc::new(RefCell::new(inner)),
             cached_layout: Rc::new(RefCell::new(None)),
             max_glyph_width: 0.0,
             max_line_height: 0.0,
@@ -71,7 +72,7 @@ impl Font {
         FONT_SAMPLE_RATIO
     }
     pub fn height(&self) -> f32 {
-        self.inner.height()
+        self.inner.borrow().height()
     }
     pub fn max_glyph_width(&self) -> f32 {
         self.max_glyph_width
@@ -108,8 +109,8 @@ impl Font {
     fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
         let mut glyphs = Vec::new();
         let mut line_breaks = Vec::new();
-        let v_advance = self.height() + self.inner.line_gap();
-        let mut caret = point(0.0, self.inner.ascent());
+        let v_advance = self.height() + self.inner.borrow().line_gap();
+        let mut caret = point(0.0, self.inner.borrow().ascent());
         let mut last_glyph: Option<Glyph> = None;
         for c in text.as_ref().chars() {
             if c.is_control() {
@@ -122,12 +123,12 @@ impl Font {
                 continue;
             }
 
-            let mut glyph = self.inner.scaled_glyph(c);
+            let mut glyph = self.inner.borrow().scaled_glyph(c);
             if let Some(previous) = last_glyph.take() {
-                caret.x += self.inner.h_advance(previous.id);
-                caret.x += self.inner.kern(previous.id, glyph.id);
+                caret.x += self.inner.borrow().h_advance(previous.id);
+                caret.x += self.inner.borrow().kern(previous.id, glyph.id);
             }
-            let next_x = caret.x + self.inner.h_advance(glyph.id);
+            let next_x = caret.x + self.inner.borrow().h_advance(glyph.id);
             if !c.is_whitespace() && next_x > max_width {
                 caret.x = 0.0;
                 caret.y += v_advance;
@@ -140,7 +141,7 @@ impl Font {
         let glyphs = glyphs
             .into_iter()
             .enumerate()
-            .filter_map(|(i, g)| self.inner.outline_glyph(g).map(|g| (i, g)))
+            .filter_map(|(i, g)| self.inner.borrow().outline_glyph(g).map(|g| (i, g)))
             .collect();
         Layout {
             glyphs,
