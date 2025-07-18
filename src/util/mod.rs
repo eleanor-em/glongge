@@ -940,3 +940,19 @@ impl<T> InspectMut<T> for Option<T> {
         self
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OrElse {
+    Done,
+    Continue,
+}
+impl OrElse {
+    // Intentionally allowed to end a chain of OrElse.
+    #[allow(clippy::return_self_not_must_use)]
+    pub fn or_else(self, mut f: impl FnMut() -> OrElse) -> OrElse {
+        match self {
+            OrElse::Done => OrElse::Done,
+            OrElse::Continue => f(),
+        }
+    }
+}
