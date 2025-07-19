@@ -4,7 +4,7 @@ use crate::core::TreeObjectOfType;
 use crate::core::render::{RenderHandler, UpdateSync};
 use crate::gui::GuiContext;
 use crate::shader::SpriteShader;
-use crate::util::{InspectMut, UniqueShared, gg_float};
+use crate::util::{GLOBAL_STATS, InspectMut, UniqueShared, gg_float};
 use crate::{
     core::render::StoredRenderItem,
     core::scene::GuiClosure,
@@ -219,7 +219,6 @@ impl ObjectHandler {
         let o = self.object_ref_tracker.get(&remove_id).unwrap();
         let count = Rc::strong_count(&o.scene_object.wrapped);
         if count > 1 {
-            info!("remaining references to `{name} ({remove_id:?})`: {count}");
             self.dangling_names.insert(remove_id, name);
         } else {
             self.object_ref_tracker.remove(&remove_id);
@@ -370,10 +369,19 @@ impl ObjectHandler {
             }
         }
         if leaked_bytes > 0 {
+            GLOBAL_STATS
+                .get_or_init(UniqueShared::default)
+                .get()
+                .total_leaked_memory_bytes += leaked_bytes;
             warn_every_seconds!(
                 1,
-                "leaked memory: {:.2} KiB",
-                (leaked_bytes as f64) / 1024.0
+                "leaked memory: {:.2} KiB ({:.2} KiB total)",
+                leaked_bytes as f64 / 1024.0,
+                GLOBAL_STATS
+                    .get_or_init(UniqueShared::default)
+                    .get()
+                    .total_leaked_memory_bytes as f64
+                    / 1024.0
             );
         }
     }

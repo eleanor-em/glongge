@@ -8,7 +8,7 @@ use crate::gui::{GuiContext, GuiUi};
 use egui::{Button, WidgetText};
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
 use std::{hash::Hash, ops::Deref, vec::IntoIter};
 use tracing_subscriber::fmt::time::OffsetTime;
 
@@ -36,6 +36,13 @@ macro_rules! include_bytes_root {
         include_bytes!(concat!(concat!(env!("CARGO_MANIFEST_DIR"), "/"), $path))
     };
 }
+
+#[derive(Default)]
+pub(crate) struct GlobalStats {
+    pub(crate) total_leaked_memory_bytes: usize,
+}
+
+pub(crate) static GLOBAL_STATS: OnceLock<UniqueShared<GlobalStats>> = OnceLock::new();
 
 #[allow(dead_code)]
 pub mod gg_time {

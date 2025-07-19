@@ -26,7 +26,13 @@ impl GuiContext {
     }
 
     pub(crate) fn mark_enabled(&self) {
-        self.ever_enabled.store(true, Ordering::SeqCst);
+        if self
+            .ever_enabled
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            info!("enable debug GUI");
+        }
     }
     pub(crate) fn is_ever_enabled(&self) -> bool {
         self.ever_enabled.load(Ordering::SeqCst)

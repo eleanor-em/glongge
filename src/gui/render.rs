@@ -382,7 +382,6 @@ impl GuiRenderer {
             .context("too large size for min alignment: {Self::MAX_STAGING_SIZE_BYTES}")?,
         )?;
         let draw_buffer = UniqueShared::new(GuiVertexIndexBuffers::new(vk_ctx.clone(), 20_000)?);
-        info!("GuiRenderer::new()");
         Ok(Self {
             vk_ctx,
             vs: vs::load(device.clone()).context("failed to create shader module")?,
@@ -694,6 +693,8 @@ impl GuiRenderer {
 
 // Execution methods
 impl GuiRenderer {
+    // I think Clippy is wrong on this one.
+    #[allow(clippy::redundant_else)]
     fn prepare_mesh_draw(
         &self,
         cbf: &mut RecordingCommandBuffer,
@@ -702,7 +703,12 @@ impl GuiRenderer {
     ) -> Result<()> {
         let texture_desc_sets = self.texture_desc_sets.get();
         let Some((desc_set, _)) = texture_desc_sets.get(&mesh.texture_id) else {
-            bail!("GUI texture missing: {:?}", mesh.texture_id);
+            if self.is_dirty() {
+                // Expected case; textures not yet uploaded.
+                return Ok(());
+            } else {
+                bail!("GUI texture missing: {:?}", mesh.texture_id);
+            }
         };
         unsafe {
             cbf.as_raw().bind_descriptor_sets(
