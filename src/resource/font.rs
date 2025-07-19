@@ -98,45 +98,91 @@ impl Font {
         }
     }
     fn layout_no_cache(&self, text: impl AsRef<str>, settings: &FontRenderSettings) -> Layout {
-        match settings.text_wrap_mode {
-            TextWrapMode::WrapAnywhere => {
-                self.layout_wrap_anywhere(text, settings.max_width * self.sample_ratio())
+        if settings.max_width == f32::INFINITY {
+            self.layout_no_wrap(text)
+        } else {
+            match settings.text_wrap_mode {
+                TextWrapMode::WrapAnywhere => {
+                    self.layout_wrap_anywhere(text, settings.max_width * self.sample_ratio())
+                }
+                TextWrapMode::WrapAtWordBoundary => unimplemented!(),
             }
-            TextWrapMode::WrapAtWordBoundary => unimplemented!(),
         }
     }
-
-    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
-        let mut glyphs = Vec::new();
-        let mut line_breaks = Vec::new();
-        let v_advance = self.height() + self.inner.borrow().line_gap();
-        let mut caret = point(0.0, self.inner.borrow().ascent());
+    fn layout_no_wrap(&self, text: impl AsRef<str>) -> Layout {
+        let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
         for c in text.as_ref().chars() {
             if c.is_control() {
                 if c == '\n' {
-                    caret.x = 0.0;
-                    caret.y += v_advance;
-                    line_breaks.push(glyphs.len());
                     last_glyph = None;
+                    glyphs_by_line.push(Vec::new());
                 }
                 continue;
             }
 
-            let mut glyph = self.inner.borrow().scaled_glyph(c);
-            if let Some(previous) = last_glyph.take() {
-                caret.x += self.inner.borrow().h_advance(previous.id);
-                caret.x += self.inner.borrow().kern(previous.id, glyph.id);
-            }
-            let next_x = caret.x + self.inner.borrow().h_advance(glyph.id);
-            if !c.is_whitespace() && next_x > max_width {
-                caret.x = 0.0;
-                caret.y += v_advance;
-                line_breaks.push(glyphs.len());
-            }
-            glyph.position = caret;
+            let glyph = self.inner.borrow().scaled_glyph(c);
+            let dx = if let Some(previous) = last_glyph.take() {
+                let font = self.inner.borrow();
+                font.h_advance(previous.id) + font.kern(previous.id, glyph.id)
+            } else {
+                0.0
+            };
+            glyphs_by_line.last_mut().unwrap().push((c, dx));
             last_glyph = Some(glyph.clone());
-            glyphs.push(glyph);
+        }
+        self.lines_to_layout(glyphs_by_line)
+    }
+    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
+        let mut glyphs_by_line = vec![Vec::new()];
+        let mut last_glyph: Option<Glyph> = None;
+        for c in text.as_ref().chars() {
+            if c.is_control() {
+                if c == '\n' {
+                    last_glyph = None;
+                    glyphs_by_line.push(Vec::new());
+                }
+                continue;
+            }
+
+            let glyph = self.inner.borrow().scaled_glyph(c);
+            let dx = if let Some(previous) = last_glyph.take() {
+                let font = self.inner.borrow();
+                font.h_advance(previous.id) + font.kern(previous.id, glyph.id)
+            } else {
+                0.0
+            };
+            let next_x = glyphs_by_line
+                .last_mut()
+                .unwrap()
+                .iter()
+                .map(|(_, dx)| *dx)
+                .sum::<f32>()
+                + dx
+                + self.inner.borrow().h_advance(glyph.id);
+            if !c.is_whitespace() && next_x > max_width {
+                glyphs_by_line.push(vec![(c, 0.0)]);
+            } else {
+                glyphs_by_line.last_mut().unwrap().push((c, dx));
+            }
+            last_glyph = Some(glyph.clone());
+        }
+        self.lines_to_layout(glyphs_by_line)
+    }
+    fn lines_to_layout(&self, glyphs_by_line: Vec<Vec<(char, f32)>>) -> Layout {
+        let mut caret = point(0.0, self.inner.borrow().ascent());
+        let mut glyphs = Vec::new();
+        let mut line_breaks = Vec::new();
+        for line in glyphs_by_line {
+            line_breaks.push(line_breaks.last().unwrap_or(&0) + line.len());
+            for (c, dx) in line {
+                caret.x += dx;
+                let mut glyph = self.inner.borrow().scaled_glyph(c);
+                glyph.position = caret;
+                glyphs.push(glyph);
+            }
+            caret.x = 0.0;
+            caret.y += self.height() + self.inner.borrow().line_gap();
         }
         let glyphs = glyphs
             .into_iter()
