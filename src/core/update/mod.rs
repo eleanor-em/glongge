@@ -535,6 +535,13 @@ impl UpdateHandler {
                 .as_micros();
             let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
             if fixed_updates > 0 {
+                let update_span = span!(
+                    tracing::Level::INFO,
+                    "fixed_update_report",
+                    fc = self.frame_counter,
+                    ffc = self.fixed_frame_counter
+                );
+                let _enter = update_span.enter();
                 self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
                 if self.fixed_update_us >= FIXED_UPDATE_WARN_DELAY_US {
                     warn!(
@@ -618,7 +625,16 @@ impl UpdateHandler {
             self.call_on_collision(input_handler, &mut object_tracker);
             self.call_on_update_end(input_handler, &mut object_tracker);
         }
-        self.object_handler.cleanup_references();
+        {
+            let update_span = span!(
+                tracing::Level::INFO,
+                "cleanup_references",
+                fc = self.frame_counter,
+                ffc = self.fixed_frame_counter
+            );
+            let _enter = update_span.enter();
+            self.object_handler.cleanup_references();
+        }
         object_tracker
     }
 
@@ -1105,6 +1121,7 @@ impl UpdateHandler {
                 all_children: &self.object_handler.children,
                 dummy_transform: Rc::new(RefCell::new(Transform::default())),
             };
+            let then = Instant::now();
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
                     .inner_mut()
@@ -1114,6 +1131,14 @@ impl UpdateHandler {
             .flatten()
             {
                 self.vertex_map.insert(new_obj.object_id, new_vertices);
+            }
+            let elapsed = then.elapsed().as_micros() as f32 / 1000.0;
+            if elapsed > SLOW_LOAD_DEADLINE {
+                warn!(
+                    "slow on_load(): {elapsed:.2} for {} [{:?}]",
+                    new_obj.nickname_or_type_name(),
+                    new_obj.object_id(),
+                );
             }
         }
         self.debug_gui.on_done_adding_objects(&self.object_handler);
@@ -1139,7 +1164,12 @@ impl UpdateHandler {
                         let mut ctx =
                             UpdateContext::new(self, input_handler, this_id, object_tracker)
                                 .context("UpdateHandler::call_on_ready()")?;
+                        let then = Instant::now();
                         this.inner_mut().on_ready(&mut ctx);
+                        let elapsed = then.elapsed().as_micros() as f32 / 1000.0;
+                        if elapsed > SLOW_LOAD_DEADLINE {
+                            warn!("slow on_ready(): {elapsed:.2} for {} [{:?}]", this.nickname_or_type_name(), this.object_id(),);
+                        }
                         Ok(())
                     }),
             );

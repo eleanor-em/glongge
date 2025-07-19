@@ -16,3 +16,5 @@ pub const USE_VSYNC: bool = true;
 pub const SYNC_UPDATE_TO_RENDER: bool = true;
 
 pub const FONT_SAMPLE_RATIO: f32 = 4.0;
+
+pub const SLOW_LOAD_DEADLINE: f32 = 4.0;

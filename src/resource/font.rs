@@ -68,7 +68,7 @@ impl Font {
         };
 
         // Get the largest possible dimensions.
-        let all_chars = (0..0xffff)
+        let all_chars = (0..0x0400)
             .filter(|c| !is_unsupported_codepoint(*c))
             .filter_map(char::from_u32)
             .filter(|c| c.is_alphanumeric())
@@ -84,6 +84,7 @@ impl Font {
             })
             .max_f32()
             .unwrap_or(0.0);
+        // Must do a second pass: consider "gh".
         let layout = rv.layout_no_cache(
             all_chars.into_iter().collect::<String>(),
             &FontRenderSettings::default(),

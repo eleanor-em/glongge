@@ -816,7 +816,7 @@ impl GuiConsoleLog {
     fn transform_log_line(line: &str) -> String {
         let re = Regex::new(
             "((?:INFO|WARN|ERROR)\x1b\\[0m \
-                 (?:\x1b\\[1m.*update.*\x1b\\[1m\\}\x1b\\[0m\x1b\\[2m:\x1b\\[0m )?\
+                 (?:\x1b\\[1m.*(?:update|cleanup_references).*\x1b\\[1m\\}\x1b\\[0m\x1b\\[2m:\x1b\\[0m )?\
                  \x1b\\[2m).*?\
                  (glongge(?:\\/|\\\\)src(?:\\/|\\\\))",
         )
