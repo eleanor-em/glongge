@@ -20,11 +20,34 @@ mod internal {
     use anyhow::Result;
     use itertools::Itertools;
 
+    // Used to avoid clobbering our Font struct name with (the trait) ab_glyph::Font.
     pub fn font_from_slice(slice: &[u8], size: f32) -> Result<PxScaleFont<FontVec>> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
         let scale = PxScale::from(size * FONT_SAMPLE_RATIO);
         Ok(font.into_scaled(scale))
     }
+}
+
+#[allow(clippy::nonminimal_bool)]
+pub fn is_unsupported_codepoint(c: u32) -> bool {
+    false
+        || (0x01c4..=0x01cc).contains(&c) // Annoying Latin digraphs
+        || (0x01f1..=0x01f3).contains(&c) // Annoying Latin digraphs
+        || (0x0400..=0x04ff).contains(&c) // Cyrillic; contains some weird large variants
+        || (0x0500..=0x052f).contains(&c) // Cyrillic supplement
+        || (0x0530..=0x058f).contains(&c) // Armenian
+        || (0x0600..=0x06ff).contains(&c) // Arabic; contains some annoying calligraphic characters
+        || (0x1400..=0x167f).contains(&c) // Unified Canadian Aboriginal Syllabics
+        || (0x1680..=0x169F).contains(&c) // Ogham
+        || (0x1f00..=0x1fff).contains(&c) // Greek Extended
+        || (0x2160..=0x2188).contains(&c) // Roman numerals
+        || (0x2c60..=0x2c7f).contains(&c) // Latin Extended-C
+        || (0xa640..=0xa69f).contains(&c) // Cyrillic Extended-B
+        || (0xa720..=0xa7ff).contains(&c) // Latin Extended-D
+        || (0xfb00..=0xfb4f).contains(&c) // Ligatures
+        || (0xfb50..=0xfdff).contains(&c) // Arabic Presentation Forms-A
+        || (0xfe70..=0xfeff).contains(&c) // Arabic Presentation Forms-B
+        || c == 0x2152 // ⅒, annoying large in many fonts
 }
 
 #[derive(Clone)]
@@ -45,8 +68,13 @@ impl Font {
         };
 
         // Get the largest possible dimensions.
-        rv.max_glyph_width = (0..0xffff)
+        let all_chars = (0..0xffff)
+            .filter(|c| !is_unsupported_codepoint(*c))
             .filter_map(char::from_u32)
+            .filter(|c| c.is_alphanumeric())
+            .collect_vec();
+        rv.max_glyph_width = all_chars
+            .iter()
             .map(|c| {
                 let glyphs = rv.layout_no_cache(c.to_string(), &FontRenderSettings::default());
                 let Ok(reader) = GlyphReader::new(glyphs, usize::MAX, Colour::white()) else {
@@ -56,8 +84,10 @@ impl Font {
             })
             .max_f32()
             .unwrap_or(0.0);
-        let all_chars = (0..0xffff).filter_map(char::from_u32).collect::<String>();
-        let layout = rv.layout_no_cache(all_chars, &FontRenderSettings::default());
+        let layout = rv.layout_no_cache(
+            all_chars.into_iter().collect::<String>(),
+            &FontRenderSettings::default(),
+        );
         let reader = GlyphReader::new(layout, usize::MAX, Colour::white()).unwrap();
         rv.max_line_height = reader.height() as f32 / rv.sample_ratio();
 
@@ -219,6 +249,9 @@ impl Font {
         for line in glyphs_by_line {
             line_breaks.push(line_breaks.last().unwrap_or(&0) + line.len());
             for (c, dx) in line {
+                if is_unsupported_codepoint(c as u32) {
+                    warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
+                }
                 caret.x += dx;
                 let mut glyph = self.inner.borrow().scaled_glyph(c);
                 glyph.position = caret;
