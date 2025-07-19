@@ -632,12 +632,14 @@ impl UpdateHandler {
         F: Fn(RefMut<dyn SceneObject>, &mut UpdateContext),
     {
         for (this_id, this) in self.object_handler.objects.clone() {
-            gg_err::log_and_ok(
-                UpdateContext::new(self, input_handler, this_id, object_tracker).with_context(
-                    || format!("UpdateHandler::iter_with_other_map(): {description}"),
-                ),
-            )
-            .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
+            if !object_tracker.pending_remove.contains(&this_id) {
+                gg_err::log_and_ok(
+                    UpdateContext::new(self, input_handler, this_id, object_tracker).with_context(
+                        || format!("UpdateHandler::iter_with_other_map(): {description}"),
+                    ),
+                )
+                .inspect_mut(|ctx| call_obj_event(this.inner_mut(), ctx));
+            }
         }
     }
 
