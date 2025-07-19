@@ -570,12 +570,12 @@ impl Task for PostRenderTask {
             warn!("resource handler not yet initialised, skip PostRenderTask::execute()");
             return Ok(());
         }
-        self.resource_handler.texture.wait_free_unused_files();
+        self.resource_handler.texture.wait_free_unused_textures();
         self.handler.update_sync.mark_render_done();
 
         world
             .perf_stats()
-            .lap("PostRenderTask: wait_free_unused_files()");
+            .lap("PostRenderTask: wait_free_unused_textures()");
         Ok(())
     }
 }

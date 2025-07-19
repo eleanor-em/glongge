@@ -647,6 +647,10 @@ impl TextureHandler {
         let mut inner = self.inner.get();
         inner.free_unused_files();
     }
+    pub fn wait_free_unused_textures(&self) {
+        let mut inner = self.inner.get();
+        inner.free_unused_textures();
+    }
 
     pub(crate) fn ready_values(&self) -> Vec<InternalTexture> {
         self.inner
