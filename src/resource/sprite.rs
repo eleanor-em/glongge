@@ -469,6 +469,9 @@ impl Sprite {
     pub fn translate(&self, by: Vec2) {
         self.inner.as_ref().unwrap().transform_mut().centre += by;
     }
+    pub fn set_centre(&self, centre: Vec2) {
+        self.inner.as_ref().unwrap().transform_mut().centre = centre;
+    }
 
     pub(crate) fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
         self.inner
