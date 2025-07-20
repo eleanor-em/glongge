@@ -195,7 +195,7 @@ impl Font {
         let mut last_glyph: Option<Glyph> = None;
         for c in text.as_ref().chars() {
             if c.is_control() {
-                glyphs_by_line.last_mut().unwrap().push((c, 0.0));
+                glyphs_by_line.last_mut().unwrap().push((' ', 0.0));
                 if c == '\n' {
                     glyphs_by_line.push(Vec::new());
                     last_glyph = None;
@@ -353,10 +353,6 @@ impl LineGlyphs {
             .max_f32()
     }
 
-    fn is_empty(&self) -> bool {
-        self.glyphs.is_empty()
-    }
-
     fn take(&self, max_glyph_ix: usize) -> impl Iterator<Item = &OutlinedGlyph> {
         self.glyphs
             .iter()
@@ -405,12 +401,7 @@ pub struct Layout {
 
 impl Layout {
     fn new(glyphs_by_line: Vec<LineGlyphs>, sample_ratio: f32) -> Self {
-        check_false!(glyphs_by_line.is_empty());
-        check!(
-            glyphs_by_line
-                .iter()
-                .all(|line_glyphs| !line_glyphs.is_empty())
-        );
+        check_false!(glyphs_by_line.is_empty()); // untested case
         check!(sample_ratio.is_finite());
         check_gt!(sample_ratio, 0.0);
 
@@ -419,29 +410,51 @@ impl Layout {
         let mut bounds = glyphs_by_line
             .iter()
             .fold(Rect::default(), |bounds, line_glyphs| {
-                bounds.union(&Rect::from_coords(
-                    Vec2 {
-                        x: line_glyphs.min_x().unwrap(),
-                        y: bounds.top(),
-                    },
-                    Vec2 {
-                        x: line_glyphs.max_x().unwrap(),
-                        y: bounds.bottom(),
-                    },
-                ))
+                match (line_glyphs.min_x(), line_glyphs.max_x()) {
+                    (Some(0.0), Some(0.0)) => bounds,
+                    (Some(mut min_x), Some(max_x)) => {
+                        // Kludge: it's a bit weird that min_x can be negative.
+                        if min_x < 0.0 {
+                            check_gt!(min_x, -sample_ratio);
+                            min_x = 0.0;
+                        }
+                        bounds.union(&Rect::from_coords(
+                            Vec2 {
+                                x: min_x,
+                                y: bounds.top(),
+                            },
+                            Vec2 {
+                                x: max_x,
+                                y: bounds.bottom(),
+                            },
+                        ))
+                    }
+                    _ => bounds,
+                }
             });
         // Calculate height per-line:
         for line_glyphs in &glyphs_by_line {
-            bounds = bounds.union(&Rect::from_coords(
-                Vec2 {
-                    x: bounds.left(),
-                    y: line_glyphs.min_y().unwrap(),
-                },
-                Vec2 {
-                    x: bounds.right(),
-                    y: line_glyphs.max_y().unwrap(),
-                },
-            ));
+            bounds = match (line_glyphs.min_y(), line_glyphs.max_y()) {
+                (Some(0.0), Some(0.0)) => bounds,
+                (Some(mut min_y), Some(max_y)) => {
+                    // Kludge: it's a bit weird that min_y can be negative.
+                    if min_y < 0.0 {
+                        check_gt!(min_y, -sample_ratio);
+                        min_y = 0.0;
+                    }
+                    bounds.union(&Rect::from_coords(
+                        Vec2 {
+                            x: bounds.left(),
+                            y: min_y,
+                        },
+                        Vec2 {
+                            x: bounds.right(),
+                            y: max_y,
+                        },
+                    ))
+                }
+                _ => bounds,
+            };
             bounds_by_line.push(bounds);
         }
         check_eq!(glyphs_by_line.len(), bounds_by_line.len());
