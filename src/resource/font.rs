@@ -222,8 +222,9 @@ impl Font {
                 + self.inner.borrow().h_advance(glyph.id);
             if !c.is_whitespace()
                 && next_x > max_width
-                && let Some((sep, mut word)) = last_line.rsplit_owned(|(c, _)| c.is_whitespace())
+                && let Some((mut sep, mut word)) = last_line.rsplit_owned(|(c, _)| c.is_whitespace())
             {
+                sep.1 = 0.0;
                 last_line.push(sep);
                 word[0].1 = 0.0;
                 glyphs_by_line.push(word);
