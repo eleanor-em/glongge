@@ -180,7 +180,6 @@ pub mod gg_time {
 
 #[allow(dead_code)]
 pub mod gg_iter {
-    use std::cmp;
     use std::ops::Add;
 
     pub fn sum_tuple3<T: Add<Output = T>>(acc: (T, T, T), x: (T, T, T)) -> (T, T, T) {
@@ -194,13 +193,6 @@ pub mod gg_iter {
             }
         }
         None
-    }
-
-    pub fn partition_point_by<T, F>(slice: &[T], mut comparator: F) -> usize
-    where
-        F: FnMut(&T) -> cmp::Ordering,
-    {
-        slice.partition_point(|x| (comparator)(x) != cmp::Ordering::Greater)
     }
 
     #[must_use]
@@ -503,6 +495,28 @@ pub mod gg_range {
 
     pub fn overlap_len_f32(r1: &Range<f32>, r2: &Range<f32>) -> Option<f32> {
         overlap_f32(r1, r2).map(|r| r.end - r.start)
+    }
+}
+
+pub mod gg_vec {
+    pub trait GgVec<T> {
+        fn rsplit_owned<P: for<'a> FnMut(&'a T) -> bool>(
+            &mut self,
+            predicate: P,
+        ) -> Option<(T, Self)>
+        where
+            Self: Sized;
+    }
+
+    impl<T: Clone> GgVec<T> for Vec<T> {
+        fn rsplit_owned<P: for<'a> FnMut(&'a T) -> bool>(
+            &mut self,
+            mut predicate: P,
+        ) -> Option<(T, Self)> {
+            let (point, _) = self.iter().enumerate().rev().find(|(_, t)| predicate(t))?;
+            let mut rv = self.split_off(point);
+            Some((rv.remove(0), rv))
+        }
     }
 }
 

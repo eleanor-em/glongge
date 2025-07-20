@@ -559,7 +559,7 @@ impl Vec2 {
     ///
     /// - `p1`: Starting point of the first line segment
     /// - `ax1`: Direction and length of the first line segment
-    /// - `p2`: Starting point of the second line segment  
+    /// - `p2`: Starting point of the second line segment
     /// - `ax2`: Direction and length of the second line segment
     ///
     /// # Returns
@@ -1684,6 +1684,12 @@ pub trait AxisAlignedExtent {
     fn contains_point(&self, pos: Vec2) -> bool {
         (self.left()..self.right()).contains(&pos.x) && (self.top()..self.bottom()).contains(&pos.y)
     }
+    fn contains_rect(&self, rect: &Rect) -> bool {
+        self.left() <= rect.left()
+            && self.right() >= rect.right()
+            && self.top() <= rect.top()
+            && self.bottom() >= rect.bottom()
+    }
 
     fn union(&self, rhs: impl AxisAlignedExtent) -> Rect {
         self.as_rect().union(&rhs.as_rect())
@@ -1762,6 +1768,27 @@ impl Rect {
     pub fn with_centre(mut self, centre: Vec2) -> Rect {
         self.centre = centre;
         self
+    }
+}
+
+impl Mul<f32> for Rect {
+    type Output = Rect;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self::Output {
+            centre: self.centre * rhs,
+            half_widths: self.half_widths * rhs,
+        }
+    }
+}
+impl Div<f32> for Rect {
+    type Output = Rect;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self::Output {
+            centre: self.centre / rhs,
+            half_widths: self.half_widths / rhs,
+        }
     }
 }
 
