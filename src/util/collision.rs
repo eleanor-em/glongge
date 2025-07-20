@@ -97,7 +97,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     where
         Self: Sized,
     {
-        self.scaled(extent.component_wise_div(self.aa_extent()))
+        self.scaled(extent.component_wise_div(self.extent()))
     }
 
     #[must_use]
@@ -115,7 +115,7 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
 #[derive(Debug, Clone, Copy)]
 pub struct NullCollider;
 impl AxisAlignedExtent for NullCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         Vec2::zero()
     }
 
@@ -441,7 +441,7 @@ impl Polygonal for OrientedBoxCollider {
 }
 
 impl AxisAlignedExtent for OrientedBoxCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.extent
     }
 
@@ -576,7 +576,7 @@ impl Polygonal for BoxCollider {
 }
 
 impl AxisAlignedExtent for BoxCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.extent
     }
 
@@ -678,7 +678,7 @@ pub struct BoxCollider3d {
 }
 
 impl AxisAlignedExtent for BoxCollider3d {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.extent
     }
 
@@ -836,7 +836,7 @@ impl Polygonal for ConvexCollider {
 }
 
 impl AxisAlignedExtent for ConvexCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.extent_cached
     }
 
@@ -1330,9 +1330,9 @@ impl Polygonal for CompoundCollider {
 }
 
 impl AxisAlignedExtent for CompoundCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         let mut max = Vec2::zero();
-        for extent in self.inner.iter().map(ConvexCollider::aa_extent) {
+        for extent in self.inner.iter().map(ConvexCollider::extent) {
             max.x = max.x.max(extent.x);
             max.y = max.y.max(extent.y);
         }
@@ -1476,13 +1476,13 @@ impl Default for GenericCollider {
 }
 
 impl AxisAlignedExtent for GenericCollider {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         match self {
-            GenericCollider::Null => NullCollider.aa_extent(),
-            GenericCollider::Box(c) => c.aa_extent(),
-            GenericCollider::OrientedBox(c) => c.aa_extent(),
-            GenericCollider::Convex(c) => c.aa_extent(),
-            GenericCollider::Compound(c) => c.aa_extent(),
+            GenericCollider::Null => NullCollider.extent(),
+            GenericCollider::Box(c) => c.extent(),
+            GenericCollider::OrientedBox(c) => c.extent(),
+            GenericCollider::Convex(c) => c.extent(),
+            GenericCollider::Compound(c) => c.extent(),
         }
     }
 
@@ -1839,7 +1839,7 @@ impl GuiObject for GgInternalCollisionShape {
             self.centre_cell_receiver_x.clear_state();
             self.centre_cell_receiver_y.clear_state();
         }
-        let extent = self.collider.aa_extent();
+        let extent = self.collider.extent();
         let (next_x, next_y) = (
             self.extent_cell_receiver_x.try_recv(),
             self.extent_cell_receiver_y.try_recv(),
@@ -1883,7 +1883,7 @@ impl GuiObject for GgInternalCollisionShape {
             ui.label(collider.to_string());
             ui.add(egui::Label::new("Extent").selectable(false));
             collider
-                .aa_extent()
+                .extent()
                 .build_gui(ui, 0.1, extent_cell_sender_x, extent_cell_sender_y);
             ui.end_row();
             ui.add(egui::Label::new("Centre").selectable(false));

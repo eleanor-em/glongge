@@ -587,11 +587,11 @@ impl GlyphReader {
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn width(&self) -> u32 {
-        self.all_px_bounds.aa_extent().x as u32
+        self.all_px_bounds.extent().x as u32
     }
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn height(&self) -> u32 {
-        self.all_px_bounds.aa_extent().y as u32
+        self.all_px_bounds.extent().y as u32
     }
 }
 
@@ -786,11 +786,11 @@ impl GuiObject for Label {
 }
 
 impl AxisAlignedExtent for Label {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.next_sprite
             .as_ref()
             .or(self.sprite.as_ref())
-            .map_or(Vec2::zero(), Sprite::aa_extent)
+            .map_or(Vec2::zero(), Sprite::extent)
             / self.font.sample_ratio()
     }
 

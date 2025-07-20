@@ -786,7 +786,7 @@ pub trait GuiObject: SceneObject {
     /// [`EditCell`](crate::gui::EditCell)/[`EditCellSender`](crate::gui::EditCellSender):
     /// ```ignore
     /// fn on_gui(&mut self, ctx: &UpdateContext, _selected: bool) -> GuiCommand {
-    ///     let extent = self.collider.aa_extent();
+    ///     let extent = self.collider.extent();
     ///     let (next_x, next_y) = (
     ///         self.extent_cell_receiver_x.try_recv(),
     ///         self.extent_cell_receiver_y.try_recv(),
@@ -807,7 +807,7 @@ pub trait GuiObject: SceneObject {
     ///     Box::new(move |ui| {
     ///         ui.add(egui::Label::new("Extent").selectable(false));
     ///         collider
-    ///             .aa_extent()
+    ///             .extent()
     ///             .build_gui(ui, 0.1, extent_cell_sender_x, extent_cell_sender_y);
     ///     })
     /// }

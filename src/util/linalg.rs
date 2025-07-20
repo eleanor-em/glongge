@@ -1603,7 +1603,7 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
 /// It allows querying dimensions, corners, edges, and containment tests for the implementing type.
 ///
 /// The trait requires implementing two core methods:
-/// - [`aa_extent()`](AxisAlignedExtent::aa_extent) - Returns the width and height as a [`Vec2`]
+/// - [`extent()`](AxisAlignedExtent::extent) - Returns the width and height as a [`Vec2`]
 /// - [`centre()`](AxisAlignedExtent::centre) - Returns the center point as a [`Vec2`]
 ///
 /// All other methods have default implementations based on these two.
@@ -1621,7 +1621,7 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
 /// );
 ///
 /// assert_eq!(rect.centre(), Vec2 { x: 1.0, y: 2.0 });
-/// assert_eq!(rect.aa_extent(), Vec2 { x: 4.0, y: 6.0 });
+/// assert_eq!(rect.extent(), Vec2 { x: 4.0, y: 6.0 });
 /// assert_eq!(rect.top_left(), Vec2 { x: -1.0, y: -1.0 });
 /// assert_eq!(rect.bottom_right(), Vec2 { x: 3.0, y: 5.0 });
 ///
@@ -1646,23 +1646,23 @@ impl From<Mat3x3> for [[f32; 4]; 4] {
 /// }
 /// ```
 pub trait AxisAlignedExtent {
-    fn aa_extent(&self) -> Vec2;
+    fn extent(&self) -> Vec2;
     fn centre(&self) -> Vec2;
 
     fn half_widths(&self) -> Vec2 {
-        self.aa_extent() / 2
+        self.extent() / 2
     }
     fn top_left(&self) -> Vec2 {
         self.centre() - self.half_widths()
     }
     fn top_right(&self) -> Vec2 {
-        self.top_left() + self.aa_extent().x * Vec2::right()
+        self.top_left() + self.extent().x * Vec2::right()
     }
     fn bottom_left(&self) -> Vec2 {
-        self.top_left() + self.aa_extent().y * Vec2::down()
+        self.top_left() + self.extent().y * Vec2::down()
     }
     fn bottom_right(&self) -> Vec2 {
-        self.top_left() + self.aa_extent()
+        self.top_left() + self.extent()
     }
 
     fn left(&self) -> f32 {
@@ -1713,7 +1713,7 @@ pub trait AxisAlignedExtent {
 /// );
 ///
 /// // Total width is twice the half-width
-/// assert_eq!(rect.aa_extent(), Vec2 { x: 4.0, y: 3.0 });
+/// assert_eq!(rect.extent(), Vec2 { x: 4.0, y: 3.0 });
 ///
 /// // Test if point is inside rectangle
 /// assert!(rect.contains_point(Vec2 { x: 1.0, y: 0.5 }));
@@ -1793,7 +1793,7 @@ impl Div<f32> for Rect {
 }
 
 impl AxisAlignedExtent for Rect {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.half_widths * 2.0
     }
     fn centre(&self) -> Vec2 {

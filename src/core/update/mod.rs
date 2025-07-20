@@ -1517,7 +1517,7 @@ impl<'a> UpdateContext<'a> {
     /// }
     ///
     /// // Get viewport dimensions
-    /// let viewport_size = ctx.viewport().aa_extent();
+    /// let viewport_size = ctx.viewport().extent();
     ///
     /// // Get viewport center position
     /// let center = ctx.viewport().centre();
@@ -2477,7 +2477,7 @@ impl ObjectContext<'_> {
     /// If the object has multiple child colliders, returns the extent of the first collider found.
     /// Returns a default [`Vec2`] if no collider is found.
     pub fn extent(&self) -> Vec2 {
-        self.collider().unwrap_or_default().aa_extent()
+        self.collider().unwrap_or_default().extent()
     }
 
     /// Returns the width and height of another object's collider.
@@ -2485,7 +2485,7 @@ impl ObjectContext<'_> {
     /// If the other object has multiple child colliders, returns the extent of the first collider found.
     /// Returns a default [`Vec2`] if no collider is found.
     pub fn extent_of(&self, other: &TreeSceneObject) -> Vec2 {
-        self.collider_of(other).unwrap_or_default().aa_extent()
+        self.collider_of(other).unwrap_or_default().extent()
     }
 
     /// Returns this object's collider.
@@ -2919,8 +2919,8 @@ impl ViewportContext<'_> {
 }
 
 impl AxisAlignedExtent for ViewportContext<'_> {
-    fn aa_extent(&self) -> Vec2 {
-        self.viewport.aa_extent()
+    fn extent(&self) -> Vec2 {
+        self.viewport.extent()
     }
 
     fn centre(&self) -> Vec2 {

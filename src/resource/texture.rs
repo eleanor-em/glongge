@@ -64,7 +64,7 @@ impl Texture {
 }
 
 impl AxisAlignedExtent for Texture {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.extent
     }
 
@@ -165,7 +165,7 @@ impl InternalTexture {
 }
 
 impl AxisAlignedExtent for InternalTexture {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         Vec2 {
             x: self.raw.info.extent[0] as f32,
             y: self.raw.info.extent[1] as f32,
@@ -323,7 +323,7 @@ impl TextureHandlerInner {
             has_write_access: false,
             ready: ready.clone(),
         };
-        let extent = internal_texture.aa_extent();
+        let extent = internal_texture.extent();
         if let Some(existing) = self.textures.insert(id, internal_texture) {
             panic!(
                 "tried to use texture id {id}, but ref_count={}",

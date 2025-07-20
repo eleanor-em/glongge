@@ -126,7 +126,7 @@ impl AdjustedViewport {
 }
 
 impl AxisAlignedExtent for AdjustedViewport {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         Vec2 {
             x: self.logical_width(),
             y: self.logical_height(),

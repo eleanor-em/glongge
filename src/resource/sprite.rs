@@ -162,7 +162,7 @@ impl GgInternalSprite {
                     .union(&b.with_centre(Vec2::zero()))
             })
             .unwrap_or_default()
-            .aa_extent()
+            .extent()
     }
 
     pub fn textures_ready(&self) -> bool {
@@ -363,7 +363,7 @@ impl Sprite {
     }
 
     pub(crate) fn add_from_texture(object_ctx: &mut ObjectContext, texture: Texture) -> Sprite {
-        let extent = texture.aa_extent().as_vec2int_lossy();
+        let extent = texture.extent().as_vec2int_lossy();
         Self::add_from_single_extent(object_ctx, texture, Vec2i::zero(), extent)
     }
     pub(crate) fn add_from_texture_deferred(
@@ -487,7 +487,7 @@ impl Sprite {
 }
 
 impl AxisAlignedExtent for Sprite {
-    fn aa_extent(&self) -> Vec2 {
+    fn extent(&self) -> Vec2 {
         self.inner_unwrap().max_extent()
     }
 

@@ -761,7 +761,7 @@ impl SceneObject for Player {
             .clamp_to_right(Some(self.centre.x + 200.0), None);
         ctx.viewport_mut().clamp_to_left(Some(0.0), None);
 
-        let death_y = ctx.viewport().bottom() + self.current_sprite_mut().aa_extent().y;
+        let death_y = ctx.viewport().bottom() + self.current_sprite_mut().extent().y;
         if self.has_control() && self.centre.y > death_y {
             self.start_die(ctx);
         }

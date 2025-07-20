@@ -738,7 +738,7 @@ impl Task for GuiRenderer {
 
         let viewport = self.viewport.get().clone();
         let push_constants = {
-            let viewport_extent = viewport.aa_extent();
+            let viewport_extent = viewport.extent();
             // TODO: fix this
             let scale_factor = viewport.scale_factor() / viewport.gui_scale_factor();
             vs::VertPC {
