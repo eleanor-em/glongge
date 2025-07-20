@@ -1135,7 +1135,7 @@ impl UpdateHandler {
             let elapsed = then.elapsed().as_micros() as f32 / 1000.0;
             if elapsed > SLOW_LOAD_DEADLINE {
                 warn!(
-                    "slow on_load(): {elapsed:.2} for {} [{:?}]",
+                    "slow on_load(): {elapsed:.2} ms for {} [{:?}]",
                     new_obj.nickname_or_type_name(),
                     new_obj.object_id(),
                 );
@@ -1168,7 +1168,7 @@ impl UpdateHandler {
                         this.inner_mut().on_ready(&mut ctx);
                         let elapsed = then.elapsed().as_micros() as f32 / 1000.0;
                         if elapsed > SLOW_LOAD_DEADLINE {
-                            warn!("slow on_ready(): {elapsed:.2} for {} [{:?}]", this.nickname_or_type_name(), this.object_id(),);
+                            warn!("slow on_ready(): {elapsed:.2} ms for {} [{:?}]", this.nickname_or_type_name(), this.object_id(),);
                         }
                         Ok(())
                     }),

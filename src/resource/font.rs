@@ -47,7 +47,7 @@ pub fn is_unsupported_codepoint(c: u32) -> bool {
         || (0xfb00..=0xfb4f).contains(&c) // Ligatures
         || (0xfb50..=0xfdff).contains(&c) // Arabic Presentation Forms-A
         || (0xfe70..=0xfeff).contains(&c) // Arabic Presentation Forms-B
-        || c == 0x2152 // ⅒, annoying large in many fonts
+        || c == 0x2152 // ⅒, annoyingly large in many fonts
 }
 
 #[derive(Clone)]
@@ -55,42 +55,38 @@ pub struct Font {
     inner: Rc<RefCell<PxScaleFont<FontVec>>>,
     cached_layout: Rc<RefCell<Option<(String, FontRenderSettings, Layout)>>>,
     max_glyph_width: f32,
-    max_line_height: f32,
 }
 
 impl Font {
+    #[allow(clippy::nonminimal_bool)]
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
             inner: Rc::new(RefCell::new(inner)),
             cached_layout: Rc::new(RefCell::new(None)),
             max_glyph_width: 0.0,
-            max_line_height: 0.0,
         };
 
-        // Get the largest possible dimensions.
-        let all_chars = (0..0x0400)
-            .filter(|c| !is_unsupported_codepoint(*c))
+        // Get the largest supported character width; used for font-independent margins etc.
+        rv.max_glyph_width = (0..0xffff)
+            .filter(|n| !is_unsupported_codepoint(*n))
+            .filter(|n| {
+                // CJK (should work fine, but very slow to lay out)
+                !((0x3400..=0x4db5).contains(n)   // CJKUI Ext A
+                || (0x4e00..=0x9fcc).contains(n)  // CJK Unified Ideographs
+                || (0xac00..=0xd7af).contains(n)  // Hangul Syllables
+                || (0xd7b0..=0xd7ff).contains(n)) // Hangul Jamo Extended-B
+            })
             .filter_map(char::from_u32)
             .filter(|c| c.is_alphanumeric())
-            .collect_vec();
-        rv.max_glyph_width = all_chars
-            .iter()
             .map(|c| {
-                let glyphs = rv.layout_no_cache(c.to_string(), &FontRenderSettings::default());
-                let Ok(reader) = GlyphReader::new(glyphs, usize::MAX, Colour::white()) else {
+                let inner = rv.inner.borrow();
+                let Some(glyph) = inner.outline_glyph(inner.scaled_glyph(c)) else {
                     return 0.0;
                 };
-                reader.width() as f32 / rv.sample_ratio()
+                glyph.px_bounds().width() / rv.sample_ratio()
             })
             .max_f32()
             .unwrap_or(0.0);
-        // Must do a second pass: consider "gh".
-        let layout = rv.layout_no_cache(
-            all_chars.into_iter().collect::<String>(),
-            &FontRenderSettings::default(),
-        );
-        let reader = GlyphReader::new(layout, usize::MAX, Colour::white()).unwrap();
-        rv.max_line_height = reader.height() as f32 / rv.sample_ratio();
 
         rv
     }
@@ -102,14 +98,12 @@ impl Font {
     pub fn sample_ratio(&self) -> f32 {
         FONT_SAMPLE_RATIO
     }
-    pub fn height(&self) -> f32 {
-        self.inner.borrow().height()
-    }
     pub fn max_glyph_width(&self) -> f32 {
         self.max_glyph_width
     }
-    pub fn max_line_height(&self) -> f32 {
-        self.max_line_height
+    /// NOTE: Some lines may be slightly larger than this.
+    pub fn line_height(&self) -> f32 {
+        self.inner.borrow().height() / self.sample_ratio()
     }
 
     fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> Layout {
@@ -247,6 +241,7 @@ impl Font {
         let mut caret = point(0.0, self.inner.borrow().ascent());
         let mut glyphs = Vec::new();
         let mut line_breaks = Vec::new();
+        let line_height = self.inner.borrow().height() + self.inner.borrow().line_gap();
         for line in glyphs_by_line {
             line_breaks.push(line_breaks.last().unwrap_or(&0) + line.len());
             for (c, dx) in line {
@@ -259,7 +254,7 @@ impl Font {
                 glyphs.push(glyph);
             }
             caret.x = 0.0;
-            caret.y += self.height() + self.inner.borrow().line_gap();
+            caret.y += line_height;
         }
         let glyphs = glyphs
             .into_iter()
