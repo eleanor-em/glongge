@@ -238,47 +238,41 @@ impl Font {
     }
     // max_width for justification algorithms (TODO).
     fn lines_to_layout(&self, glyphs_by_line: Vec<Vec<(char, f32)>>, _max_width: f32) -> Layout {
-        let mut caret = point(0.0, self.inner.borrow().ascent());
-        let mut glyphs = Vec::new();
-        let mut line_breaks = Vec::new();
         let line_height = self.inner.borrow().height() + self.inner.borrow().line_gap();
+        let mut glyphs = Vec::new();
+        let mut glyph_ix = 0;
+        let mut caret = point(0.0, self.inner.borrow().ascent());
         for line in glyphs_by_line {
-            line_breaks.push(line_breaks.last().unwrap_or(&0) + line.len());
-            for (c, dx) in line {
-                if is_unsupported_codepoint(c as u32) {
-                    warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
-                }
-                caret.x += dx;
-                let mut glyph = self.inner.borrow().scaled_glyph(c);
-                glyph.position = caret;
-                glyphs.push(glyph);
-            }
+            glyphs.push(
+                line.into_iter()
+                    .map(|(c, dx)| {
+                        if is_unsupported_codepoint(c as u32) {
+                            warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
+                        }
+                        caret.x += dx;
+                        glyph_ix += 1;
+                        let mut glyph = self.inner.borrow().scaled_glyph(c);
+                        glyph.position = caret;
+                        (glyph_ix, glyph)
+                    })
+                    .filter_map(|(i, g)| self.inner.borrow().outline_glyph(g).map(|g| (i, g)))
+                    .collect(),
+            );
+
             caret.x = 0.0;
             caret.y += line_height;
         }
-        let glyphs = glyphs
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, g)| self.inner.borrow().outline_glyph(g).map(|g| (i, g)))
-            .collect();
-        Layout {
-            glyphs,
-            line_breaks,
-        }
+        Layout::new(glyphs)
     }
 
-    pub fn dry_run_render(
-        &self,
-        text: impl AsRef<str>,
-        settings: &FontRenderSettings,
-    ) -> Result<bool> {
+    pub fn dry_run_render(&self, text: impl AsRef<str>, settings: &FontRenderSettings) -> bool {
         settings.validate();
         let layout = self.layout(text, settings.clone());
-        let reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
+        let reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white());
         let width = reader.width();
         let height = reader.height();
-        Ok(!(width as f32 > settings.max_width * self.sample_ratio()
-            || height as f32 > settings.max_height * self.sample_ratio()))
+        !(width as f32 > settings.max_width * self.sample_ratio()
+            || height as f32 > settings.max_height * self.sample_ratio())
     }
 
     pub fn render_to_sprite(
@@ -286,18 +280,18 @@ impl Font {
         object_ctx: &mut ObjectContext,
         text: impl AsRef<str>,
         settings: &FontRenderSettings,
-    ) -> Result<Option<Sprite>> {
+    ) -> Option<Sprite> {
         settings.validate();
         let layout = self.layout(text, settings.clone());
-        let mut reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())?;
+        let mut reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white());
         let width = reader.width();
         let height = reader.height();
         if width as f32 > settings.max_width * self.sample_ratio()
             || height as f32 > settings.max_height * self.sample_ratio()
         {
-            Ok(None)
+            None
         } else {
-            Ok(Some(Sprite::add_from_texture_deferred(
+            Some(Sprite::add_from_texture_deferred(
                 object_ctx,
                 Box::new(move |resource_handler| {
                     resource_handler.texture.wait_load_reader_rgba(
@@ -308,15 +302,100 @@ impl Font {
                         Format::R8G8B8A8_UNORM,
                     )
                 }),
-            )))
+            ))
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LineGlyphs {
+    glyphs: BTreeMap<usize, OutlinedGlyph>,
+}
+
+impl LineGlyphs {
+    fn start_of_line_ix(&self) -> Option<usize> {
+        self.glyphs.keys().min().copied()
+    }
+
+    fn min_x(&self) -> Option<f32> {
+        self.glyphs.values().map(|g| g.px_bounds().min.x).min_f32()
+    }
+    fn max_x(&self) -> Option<f32> {
+        self.glyphs.values().map(|g| g.px_bounds().max.x).max_f32()
+    }
+    fn min_y(&self) -> Option<f32> {
+        self.glyphs.values().map(|g| g.px_bounds().min.y).min_f32()
+    }
+    fn max_y(&self) -> Option<f32> {
+        self.glyphs.values().map(|g| g.px_bounds().max.y).max_f32()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.glyphs.is_empty()
+    }
+
+    fn take(&self, max_glyphs: usize) -> impl Iterator<Item = &OutlinedGlyph> {
+        self.glyphs
+            .iter()
+            .take_while(move |(i, _)| **i <= max_glyphs)
+            .map(|(_, g)| g)
+    }
+}
+
+impl FromIterator<(usize, OutlinedGlyph)> for LineGlyphs {
+    fn from_iter<T: IntoIterator<Item = (usize, OutlinedGlyph)>>(iter: T) -> Self {
+        Self {
+            glyphs: iter.into_iter().collect(),
         }
     }
 }
 
 #[derive(Clone)]
 struct Layout {
-    glyphs: BTreeMap<usize, OutlinedGlyph>,
-    line_breaks: Vec<usize>,
+    glyphs_by_line: Vec<LineGlyphs>,
+    bounds_by_line: Vec<ab_glyph::Rect>,
+}
+
+impl Layout {
+    fn new(glyphs_by_line: Vec<LineGlyphs>) -> Self {
+        let mut bounds_by_line = Vec::new();
+        let mut bounds = ab_glyph::Rect {
+            min: point(f32::INFINITY, f32::INFINITY),
+            max: point(f32::NEG_INFINITY, f32::NEG_INFINITY),
+        };
+        // Calculate width using all lines:
+        for line_glyphs in &glyphs_by_line {
+            check_false!(line_glyphs.is_empty());
+            bounds.min.x = bounds.min.x.min(line_glyphs.min_x().unwrap());
+            bounds.max.x = bounds.max.x.max(line_glyphs.max_x().unwrap());
+        }
+
+        // Calculate height per-line:
+        for line_glyphs in &glyphs_by_line {
+            bounds.min.y = bounds.min.y.min(line_glyphs.min_y().unwrap());
+            bounds.max.y = bounds.max.y.max(line_glyphs.max_y().unwrap());
+            bounds_by_line.push(bounds);
+        }
+        check_eq!(glyphs_by_line.len(), bounds_by_line.len());
+        Self {
+            glyphs_by_line,
+            bounds_by_line,
+        }
+    }
+
+    fn bounds_for_max_glyphs(&self, max_glyphs: usize) -> Option<ab_glyph::Rect> {
+        self.glyphs_by_line
+            .iter()
+            .zip(self.bounds_by_line.iter())
+            .filter_map(|(glyphs, bounds)| {
+                if glyphs.start_of_line_ix()? <= max_glyphs {
+                    Some(*bounds)
+                } else {
+                    None
+                }
+            })
+            .next_back()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -370,7 +449,6 @@ impl Eq for FontRenderSettings {}
 pub enum TextWrapMode {
     #[default]
     WrapAnywhere,
-    // TODO:
     WrapAtWordBoundary,
 }
 
@@ -382,45 +460,20 @@ struct GlyphReader {
 }
 
 impl GlyphReader {
-    fn new(layout: Layout, max_glyphs: usize, col: Colour) -> Result<Self> {
-        // To work out the exact size needed for the drawn glyphs, we need to outline
-        // them and use their px_bounds which hold the coordinates of their render bounds.
-        let next_line_break = *layout
-            .line_breaks
-            .iter()
-            .find(|i| **i >= max_glyphs)
-            .unwrap_or(&usize::MAX);
-        let (_, all_px_bounds) = layout
-            .glyphs
-            .iter()
-            .map(|(i, g)| (i, g.px_bounds()))
-            .reduce(|(_i, mut bounds), (j, next)| {
-                // Use all lines to find the width:
-                bounds.min.x = bounds.min.x.min(next.min.x);
-                bounds.max.x = bounds.max.x.max(next.max.x);
-                // Use until the next line break to find the height:
-                if *j < next_line_break {
-                    bounds.min.y = bounds.min.y.min(next.min.y);
-                    bounds.max.y = bounds.max.y.max(next.max.y);
-                }
-                (j, bounds)
-            })
-            .context("could not get outline of glyphs")?;
-        // Now get the actual glyphs we will use:
+    fn new(layout: Layout, max_glyphs: usize, col: Colour) -> Self {
         let glyphs = layout
-            .glyphs
+            .glyphs_by_line
             .iter()
-            .filter(|(i, _)| **i < max_glyphs)
-            .map(|(_, g)| g)
+            .flat_map(|line_glyphs| line_glyphs.take(max_glyphs))
             .cloned()
             .collect_vec();
-
-        Ok(Self {
+        let all_px_bounds = layout.bounds_for_max_glyphs(max_glyphs).unwrap_or_default();
+        Self {
             _layout: layout,
             inner: Some(glyphs),
             col: col.as_bytes(),
             all_px_bounds,
-        })
+        }
     }
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
@@ -531,10 +584,7 @@ impl Label {
         let Some(text) = self.last_text.as_ref() else {
             return false;
         };
-        !self
-            .font
-            .dry_run_render(text, &self.render_settings)
-            .unwrap()
+        !self.font.dry_run_render(text, &self.render_settings)
     }
     pub fn overflowed(&self) -> bool {
         self.overflowed
@@ -558,12 +608,11 @@ impl Label {
         {
             // No update necessary.
         } else if self.next_sprite.is_none() {
-            self.next_sprite = self
-                .font
-                .render_to_sprite(ctx.object_mut(), &text, &self.render_settings.clone())
-                .unwrap()
-                .map(Sprite::with_hidden);
-            if self.next_sprite.is_some() {
+            if let Some(next_sprite) =
+                self.font
+                    .render_to_sprite(ctx.object_mut(), &text, &self.render_settings.clone())
+            {
+                self.next_sprite = Some(next_sprite.with_hidden());
                 self.last_text = Some(text);
                 self.last_render_settings = Some(self.render_settings.clone());
             }

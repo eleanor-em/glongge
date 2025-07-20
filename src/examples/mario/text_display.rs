@@ -38,7 +38,7 @@ impl SceneObject for WinTextDisplay {
                     max_width: 200.0,
                     ..FontRenderSettings::default()
                 },
-            )?
+            )
             .unwrap();
         self.font = Some(font);
         let mut transform = object_ctx.transform_mut();

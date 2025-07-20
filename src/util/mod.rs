@@ -271,6 +271,20 @@ pub mod gg_iter {
                 }
             })
         }
+        fn min_f32(self) -> Option<f32>
+        where
+            Self: Sized,
+        {
+            self.fold(None, |min, x| {
+                if x.is_nan() {
+                    return Some(x);
+                }
+                match min {
+                    None => Some(x),
+                    Some(m) => Some(m.min(x)),
+                }
+            })
+        }
     }
 
     impl<T: Iterator<Item = f32>> GgFloatIter for T {}
