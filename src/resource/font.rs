@@ -222,7 +222,8 @@ impl Font {
                 + self.inner.borrow().h_advance(glyph.id);
             if !c.is_whitespace()
                 && next_x > max_width
-                && let Some((mut sep, mut word)) = last_line.rsplit_owned(|(c, _)| c.is_whitespace())
+                && let Some((mut sep, mut word)) =
+                    last_line.rsplit_owned(|(c, _)| c.is_whitespace())
             {
                 sep.1 = 0.0;
                 last_line.push(sep);
@@ -276,7 +277,7 @@ impl Font {
     ) -> Result<Sprite, FontRenderError> {
         settings.validate();
         let layout = self.layout(text, settings.clone());
-        let mut reader = GlyphReader::new(layout, settings.max_glyphs, Colour::white())
+        let mut reader = GlyphReader::new(layout, settings.max_glyph_ix, Colour::white())
             .ok_or(FontRenderError::Empty)?;
         let width = reader.width();
         let height = reader.height();
@@ -356,10 +357,10 @@ impl LineGlyphs {
         self.glyphs.is_empty()
     }
 
-    fn take(&self, max_glyphs: usize) -> impl Iterator<Item = &OutlinedGlyph> {
+    fn take(&self, max_glyph_ix: usize) -> impl Iterator<Item = &OutlinedGlyph> {
         self.glyphs
             .iter()
-            .take_while(move |(i, _)| **i <= max_glyphs)
+            .take_while(move |(i, _)| **i <= max_glyph_ix)
             .map(|(_, (_, g))| g)
     }
 }
@@ -451,12 +452,12 @@ impl Layout {
         }
     }
 
-    pub fn bounds_for_max_glyphs(&self, max_glyphs: usize) -> Option<Rect> {
+    pub fn bounds_for_max_glyph_ix(&self, max_glyph_ix: usize) -> Option<Rect> {
         self.glyphs_by_line
             .iter()
             .zip(self.bounds_by_line.iter())
             .filter_map(|(line_glyphs, line_bounds)| {
-                if line_glyphs.start_of_line_ix()? <= max_glyphs {
+                if line_glyphs.start_of_line_ix()? <= max_glyph_ix {
                     Some(*line_bounds / self.sample_ratio)
                 } else {
                     None
@@ -465,7 +466,7 @@ impl Layout {
             .next_back()
     }
 
-    pub fn max_glyphs_for_bounds(&self, bounds: Rect) -> Option<usize> {
+    pub fn max_glyph_ix_for_bounds(&self, bounds: Rect) -> Option<usize> {
         let bounds = bounds * self.sample_ratio;
         let ixs = self
             .glyphs_by_line
@@ -496,7 +497,7 @@ impl Layout {
 pub struct FontRenderSettings {
     pub max_width: f32,
     pub max_height: f32,
-    pub max_glyphs: usize,
+    pub max_glyph_ix: usize,
     pub text_wrap_mode: TextWrapMode,
 }
 
@@ -529,7 +530,7 @@ impl Default for FontRenderSettings {
         Self {
             max_width: f32::INFINITY,
             max_height: f32::INFINITY,
-            max_glyphs: usize::MAX,
+            max_glyph_ix: usize::MAX,
             text_wrap_mode: TextWrapMode::default(),
         }
     }
@@ -541,7 +542,7 @@ impl PartialEq for FontRenderSettings {
             && (!gg_float::is_finite(self.max_width) || self.max_width == other.max_width)
             && gg_float::is_finite(self.max_height) == gg_float::is_finite(other.max_height)
             && (!gg_float::is_finite(self.max_height) || self.max_height == other.max_height)
-            && self.max_glyphs == other.max_glyphs
+            && self.max_glyph_ix == other.max_glyph_ix
             && self.text_wrap_mode == other.text_wrap_mode
     }
 }
@@ -563,18 +564,18 @@ struct GlyphReader {
 }
 
 impl GlyphReader {
-    fn new(layout: Layout, max_glyphs: usize, col: Colour) -> Option<Self> {
-        if max_glyphs == 0 {
+    fn new(layout: Layout, max_glyph_ix: usize, col: Colour) -> Option<Self> {
+        if max_glyph_ix == 0 {
             return None;
         }
         let glyphs = layout
             .glyphs_by_line
             .iter()
-            .flat_map(|line_glyphs| line_glyphs.take(max_glyphs))
+            .flat_map(|line_glyphs| line_glyphs.take(max_glyph_ix))
             .cloned()
             .collect_vec();
-        let Some(scaled_bounds) = layout.bounds_for_max_glyphs(max_glyphs) else {
-            warn!("no bounds for max_glyphs = {max_glyphs}");
+        let Some(scaled_bounds) = layout.bounds_for_max_glyph_ix(max_glyph_ix) else {
+            warn!("no bounds for max_glyph_ix = {max_glyph_ix}");
             return None;
         };
         let all_px_bounds = scaled_bounds * layout.sample_ratio;
