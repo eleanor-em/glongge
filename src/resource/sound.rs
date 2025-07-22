@@ -41,7 +41,7 @@ impl Sound {
             source.set_pitch(linalg::eerp(1.0 - mag, 1.0 + mag, rng.random_range(0.0..1.0)).into());
             source.play();
         } else {
-            warn!("tried to play non-loaded sound");
+            error!("tried to play non-loaded sound");
         }
     }
     pub fn play(&mut self) {
@@ -57,7 +57,7 @@ impl Sound {
             source.set_pitch(1.0);
             source.play();
         } else {
-            warn!("tried to play non-loaded sound");
+            error!("tried to play non-loaded sound");
         }
     }
 
@@ -76,7 +76,7 @@ impl Sound {
             source.play();
             self.is_looping = true;
         } else {
-            warn!("tried to play non-loaded sound");
+            error!("tried to play non-loaded sound");
         }
     }
 
@@ -92,7 +92,7 @@ impl Sound {
                 .expect("should only be fallible for streaming buffers (see source)");
             self.is_looping = false;
         } else {
-            warn!("tried to stop non-loaded sound");
+            error!("tried to stop non-loaded sound");
         }
     }
 

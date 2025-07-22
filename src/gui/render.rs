@@ -199,6 +199,7 @@ impl GuiVertexIndexBuffers {
 
     fn realloc(&mut self) -> Result<()> {
         let size = self.vertex_size_in_bytes();
+        // realloc() calls are not problematic, just surprising.
         if size / 1024 / 1024 == 0 {
             warn!(
                 "reallocating vertex buffer: {} KiB -> {} KiB",
@@ -401,7 +402,7 @@ impl GuiRenderer {
     }
 
     fn get_or_create_pipeline(&self) -> Result<Arc<GraphicsPipeline>> {
-        if self.pipeline.get().is_none() {
+        if self.pipeline.lock().is_none() {
             let vs = self
                 .vs
                 .entry_point("main")
@@ -430,7 +431,7 @@ impl GuiRenderer {
                 color_attachment_formats: vec![Some(swapchain.image_format())],
                 ..Default::default()
             };
-            *self.pipeline.get() = Some(GraphicsPipeline::new(
+            *self.pipeline.lock() = Some(GraphicsPipeline::new(
                 device,
                 /* cache= */ None,
                 GraphicsPipelineCreateInfo {
@@ -438,7 +439,7 @@ impl GuiRenderer {
                     vertex_input_state: Some(vertex_input_state),
                     input_assembly_state: Some(InputAssemblyState::default()),
                     viewport_state: Some(ViewportState {
-                        viewports: [self.viewport.get().inner()].into_iter().collect(),
+                        viewports: [self.viewport.lock().inner()].into_iter().collect(),
                         ..Default::default()
                     }),
                     rasterization_state: Some(RasterizationState::default()),
@@ -455,7 +456,7 @@ impl GuiRenderer {
                 },
             )?);
         }
-        Ok(self.pipeline.get().clone().unwrap())
+        Ok(self.pipeline.lock().clone().unwrap())
     }
 
     fn create_image_view(
@@ -502,7 +503,7 @@ impl GuiRenderer {
             desc_set.update(&desc_writes, &[])?;
         }
         self.texture_desc_sets
-            .get()
+            .lock()
             .insert(id, (desc_set, desc_writes));
         Ok(())
     }
@@ -541,7 +542,7 @@ impl GuiRenderer {
 
         // Copy texture data to existing image if delta pos exists (e.g. font changed)
         if let Some(pos) = delta.pos {
-            let texture_images = self.texture_images.get();
+            let texture_images = self.texture_images.lock();
             let Some(existing_image) = texture_images.get(&id) else {
                 error!("attempted to write to nonexistent image: {id:?}");
                 return Ok(());
@@ -582,8 +583,8 @@ impl GuiRenderer {
                     AllocationCreateInfo::default(),
                 )
                 .unwrap();
-            self.texture_images.get().insert(id, img);
-            *self.texture_images_dirty.get() = true;
+            self.texture_images.lock().insert(id, img);
+            *self.texture_images_dirty.lock() = true;
         }
         Ok(())
     }
@@ -594,7 +595,7 @@ impl GuiRenderer {
         world: &VulkanoContext,
         sets: &[(egui::TextureId, egui::epaint::ImageDelta)],
     ) -> Result<()> {
-        let primitives = self.primitives.get().take().expect("no GUI primitives");
+        let primitives = self.primitives.lock().take().expect("no GUI primitives");
         let mut meshes = primitives
             .iter()
             .filter_map(|mesh| match &mesh.primitive {
@@ -603,29 +604,29 @@ impl GuiRenderer {
             })
             .cloned()
             .collect_vec();
-        if *self.gui_enabled.get() && meshes.is_empty() {
+        if *self.gui_enabled.lock() && meshes.is_empty() {
             // There is some jank whereby the meshes can be empty while updating the textures.
             // This is a hack to prevent the GUI from flickering in this case.
             meshes = self.last_nonempty_frame.clone_inner();
         } else {
-            self.last_nonempty_frame.get().clone_from(&meshes);
+            self.last_nonempty_frame.lock().clone_from(&meshes);
         }
         let image_idx = tcx
             .swapchain(world.swapchain_id())
             .unwrap()
             .current_image_index()
             .unwrap() as usize;
-        self.draw_buffer.get().write(
+        self.draw_buffer.lock().write(
             image_idx,
             &meshes.iter().flat_map(|m| m.vertices.clone()).collect_vec(),
             &meshes.iter().flat_map(|m| m.indices.clone()).collect_vec(),
             tcx,
         )?;
-        let mut next_frame = self.next_frame.get();
+        let mut next_frame = self.next_frame.lock();
         *next_frame = Some(meshes);
 
-        for (id, image) in self.texture_images.get().iter() {
-            if !self.texture_desc_sets.get().contains_key(id) {
+        for (id, image) in self.texture_images.lock().iter() {
+            if !self.texture_desc_sets.lock().contains_key(id) {
                 self.create_image_view(*id, *image, cbf, tcx)?;
             }
         }
@@ -650,11 +651,11 @@ impl GuiRenderer {
     }
 
     pub(crate) fn image_writes(&self) -> Vec<Id<Image>> {
-        self.texture_images.get().values().copied().collect()
+        self.texture_images.lock().values().copied().collect()
     }
     pub(crate) fn buffer_writes(&self) -> Vec<Id<Buffer>> {
-        let vertices_id = self.draw_buffer.get().vertices;
-        let indices_id = self.draw_buffer.get().indices;
+        let vertices_id = self.draw_buffer.lock().vertices;
+        let indices_id = self.draw_buffer.lock().indices;
         vec![self.staging_buffer, vertices_id, indices_id]
     }
     pub(crate) fn build_task_graph(
@@ -671,23 +672,23 @@ impl GuiRenderer {
         );
         node.buffer_access(self.staging_buffer, AccessTypes::COPY_TRANSFER_READ);
         node.buffer_access(
-            self.draw_buffer.get().vertices,
+            self.draw_buffer.lock().vertices,
             AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
-        node.buffer_access(self.draw_buffer.get().indices, AccessTypes::INDEX_READ);
-        for &image in self.texture_images.get().values() {
+        node.buffer_access(self.draw_buffer.lock().indices, AccessTypes::INDEX_READ);
+        for &image in self.texture_images.lock().values() {
             node.image_access(
                 image,
                 AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
                 ImageLayoutType::Optimal,
             );
         }
-        *self.texture_images_dirty.get() = false;
-        self.draw_buffer.get().is_dirty = false;
+        *self.texture_images_dirty.lock() = false;
+        self.draw_buffer.lock().is_dirty = false;
         node.build()
     }
     pub(crate) fn is_dirty(&self) -> bool {
-        *self.texture_images_dirty.get() || self.draw_buffer.get().is_dirty
+        *self.texture_images_dirty.lock() || self.draw_buffer.lock().is_dirty
     }
 }
 
@@ -701,7 +702,7 @@ impl GuiRenderer {
         layout: &PipelineLayout,
         mesh: &Mesh,
     ) -> Result<()> {
-        let texture_desc_sets = self.texture_desc_sets.get();
+        let texture_desc_sets = self.texture_desc_sets.lock();
         let Some((desc_set, _)) = texture_desc_sets.get(&mesh.texture_id) else {
             if self.is_dirty() {
                 // Expected case; textures not yet uploaded.
@@ -732,11 +733,11 @@ impl Task for GuiRenderer {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
-        let Some(frame) = self.next_frame.get().take() else {
+        let Some(frame) = self.next_frame.lock().take() else {
             return Ok(());
         };
 
-        let viewport = self.viewport.get().clone();
+        let viewport = self.viewport.lock().clone();
         let push_constants = {
             let viewport_extent = viewport.extent();
             // TODO: fix this
@@ -775,7 +776,7 @@ impl Task for GuiRenderer {
                 &push_constants,
             )?;
         }
-        self.draw_buffer.get().bind(cbf).unwrap();
+        self.draw_buffer.lock().bind(cbf).unwrap();
         world.perf_stats().lap("GuiRenderer: begin_rendering()");
 
         let mut vertex_cursor = 0;

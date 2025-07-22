@@ -1441,7 +1441,7 @@ impl Collider for CompoundCollider {
 
     fn rotated(&self, _by: f32) -> Self {
         // TODO: implement
-        warn!("CompoundCollider::rotated(): not implemented");
+        error!("CompoundCollider::rotated(): not implemented");
         self.clone()
     }
 

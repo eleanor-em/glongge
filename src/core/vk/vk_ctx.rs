@@ -253,21 +253,21 @@ impl VulkanoContext {
     pub(crate) fn recreate_swapchain(&mut self, window: &GgWindow) -> Result<()> {
         let new_swapchain =
             self.resources
-                .recreate_swapchain(*self.swapchain.get(), |create_info| SwapchainCreateInfo {
+                .recreate_swapchain(*self.swapchain.lock(), |create_info| SwapchainCreateInfo {
                     image_extent: window.inner_size().into(),
                     ..create_info
                 })?;
-        *self.swapchain.get() = new_swapchain;
-        *self.images.get() = self
+        *self.swapchain.lock() = new_swapchain;
+        *self.images.lock() = self
             .resources
             .swapchain(new_swapchain)?
             .images()
             .iter()
             .cloned()
             .collect_vec();
-        *self.image_views.get() = self
+        *self.image_views.lock() = self
             .images
-            .get()
+            .lock()
             .iter()
             .map(|image| ImageView::new_default(image.clone()))
             .collect::<Result<Vec<_>, _>>()
@@ -295,20 +295,20 @@ impl VulkanoContext {
     pub(crate) fn swapchain(&self) -> Result<Arc<Swapchain>> {
         Ok(self
             .resources
-            .swapchain(*self.swapchain.get())?
+            .swapchain(*self.swapchain.lock())?
             .swapchain()
             .clone())
     }
     pub(crate) fn swapchain_id(&self) -> Id<Swapchain> {
-        *self.swapchain.get()
+        *self.swapchain.lock()
     }
 
     pub(crate) fn current_image_view(&self, image_idx: usize) -> Arc<ImageView> {
-        self.image_views.get()[image_idx].clone()
+        self.image_views.lock()[image_idx].clone()
     }
     // May change between frames, e.g. due to recreate_swapchain().
     pub fn image_count(&self) -> usize {
-        *self.image_count.get()
+        *self.image_count.lock()
     }
 
     pub(crate) fn perf_stats(&self) -> &VulkanoPerfStats {

@@ -102,8 +102,9 @@ impl GgInternalInteractiveSpline {
         &mut self.spline
     }
     pub fn recalculate(&mut self) {
+        // This whole gui_selected business is dodgy as heck.
         if !self.gui_selected {
-            warn!("called recalculate() but not shown; skipping to save processing");
+            warn!("called recalculate() but not selected; skipping to save processing");
             return;
         }
         if self.spline.is_empty() {

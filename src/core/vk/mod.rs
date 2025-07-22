@@ -605,6 +605,7 @@ impl RenderPerfStats {
             #[allow(clippy::cast_precision_loss)]
             let on_time_rate = self.on_time as f32 / self.count as f32 * 100.0;
             if on_time_rate.round() < 100.0 {
+                // TODO: this calculation is dubious, improve.
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {

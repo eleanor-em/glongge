@@ -220,7 +220,9 @@ impl ObjectHandler {
 
     /// Caution: does not automatically remove children.
     fn remove_object(&mut self, remove_id: ObjectId) {
-        let name = self.fully_qualified_name(remove_id);
+        let name = self
+            .fully_qualified_name(remove_id)
+            .context("ObjectHandler::remove_object()");
         // Remove this object from its parent's list of children.
         let parent_id = gg_err::log_err_then(
             self.get_parent_by_id(remove_id)
@@ -412,14 +414,14 @@ impl ObjectHandler {
         if leaked_bytes > 0 {
             GLOBAL_STATS
                 .get_or_init(UniqueShared::default)
-                .get()
+                .lock()
                 .total_leaked_memory_bytes += leaked_bytes;
             error!(
                 "leaked memory: {:.2} KiB ({:.2} KiB total)",
                 leaked_bytes as f64 / 1024.0,
                 GLOBAL_STATS
                     .get_or_init(UniqueShared::default)
-                    .get()
+                    .lock()
                     .total_leaked_memory_bytes as f64
                     / 1024.0
             );
@@ -592,7 +594,7 @@ impl UpdateHandler {
                     );
                 }
                 if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT_US {
-                    warn!(
+                    error!(
                         "fixed update behind by {:.1} ms, giving up",
                         gg_float::from_u128_or_inf(
                             self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US
@@ -1109,6 +1111,7 @@ impl UpdateHandler {
         self.object_handler.update_all_transforms();
 
         if !pending_add.is_empty() {
+            // This should work, but isn't well-tested and could in theory lead to stack overflows.
             warn!(
                 "fc={}: recursive call to complete_update_with_added_objects(); should not add objects in on_ready()",
                 self.frame_counter
@@ -1232,7 +1235,8 @@ impl UpdateHandler {
             }
             gg_err::log_err_and_ignore(
                 self.object_handler
-                    .reparent_object(target_id, new_parent_id),
+                    .reparent_object(target_id, new_parent_id)
+                    .context("UpdateHandler::complete_update_with_moved_objects()"),
             );
         }
     }
@@ -1830,7 +1834,7 @@ where
 {
     fn new(raw: UniqueShared<Vec<u8>>) -> Result<Self> {
         let deserialized = {
-            let raw = raw.get();
+            let raw = raw.lock();
             if raw.is_empty() {
                 T::default()
             } else {
@@ -1863,7 +1867,7 @@ where
 {
     fn drop(&mut self) {
         if self.modified {
-            *self.raw.get() =
+            *self.raw.lock() =
                 bincode::serialize(&self.deserialized).expect("failed to serialize scene data");
         }
     }

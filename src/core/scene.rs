@@ -56,7 +56,7 @@ impl InternalScene {
                 panic!("scene locked in InternalScene::run(): {:?}", self.name)
             });
             scene
-                .load(&data.get())
+                .load(&data.lock())
                 .unwrap_or_else(|_| panic!("could not load data for {:?}", self.name));
             scene.create_objects(entrance_id)
         };

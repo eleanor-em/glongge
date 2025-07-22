@@ -243,8 +243,8 @@ impl RenderHandler {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
         for (a, b) in shaders.iter().tuple_combinations() {
             check_ne!(
-                a.get().name_concrete(),
-                b.get().name_concrete(),
+                a.lock().name_concrete(),
+                b.lock().name_concrete(),
                 "duplicate shader name"
             );
         }
@@ -265,7 +265,7 @@ impl RenderHandler {
     #[must_use]
     pub(crate) fn with_global_scale_factor(self, global_scale_factor: f32) -> Self {
         self.viewport
-            .get()
+            .lock()
             .set_global_scale_factor(global_scale_factor);
         {
             let mut rc = self.render_data_channel.lock().unwrap();
@@ -285,7 +285,7 @@ impl RenderHandler {
     }
 
     pub(crate) fn get_viewport(&self) -> AdjustedViewport {
-        self.viewport.get().clone()
+        self.viewport.lock().clone()
     }
 
     pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
@@ -297,8 +297,8 @@ impl RenderHandler {
     }
 
     pub(crate) fn on_recreate_swapchain(&self) {
-        self.viewport.get().update_from_window(&self.window);
-        self.render_data_channel.lock().unwrap().viewport = self.viewport.get().clone();
+        self.viewport.lock().update_from_window(&self.window);
+        self.render_data_channel.lock().unwrap().viewport = self.viewport.lock().clone();
     }
 
     pub(crate) fn do_gui(
@@ -329,7 +329,7 @@ impl RenderHandler {
                 }
             });
         platform.handle_platform_output(&self.window.inner, full_output.platform_output.clone());
-        self.last_full_output.get().replace(full_output);
+        self.last_full_output.lock().replace(full_output);
     }
 
     pub(crate) fn build_shader_task_graphs(
@@ -340,7 +340,7 @@ impl RenderHandler {
         textures: &[Id<Image>],
     ) -> Result<()> {
         // Host buffer accesses
-        for buffer in self.shaders.iter().flat_map(|s| s.get().buffer_writes()) {
+        for buffer in self.shaders.iter().flat_map(|s| s.lock().buffer_writes()) {
             task_graph.add_host_buffer_access(buffer, HostAccessType::Write);
         }
         for buffer in self.gui_shader.buffer_writes() {
@@ -386,7 +386,7 @@ impl RenderHandler {
             .shaders
             .iter()
             .map(|s| {
-                s.get()
+                s.lock()
                     .build_task_node(task_graph, virtual_swapchain_id, textures)
             })
             .collect_vec();
@@ -451,20 +451,20 @@ impl Task for PreRenderTask {
             .unwrap() as usize;
         let mut rx = self.handler.render_data_channel.lock().unwrap();
         let (global_scale_factor, render_frame) = {
-            self.handler.viewport.get().translation = rx.viewport.translation;
+            self.handler.viewport.lock().translation = rx.viewport.translation;
             let global_scale_factor = rx.should_resize_with_scale_factor();
-            *self.handler.gui_shader.gui_enabled.get() = rx.gui_enabled;
+            *self.handler.gui_shader.gui_enabled.lock() = rx.gui_enabled;
             (global_scale_factor, rx.next_frame())
         };
         world.perf_stats().lap("PreRenderTask: next_frame()");
         if let Some(global_scale_factor) = global_scale_factor {
             self.handler
                 .viewport
-                .get()
+                .lock()
                 .set_global_scale_factor(global_scale_factor);
             self.handler.on_recreate_swapchain();
         }
-        for mut shader in self.handler.shaders.iter().map(|s| s.get()) {
+        for mut shader in self.handler.shaders.iter().map(|s| s.lock()) {
             let shader_id = shader.id();
             shader
                 .pre_render_update(image_idx, render_frame.for_shader(shader_id), tcx)
@@ -488,7 +488,7 @@ impl Task for PreRenderTask {
             world
                 .perf_stats()
                 .lap("PreRenderTask: gui_ctx.tessellate()");
-            *self.handler.gui_shader.primitives.get() = Some(primitives);
+            *self.handler.gui_shader.primitives.lock() = Some(primitives);
             self.handler
                 .gui_shader
                 .pre_render_update(cbf, tcx, world, &full_output.textures_delta.set)
@@ -521,7 +521,7 @@ impl Task for ClearTask {
             .current_image_index()
             .unwrap() as usize;
         let image_view = world.current_image_view(image_idx);
-        let viewport_extent = self.handler.viewport.get().inner().extent;
+        let viewport_extent = self.handler.viewport.lock().inner().extent;
         unsafe {
             cbf.as_raw()
                 .begin_rendering(&RenderingInfo {

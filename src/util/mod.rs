@@ -6,6 +6,7 @@ use crate::core::scene::SceneHandler;
 use crate::core::vk::WindowEventHandler;
 use crate::gui::{GuiContext, GuiUi};
 use egui::{Button, WidgetText};
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
@@ -40,6 +41,7 @@ macro_rules! include_bytes_root {
 #[derive(Default)]
 pub(crate) struct GlobalStats {
     pub(crate) total_leaked_memory_bytes: usize,
+    pub(crate) warned_unsupported_codepoints: BTreeSet<u32>,
 }
 
 pub(crate) static GLOBAL_STATS: OnceLock<UniqueShared<GlobalStats>> = OnceLock::new();
@@ -716,7 +718,7 @@ impl<T: Clone> UniqueShared<T> {
 }
 
 impl<T: ?Sized> UniqueShared<T> {
-    pub fn get(&self) -> MutexGuard<'_, T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         self.inner
             .try_lock()
             .expect("attempted to acquire UniqueShared but it was already in use")
@@ -725,25 +727,25 @@ impl<T: ?Sized> UniqueShared<T> {
 
 impl<T: Clone> UniqueShared<T> {
     pub fn clone_inner(&self) -> T {
-        self.get().clone()
+        self.lock().clone()
     }
 }
 
 impl<T> UniqueShared<Option<T>> {
     pub fn take_inner(&self) -> Option<T> {
-        self.get().take()
+        self.lock().take()
     }
 }
 
 impl<T: Debug> Debug for UniqueShared<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueShared[{:?}]", self.get())
+        write!(f, "UniqueShared[{:?}]", self.lock())
     }
 }
 
 impl<T: Display> Display for UniqueShared<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueShared({})", self.get())
+        write!(f, "UniqueShared({})", self.lock())
     }
 }
 

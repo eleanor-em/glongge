@@ -23,7 +23,6 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
-use tracing::warn;
 
 #[derive(Clone, Eq, PartialEq)]
 enum ObjectLabel {
@@ -480,7 +479,8 @@ impl GuiObjectTree {
             } else if let Some(child) = gg_err::log_err_then(
                 object_handler
                     .get_children(self.selected_id.get())
-                    .map(|v| v.first()),
+                    .map(|v| v.first())
+                    .context("GuiObjectTree::on_input(): child not found"),
             ) {
                 self.selected_id.send(child.object_id);
             } else {
@@ -524,10 +524,15 @@ impl GuiObjectTree {
                 .context("GuiObjectTree::on_input(): parent not found"),
         )
         .map_or(ObjectId::root(), |parent| parent.object_id);
-        let siblings = gg_err::log_unwrap_or(&Vec::new(), object_handler.get_children(parent_id))
-            .iter()
-            .map(|o| o.object_id)
-            .collect_vec();
+        let siblings = gg_err::log_unwrap_or(
+            &Vec::new(),
+            object_handler
+                .get_children(parent_id)
+                .with_context(|| format!("GuiObjectTree::select_nth_sibling(): {n}")),
+        )
+        .iter()
+        .map(|o| o.object_id)
+        .collect_vec();
         if let Some(sibling_id) = gg_iter::index_of(&siblings, &self.selected_id.get())
             .map(|i| {
                 let ix = isize::try_from(i).unwrap() + n;
@@ -1009,7 +1014,7 @@ impl GuiConsoleLog {
                                         34 => Color32::from_rgb(0, 55, 218),
                                         0 | 1 | 3 => Color32::from_gray(240),
                                         _ => {
-                                            warn!("unrecognised colour code: {col}");
+                                            error!("unrecognised colour code: {col}");
                                             Color32::from_gray(240)
                                         }
                                     })
@@ -1243,7 +1248,14 @@ impl DebugGui {
                 gg_err::log_and_ok(object_handler.get_parent_chain(*o))
                     .is_some_and(|chain| !chain.contains(&self.object_tree.selected_id.get()))
             })
-            .flat_map(|o| gg_err::log_unwrap_or(Vec::new(), object_handler.get_collision_shapes(o)))
+            .flat_map(|o| {
+                gg_err::log_unwrap_or(
+                    Vec::new(),
+                    object_handler
+                        .get_collision_shapes(o)
+                        .context("DebugGui::clear_mouseovers()"),
+                )
+            })
             .for_each(|c| c.borrow_mut().hide_wireframe());
     }
     pub fn on_mouseovers(
@@ -1254,13 +1266,17 @@ impl DebugGui {
         self.wireframe_mouseovers = collisions
             .into_iter()
             .flat_map(|c| {
-                let result = object_handler.get_collision_shapes(c.other.object_id);
-                gg_err::log_unwrap_or(Vec::new(), result)
-                    .into_iter()
-                    .map(|c| {
-                        c.borrow_mut().show_wireframe();
-                        c.object_id()
-                    })
+                gg_err::log_unwrap_or(
+                    Vec::new(),
+                    object_handler
+                        .get_collision_shapes(c.other.object_id)
+                        .context("DebugGui::on_mouseovers()"),
+                )
+                .into_iter()
+                .map(|c| {
+                    c.borrow_mut().show_wireframe();
+                    c.object_id()
+                })
             })
             .unique()
             .collect_vec();

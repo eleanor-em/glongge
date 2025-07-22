@@ -8,9 +8,9 @@ use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
-use crate::util::gg_float;
 use crate::util::gg_iter::GgFloatIter;
 use crate::util::gg_vec::GgVec;
+use crate::util::{GLOBAL_STATS, UniqueShared, gg_float};
 use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{
     Font as AbGlyphFontTrait, FontVec, Glyph, OutlinedGlyph, PxScale, PxScaleFont, ScaleFont,
@@ -248,7 +248,14 @@ impl Font {
             glyphs.push(LineGlyphs::new(
                 line.into_iter()
                     .map(|(c, dx)| {
-                        if is_unsupported_codepoint(c as u32) {
+                        if is_unsupported_codepoint(c as u32)
+                            && GLOBAL_STATS
+                                .get_or_init(UniqueShared::default)
+                                .lock()
+                                .warned_unsupported_codepoints
+                                .insert(c as u32)
+                        {
+                            // This will probably still render OK, it just may be weirdly wide.
                             warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
                         }
                         caret.x += dx;
@@ -588,6 +595,7 @@ impl GlyphReader {
             .cloned()
             .collect_vec();
         let Some(scaled_bounds) = layout.bounds_for_max_glyph_ix(max_glyph_ix) else {
+            // e.g. because the layout characters start with whitespace?
             warn!("no bounds for max_glyph_ix = {max_glyph_ix}");
             return None;
         };
@@ -632,12 +640,13 @@ impl Read for GlyphReader {
             let img_left = bounds.min.x as u32 - self.all_px_bounds.left() as u32;
             let img_top = bounds.min.y as u32 - self.all_px_bounds.top() as u32;
             glyph.draw(|x, y, v| {
+                // Below calls should never really fail.
                 let Some(x) = (img_left + x).to_i32() else {
-                    warn!("glyph x out of range: {}", img_left + x);
+                    error!("glyph x out of range: {}", img_left + x);
                     return;
                 };
                 let Some(y) = (img_top + y).to_i32() else {
-                    warn!("glyph y out of range: {}", img_top + y);
+                    error!("glyph y out of range: {}", img_top + y);
                     return;
                 };
                 let px = Vec2i { x, y }.as_index(self.width(), self.height()) * 4;

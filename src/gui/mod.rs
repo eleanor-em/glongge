@@ -191,7 +191,9 @@ impl EditCellSender<f32> {
                 value += dy * drag_speed;
                 *text = format!("{value:.1}");
                 if self.tx.send(text.clone()).is_err() {
-                    warn!("EditCellSender: send failed (scene ended?)");
+                    // I think this occurred at some point while testing, hence why this is not
+                    // .unwrap().
+                    error!("EditCellSender: send failed (scene ended?)");
                 }
             }
         }

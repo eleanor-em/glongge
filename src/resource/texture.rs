@@ -75,7 +75,7 @@ impl AxisAlignedExtent for Texture {
 
 impl Clone for Texture {
     fn clone(&self) -> Self {
-        *self.ref_count.get() += 1;
+        *self.ref_count.lock() += 1;
         Self {
             id: self.id,
             duration: self.duration,
@@ -98,7 +98,7 @@ impl Display for Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        *self.ref_count.get() -= 1;
+        *self.ref_count.lock() -= 1;
     }
 }
 
@@ -327,7 +327,7 @@ impl TextureHandlerInner {
         if let Some(existing) = self.textures.insert(id, internal_texture) {
             panic!(
                 "tried to use texture id {id}, but ref_count={}",
-                existing.ref_count.get()
+                existing.ref_count.lock()
             );
         }
         info_every_seconds!(1, "created texture id {id}");
@@ -344,13 +344,13 @@ impl TextureHandlerInner {
         let unused_ids = self
             .textures
             .iter()
-            .filter(|(_, tex)| tex.is_ready() && tex.ref_count.get().is_zero())
+            .filter(|(_, tex)| tex.is_ready() && tex.ref_count.lock().is_zero())
             .map(|(id, _)| *id)
             .collect_vec();
         if unused_ids.is_empty() {
             return;
         }
-        let mut material_handler = self.material_handler.get();
+        let mut material_handler = self.material_handler.lock();
         info_every_seconds!(1, "freeing texture ids: {unused_ids:?}");
         for unused_id in unused_ids {
             for file_textures in self.loaded_files.values() {
@@ -365,7 +365,7 @@ impl TextureHandlerInner {
         for filename in self
             .loaded_files
             .iter()
-            .filter(|(_, textures)| textures.iter().all(|tex| *tex.ref_count.get() <= 1))
+            .filter(|(_, textures)| textures.iter().all(|tex| *tex.ref_count.lock() <= 1))
             .map(|(filename, _)| filename.clone())
             .collect_vec()
         {
@@ -474,7 +474,7 @@ impl TextureHandler {
 
     pub fn material_from_texture(&self, texture: &Texture, area: &Rect) -> MaterialId {
         self.material_handler
-            .get()
+            .lock()
             .material_from_texture(texture, area)
     }
 
@@ -484,7 +484,7 @@ impl TextureHandler {
         // Beware: do not lock `inner` longer than necessary.
         if let Some(texture) = self
             .inner
-            .get()
+            .lock()
             .loaded_files
             .get(&filename)
             .and_then(|v| v.first())
@@ -492,7 +492,7 @@ impl TextureHandler {
             return Ok(texture.clone());
         }
         let loaded = Self::load_file_inner(&filename)?;
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         let texture = inner.create_texture(&self.ctx, filename.to_string(), loaded)?;
         info!("loaded texture: {} = {:?}", filename, texture.id());
         inner.loaded_files.insert(filename, vec![texture.clone()]);
@@ -563,11 +563,11 @@ impl TextureHandler {
     pub fn wait_load_file_animated(&self, filename: impl AsRef<str>) -> Result<Vec<Texture>> {
         let filename = filename.as_ref().to_string();
         // Beware: do not lock `inner` longer than necessary.
-        if let Some(texture) = self.inner.get().loaded_files.get(&filename) {
+        if let Some(texture) = self.inner.lock().loaded_files.get(&filename) {
             return Ok(texture.clone());
         }
         let results = Self::load_file_inner_animated(&filename)?;
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         let textures = results
             .into_iter()
             .map(|loaded| inner.create_texture(&self.ctx, filename.to_string(), loaded))
@@ -615,7 +615,7 @@ impl TextureHandler {
         format: Format,
     ) -> Result<Texture> {
         let loaded = Self::load_reader_rgba_inner(reader, width, height, format)?;
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         inner.create_texture(&self.ctx, filename, loaded)
     }
     fn load_reader_rgba_inner<R: Read>(
@@ -644,17 +644,17 @@ impl TextureHandler {
     }
 
     pub fn wait_free_unused_files(&self) {
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         inner.free_unused_files();
     }
     pub fn wait_free_unused_textures(&self) {
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         inner.free_unused_textures();
     }
 
     pub(crate) fn ready_values(&self) -> Vec<InternalTexture> {
         self.inner
-            .get()
+            .lock()
             .textures
             .values()
             .filter(|t| t.is_ready())
@@ -667,7 +667,7 @@ impl TextureHandler {
     }
 
     pub(crate) fn get_updated_materials(&self) -> Option<Vec<(MaterialId, Material)>> {
-        let mut material_handler = self.material_handler.get();
+        let mut material_handler = self.material_handler.lock();
         if material_handler.dirty {
             let rv = material_handler
                 .materials
@@ -682,7 +682,7 @@ impl TextureHandler {
     }
 
     pub fn wait_get_raw(&self, texture_id: TextureId) -> Result<Option<Vec<Vec<Colour>>>> {
-        let Some(tex) = self.inner.get().textures.get(&texture_id).cloned() else {
+        let Some(tex) = self.inner.lock().textures.get(&texture_id).cloned() else {
             return Ok(None);
         };
         let w = tex.raw.info.extent[0] as usize;
@@ -704,7 +704,7 @@ impl TextureHandler {
 
     pub(crate) fn should_build_task_graph(&self) -> bool {
         self.inner
-            .get()
+            .lock()
             .textures
             .values()
             .any(|t| !t.has_write_access)
@@ -713,7 +713,7 @@ impl TextureHandler {
         &self,
         task_graph: &mut TaskGraph<VulkanoContext>,
     ) -> (NodeId, Vec<Id<Image>>) {
-        let mut inner = self.inner.get();
+        let mut inner = self.inner.lock();
         for tex in inner.textures.values() {
             task_graph.add_host_buffer_access(tex.buf, HostAccessType::Write);
         }
@@ -753,7 +753,7 @@ impl Task for UploadTexturesTask {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
-        let mut inner = self.texture.inner.get();
+        let mut inner = self.texture.inner.lock();
         for tex in inner
             .textures
             .values_mut()

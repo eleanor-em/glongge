@@ -203,13 +203,13 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
     fn realloc(&mut self) -> Result<()> {
         let size = self.size_in_bytes();
         if size / 1024 / 1024 == 0 {
-            warn!(
+            info!(
                 "reallocating vertex buffer: {} KiB -> {} KiB",
                 size / 1024,
                 size * 2 / 1024
             );
         } else {
-            warn!(
+            info!(
                 "reallocating vertex buffer: {} MiB -> {} MiB",
                 size / 1024 / 1024,
                 size * 2 / 1024 / 1024
@@ -393,7 +393,7 @@ impl SpriteShader {
 
     fn maybe_update_desc_sets(&mut self, tcx: &mut TaskContext) -> Result<()> {
         let maybe_materials = self.resource_handler.texture.get_updated_materials();
-        if maybe_materials.is_none() && self.descriptor_set.get().is_some() {
+        if maybe_materials.is_none() && self.descriptor_set.lock().is_some() {
             return Ok(());
         }
 
@@ -456,13 +456,13 @@ impl SpriteShader {
         unsafe {
             desc_set.update(&desc_writes, &[])?;
         }
-        if let Some(desc_set) = self.descriptor_set.get().take() {
-            self.descriptor_set_backup.get().push(desc_set);
-            if self.descriptor_set_backup.get().len() > 1 {
-                self.descriptor_set_backup.get().remove(0);
+        if let Some(desc_set) = self.descriptor_set.lock().take() {
+            self.descriptor_set_backup.lock().push(desc_set);
+            if self.descriptor_set_backup.lock().len() > 1 {
+                self.descriptor_set_backup.lock().remove(0);
             }
         }
-        *self.descriptor_set.get() = Some(SpriteShaderDescriptorSet {
+        *self.descriptor_set.lock() = Some(SpriteShaderDescriptorSet {
             desc: Arc::new(desc_set),
             _samplers: vec![sampler],
             _writes: desc_writes,
@@ -529,7 +529,7 @@ impl Shader for SpriteShader {
             .render_infos
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.get().single_len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.lock().single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 let vertex = render_frame.vertices[vertex_index as usize];
@@ -545,12 +545,12 @@ impl Shader for SpriteShader {
                 }
             }
         }
-        self.vertex_buffer.get().write(image_idx, &vertices, tcx)?;
+        self.vertex_buffer.lock().write(image_idx, &vertices, tcx)?;
         Ok(())
     }
 
     fn buffer_writes(&self) -> Vec<Id<Buffer>> {
-        vec![self.vertex_buffer.get().inner, self.materials]
+        vec![self.vertex_buffer.lock().inner, self.materials]
     }
 
     fn build_task_node(
@@ -578,7 +578,7 @@ impl Shader for SpriteShader {
             );
         }
         node.buffer_access(
-            self.vertex_buffer.get().inner,
+            self.vertex_buffer.lock().inner,
             AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.buffer_access(self.materials, AccessTypes::VERTEX_ATTRIBUTE_READ);
@@ -595,11 +595,11 @@ impl Task for SpriteShader {
         tcx: &mut TaskContext<'_>,
         world: &Self::World,
     ) -> TaskResult {
-        if self.vertex_buffer.get().vertex_count.is_zero() {
+        if self.vertex_buffer.lock().vertex_count.is_zero() {
             return Ok(());
         }
         let layout = self.pipeline.layout().clone();
-        let viewport = self.viewport.get();
+        let viewport = self.viewport.lock();
         let pc = sprite::vertex_shader::WindowData {
             window_width: viewport.physical_width(),
             window_height: viewport.physical_height(),
@@ -640,7 +640,7 @@ impl Task for SpriteShader {
                     PipelineBindPoint::Graphics,
                     &layout.clone(),
                     0,
-                    &[&self.descriptor_set.get().clone().unwrap().desc],
+                    &[&self.descriptor_set.lock().clone().unwrap().desc],
                     &[],
                 )?
                 .push_constants(&layout, 0, &pc)?;
@@ -649,7 +649,7 @@ impl Task for SpriteShader {
                 .lap("SpriteShader: bind_pipeline_graphics()");
         }
 
-        self.vertex_buffer.get().draw(cbf).unwrap();
+        self.vertex_buffer.lock().draw(cbf).unwrap();
         world.perf_stats().lap("SpriteShader: draw()");
 
         unsafe {
@@ -754,7 +754,7 @@ impl Shader for WireframeShader {
             .render_infos
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
-        let mut vertices = Vec::with_capacity(self.vertex_buffer.get().single_len());
+        let mut vertices = Vec::with_capacity(self.vertex_buffer.lock().single_len());
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 let vertex = render_frame.vertices[vertex_index as usize];
@@ -769,12 +769,12 @@ impl Shader for WireframeShader {
                 }
             }
         }
-        self.vertex_buffer.get().write(image_idx, &vertices, tcx)?;
+        self.vertex_buffer.lock().write(image_idx, &vertices, tcx)?;
         Ok(())
     }
 
     fn buffer_writes(&self) -> Vec<Id<Buffer>> {
-        vec![self.vertex_buffer.get().inner]
+        vec![self.vertex_buffer.lock().inner]
     }
 
     fn build_task_node(
@@ -795,7 +795,7 @@ impl Shader for WireframeShader {
             ImageLayoutType::Optimal,
         );
         node.buffer_access(
-            self.vertex_buffer.get().inner,
+            self.vertex_buffer.lock().inner,
             AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.build()
@@ -811,11 +811,11 @@ impl Task for WireframeShader {
         tcx: &mut TaskContext<'_>,
         world: &Self::World,
     ) -> TaskResult {
-        if self.vertex_buffer.get().vertex_count.is_zero() {
+        if self.vertex_buffer.lock().vertex_count.is_zero() {
             return Ok(());
         }
         let layout = self.pipeline.layout().clone();
-        let viewport = self.viewport.get();
+        let viewport = self.viewport.lock();
         let pc = basic::vertex_shader::WindowData {
             window_width: viewport.physical_width(),
             window_height: viewport.physical_height(),
@@ -853,7 +853,7 @@ impl Task for WireframeShader {
                 .push_constants(&layout, 0, &pc)?;
         }
 
-        self.vertex_buffer.get().draw(cbf).unwrap();
+        self.vertex_buffer.lock().draw(cbf).unwrap();
 
         unsafe {
             cbf.as_raw().end_rendering().unwrap();
