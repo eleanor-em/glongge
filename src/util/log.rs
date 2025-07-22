@@ -12,7 +12,7 @@ macro_rules! info_every_seconds {
         {
             let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
             if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
-                info!($($args),+);
+                $crate::core::prelude::info!($($args),+);
                 last_log.insert(loc.clone(), std::time::Instant::now());
             }
         }
@@ -25,13 +25,12 @@ macro_rules! info_every_millis {
         {
             let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
             if last_log.get(&loc).map_or(true, |then| then.elapsed().as_millis() >= $millis) {
-                info!($($args),+);
+                $crate::core::prelude::info!($($args),+);
                 last_log.insert(loc.clone(), std::time::Instant::now());
             }
         }
     }
 }
-
 #[macro_export]
 macro_rules! warn_every_seconds {
     ($seconds:expr, $($args:expr),+) => {
@@ -39,7 +38,7 @@ macro_rules! warn_every_seconds {
         {
             let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
             if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
-                warn!($($args),+);
+                $crate::core::prelude::warn!($($args),+);
                 last_log.insert(loc.clone(), std::time::Instant::now());
             }
         }
@@ -52,7 +51,34 @@ macro_rules! warn_every_millis {
         {
             let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
             if last_log.get(&loc).map_or(true, |then| then.elapsed().as_millis() >= $millis) {
-                warn!($($args),+);
+                $crate::core::prelude::warn!($($args),+);
+                last_log.insert(loc.clone(), std::time::Instant::now());
+            }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! error_every_seconds {
+    ($seconds:expr, $($args:expr),+) => {
+        let loc = $crate::util::assert::current_location!().to_string();
+        {
+            let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
+            if last_log.get(&loc).map_or(true, |then| then.elapsed().as_secs() >= $seconds) {
+                $crate::core::prelude::error!($($args),+);
+                last_log.insert(loc.clone(), std::time::Instant::now());
+            }
+        }
+    }
+}
+#[macro_export]
+macro_rules! error_every_millis {
+    ($millis:expr, $($args:expr),+) => {
+        let loc = $crate::util::assert::current_location!().to_string();
+        {
+            let mut last_log = $crate::util::log::LAST_LOG.lock().unwrap();
+            if last_log.get(&loc).map_or(true, |then| then.elapsed().as_millis() >= $millis) {
+                $crate::core::prelude::error!($($args),+);
                 last_log.insert(loc.clone(), std::time::Instant::now());
             }
         }

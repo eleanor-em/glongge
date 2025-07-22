@@ -27,7 +27,7 @@ static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);
 /// [`ObjectId`] uses an atomic counter to generate unique IDs, starting at 1.
 /// The ID 0 is reserved for the root object, which never actually exists in the scene -- it is only
 /// used to ensure a proper tree structure.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId(usize);
 
 impl ObjectId {
@@ -46,6 +46,12 @@ impl ObjectId {
     }
     pub fn value_eq_for_debugging(self, rhs: usize) -> bool {
         self.0 == rhs
+    }
+}
+
+impl Debug for ObjectId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[ObjectId {}]", self.0)
     }
 }
 
@@ -158,9 +164,9 @@ impl Debug for TreeSceneObject {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:?} ({:?})",
+            "{:?} {:?}",
+            self.scene_object.nickname_or_type_name(),
             self.object_id,
-            self.scene_object.nickname_or_type_name()
         )
     }
 }

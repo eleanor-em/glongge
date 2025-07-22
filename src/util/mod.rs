@@ -743,7 +743,7 @@ impl<T: Debug> Debug for UniqueShared<T> {
 
 impl<T: Display> Display for UniqueShared<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueShared[{}]", self.get())
+        write!(f, "UniqueShared({})", self.get())
     }
 }
 
