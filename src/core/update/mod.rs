@@ -392,10 +392,11 @@ impl ObjectHandler {
                 }
             }
         }
-        if reports != self.last_reported_leaked_ids
-            || self
-                .last_reported_leaked_ids_at
-                .is_none_or(|i| i.elapsed().as_secs() >= 1)
+        if !reports.is_empty()
+            && (reports != self.last_reported_leaked_ids
+                || self
+                    .last_reported_leaked_ids_at
+                    .is_none_or(|i| i.elapsed().as_secs() >= 1))
         {
             let report_str = reports
                 .iter()
@@ -408,9 +409,9 @@ impl ObjectHandler {
                 })
                 .join(", ");
             error!("dangling references: {report_str}");
-            self.last_reported_leaked_ids = reports;
             self.last_reported_leaked_ids_at = Some(Instant::now());
         }
+        self.last_reported_leaked_ids = reports;
         if leaked_bytes > 0 {
             GLOBAL_STATS
                 .get_or_init(UniqueShared::default)
