@@ -136,7 +136,9 @@ impl ObjectHandler {
     pub(crate) fn get_parent_chain(&self, mut id: ObjectId) -> Result<Vec<ObjectId>> {
         let mut rv = Vec::new();
         let orig_id = id;
+        // I think this loop somehow became infinite one time.
         while !id.is_root() {
+            check_lt!(rv.len(), 1000);
             rv.push(id);
             id = self
                 .lookup_parent_id(id)
@@ -305,7 +307,9 @@ impl ObjectHandler {
     fn update_all_transforms(&mut self) {
         let mut child_stack = Vec::with_capacity(self.objects.len());
         child_stack.push((ObjectId::root(), Transform::default()));
+        let mut processed_ids = BTreeSet::new();
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
+            check!(processed_ids.insert(parent_id), "{parent_id:?}");
             self.absolute_transforms.insert(parent_id, parent_transform);
             if let Some(children) = gg_err::log_and_ok(
                 self.get_children(parent_id)
@@ -1063,7 +1067,10 @@ impl UpdateHandler {
         // Multiple iterations, because on_load() may add more objects.
         // See e.g. GgInternalContainer.
         let mut new_ids = BTreeSet::new();
+        let mut iterations = 0;
         while !pending_add_objects.is_empty() {
+            check_lt!(iterations, 1000);
+            iterations += 1;
             pending_add_objects.retain(|obj| {
                 let rv = obj.parent_id.is_root()
                     || self.object_handler.objects.contains_key(&obj.parent_id);
@@ -2107,7 +2114,10 @@ impl ObjectContext<'_> {
     pub fn parent_chain(&self) -> Vec<&TreeSceneObject> {
         let mut object_id = self.this_id;
         let mut parent_chain = Vec::new();
+        let mut iterations = 0;
         while let Some(p) = self.lookup_parent(object_id) {
+            check_lt!(iterations, 1000);
+            iterations += 1;
             object_id = p.object_id;
             parent_chain.push(p);
         }
