@@ -417,6 +417,8 @@ pub mod gg_float {
     use crate::util::linalg::{Transform, Vec2};
     use anyhow::{Result, bail};
     use num_traits::{FromPrimitive, Zero};
+    use std::cmp::Ordering;
+    use std::hash::{Hash, Hasher};
     use std::num::FpCategory;
     use std::time::Duration;
 
@@ -467,6 +469,34 @@ pub mod gg_float {
 
     pub fn sign_zero(x: f32) -> f32 {
         if x.is_zero() { 0.0 } else { x.signum() }
+    }
+
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct FloatKey(pub f32);
+    impl Hash for FloatKey {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            state.write_u32(self.0.to_bits());
+        }
+    }
+    impl PartialEq for FloatKey {
+        fn eq(&self, other: &Self) -> bool {
+            if self.0.is_nan() && other.0.is_nan() {
+                true
+            } else {
+                self.0 == other.0
+            }
+        }
+    }
+    impl Eq for FloatKey {}
+    impl PartialOrd for FloatKey {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+    impl Ord for FloatKey {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.0.total_cmp(&other.0)
+        }
     }
 }
 

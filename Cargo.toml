@@ -29,7 +29,7 @@ vulkano-taskgraph = "0.35.1"
 egui = "0.31.1"
 egui-winit = "0.31.1"
 # media
-ab_glyph = "0.2.30"
+ab_glyph = "0.2.31"
 asefile = "0.3.8"
 fyrox-sound = { git = "https://github.com/eleanor-em/Fyrox-sound-only" } # forked from 0.35.0
 png = "0.17.16"

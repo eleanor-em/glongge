@@ -1,13 +1,13 @@
 use itertools::Itertools;
 use num_traits::ToPrimitive;
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read};
-use std::rc::Rc;
+use std::sync::OnceLock;
 use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
+use crate::util::gg_float::FloatKey;
 use crate::util::gg_iter::GgFloatIter;
 use crate::util::gg_vec::GgVec;
 use crate::util::{GLOBAL_STATS, UniqueShared, gg_float};
@@ -16,6 +16,30 @@ use ab_glyph::{
     Font as AbGlyphFontTrait, FontVec, Glyph, OutlinedGlyph, PxScale, PxScaleFont, ScaleFont,
 };
 use glongge_derive::partially_derive_scene_object;
+
+pub static LOADED_FONTS: OnceLock<UniqueShared<BTreeMap<String, BTreeMap<FloatKey, Font>>>> =
+    OnceLock::new();
+
+/// Create [`Font`]s with these macros.
+#[macro_export]
+macro_rules! font_from_file {
+    ($path:expr, $size:expr) => {{
+        match $crate::resource::font::LOADED_FONTS
+            .get_or_init($crate::util::UniqueShared::default)
+            .lock()
+            .entry($path.to_string())
+            .or_default()
+            .entry($crate::util::gg_float::FloatKey($size))
+        {
+            std::collections::btree_map::Entry::Vacant(vacant) => {
+                $crate::resource::font::Font::from_slice(include_bytes_root!($path), $size)
+                    .map(|f| vacant.insert(f))
+                    .cloned()
+            }
+            std::collections::btree_map::Entry::Occupied(value) => Ok(value.get().clone()),
+        }
+    }};
+}
 
 #[allow(clippy::nonminimal_bool)]
 pub fn is_unsupported_codepoint(c: u32) -> bool {
@@ -45,12 +69,10 @@ pub enum FontRenderError {
     TooLarge,
 }
 
-#[derive(Clone)]
 pub struct Font {
-    // Use RefCell for clonability.
-    inner: Rc<RefCell<PxScaleFont<FontVec>>>,
-    // Use RefCell for interior mutability.
-    cached_layout: Rc<RefCell<Option<(String, FontRenderSettings, Layout)>>>,
+    inner: PxScaleFont<FontVec>,
+    // Use UniqueShared for interior mutability.
+    cached_layout: UniqueShared<Option<(String, FontRenderSettings, Layout)>>,
     max_glyph_width: f32,
 }
 
@@ -58,8 +80,8 @@ impl Font {
     #[allow(clippy::nonminimal_bool)]
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
-            inner: Rc::new(RefCell::new(inner)),
-            cached_layout: Rc::new(RefCell::new(None)),
+            inner,
+            cached_layout: UniqueShared::default(),
             max_glyph_width: 0.0,
         };
 
@@ -76,8 +98,7 @@ impl Font {
             .filter_map(char::from_u32)
             .filter(|c| c.is_alphanumeric())
             .map(|c| {
-                let inner = rv.inner.borrow();
-                let Some(glyph) = inner.outline_glyph(inner.scaled_glyph(c)) else {
+                let Some(glyph) = rv.inner.outline_glyph(rv.inner.scaled_glyph(c)) else {
                     return 0.0;
                 };
                 glyph.px_bounds().width() / rv.sample_ratio()
@@ -88,6 +109,7 @@ impl Font {
         rv
     }
 
+    /// Do not call directly! Use above macro [`font_from_file`].
     pub fn from_slice(slice: &[u8], size: f32) -> Result<Self> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
         let scale = PxScale::from(size * FONT_SAMPLE_RATIO);
@@ -102,13 +124,13 @@ impl Font {
     }
     /// NOTE: Some lines may be slightly larger than this.
     pub fn line_height(&self) -> f32 {
-        self.inner.borrow().height() / self.sample_ratio()
+        self.inner.height() / self.sample_ratio()
     }
 
     fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> Layout {
         let text = text.as_ref();
         if let Some((cached_text, cached_settings, cached_layout)) =
-            self.cached_layout.borrow().as_ref()
+            self.cached_layout.lock().as_ref()
             && cached_text == text
             && cached_settings.is_same_layout(&settings)
         {
@@ -116,7 +138,7 @@ impl Font {
         } else {
             let layout = self.layout_no_cache(text, &settings);
             self.cached_layout
-                .borrow_mut()
+                .lock()
                 .replace((text.to_string(), settings, layout.clone()));
             layout
         }
@@ -146,10 +168,9 @@ impl Font {
                 continue;
             }
 
-            let glyph = self.inner.borrow().scaled_glyph(c);
+            let glyph = self.inner.scaled_glyph(c);
             let dx = if let Some(previous) = last_glyph.take() {
-                let font = self.inner.borrow();
-                font.h_advance(previous.id) + font.kern(previous.id, glyph.id)
+                self.inner.h_advance(previous.id) + self.inner.kern(previous.id, glyph.id)
             } else {
                 0.0
             };
@@ -170,17 +191,16 @@ impl Font {
                 continue;
             }
 
-            let glyph = self.inner.borrow().scaled_glyph(c);
+            let glyph = self.inner.scaled_glyph(c);
             let dx = if let Some(previous) = last_glyph.take() {
-                let font = self.inner.borrow();
-                font.h_advance(previous.id) + font.kern(previous.id, glyph.id)
+                self.inner.h_advance(previous.id) + self.inner.kern(previous.id, glyph.id)
             } else {
                 0.0
             };
             let last_line = glyphs_by_line.last_mut().unwrap();
             let next_x = last_line.iter().map(|(_, dx)| *dx).sum::<f32>()
                 + dx
-                + self.inner.borrow().h_advance(glyph.id);
+                + self.inner.h_advance(glyph.id);
             if !c.is_whitespace() && next_x > max_width {
                 glyphs_by_line.push(vec![(c, 0.0)]);
             } else {
@@ -203,10 +223,9 @@ impl Font {
                 continue;
             }
 
-            let glyph = self.inner.borrow().scaled_glyph(c);
+            let glyph = self.inner.scaled_glyph(c);
             let dx = if let Some(previous) = last_glyph.take() {
-                let font = self.inner.borrow();
-                font.h_advance(previous.id) + font.kern(previous.id, glyph.id)
+                self.inner.h_advance(previous.id) + self.inner.kern(previous.id, glyph.id)
             } else {
                 0.0
             };
@@ -219,7 +238,7 @@ impl Font {
                 .map(|(_, dx): &(char, f32)| dx)
                 .sum::<f32>()
                 + dx
-                + self.inner.borrow().h_advance(glyph.id);
+                + self.inner.h_advance(glyph.id);
             if !c.is_whitespace()
                 && next_x > max_width
                 && let Some((mut sep, mut word)) =
@@ -237,12 +256,12 @@ impl Font {
     }
     // max_width for justification algorithms (TODO).
     fn lines_to_layout(&self, glyphs_by_line: Vec<Vec<(char, f32)>>, _max_width: f32) -> Layout {
-        let line_height = self.inner.borrow().height() + self.inner.borrow().line_gap();
+        let line_height = self.inner.height() + self.inner.line_gap();
         let mut glyphs = Vec::new();
         let mut glyph_ix = 0;
         let mut caret = Vec2 {
             x: 0.0,
-            y: self.inner.borrow().ascent(),
+            y: self.inner.ascent(),
         };
         for line in glyphs_by_line {
             glyphs.push(LineGlyphs::new(
@@ -260,13 +279,11 @@ impl Font {
                         }
                         caret.x += dx;
                         glyph_ix += 1;
-                        let mut glyph = self.inner.borrow().scaled_glyph(c);
+                        let mut glyph = self.inner.scaled_glyph(c);
                         glyph.position = caret.into();
                         (glyph_ix, (c, glyph))
                     })
-                    .filter_map(|(i, (c, g))| {
-                        self.inner.borrow().outline_glyph(g).map(|g| (i, (c, g)))
-                    })
+                    .filter_map(|(i, (c, g))| self.inner.outline_glyph(g).map(|g| (i, (c, g))))
                     .collect(),
             ));
 
@@ -312,9 +329,26 @@ impl Font {
 
     pub fn last_layout(&self) -> Option<Layout> {
         self.cached_layout
-            .borrow()
+            .lock()
             .as_ref()
             .map(|(_, _, l)| l.clone())
+    }
+}
+
+// let's not talk about this
+impl Clone for Font {
+    fn clone(&self) -> Self {
+        // unwrap() because this can only fail on a parse failure, which it can't if we already
+        // successfully constructed `self`.
+        let font =
+            FontVec::try_from_vec(self.inner.font().as_slice().iter().copied().collect_vec())
+                .unwrap();
+        let scale = self.inner.scale();
+        Self {
+            inner: font.into_scaled(scale),
+            cached_layout: UniqueShared::default(),
+            max_glyph_width: self.max_glyph_width,
+        }
     }
 }
 
