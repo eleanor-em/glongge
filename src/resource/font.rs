@@ -672,15 +672,18 @@ impl FontRenderSettings {
             && self.text_wrap_mode == other.text_wrap_mode
             && self.do_parse_rich_text == other.do_parse_rich_text
     }
+}
 
-    pub fn bounds(&self) -> Rect {
-        Rect::from_coords(
-            Vec2 { x: 0.0, y: 0.0 },
-            Vec2 {
-                x: self.max_width,
-                y: self.max_height,
-            },
-        )
+impl AxisAlignedExtent for FontRenderSettings {
+    fn extent(&self) -> Vec2 {
+        Vec2 {
+            x: self.max_width,
+            y: self.max_height,
+        }
+    }
+
+    fn centre(&self) -> Vec2 {
+        self.extent() / 2.0
     }
 }
 
@@ -940,6 +943,19 @@ impl SceneObject for Label {
             && let Some(text) = self.last_text.clone()
         {
             self.render_text(ctx, text);
+        }
+        if let Some(sprite) = self.sprite.as_mut()
+            && let Some(settings) = self.last_render_settings.as_ref()
+        {
+            let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths())
+                * ctx.viewport().total_scale_factor();
+            if clip.top_left().is_nan() {
+                warn!("NaN clipping boundary? {clip:?}");
+            }
+            if clip.bottom_right().is_nan() {
+                warn!("NaN clipping boundary? {clip:?}");
+            }
+            sprite.set_clip(clip);
         }
     }
 

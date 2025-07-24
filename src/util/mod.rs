@@ -424,23 +424,26 @@ pub mod gg_float {
 
     pub trait GgFloat {
         fn is_finite(&self) -> bool;
-    }
-
-    impl GgFloat for f32 {
-        fn is_finite(&self) -> bool {
-            self.is_normal() || self.is_zero()
-        }
+        fn is_nan(&self) -> bool;
     }
 
     impl GgFloat for Vec2 {
         fn is_finite(&self) -> bool {
             self.x.is_finite() && self.y.is_finite()
         }
+
+        fn is_nan(&self) -> bool {
+            self.x.is_nan() || self.y.is_nan()
+        }
     }
 
     impl GgFloat for Transform {
         fn is_finite(&self) -> bool {
             self.centre.is_finite() && self.rotation.is_finite() && self.scale.is_finite()
+        }
+
+        fn is_nan(&self) -> bool {
+            self.centre.is_nan() || self.rotation.is_nan() || self.scale.is_nan()
         }
     }
     pub fn is_finite(x: f32) -> bool {

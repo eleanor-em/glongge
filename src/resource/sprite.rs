@@ -152,6 +152,12 @@ impl GgInternalSprite {
             self.state = SpriteState::ShouldUpdate;
         }
     }
+    pub fn set_clip(&mut self, clip: Rect) {
+        self.render_item = self.render_item.clone().with_clip(clip);
+        if self.state == SpriteState::Show {
+            self.state = SpriteState::ShouldUpdate;
+        }
+    }
 
     pub fn max_extent(&self) -> Vec2 {
         self.areas
@@ -464,6 +470,9 @@ impl Sprite {
 
     pub fn set_blend_col(&self, col: Colour) {
         self.inner_unwrap().set_blend_col(col);
+    }
+    pub fn set_clip(&self, clip: Rect) {
+        self.inner_unwrap().set_clip(clip);
     }
 
     pub fn translate(&self, by: Vec2) {

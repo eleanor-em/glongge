@@ -52,6 +52,7 @@ pub struct ShaderExecWithVertexData {
     pub transform: Transform,
     pub vertex_indices: Range<u32>,
     pub depth: VertexDepth,
+    pub clip: Rect,
 }
 
 pub(crate) struct RenderDataChannel {
@@ -652,17 +653,18 @@ impl Ord for VertexDepth {
 }
 
 /// A list of coloured vertices to be rendered by a shader at a fixed depth.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct RenderItem {
-    pub depth: VertexDepth,
     pub vertices: Vec<VertexWithCol>,
+    pub depth: VertexDepth,
+    pub clip: Rect,
 }
 
 impl RenderItem {
     pub fn new(vertices: Vec<VertexWithCol>) -> Self {
         Self {
-            depth: VertexDepth::Middle,
             vertices,
+            ..Self::default()
         }
     }
     pub fn from_raw_vertices(vertices: Vec<Vec2>) -> Self {
@@ -680,15 +682,22 @@ impl RenderItem {
         }
         self
     }
+    #[must_use]
+    pub fn with_clip(mut self, clip: Rect) -> Self {
+        self.clip = clip;
+        self
+    }
 
     /// Concatenates this render item with another one.
     /// Takes the maximum depth between the two items.
     #[must_use]
     pub fn concat(mut self, other: RenderItem) -> Self {
         self.vertices.extend(other.vertices);
+        check_eq!(self.clip, other.clip);
         Self {
-            depth: self.depth.max(other.depth),
             vertices: self.vertices,
+            depth: self.depth.max(other.depth),
+            clip: self.clip,
         }
     }
 
@@ -697,6 +706,16 @@ impl RenderItem {
     }
     pub fn len(&self) -> usize {
         self.vertices.len()
+    }
+}
+
+impl Default for RenderItem {
+    fn default() -> Self {
+        Self {
+            vertices: vec![],
+            depth: VertexDepth::default(),
+            clip: Rect::unbounded(),
+        }
     }
 }
 

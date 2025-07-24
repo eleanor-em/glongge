@@ -371,6 +371,7 @@ impl ObjectHandler {
                 inner: shader_exec_inner,
                 transform: *transform,
                 depth: item.render_item.depth,
+                clip: item.render_item.clip,
             });
             start = end;
         }
@@ -2950,6 +2951,16 @@ impl ViewportContext<'_> {
     /// * `global_scale_factor` - New scale factor to apply to the viewport
     pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
         self.viewport.set_global_scale_factor(global_scale_factor);
+    }
+    pub fn global_scale_factor(&self) -> f32 {
+        self.viewport.global_scale_factor()
+    }
+    // Includes Hi-DPI scaling.
+    pub fn gui_scale_factor(&self) -> f32 {
+        self.viewport.gui_scale_factor()
+    }
+    pub fn total_scale_factor(&self) -> f32 {
+        self.global_scale_factor() * self.gui_scale_factor()
     }
 }
 
