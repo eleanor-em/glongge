@@ -1661,13 +1661,13 @@ pub trait AxisAlignedExtent {
         self.centre() - self.half_widths()
     }
     fn top_right(&self) -> Vec2 {
-        self.top_left() + self.extent().project_x()
+        self.centre() + self.half_widths().project_x() - self.half_widths().project_y()
     }
     fn bottom_left(&self) -> Vec2 {
-        self.top_left() + self.extent().project_y()
+        self.centre() - self.half_widths().project_x() + self.half_widths().project_y()
     }
     fn bottom_right(&self) -> Vec2 {
-        self.top_left() + self.extent()
+        self.centre() + self.half_widths()
     }
 
     fn left(&self) -> f32 {

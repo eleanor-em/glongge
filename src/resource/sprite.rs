@@ -216,14 +216,19 @@ impl SceneObject for GgInternalSprite {
         check_eq!(self.textures.len(), self.materials.len());
         check_false!(self.render_item.is_empty());
 
-        Ok(if self.state == SpriteState::Show {
-            self.last_state = SpriteState::Show;
-            Some(self.render_item.clone())
-        } else {
-            self.state = SpriteState::Hide;
-            self.last_state = SpriteState::Hide;
-            None
-        })
+        Ok(
+            if self.state == SpriteState::Show
+                || self.state == SpriteState::ShouldShow
+                || self.state == SpriteState::ShouldUpdate
+            {
+                self.last_state = SpriteState::Show;
+                Some(self.render_item.clone())
+            } else {
+                self.state = SpriteState::Hide;
+                self.last_state = self.state;
+                None
+            },
+        )
     }
 
     fn on_update(&mut self, ctx: &mut UpdateContext) {
@@ -295,13 +300,15 @@ impl RenderableObject for GgInternalSprite {
 
 impl GuiObject for GgInternalSprite {
     fn on_gui(&mut self, _ctx: &UpdateContext, _selected: bool) -> GuiCommand {
-        let is_show = self.state == SpriteState::Show;
+        let state = self.state;
         let textures_ready = self.textures_ready();
         let texture_ids = self.textures.iter().map(Texture::id).collect_vec();
+        let depth = self.render_item.depth;
         GuiCommand::new(move |ui| {
-            ui.add(egui::Label::new(format!("is_show: {is_show}")).selectable(false));
+            ui.add(egui::Label::new(format!("state: {state:?}")).selectable(false));
             ui.add(egui::Label::new(format!("textures_ready: {textures_ready}")).selectable(false));
             ui.add(egui::Label::new(format!("texture ids: {texture_ids:?}")).selectable(false));
+            ui.add(egui::Label::new(format!("depth: {depth:?}")).selectable(false));
         })
     }
 }
@@ -382,11 +389,17 @@ impl Sprite {
     #[must_use]
     pub fn with_depth(self, depth: VertexDepth) -> Self {
         self.inner_unwrap().render_item.depth = depth;
+        if self.inner_unwrap().state == SpriteState::Show {
+            self.inner_unwrap().state = SpriteState::ShouldUpdate;
+        }
         self
     }
     #[must_use]
     pub fn with_blend_col(self, col: Colour) -> Self {
         self.inner_unwrap().set_blend_col(col);
+        if self.inner_unwrap().state == SpriteState::Show {
+            self.inner_unwrap().state = SpriteState::ShouldUpdate;
+        }
         self
     }
     #[must_use]

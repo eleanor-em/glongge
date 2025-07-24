@@ -5,6 +5,7 @@ pub use num_traits;
 
 #[allow(unused_imports)]
 pub use anyhow::{Context, Result, anyhow, bail};
+pub use egui;
 #[allow(unused_imports)]
 pub use tracing::{error, info, warn};
 

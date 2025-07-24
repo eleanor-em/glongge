@@ -683,7 +683,7 @@ impl AxisAlignedExtent for FontRenderSettings {
     }
 
     fn centre(&self) -> Vec2 {
-        self.extent() / 2.0
+        self.half_widths()
     }
 }
 
