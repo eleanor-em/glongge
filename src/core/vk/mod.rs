@@ -119,6 +119,9 @@ impl AdjustedViewport {
     pub(crate) fn gui_scale_factor(&self) -> f32 {
         self.scale_factor / self.global_scale_factor
     }
+    pub(crate) fn total_scale_factor(&self) -> f32 {
+        self.scale_factor
+    }
 
     pub(crate) fn inner(&self) -> Viewport {
         self.inner.clone()
@@ -389,7 +392,7 @@ where
         let viewport = UniqueShared::new(window.create_default_viewport());
 
         let vk_ctx = VulkanoContext::new(event_loop, &window)?;
-        let resource_handler = ResourceHandler::new(&vk_ctx)?;
+        let resource_handler = ResourceHandler::new(&vk_ctx, viewport.clone())?;
         // TODO: have preloading somehow.
 
         // TODO: these need a barrier between executions because they access the current image.
