@@ -31,14 +31,14 @@ impl SceneObject for WinTextDisplay {
     ) -> Result<Option<RenderItem>> {
         let font = font_from_file!("res/DejaVuSansMono.ttf", 20.0)?;
         self.sprite = font
-            .render_to_sprite(
-                object_ctx,
+            .layout(
                 "You win!",
-                &FontRenderSettings {
+                FontRenderSettings {
                     max_width: 200.0,
                     ..FontRenderSettings::default()
                 },
             )
+            .render_to_sprite(object_ctx)
             .unwrap();
         self.font = Some(font);
         let mut transform = object_ctx.transform_mut();
