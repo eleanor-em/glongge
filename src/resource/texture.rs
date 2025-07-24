@@ -491,10 +491,16 @@ impl TextureHandler {
         {
             return Ok(texture.clone());
         }
-        let loaded = Self::load_file_inner(&filename)?;
+        let loaded = Self::load_file_inner(&filename).with_context(|| {
+            format!("TextureHandler::wait_load_file(): loading file: {filename}")
+        })?;
         let mut inner = self.inner.lock();
-        let texture = inner.create_texture(&self.ctx, filename.to_string(), loaded)?;
-        info!("loaded texture: {} = {:?}", filename, texture.id());
+        let texture = inner
+            .create_texture(&self.ctx, filename.to_string(), loaded)
+            .with_context(|| {
+                format!("TextureHandler::wait_load_file(): creating texture: {filename}")
+            })?;
+        info!("loaded texture: {filename} = {:?}", texture.id());
         inner.loaded_files.insert(filename, vec![texture.clone()]);
         Ok(texture)
     }
