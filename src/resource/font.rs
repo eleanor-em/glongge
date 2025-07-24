@@ -1,12 +1,15 @@
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::io::{ErrorKind, Read};
 use std::sync::OnceLock;
 use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
+use crate::resource::rich_text::{FormatInstruction, FormattedChars};
 use crate::util::gg_float::FloatKey;
 use crate::util::gg_iter::GgFloatIter;
 use crate::util::gg_vec::GgVec;
@@ -32,7 +35,7 @@ macro_rules! font_from_file {
             .entry($crate::util::gg_float::FloatKey($size))
         {
             std::collections::btree_map::Entry::Vacant(vacant) => {
-                $crate::resource::font::Font::from_slice(include_bytes_root!($path), $size)
+                $crate::resource::font::Font::from_slice_uncached(include_bytes_root!($path), $size)
                     .map(|f| vacant.insert(f))
                     .cloned()
             }
@@ -69,10 +72,18 @@ pub enum FontRenderError {
     TooLarge,
 }
 
+impl Display for FontRenderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl Error for FontRenderError {}
+
 pub struct Font {
     inner: PxScaleFont<FontVec>,
     // Use UniqueShared for interior mutability.
-    cached_layout: UniqueShared<Option<(String, FontRenderSettings, Layout)>>,
+    cached_layout: UniqueShared<Option<(String, FontLayout)>>,
     max_glyph_width: f32,
 }
 
@@ -109,8 +120,8 @@ impl Font {
         rv
     }
 
-    /// Do not call directly! Use above macro [`font_from_file`].
-    pub fn from_slice(slice: &[u8], size: f32) -> Result<Self> {
+    /// Probably should not be called directly! Use e.g. above macro [`font_from_file`].
+    pub fn from_slice_uncached(slice: &[u8], size: f32) -> Result<Self> {
         let font = FontVec::try_from_vec(slice.iter().copied().collect_vec())?;
         let scale = PxScale::from(size * FONT_SAMPLE_RATIO);
         Ok(Self::new(font.into_scaled(scale)))
@@ -127,39 +138,60 @@ impl Font {
         self.inner.height() / self.sample_ratio()
     }
 
-    fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> Layout {
+    fn format_rich_text(text: impl AsRef<str>, settings: &FontRenderSettings) -> FormattedChars {
         let text = text.as_ref();
-        if let Some((cached_text, cached_settings, cached_layout)) =
-            self.cached_layout.lock().as_ref()
-            && cached_text == text
-            && cached_settings.is_same_layout(&settings)
+        if settings.do_parse_rich_text
+            && let Some(parsed) = FormattedChars::parse(text)
         {
-            cached_layout.clone()
+            parsed
         } else {
-            let layout = self.layout_no_cache(text, &settings);
+            FormattedChars::unformatted(text)
+        }
+    }
+
+    pub fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> FontLayout {
+        settings.validate();
+        let text = text.as_ref();
+        if let Some((cached_text, cached_layout)) = self.cached_layout.lock().as_ref()
+            && cached_text == text
+            && cached_layout.settings.is_same_layout(&settings)
+        {
+            cached_layout.clone().with_settings(settings)
+        } else {
+            let layout = self.layout_no_cache(text, settings);
             self.cached_layout
                 .lock()
-                .replace((text.to_string(), settings, layout.clone()));
+                .replace((text.to_string(), layout.clone()));
             layout
         }
     }
-    fn layout_no_cache(&self, text: impl AsRef<str>, settings: &FontRenderSettings) -> Layout {
+    fn layout_no_cache(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> FontLayout {
+        settings.validate();
+        let formatted_chars = Self::format_rich_text(text.as_ref(), &settings);
         if settings.max_width == f32::INFINITY {
-            self.layout_no_wrap(text)
+            self.layout_no_wrap(formatted_chars, settings)
         } else {
             match settings.text_wrap_mode {
-                TextWrapMode::WrapAnywhere => {
-                    self.layout_wrap_anywhere(text, settings.max_width * self.sample_ratio())
+                TextWrapMode::WrapAnywhere => self.layout_wrap_anywhere(formatted_chars, settings),
+                TextWrapMode::WrapAtWordBoundary => {
+                    self.layout_wrap_at_word_boundary(formatted_chars, settings)
                 }
-                TextWrapMode::WrapAtWordBoundary => self
-                    .layout_wrap_at_word_boundary(text, settings.max_width * self.sample_ratio()),
             }
         }
     }
-    fn layout_no_wrap(&self, text: impl AsRef<str>) -> Layout {
+    fn layout_no_wrap(
+        &self,
+        formatted_chars: FormattedChars,
+        settings: FontRenderSettings,
+    ) -> FontLayout {
+        check_eq!(settings.max_width, f32::INFINITY);
         let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
-        for c in text.as_ref().chars() {
+        check!(
+            formatted_chars.format_instructions.is_empty(),
+            "not implemented"
+        );
+        for c in formatted_chars.chars {
             if c.is_control() {
                 if c == '\n' {
                     last_glyph = None;
@@ -177,12 +209,24 @@ impl Font {
             glyphs_by_line.last_mut().unwrap().push((c, dx));
             last_glyph = Some(glyph.clone());
         }
-        self.lines_to_layout(glyphs_by_line, f32::INFINITY)
+        self.lines_to_layout(
+            glyphs_by_line,
+            formatted_chars.format_instructions,
+            settings,
+        )
     }
-    fn layout_wrap_anywhere(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
+    fn layout_wrap_anywhere(
+        &self,
+        formatted_chars: FormattedChars,
+        settings: FontRenderSettings,
+    ) -> FontLayout {
         let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
-        for c in text.as_ref().chars() {
+        check!(
+            formatted_chars.format_instructions.is_empty(),
+            "not implemented"
+        );
+        for c in formatted_chars.chars {
             if c.is_control() {
                 if c == '\n' {
                     last_glyph = None;
@@ -201,19 +245,27 @@ impl Font {
             let next_x = last_line.iter().map(|(_, dx)| *dx).sum::<f32>()
                 + dx
                 + self.inner.h_advance(glyph.id);
-            if !c.is_whitespace() && next_x > max_width {
+            if !c.is_whitespace() && next_x > settings.max_width * self.sample_ratio() {
                 glyphs_by_line.push(vec![(c, 0.0)]);
             } else {
                 last_line.push((c, dx));
             }
             last_glyph = Some(glyph.clone());
         }
-        self.lines_to_layout(glyphs_by_line, max_width)
+        self.lines_to_layout(
+            glyphs_by_line,
+            formatted_chars.format_instructions,
+            settings,
+        )
     }
-    fn layout_wrap_at_word_boundary(&self, text: impl AsRef<str>, max_width: f32) -> Layout {
+    fn layout_wrap_at_word_boundary(
+        &self,
+        formatted_chars: FormattedChars,
+        settings: FontRenderSettings,
+    ) -> FontLayout {
         let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
-        for c in text.as_ref().chars() {
+        for c in formatted_chars.chars {
             if c.is_control() {
                 glyphs_by_line.last_mut().unwrap().push((' ', 0.0));
                 if c == '\n' {
@@ -239,8 +291,8 @@ impl Font {
                 .sum::<f32>()
                 + dx
                 + self.inner.h_advance(glyph.id);
-            if !c.is_whitespace()
-                && next_x > max_width
+            if next_x > settings.max_width * self.sample_ratio()
+                && !c.is_whitespace()
                 && let Some((mut sep, mut word)) =
                     last_line.rsplit_owned(|(c, _)| c.is_whitespace())
             {
@@ -252,86 +304,83 @@ impl Font {
 
             last_glyph = Some(glyph.clone());
         }
-        self.lines_to_layout(glyphs_by_line, max_width)
+        self.lines_to_layout(
+            glyphs_by_line,
+            formatted_chars.format_instructions,
+            settings,
+        )
     }
-    // max_width for justification algorithms (TODO).
-    fn lines_to_layout(&self, glyphs_by_line: Vec<Vec<(char, f32)>>, _max_width: f32) -> Layout {
+    fn lines_to_layout(
+        &self,
+        glyphs_by_line: Vec<Vec<(char, f32)>>,
+        mut format_instructions: BTreeMap<usize, FormatInstruction>,
+        settings: FontRenderSettings,
+    ) -> FontLayout {
         let line_height = self.inner.height() + self.inner.line_gap();
         let mut glyphs = Vec::new();
         let mut glyph_ix = 0;
+        let mut outlined_glyph_ix = 0;
+        let mut out_format_instructions = BTreeMap::new();
         let mut caret = Vec2 {
             x: 0.0,
             y: self.inner.ascent(),
         };
         for line in glyphs_by_line {
-            glyphs.push(LineGlyphs::new(
-                line.into_iter()
-                    .map(|(c, dx)| {
-                        if is_unsupported_codepoint(c as u32)
-                            && GLOBAL_STATS
-                                .get_or_init(UniqueShared::default)
-                                .lock()
-                                .warned_unsupported_codepoints
-                                .insert(c as u32)
-                        {
-                            // This will probably still render OK, it just may be weirdly wide.
-                            warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
-                        }
-                        caret.x += dx;
-                        glyph_ix += 1;
-                        let mut glyph = self.inner.scaled_glyph(c);
-                        glyph.position = caret.into();
-                        (glyph_ix, (c, glyph))
-                    })
-                    .filter_map(|(i, (c, g))| self.inner.outline_glyph(g).map(|g| (i, (c, g))))
-                    .collect(),
-            ));
+            let mut line_glyphs = BTreeMap::new();
+            for (c, dx) in line {
+                check_le!(outlined_glyph_ix, glyph_ix);
+                if let Some(&format_ix) = format_instructions.keys().next() {
+                    if glyph_ix == format_ix {
+                        let (_, instr) = format_instructions.pop_first().unwrap();
+                        out_format_instructions.insert(outlined_glyph_ix, instr);
+                    } else {
+                        check_lt!(glyph_ix, format_ix);
+                    }
+                }
+                if is_unsupported_codepoint(c as u32)
+                    && GLOBAL_STATS
+                        .get_or_init(UniqueShared::default)
+                        .lock()
+                        .warned_unsupported_codepoints
+                        .insert(c as u32)
+                {
+                    // This will probably still render OK, it just may be weirdly wide.
+                    warn!("unsupported codepoint: {:?} (0x{:x})", c, c as u32);
+                }
+                caret.x += dx;
+                // TODO: dubious; should really increment at the end, but this breaks stuff.
+                //  See above TODO.
+                glyph_ix += 1;
+                let mut glyph = self.inner.scaled_glyph(c);
+                glyph.position = caret.into();
+                if let Some(outlined) = self.inner.outline_glyph(glyph) {
+                    outlined_glyph_ix += 1;
+                    line_glyphs.insert(
+                        glyph_ix,
+                        LayoutGlyph {
+                            _source: c,
+                            glyph: outlined,
+                        },
+                    );
+                }
+            }
+            glyphs.push(LineGlyphs {
+                glyphs: line_glyphs,
+            });
 
             caret.x = 0.0;
             caret.y += line_height;
         }
-        Layout::new(glyphs, self.sample_ratio())
+        FontLayout::new(
+            glyphs,
+            out_format_instructions,
+            settings,
+            self.sample_ratio(),
+        )
     }
 
-    pub fn render_to_sprite(
-        &self,
-        object_ctx: &mut ObjectContext,
-        text: impl AsRef<str>,
-        settings: &FontRenderSettings,
-    ) -> Result<Sprite, FontRenderError> {
-        settings.validate();
-        let layout = self.layout(text, settings.clone());
-        let mut reader = GlyphReader::new(layout, settings.max_glyph_ix, Colour::white())
-            .ok_or(FontRenderError::Empty)?;
-        let width = reader.width();
-        let height = reader.height();
-        if width as f32 > settings.max_width * self.sample_ratio()
-            || height as f32 > settings.max_height * self.sample_ratio()
-        {
-            Err(FontRenderError::TooLarge)
-        } else {
-            check!(width != 0);
-            check!(height != 0);
-            Ok(Sprite::add_from_texture_deferred(
-                object_ctx,
-                Box::new(move |resource_handler| {
-                    resource_handler.texture.wait_load_reader_rgba(
-                        "[font]".to_string(),
-                        &mut reader,
-                        width,
-                        height,
-                        Format::R8G8B8A8_UNORM,
-                    )
-                }),
-            ))
-        }
-    }
-
-    pub fn last_layout(&self) -> Option<Layout> {
-        self.cached_layout
-            .lock()
-            .as_ref()
-            .map(|(_, _, l)| l.clone())
+    pub fn last_layout(&self) -> Option<FontLayout> {
+        self.cached_layout.lock().as_ref().map(|(_, l)| l.clone())
     }
 }
 
@@ -353,15 +402,23 @@ impl Clone for Font {
 }
 
 #[derive(Clone)]
+struct LayoutGlyph {
+    _source: char,
+    glyph: OutlinedGlyph,
+}
+
+impl LayoutGlyph {
+    fn px_bounds(&self) -> Rect {
+        self.glyph.px_bounds().into()
+    }
+}
+
+#[derive(Clone)]
 struct LineGlyphs {
-    glyphs: BTreeMap<usize, (char, OutlinedGlyph)>,
+    glyphs: BTreeMap<usize, LayoutGlyph>,
 }
 
 impl LineGlyphs {
-    fn new(glyphs: BTreeMap<usize, (char, OutlinedGlyph)>) -> Self {
-        Self { glyphs }
-    }
-
     fn start_of_line_ix(&self) -> Option<usize> {
         self.glyphs.keys().min().copied()
     }
@@ -372,25 +429,25 @@ impl LineGlyphs {
     fn min_x(&self) -> Option<f32> {
         self.glyphs
             .values()
-            .map(|(_, g)| g.px_bounds().min.x)
+            .map(|glyph| glyph.px_bounds().left())
             .min_f32()
     }
     fn max_x(&self) -> Option<f32> {
         self.glyphs
             .values()
-            .map(|(_, g)| g.px_bounds().max.x)
+            .map(|glyph| glyph.px_bounds().right())
             .max_f32()
     }
     fn min_y(&self) -> Option<f32> {
         self.glyphs
             .values()
-            .map(|(_, g)| g.px_bounds().min.y)
+            .map(|glyph| glyph.px_bounds().top())
             .min_f32()
     }
     fn max_y(&self) -> Option<f32> {
         self.glyphs
             .values()
-            .map(|(_, g)| g.px_bounds().max.y)
+            .map(|glyph| glyph.px_bounds().bottom())
             .max_f32()
     }
 
@@ -398,7 +455,7 @@ impl LineGlyphs {
         self.glyphs
             .iter()
             .take_while(move |(i, _)| **i <= max_glyph_ix)
-            .map(|(_, (_, g))| g)
+            .map(|(_, g)| &g.glyph)
     }
 }
 
@@ -434,14 +491,21 @@ impl From<Rect> for ab_glyph::Rect {
 }
 
 #[derive(Clone)]
-pub struct Layout {
+pub struct FontLayout {
     glyphs_by_line: Vec<LineGlyphs>,
     bounds_by_line: Vec<Rect>,
+    format_instructions: BTreeMap<usize, FormatInstruction>,
+    settings: FontRenderSettings,
     sample_ratio: f32,
 }
 
-impl Layout {
-    fn new(glyphs_by_line: Vec<LineGlyphs>, sample_ratio: f32) -> Self {
+impl FontLayout {
+    fn new(
+        glyphs_by_line: Vec<LineGlyphs>,
+        format_instructions: BTreeMap<usize, FormatInstruction>,
+        settings: FontRenderSettings,
+        sample_ratio: f32,
+    ) -> Self {
         check_false!(glyphs_by_line.is_empty()); // untested case
         check!(sample_ratio.is_finite());
         check_gt!(sample_ratio, 0.0);
@@ -456,7 +520,7 @@ impl Layout {
                     (Some(mut min_x), Some(max_x)) => {
                         // Kludge: it's a bit weird that min_x can be negative.
                         if min_x < 0.0 {
-                            check_gt!(min_x, -sample_ratio);
+                            check_ge!(min_x, -sample_ratio);
                             min_x = 0.0;
                         }
                         bounds.union(&Rect::from_coords(
@@ -502,7 +566,46 @@ impl Layout {
         Self {
             glyphs_by_line,
             bounds_by_line,
+            format_instructions,
+            settings,
             sample_ratio,
+        }
+    }
+
+    #[must_use]
+    pub fn with_settings(mut self, settings: FontRenderSettings) -> Self {
+        check!(self.settings.is_same_layout(&settings));
+        self.settings = settings;
+        self
+    }
+
+    pub fn render_to_sprite(
+        &self,
+        object_ctx: &mut ObjectContext,
+    ) -> Result<Sprite, FontRenderError> {
+        let mut reader =
+            GlyphReader::new(self, self.settings.max_glyph_ix).ok_or(FontRenderError::Empty)?;
+        let width = reader.width();
+        let height = reader.height();
+        if width as f32 > self.settings.max_width * self.sample_ratio
+            || height as f32 > self.settings.max_height * self.sample_ratio
+        {
+            Err(FontRenderError::TooLarge)
+        } else {
+            check!(width != 0);
+            check!(height != 0);
+            Ok(Sprite::add_from_texture_deferred(
+                object_ctx,
+                Box::new(move |resource_handler| {
+                    resource_handler.texture.wait_load_reader_rgba(
+                        "[font]".to_string(),
+                        &mut reader,
+                        width,
+                        height,
+                        Format::R8G8B8A8_UNORM,
+                    )
+                }),
+            ))
         }
     }
 
@@ -553,6 +656,7 @@ pub struct FontRenderSettings {
     pub max_height: f32,
     pub max_glyph_ix: usize,
     pub text_wrap_mode: TextWrapMode,
+    pub do_parse_rich_text: bool,
 }
 
 impl FontRenderSettings {
@@ -566,16 +670,20 @@ impl FontRenderSettings {
         self.max_width == other.max_width
             && self.max_height == other.max_height
             && self.text_wrap_mode == other.text_wrap_mode
+            && self.do_parse_rich_text == other.do_parse_rich_text
+    }
+}
+
+impl AxisAlignedExtent for FontRenderSettings {
+    fn extent(&self) -> Vec2 {
+        Vec2 {
+            x: self.max_width,
+            y: self.max_height,
+        }
     }
 
-    pub fn bounds(&self) -> Rect {
-        Rect::from_coords(
-            Vec2 { x: 0.0, y: 0.0 },
-            Vec2 {
-                x: self.max_width,
-                y: self.max_height,
-            },
-        )
+    fn centre(&self) -> Vec2 {
+        self.extent() / 2.0
     }
 }
 
@@ -586,6 +694,7 @@ impl Default for FontRenderSettings {
             max_height: f32::INFINITY,
             max_glyph_ix: usize::MAX,
             text_wrap_mode: TextWrapMode::default(),
+            do_parse_rich_text: false,
         }
     }
 }
@@ -611,14 +720,13 @@ pub enum TextWrapMode {
 }
 
 struct GlyphReader {
-    _layout: Layout,
     inner: Option<Vec<OutlinedGlyph>>,
-    col: [u8; 4],
+    format_instructions: Option<BTreeMap<usize, FormatInstruction>>,
     all_px_bounds: Rect,
 }
 
 impl GlyphReader {
-    fn new(layout: Layout, max_glyph_ix: usize, col: Colour) -> Option<Self> {
+    fn new(layout: &FontLayout, max_glyph_ix: usize) -> Option<Self> {
         if max_glyph_ix == 0 {
             return None;
         }
@@ -635,9 +743,8 @@ impl GlyphReader {
         };
         let all_px_bounds = scaled_bounds * layout.sample_ratio;
         Some(Self {
-            _layout: layout,
             inner: Some(glyphs),
-            col: col.as_bytes(),
+            format_instructions: Some(layout.format_instructions.clone()),
             all_px_bounds,
         })
     }
@@ -663,13 +770,31 @@ impl Read for GlyphReader {
             .inner
             .take()
             .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?;
+        let mut format_instructions = self
+            .format_instructions
+            .take()
+            .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?;
+        let mut colour = Colour::black();
 
         // Zero out the buffer first.
         for val in buf.iter_mut() {
             *val = 0;
         }
 
-        for glyph in glyphs {
+        for (i, glyph) in glyphs.into_iter().enumerate() {
+            // Handle formatting.
+            if let Some(&format_ix) = format_instructions.keys().next() {
+                check_le!(i, format_ix);
+                if i == format_ix {
+                    match format_instructions.pop_first() {
+                        None => unreachable!(),
+                        Some((_, FormatInstruction::SetColourTo(new_colour))) => {
+                            colour = new_colour;
+                        }
+                    }
+                }
+            }
+            // Rasterise.
             let bounds = glyph.px_bounds();
             let img_left = bounds.min.x as u32 - self.all_px_bounds.left() as u32;
             let img_top = bounds.min.y as u32 - self.all_px_bounds.top() as u32;
@@ -684,13 +809,8 @@ impl Read for GlyphReader {
                     return;
                 };
                 let px = Vec2i { x, y }.as_index(self.width(), self.height()) * 4;
-
-                buf[px] = self.col[0];
-                buf[px + 1] = self.col[1];
-                buf[px + 2] = self.col[2];
-
-                let a = f32::from(self.col[3]) / 255.0;
-                buf[px + 3] = buf[px + 3].saturating_add((v * a * 255.0) as u8);
+                buf[px..px + 3].copy_from_slice(&colour.as_bytes()[..3]);
+                buf[px + 3] = buf[px + 3].saturating_add((v * colour.a * 255.0) as u8);
             });
         }
         Ok(buf.len())
@@ -768,7 +888,8 @@ impl Label {
             self.overflowed = false;
             match self
                 .font
-                .render_to_sprite(ctx.object_mut(), &text, &self.render_settings)
+                .layout(&text, self.render_settings.clone())
+                .render_to_sprite(ctx.object_mut())
             {
                 Ok(next_sprite) => {
                     self.next_sprite = Some(next_sprite.with_hidden());

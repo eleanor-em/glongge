@@ -1,3 +1,4 @@
+use anyhow::Result;
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 use std::ops::Mul;
 
@@ -43,6 +44,13 @@ impl Colour {
                 .to_u8()
                 .expect("weird conversion failure to u8"),
         )
+    }
+
+    pub fn from_hex_rgb(hex: &str) -> Result<Self> {
+        let r = u8::from_str_radix(&hex[..2], 16)?;
+        let g = u8::from_str_radix(&hex[2..4], 16)?;
+        let b = u8::from_str_radix(&hex[4..], 16)?;
+        Ok(Self::from_bytes(r, g, b, 255))
     }
 
     pub fn red() -> Self {

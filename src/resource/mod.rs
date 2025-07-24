@@ -9,6 +9,7 @@ use std::sync::{
 };
 
 pub mod font;
+mod rich_text;
 pub mod sound;
 pub mod sprite;
 pub mod texture;
