@@ -17,6 +17,10 @@ pub struct Vertex {
     pub material_id: u32,
     #[format(R32G32B32A32_SFLOAT)]
     pub blend_col: [f32; 4],
+    #[format(R32G32_SFLOAT)]
+    pub clip_min: [f32; 2],
+    #[format(R32G32_SFLOAT)]
+    pub clip_max: [f32; 2],
 }
 
 pub mod vertex_shader {
@@ -31,10 +35,14 @@ pub mod vertex_shader {
             layout(location = 3) in vec2 scale;
             layout(location = 4) in uint material_id;
             layout(location = 5) in vec4 blend_col;
+            layout(location = 6) in vec2 clip_min;
+            layout(location = 7) in vec2 clip_max;
 
             layout(location = 0) out vec2 f_uv;
             layout(location = 1) out uint f_texture_id;
             layout(location = 2) out vec4 f_blend_col;
+            layout(location = 3) out vec2 f_clip_min;
+            layout(location = 4) out vec2 f_clip_max;
 
             layout(push_constant) uniform WindowData {
                 float window_width;
@@ -105,6 +113,8 @@ pub mod vertex_shader {
                 f_uv = uvs[gl_VertexIndex % 6];
                 f_texture_id = material.texture_id;
                 f_blend_col = blend_col;
+                f_clip_min = clip_min;
+                f_clip_max = clip_max;
             }
         ",
     }
@@ -119,14 +129,20 @@ pub mod fragment_shader {
             layout(location = 0) in vec2 f_uv;
             layout(location = 1) flat in uint f_texture_id;
             layout(location = 2) in vec4 f_blend_col;
+            layout(location = 3) in vec2 f_clip_min;
+            layout(location = 4) in vec2 f_clip_max;
 
             layout(location = 0) out vec4 f_col;
 
             layout(set = 0, binding = 1) uniform sampler2D tex[1023];
 
             void main() {
-                const vec4 tex_col = texture(nonuniformEXT(tex[f_texture_id]), f_uv);
-                f_col = tex_col * f_blend_col;
+                if (gl_FragCoord.x < f_clip_min.x || gl_FragCoord.y < f_clip_min.y
+                        || gl_FragCoord.x > f_clip_max.x || gl_FragCoord.y > f_clip_max.y) {
+                } else {
+                    const vec4 tex_col = texture(nonuniformEXT(tex[f_texture_id]), f_uv);
+                    f_col = tex_col * f_blend_col;
+                }
             }
         ",
     }

@@ -10,7 +10,7 @@ use vulkano::format::Format;
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
 use crate::resource::rich_text::{FormatInstruction, FormattedChars};
-use crate::util::gg_float::FloatKey;
+use crate::util::gg_float::{FloatKey, GgFloat};
 use crate::util::gg_iter::GgFloatIter;
 use crate::util::gg_vec::GgVec;
 use crate::util::{GLOBAL_STATS, UniqueShared, gg_float};
@@ -683,7 +683,7 @@ impl AxisAlignedExtent for FontRenderSettings {
     }
 
     fn centre(&self) -> Vec2 {
-        self.extent() / 2.0
+        self.half_widths()
     }
 }
 
@@ -943,6 +943,19 @@ impl SceneObject for Label {
             && let Some(text) = self.last_text.clone()
         {
             self.render_text(ctx, text);
+        }
+        if let Some(sprite) = self.sprite.as_mut()
+            && let Some(settings) = self.last_render_settings.as_ref()
+        {
+            let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths())
+                * ctx.viewport().total_scale_factor();
+            if clip.top_left().is_nan() {
+                warn!("NaN clipping boundary? {clip:?}");
+            }
+            if clip.bottom_right().is_nan() {
+                warn!("NaN clipping boundary? {clip:?}");
+            }
+            sprite.set_clip(clip);
         }
     }
 

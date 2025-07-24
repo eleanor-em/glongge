@@ -2,6 +2,7 @@
 use crate::core::prelude::*;
 
 use crate::util::gg_float;
+use crate::util::gg_float::GgFloat;
 use itertools::Product;
 use num_traits::{One, Zero};
 use serde::{Deserialize, Serialize};
@@ -70,7 +71,11 @@ pub struct Vec2 {
 
 impl PartialEq for Vec2 {
     fn eq(&self, other: &Self) -> bool {
-        (self.x - other.x).abs() < EPSILON && (self.y - other.y).abs() < EPSILON
+        if self.is_finite() || other.is_finite() {
+            (self.x - other.x).abs() < EPSILON && (self.y - other.y).abs() < EPSILON
+        } else {
+            self.x == other.x && self.y == other.y
+        }
     }
 }
 impl Eq for Vec2 {}
@@ -1656,13 +1661,13 @@ pub trait AxisAlignedExtent {
         self.centre() - self.half_widths()
     }
     fn top_right(&self) -> Vec2 {
-        self.top_left() + self.extent().x * Vec2::right()
+        self.centre() + self.half_widths().project_x() - self.half_widths().project_y()
     }
     fn bottom_left(&self) -> Vec2 {
-        self.top_left() + self.extent().y * Vec2::down()
+        self.centre() - self.half_widths().project_x() + self.half_widths().project_y()
     }
     fn bottom_right(&self) -> Vec2 {
-        self.top_left() + self.extent()
+        self.centre() + self.half_widths()
     }
 
     fn left(&self) -> f32 {
@@ -1754,6 +1759,12 @@ impl Rect {
         Self {
             centre: Vec2::zero(),
             half_widths: Vec2::zero(),
+        }
+    }
+    pub fn unbounded() -> Self {
+        Self {
+            centre: Vec2::zero(),
+            half_widths: Vec2::splat(f32::INFINITY),
         }
     }
 

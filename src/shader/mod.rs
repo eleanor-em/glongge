@@ -541,6 +541,8 @@ impl Shader for SpriteShader {
                         rotation: render_info.transform.rotation,
                         scale: render_info.transform.scale.into(),
                         blend_col: (vertex.blend_col * ri.blend_col).into(),
+                        clip_min: render_info.clip.top_left().into(),
+                        clip_max: render_info.clip.bottom_right().into(),
                     });
                 }
             }

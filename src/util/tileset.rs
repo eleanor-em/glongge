@@ -352,6 +352,7 @@ impl SceneObject for GgInternalTileset {
             rv = rv.concat(RenderItem {
                 vertices: vertices.vertices,
                 depth: tile.depth,
+                clip: Rect::unbounded(),
             });
         }
         object_ctx.add_child(CollisionShape::from_collider(
