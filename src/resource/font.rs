@@ -947,8 +947,7 @@ impl SceneObject for Label {
         if let Some(sprite) = self.sprite.as_mut()
             && let Some(settings) = self.last_render_settings.as_ref()
         {
-            let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths())
-                * ctx.viewport().total_scale_factor();
+            let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths());
             if clip.top_left().is_nan() {
                 warn!("NaN clipping boundary? {clip:?}");
             }

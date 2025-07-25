@@ -533,6 +533,7 @@ impl Shader for SpriteShader {
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 let vertex = render_frame.vertices[vertex_index as usize];
+                let clip = render_info.clip * self.viewport.lock().total_scale_factor();
                 for ri in &render_info.inner {
                     vertices.push(sprite::Vertex {
                         position: vertex.inner.into(),
@@ -541,8 +542,8 @@ impl Shader for SpriteShader {
                         rotation: render_info.transform.rotation,
                         scale: render_info.transform.scale.into(),
                         blend_col: (vertex.blend_col * ri.blend_col).into(),
-                        clip_min: render_info.clip.top_left().into(),
-                        clip_max: render_info.clip.bottom_right().into(),
+                        clip_min: clip.top_left().into(),
+                        clip_max: clip.bottom_right().into(),
                     });
                 }
             }
