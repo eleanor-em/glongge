@@ -443,6 +443,7 @@ where
         });
 
         std::thread::spawn(move || {
+            let render_stats = RenderPerfStats::new(&window);
             let mut inner = WindowEventHandlerInner {
                 window,
                 scale_factor,
@@ -454,7 +455,7 @@ where
                 platform,
                 task_graph,
                 virtual_swapchain_id,
-                render_stats: RenderPerfStats::new(),
+                render_stats,
                 last_render_stats: None,
                 is_first_window_event: true,
                 window_event_rx,
@@ -544,11 +545,28 @@ pub(crate) struct RenderPerfStats {
     last_report: Instant,
     totals_ms: Vec<f32>,
 
+    refresh_time: f32,
+
     last_perf_stats: Option<Box<RenderPerfStats>>,
 }
 
 impl RenderPerfStats {
-    fn new() -> Self {
+    fn new(window: &GgWindow) -> Self {
+        let refresh_time = window
+            .inner
+            .current_monitor()
+            .and_then(|m| m.refresh_rate_millihertz())
+            .map_or_else(|| {
+                    warn!("failed to determine refresh rate, assuming 60 Hz");
+                    1_000.0 / 60.0
+                },
+                |r| {
+                    let refresh_time = 1_000_000.0 / r as f32;
+                    info!("refresh every: {refresh_time:.2} ms");
+                    refresh_time
+                });
+        check_gt!(refresh_time, 1.0);
+        check_lt!(refresh_time, 1_000.0 / 30.0);
         Self {
             update_gui: TimeIt::new("update_gui"),
             execute: TimeIt::new("execute"),
@@ -561,6 +579,7 @@ impl RenderPerfStats {
             last_step: Instant::now(),
             last_report: Instant::now(),
             totals_ms: Vec::with_capacity(10),
+            refresh_time,
             last_perf_stats: None,
         }
     }
@@ -570,7 +589,8 @@ impl RenderPerfStats {
     }
 
     fn end(&mut self) -> Option<Self> {
-        const DEADLINE_MS: f32 = 16.8;
+        // Allow a bit of slack.
+        let deadline_ms = self.refresh_time * 1.2;
 
         self.between_renders.start();
 
@@ -584,7 +604,7 @@ impl RenderPerfStats {
             .totals_ms
             .iter()
             .rev()
-            .take_while(|&&t| t > DEADLINE_MS)
+            .take_while(|&&t| t > deadline_ms)
             .collect_vec();
         if late_in_row.len() > 1 {
             let mut msg = format!("{} frames late in a row: ", late_in_row.len());
@@ -594,7 +614,7 @@ impl RenderPerfStats {
             msg += format!("{:.1}", late_in_row.last().unwrap()).as_str();
             warn_every_seconds!(1, "{msg}");
         }
-        if render_time <= DEADLINE_MS {
+        if render_time <= deadline_ms {
             self.on_time += 1;
         }
         self.count += 1;
@@ -624,6 +644,7 @@ impl RenderPerfStats {
                 penultimate_step: self.penultimate_step,
                 last_step: self.last_step,
                 totals_ms: vec![],
+                refresh_time: self.refresh_time,
             }));
             self.last_report = Instant::now();
             self.last_report = Instant::now();
