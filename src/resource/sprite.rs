@@ -33,7 +33,6 @@ pub struct GgInternalSprite {
 
     elapsed_us: u128,
     frame_time_ms: Vec<u32>,
-    frame: usize,
 
     paused: bool,
     state: SpriteState,
@@ -66,7 +65,6 @@ impl GgInternalSprite {
             render_item,
             paused: false,
             elapsed_us: 0,
-            frame: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
@@ -87,7 +85,6 @@ impl GgInternalSprite {
             frame_time_ms: Vec::new(),
             paused: false,
             elapsed_us: 0,
-            frame: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
@@ -127,7 +124,6 @@ impl GgInternalSprite {
             frame_time_ms,
             paused: false,
             elapsed_us: 0,
-            frame: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
             name: "Sprite".to_string(),
@@ -236,17 +232,6 @@ impl SceneObject for GgInternalSprite {
             return;
         }
         self.elapsed_us += ctx.delta().as_micros();
-        let elapsed_ms = self.elapsed_us / 1000;
-        let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
-        let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
-        self.frame = self
-            .frame_time_ms
-            .iter()
-            .copied()
-            .cumsum()
-            .filter(|&ms| cycle_elapsed_ms >= u128::from(ms))
-            .count();
-        check_lt!(self.frame, self.material_indices.len());
     }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
@@ -283,8 +268,18 @@ impl RenderableObject for GgInternalSprite {
     }
     fn shader_execs(&self) -> Vec<ShaderExec> {
         check_eq!(self.state, SpriteState::Show);
-        check_lt!(self.frame, self.material_indices.len());
-        let material_index = self.material_indices[self.frame];
+        let elapsed_ms = self.elapsed_us / 1000;
+        let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
+        let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
+        let frame = self
+            .frame_time_ms
+            .iter()
+            .copied()
+            .cumsum()
+            .filter(|&ms| cycle_elapsed_ms >= u128::from(ms))
+            .count();
+        check_lt!(frame, self.material_indices.len());
+        let material_index = self.material_indices[frame];
         let material_id = self.materials[material_index];
         if self.textures_ready() {
             vec![ShaderExec {
