@@ -329,7 +329,7 @@ impl Transform {
                 cell.rotation.singleline_with_drag(ui, -1.0, "Rotation: ");
                 ui.end_row();
                 ui.add(egui::Label::new("Scale").selectable(false));
-                self.scale.build_gui(ui, 0.01, cell.scale_x, cell.scale_y);
+                self.scale.build_gui(ui, 0.05, cell.scale_x, cell.scale_y);
             });
     }
 }
