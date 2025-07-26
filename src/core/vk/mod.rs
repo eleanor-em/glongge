@@ -556,7 +556,8 @@ impl RenderPerfStats {
             .inner
             .current_monitor()
             .and_then(|m| m.refresh_rate_millihertz())
-            .map_or_else(|| {
+            .map_or_else(
+                || {
                     warn!("failed to determine refresh rate, assuming 60 Hz");
                     1_000.0 / 60.0
                 },
@@ -564,7 +565,8 @@ impl RenderPerfStats {
                     let refresh_time = 1_000_000.0 / r as f32;
                     info!("refresh every: {refresh_time:.2} ms");
                     refresh_time
-                });
+                },
+            );
         check_gt!(refresh_time, 1.0);
         check_lt!(refresh_time, 1_000.0 / 30.0);
         Self {

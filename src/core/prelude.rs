@@ -20,6 +20,7 @@ pub use crate::{
         scene::{RenderableObject, SceneObject},
         update::{FixedUpdateContext, ObjectContext, UpdateContext, collision::CollisionResponse},
     },
+    info_every_millis, info_every_seconds,
     resource::{Loader, ResourceHandler},
     util::{
         assert::*,
@@ -28,4 +29,5 @@ pub use crate::{
         linalg,
         linalg::{AxisAlignedExtent, Mat3x3, Rect, Transform, Vec2, Vec2i},
     },
+    warn_every_millis, warn_every_seconds,
 };
