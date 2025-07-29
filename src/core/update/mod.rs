@@ -61,8 +61,7 @@ pub(crate) struct ObjectHandler {
     pub(crate) absolute_transforms: BTreeMap<ObjectId, Transform>,
     children: BTreeMap<ObjectId, Vec<TreeSceneObject>>,
 
-    object_ref_tracker: BTreeMap<ObjectId, TreeSceneObject>,
-    dangling_names: BTreeMap<ObjectId, String>,
+    dangling_refs: BTreeMap<ObjectId, (TreeSceneObject, String)>,
     reported_leaked_ids: BTreeSet<ObjectId>,
     last_reported_leaked_ids: Vec<(ObjectId, usize)>,
     last_reported_leaked_ids_at: Option<Instant>,
@@ -77,8 +76,7 @@ impl ObjectHandler {
             parents: BTreeMap::new(),
             absolute_transforms: BTreeMap::new(),
             children: BTreeMap::new(),
-            object_ref_tracker: BTreeMap::new(),
-            dangling_names: BTreeMap::new(),
+            dangling_refs: BTreeMap::new(),
             reported_leaked_ids: BTreeSet::default(),
             last_reported_leaked_ids: vec![],
             last_reported_leaked_ids_at: None,
@@ -238,17 +236,18 @@ impl ObjectHandler {
         }
         self.parents.remove(&remove_id);
 
-        self.objects.remove(&remove_id);
         self.absolute_transforms.remove(&remove_id);
         self.children.remove(&remove_id);
-
-        let o = self.object_ref_tracker.get(&remove_id).unwrap();
-        let count = Rc::strong_count(&o.scene_object.wrapped);
-        if count > 1 {
-            self.dangling_names
-                .insert(remove_id, gg_err::log_unwrap_or("<unknown>", name));
-        } else {
-            self.object_ref_tracker.remove(&remove_id);
+        let Some(o) = self.objects.remove(&remove_id) else {
+            error!(
+                "ObjectHandler::remove_object(): no such object: {:?}",
+                remove_id
+            );
+            return;
+        };
+        if Rc::strong_count(&o.scene_object.wrapped) > 1 {
+            self.dangling_refs
+                .insert(remove_id, (o, gg_err::log_unwrap_or("<unknown>", name)));
         }
     }
 
@@ -265,8 +264,6 @@ impl ObjectHandler {
                 .insert(ObjectId(0), Transform::default());
         }
         self.objects.insert(new_obj.object_id, new_obj.clone());
-        self.object_ref_tracker
-            .insert(new_obj.object_id, new_obj.clone());
         self.parents.insert(new_obj.object_id, new_obj.parent_id);
         self.children.insert(new_obj.object_id, Vec::new());
         let children = self.get_children_mut(new_obj.parent_id)?;
@@ -307,9 +304,9 @@ impl ObjectHandler {
     fn update_all_transforms(&mut self) {
         let mut child_stack = Vec::with_capacity(self.objects.len());
         child_stack.push((ObjectId::root(), Transform::default()));
-        let mut processed_ids = BTreeSet::new();
+        // let mut processed_ids = BTreeSet::new();
         while let Some((parent_id, parent_transform)) = child_stack.pop() {
-            check!(processed_ids.insert(parent_id), "{parent_id:?}");
+            // check!(processed_ids.insert(parent_id), "{parent_id:?}");
             self.absolute_transforms.insert(parent_id, parent_transform);
             if let Some(children) = gg_err::log_and_ok(
                 self.get_children(parent_id)
@@ -379,22 +376,40 @@ impl ObjectHandler {
     }
 
     pub(crate) fn cleanup_references(&mut self) {
+        // Remove ObjectId's with no remaining actual references.
+        // May require multiple repetitions for nested children.
+        loop {
+            let mut ids_to_remove = Vec::new();
+            for (id, count) in self
+                .dangling_refs
+                .iter()
+                .map(|(id, (o, _))| (*id, Rc::strong_count(&o.scene_object.wrapped)))
+            {
+                check_false!(self.objects.contains_key(&id));
+                check!(count > 0);
+                if count == 1 {
+                    ids_to_remove.push(id);
+                }
+            }
+            if ids_to_remove.is_empty() {
+                break;
+            }
+            for id in ids_to_remove {
+                self.dangling_refs.remove(&id);
+            }
+        }
+
+        // Detect and report memory leaks and/or cycles.
         let mut leaked_bytes = 0;
         let mut reports = Vec::new();
-        for id in self.object_ref_tracker.keys().copied().collect_vec() {
-            let o = self.object_ref_tracker.get(&id).unwrap();
-            // Don't count the reference in `self.object_ref_tracker`.
-            let count = Rc::strong_count(&o.scene_object.wrapped) - 1;
-            if !self.objects.contains_key(&id) {
-                if count > 0 {
-                    reports.push((id, count));
-                    if self.reported_leaked_ids.insert(id) {
-                        leaked_bytes += count * size_of::<TreeSceneObject>();
-                    }
-                } else {
-                    self.object_ref_tracker.remove(&id);
-                    self.dangling_names.remove(&id);
-                }
+        for (id, count) in self
+            .dangling_refs
+            .iter()
+            .map(|(id, (o, _))| (*id, Rc::strong_count(&o.scene_object.wrapped)))
+        {
+            reports.push((id, count));
+            if self.reported_leaked_ids.insert(id) {
+                leaked_bytes += count * size_of::<TreeSceneObject>();
             }
         }
         if !reports.is_empty()
@@ -407,9 +422,9 @@ impl ObjectHandler {
                 .iter()
                 .map(|(id, count)| {
                     let name = self
-                        .dangling_names
+                        .dangling_refs
                         .get(id)
-                        .map_or("<unknown>", String::as_str);
+                        .map_or("<unknown>", |(_, name)| name.as_str());
                     format!("{name} {id:?}: {count}")
                 })
                 .join(", ");
@@ -562,68 +577,66 @@ impl UpdateHandler {
 
     pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
         let fixed_update_only = self.update_sync.try_render_done();
-        if self.is_running {
+        if !self.is_running {
+            return None;
+        }
+        if !fixed_update_only {
             self.delta = self
                 .last_delta_set
                 .map_or(Duration::from_secs(0), |i| i.elapsed());
-            if !fixed_update_only {
-                self.last_delta_set = Some(Instant::now());
+            self.last_delta_set = Some(Instant::now());
 
-                if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
-                    self.perf_stats.totals_s.remove(0);
-                }
-                self.perf_stats.totals_s.push(self.delta.as_secs_f32());
-                self.perf_stats.total_stats.start();
+            if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
+                self.perf_stats.totals_s.remove(0);
             }
+            self.perf_stats.totals_s.push(self.delta.as_secs_f32());
+            self.perf_stats.total_stats.start();
+        }
 
-            // Count the number of fixed updates to perform.
-            self.fixed_update_us += self
-                .last_update_start
-                .map_or(Duration::from_secs(0), |i| i.elapsed())
-                .as_micros();
-            let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
-            if fixed_updates > 0 {
-                let update_span = span!(
-                    tracing::Level::INFO,
-                    "fixed_update_report",
-                    fc = self.frame_counter,
-                    ffc = self.fixed_frame_counter
+        // Count the number of fixed updates to perform.
+        self.fixed_update_us += self
+            .last_update_start
+            .map_or(Duration::from_secs(0), |i| i.elapsed())
+            .as_micros();
+        let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
+        if fixed_updates > 0 {
+            let update_span = span!(
+                tracing::Level::INFO,
+                "fixed_update_report",
+                fc = self.frame_counter,
+                ffc = self.fixed_frame_counter
+            );
+            let _enter = update_span.enter();
+            self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
+            if self.fixed_update_us >= FIXED_UPDATE_WARN_DELAY_US {
+                warn!(
+                    "fixed update behind by {:.1} ms",
+                    gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US)
+                        / 1000.0
                 );
-                let _enter = update_span.enter();
-                self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
-                if self.fixed_update_us >= FIXED_UPDATE_WARN_DELAY_US {
-                    warn!(
-                        "fixed update behind by {:.1} ms",
-                        gg_float::from_u128_or_inf(
-                            self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US
-                        ) / 1000.0
-                    );
-                }
-                if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT_US {
-                    error!(
-                        "fixed update behind by {:.1} ms, giving up",
-                        gg_float::from_u128_or_inf(
-                            self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US
-                        ) / 1000.0
-                    );
-                    self.fixed_update_us = 0;
-                }
             }
-
-            // Perform the update.
-            let input_handler = self.input_handler.lock().unwrap().clone();
-            self.last_update_start = Some(Instant::now());
-            let object_tracker =
-                self.perform_update(fixed_update_only, &input_handler, fixed_updates);
-            self.complete_update(fixed_update_only, &input_handler, object_tracker);
-
-            // Update performance statistics.
-            self.perf_stats.total_stats.stop();
-            self.debug_gui
-                .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
-            if !fixed_update_only && !self.debug_gui.scene_control.is_paused() {
-                self.frame_counter += 1;
+            if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT_US {
+                error!(
+                    "fixed update behind by {:.1} ms, giving up",
+                    gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US)
+                        / 1000.0
+                );
+                self.fixed_update_us = 0;
             }
+        }
+
+        // Perform the update.
+        let input_handler = self.input_handler.lock().unwrap().clone();
+        self.last_update_start = Some(Instant::now());
+        let object_tracker = self.perform_update(fixed_update_only, &input_handler, fixed_updates);
+        self.complete_update(fixed_update_only, &input_handler, object_tracker);
+
+        // Update performance statistics.
+        self.perf_stats.total_stats.stop();
+        self.debug_gui
+            .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
+        if !fixed_update_only && !self.debug_gui.scene_control.is_paused() {
+            self.frame_counter += 1;
         }
 
         match self.scene_instruction_rx.try_iter().next() {
@@ -663,7 +676,7 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         original_fixed_updates: u128,
     ) -> ObjectTracker {
-        let mut object_tracker = ObjectTracker::new(&self.object_handler);
+        let mut object_tracker = ObjectTracker::new();
         if fixed_update_only {
             self.call_on_fixed_update(original_fixed_updates, &mut object_tracker);
         } else if let Some(fixed_updates) =
@@ -1007,6 +1020,10 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         object_tracker: ObjectTracker,
     ) {
+        if object_tracker.is_empty() && fixed_update_only {
+            // Performance: nothing to do.
+            return;
+        }
         let update_span = span!(
             tracing::Level::INFO,
             "complete_update",
@@ -1026,10 +1043,10 @@ impl UpdateHandler {
             &mut pending_move_objects,
         );
         self.complete_update_with_moved_objects(pending_move_objects);
-        self.debug_gui
-            .complete_update(input_handler, &mut self.viewport);
 
         if !fixed_update_only {
+            self.debug_gui
+                .complete_update(input_handler, &mut self.viewport);
             self.complete_update_with_render_infos();
             self.input_handler.lock().unwrap().complete_update();
         }
@@ -1092,10 +1109,10 @@ impl UpdateHandler {
                 new_ids.insert(ObjectId(id));
             }
 
-            let mut object_tracker = ObjectTracker::new(&self.object_handler);
+            let mut object_tracker = ObjectTracker::new();
             self.object_handler
                 .collision_handler
-                .add_objects(pending_add.iter());
+                .add_objects(&pending_add);
             self.call_on_load(&mut object_tracker, pending_add);
             self.object_handler.update_all_transforms();
 
@@ -1109,7 +1126,12 @@ impl UpdateHandler {
             self.complete_update_with_removed_objects(pending_remove);
         }
 
-        let mut object_tracker = ObjectTracker::new(&self.object_handler);
+        if new_ids.is_empty() {
+            // Performance: nothing to do.
+            return;
+        }
+
+        let mut object_tracker = ObjectTracker::new();
         self.call_on_ready(&mut object_tracker, input_handler, new_ids);
         let (pending_add, pending_remove, new_pending_move_objects) = object_tracker.into_pending();
         for (object_id, new_parent_id) in new_pending_move_objects {
@@ -1154,7 +1176,7 @@ impl UpdateHandler {
             {
                 continue;
             }
-            object_tracker
+            self.object_handler
                 .objects
                 .insert(new_obj.object_id(), new_obj.clone());
             gg_err::log_err_and_ignore(
@@ -2014,29 +2036,27 @@ impl SceneContext<'_> {
     }
 }
 
+#[allow(clippy::struct_field_names)]
 struct ObjectTracker {
-    objects: BTreeMap<ObjectId, TreeSceneObject>,
     pending_add: Vec<TreeSceneObject>,
     pending_remove: BTreeSet<ObjectId>,
     pending_move: BTreeMap<ObjectId, ObjectId>,
 }
 
 impl ObjectTracker {
-    fn new(object_handler: &ObjectHandler) -> Self {
+    fn new() -> Self {
         Self {
-            objects: object_handler.objects.clone(),
             pending_add: Vec::new(),
             pending_remove: BTreeSet::new(),
             pending_move: BTreeMap::new(),
         }
     }
 
-    fn get(&self, object_id: ObjectId) -> Option<&TreeSceneObject> {
-        self.objects.get(&object_id)
+    fn is_empty(&self) -> bool {
+        self.pending_add.is_empty()
+            && self.pending_remove.is_empty()
+            && self.pending_move.is_empty()
     }
-    // fn get_mut(&mut self, object_id: ObjectId) -> Option<&mut SceneObjectWrapper> {
-    //     self.last.get_mut(&object_id)
-    // }
 }
 
 impl ObjectTracker {
@@ -2317,7 +2337,7 @@ impl ObjectContext<'_> {
     }
 
     fn others_inner(&self) -> impl Iterator<Item = &TreeSceneObject> {
-        self.object_tracker
+        self.object_handler
             .objects
             .iter()
             .filter(|(object_id, _)| !self.object_tracker.pending_remove.contains(object_id))
@@ -2394,7 +2414,7 @@ impl ObjectContext<'_> {
     ///
     /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
     pub fn transform(&self) -> Transform {
-        self.object_tracker.get(self.this_id).map_or_else(
+        self.object_handler.objects.get(&self.this_id).map_or_else(
             || {
                 error!("missing object_id in objects: this={:?}", self.this_id);
                 Transform::default()
@@ -2409,13 +2429,16 @@ impl ObjectContext<'_> {
     ///
     /// Returns [`Transform::default()`] and logs an error if the object ID is not found.
     pub fn transform_of(&self, other: &TreeSceneObject) -> Transform {
-        self.object_tracker.get(other.object_id).map_or_else(
-            || {
-                error!("missing object_id in objects: {:?}", other.object_id);
-                Transform::default()
-            },
-            TreeSceneObject::transform,
-        )
+        self.object_handler
+            .objects
+            .get(&other.object_id)
+            .map_or_else(
+                || {
+                    error!("missing object_id in objects: {:?}", other.object_id);
+                    Transform::default()
+                },
+                TreeSceneObject::transform,
+            )
     }
 
     /// Returns a mutable reference to this object's local transform.
@@ -2425,7 +2448,7 @@ impl ObjectContext<'_> {
     ///
     /// Returns a dummy transform and logs an error if the object ID is not found.
     pub fn transform_mut(&self) -> RefMut<'_, Transform> {
-        self.object_tracker.get(self.this_id).map_or_else(
+        self.object_handler.objects.get(&self.this_id).map_or_else(
             || {
                 error!("missing object_id in objects: this={:?}", self.this_id);
                 self.dummy_transform.borrow_mut()
@@ -2688,8 +2711,8 @@ impl ObjectContext<'_> {
         other_id: ObjectId,
     ) -> Result<Option<Collision>> {
         let mut other = self
-            .object_tracker
-            .get(other_id)
+            .object_handler.objects
+            .get(&other_id)
             .with_context(|| format!("ObjectContext::test_collision_inner(): missing ObjectId in `objects`: {other_id:?}"))?
             .downcast_mut::<GgInternalCollisionShape>()
             .unwrap();
@@ -2829,7 +2852,7 @@ impl ObjectContext<'_> {
         if parent_id.is_root() {
             None
         } else {
-            self.object_tracker.get(*parent_id).or_else(|| {
+            self.object_handler.objects.get(parent_id).or_else(|| {
                 error!("missing object_id in parents: {parent_id:?}");
                 None
             })

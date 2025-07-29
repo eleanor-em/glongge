@@ -836,20 +836,6 @@ pub trait GuiObject: SceneObject {
     fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> GuiCommand;
 }
 
-impl SceneObject for Box<dyn SceneObject> {
-    fn as_any(&self) -> &dyn Any {
-        self.as_ref().as_any()
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self.as_mut().as_any_mut()
-    }
-
-    fn gg_type_name(&self) -> String {
-        self.as_ref().gg_type_name()
-    }
-}
-
 impl<T> From<Box<T>> for Box<dyn SceneObject>
 where
     T: SceneObject,

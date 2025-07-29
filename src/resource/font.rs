@@ -831,6 +831,8 @@ pub struct Label {
 
     depth: VertexDepth,
     blend_col: Colour,
+
+    nickname: Option<String>,
 }
 
 impl Label {
@@ -846,6 +848,7 @@ impl Label {
             last_render_settings: None,
             depth: VertexDepth::default(),
             blend_col: Colour::white(),
+            nickname: None,
         }
     }
 
@@ -855,6 +858,9 @@ impl Label {
 
     pub fn set_text(&mut self, text: impl AsRef<str>) {
         self.text_to_set = Some(text.as_ref().to_string());
+    }
+    pub fn set_nickname(&mut self, nickname: impl AsRef<str>) {
+        self.nickname = Some(nickname.as_ref().to_string());
     }
 
     pub fn set_depth(&mut self, depth: VertexDepth) {
@@ -891,7 +897,10 @@ impl Label {
                 .layout(&text, self.render_settings.clone())
                 .render_to_sprite(ctx.object_mut())
             {
-                Ok(next_sprite) => {
+                Ok(mut next_sprite) => {
+                    if let Some(nickname) = self.nickname.as_ref() {
+                        next_sprite.set_name(format!("{nickname}Sprite"));
+                    }
                     self.next_sprite = Some(next_sprite.with_hidden());
                     self.last_render_settings = Some(self.render_settings.clone());
                 }

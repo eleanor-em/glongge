@@ -154,6 +154,9 @@ impl GgInternalSprite {
             self.state = SpriteState::ShouldUpdate;
         }
     }
+    pub fn set_name(&mut self, name: impl AsRef<str>) {
+        self.name = name.as_ref().to_string();
+    }
 
     pub fn max_extent(&self) -> Vec2 {
         self.areas
@@ -472,6 +475,9 @@ impl Sprite {
         BoxCollider::from_aa_extent(self)
     }
 
+    pub fn set_name(&mut self, name: impl AsRef<str>) {
+        self.inner_unwrap().set_name(name);
+    }
     pub fn set_depth(&mut self, depth: VertexDepth) {
         self.inner_unwrap().set_depth(depth);
     }

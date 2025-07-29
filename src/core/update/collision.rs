@@ -66,13 +66,15 @@ impl CollisionHandler {
             possible_collisions: BTreeSet::new(),
         }
     }
-    pub(crate) fn add_objects<'a, I>(&'a mut self, added_objects: I)
-    where
-        I: Iterator<Item = &'a TreeSceneObject>,
-    {
+    pub(crate) fn add_objects(&mut self, added_objects: &[TreeSceneObject]) {
+        if added_objects.is_empty() {
+            // Performance: nothing to do.
+            return;
+        }
         let mut new_object_ids_by_emitting_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         let mut new_object_ids_by_listening_tag = BTreeMap::<&'static str, Vec<ObjectId>>::new();
         for obj in added_objects
+            .iter()
             .filter(|obj| obj.scene_object.type_id == TypeId::of::<GgInternalCollisionShape>())
         {
             let id = obj.object_id();
@@ -134,6 +136,10 @@ impl CollisionHandler {
         }
     }
     pub(crate) fn remove_objects(&mut self, removed_ids: &BTreeSet<ObjectId>) {
+        if removed_ids.is_empty() {
+            // Performance: nothing to do.
+            return;
+        }
         for ids in self
             .object_ids_by_emitting_tag
             .values_mut()

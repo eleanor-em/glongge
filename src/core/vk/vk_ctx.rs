@@ -319,7 +319,7 @@ impl VulkanoContext {
 // TODO: more flexible approach here.
 fn instance_extensions(event_loop: &ActiveEventLoop) -> Result<InstanceExtensions> {
     let mut extensions = Surface::required_extensions(&event_loop)?;
-    extensions.ext_debug_utils = true;
+    // extensions.ext_debug_utils = true;
     // Required to query for PresentMode::Mailbox support:
     extensions.ext_surface_maintenance1 = true;
     Ok(extensions)
