@@ -250,12 +250,10 @@ impl WindowEventHandlerInner {
             .map_err(gg_err::CatchOutOfDate::from)?;
 
         self.render_stats.start();
-        if self.gui_ctx.is_ever_enabled() {
-            self.render_stats.update_gui.start();
-            self.update_gui();
-            self.render_stats.update_gui.stop();
-            self.vk_ctx.perf_stats().lap("update_gui()");
-        }
+        self.render_stats.update_gui.start();
+        self.update_gui();
+        self.render_stats.update_gui.stop();
+        self.vk_ctx.perf_stats().lap("update_gui()");
 
         self.render_stats.execute.start();
         // TODO: add more stuff to resource_map instead of recreating it all the time. From Marc:

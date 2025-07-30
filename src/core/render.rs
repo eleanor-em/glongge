@@ -309,26 +309,25 @@ impl RenderHandler {
         input: &Arc<Mutex<InputHandler>>,
         last_render_stats: Option<&RenderPerfStats>,
     ) {
+        let egui_input = platform.take_egui_input(&self.window.inner);
+        {
+            let mut input = input.lock().unwrap();
+            input.set_viewport(self.get_viewport());
+            input.update_mouse(&ctx.inner);
+        }
         if !ctx.is_ever_enabled() {
             return;
         }
-        let full_output = ctx
-            .inner
-            .run(platform.take_egui_input(&self.window.inner), |ctx| {
-                {
-                    let mut input = input.lock().unwrap();
-                    input.set_viewport(self.get_viewport());
-                    input.update_mouse(ctx);
-                }
-                let gui_commands = {
-                    let mut channel = self.render_data_channel.lock().unwrap();
-                    channel.last_render_stats = last_render_stats.cloned();
-                    channel.gui_commands.drain(..).collect_vec()
-                };
-                for cmd in gui_commands {
-                    cmd(ctx);
-                }
-            });
+        let full_output = ctx.inner.run(egui_input, |ctx| {
+            let gui_commands = {
+                let mut channel = self.render_data_channel.lock().unwrap();
+                channel.last_render_stats = last_render_stats.cloned();
+                channel.gui_commands.drain(..).collect_vec()
+            };
+            for cmd in gui_commands {
+                cmd(ctx);
+            }
+        });
         platform.handle_platform_output(&self.window.inner, full_output.platform_output.clone());
         self.last_full_output.lock().replace(full_output);
     }
