@@ -311,7 +311,7 @@ impl GuiObject for GgInternalSprite {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Sprite {
     pub(crate) inner: Option<TreeSceneObject>,
 }

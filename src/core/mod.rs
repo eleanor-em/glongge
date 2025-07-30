@@ -119,7 +119,7 @@ impl TreeSceneObject {
     pub fn gg_is<T: SceneObject>(&self) -> bool {
         self.scene_object.type_id == TypeId::of::<T>()
     }
-    pub fn object_id(&self) -> ObjectId {
+    pub(crate) fn object_id(&self) -> ObjectId {
         self.object_id
     }
     /// NOTE: Borrows!
@@ -159,6 +159,14 @@ impl TreeSceneObject {
         self.scene_object.wrapped.borrow_mut()
     }
 }
+
+impl PartialEq for TreeSceneObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.object_id == other.object_id
+    }
+}
+
+impl Eq for TreeSceneObject {}
 
 impl Debug for TreeSceneObject {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -226,7 +234,7 @@ impl<T: SceneObject> TreeObjectOfType<T> {
         self.inner.as_ref().unwrap()
     }
 
-    pub fn object_id(&self) -> ObjectId {
+    pub(crate) fn object_id(&self) -> ObjectId {
         self.inner.as_ref().unwrap().object_id()
     }
     /// NOTE: Borrows!
