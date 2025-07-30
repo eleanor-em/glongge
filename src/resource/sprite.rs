@@ -495,6 +495,9 @@ impl Sprite {
     pub fn set_centre(&self, centre: Vec2) {
         self.inner.as_ref().unwrap().transform_mut().centre = centre;
     }
+    pub fn set_rotation(&self, rotation: f32) {
+        self.inner.as_ref().unwrap().transform_mut().rotation = rotation;
+    }
 
     pub(crate) fn inner_unwrap(&self) -> RefMut<'_, GgInternalSprite> {
         self.inner

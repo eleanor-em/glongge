@@ -448,6 +448,12 @@ impl Vec2 {
     pub fn angle_radians(&self, other: Vec2) -> f32 {
         self.normed().dot(other.normed()).acos()
     }
+    #[must_use]
+    pub fn angle_radians_clockwise(&self, other: Vec2) -> f32 {
+        let u = self.normed();
+        let v = other.normed();
+        f32::atan2(-u.cross(v), u.dot(v))
+    }
 
     /// Projects this vector onto the given axis.
     ///
