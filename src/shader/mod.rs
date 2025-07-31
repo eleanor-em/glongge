@@ -154,6 +154,8 @@ pub trait Shader: Send {
         virtual_swapchain_id: Id<Swapchain>,
         textures: &[Id<Image>],
     ) -> NodeId;
+
+    fn should_build_task_graph(&self) -> bool;
 }
 
 #[derive(Clone)]
@@ -163,6 +165,7 @@ struct CachedVertexBuffer<T: Default + VkVertex + Copy> {
     next_vertex_idx: usize,
     vertex_count: usize,
     num_vertex_sets: usize,
+    dirty: bool,
     phantom_data: PhantomData<T>,
 }
 
@@ -179,6 +182,7 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             next_vertex_idx: 0,
             vertex_count: 0,
             num_vertex_sets,
+            dirty: true,
             phantom_data: PhantomData,
         };
         info!("created vertex buffer: {} KiB", rv.size_in_bytes() / 1024);
@@ -216,7 +220,8 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             );
         }
         // Just double the size.
-        self.inner = Self::create_vertex_buffer(&self.ctx, (self.len() * 2) as DeviceSize)?;
+        self.inner = Self::create_vertex_buffer(&self.ctx, (size * 2) as DeviceSize)?;
+        self.dirty = true;
         Ok(())
     }
 
@@ -228,6 +233,9 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
             // Reallocate if needed:
             while self.next_vertex_idx + vertices.len() > self.len() {
                 self.realloc()?;
+            }
+            if self.dirty {
+                return Ok(());
             }
             let start = (self.next_vertex_idx * size_of::<T>()) as DeviceSize;
             let end = ((self.next_vertex_idx + vertices.len()) * size_of::<T>()) as DeviceSize;
@@ -562,6 +570,7 @@ impl Shader for SpriteShader {
         virtual_swapchain_id: Id<Swapchain>,
         textures: &[Id<Image>],
     ) -> NodeId {
+        self.vertex_buffer.lock().dirty = false;
         self.virtual_swapchain_id = Some(virtual_swapchain_id);
         let mut node = task_graph.create_task_node(
             self.name_concrete().0,
@@ -587,8 +596,10 @@ impl Shader for SpriteShader {
         node.buffer_access(self.materials, AccessTypes::VERTEX_ATTRIBUTE_READ);
         node.build()
     }
+    fn should_build_task_graph(&self) -> bool {
+        self.vertex_buffer.lock().dirty
+    }
 }
-
 impl Task for SpriteShader {
     type World = VulkanoContext;
 
@@ -786,6 +797,7 @@ impl Shader for WireframeShader {
         virtual_swapchain_id: Id<Swapchain>,
         _textures: &[Id<Image>],
     ) -> NodeId {
+        self.vertex_buffer.lock().dirty = false;
         self.virtual_swapchain_id = Some(virtual_swapchain_id);
         let mut node = task_graph.create_task_node(
             self.name_concrete().0,
@@ -802,6 +814,10 @@ impl Shader for WireframeShader {
             AccessTypes::VERTEX_ATTRIBUTE_READ,
         );
         node.build()
+    }
+
+    fn should_build_task_graph(&self) -> bool {
+        self.vertex_buffer.lock().dirty
     }
 }
 

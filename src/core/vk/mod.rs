@@ -36,6 +36,7 @@ pub mod vk_ctx;
 #[derive(Clone)]
 pub(crate) struct GgWindow {
     pub(crate) inner: Arc<Window>,
+    refresh_time: f32,
 }
 
 impl GgWindow {
@@ -50,11 +51,28 @@ impl GgWindow {
             f64::from(size.y),
         )));
         let window = Arc::new(event_loop.create_window(window_attrs)?);
-        Ok(Self { inner: window })
+        let refresh_time = window
+            .current_monitor()
+            .and_then(|m| m.refresh_rate_millihertz())
+            .map_or_else(
+                || {
+                    warn!("failed to determine refresh rate, assuming 60 Hz");
+                    1_000.0 / 60.0
+                },
+                |r| {
+                    let refresh_time = 1_000_000.0 / r as f32;
+                    info!("refresh every: {refresh_time:.2} ms");
+                    refresh_time
+                },
+            );
+        check_gt!(refresh_time, 1.0);
+        check_lt!(refresh_time, 1_000.0 / 30.0);
+        Ok(Self { inner: window, refresh_time })
     }
 
     pub(crate) fn create_default_viewport(&self) -> AdjustedViewport {
         AdjustedViewport {
+            window: self.clone(),
             inner: Viewport {
                 offset: [0.0, 0.0],
                 extent: self.inner_size().into(),
@@ -74,8 +92,9 @@ impl GgWindow {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct AdjustedViewport {
+    window: GgWindow,
     inner: Viewport,
     scale_factor: f32,
     global_scale_factor: f32,
@@ -83,7 +102,18 @@ pub(crate) struct AdjustedViewport {
 }
 
 impl AdjustedViewport {
+    pub(crate) fn new(window: &GgWindow) -> Self {
+        Self {
+            window: window.clone(),
+            inner: Viewport::default(),
+            scale_factor: 0.0,
+            global_scale_factor: 0.0,
+            translation: Vec2::zero(),
+        }
+    }
+
     pub(crate) fn update_from_window(&mut self, window: &GgWindow) {
+        self.window = window.clone();
         self.inner.extent = window.inner_size().into();
         self.scale_factor = window.scale_factor() * self.global_scale_factor;
         // TODO: verbose_every_seconds!
@@ -121,6 +151,9 @@ impl AdjustedViewport {
     }
     pub(crate) fn total_scale_factor(&self) -> f32 {
         self.scale_factor
+    }
+    pub(crate) fn refresh_time(&self) -> f32 {
+        self.window.refresh_time
     }
 
     pub(crate) fn inner(&self) -> Viewport {
@@ -550,23 +583,6 @@ pub(crate) struct RenderPerfStats {
 
 impl RenderPerfStats {
     fn new(window: &GgWindow) -> Self {
-        let refresh_time = window
-            .inner
-            .current_monitor()
-            .and_then(|m| m.refresh_rate_millihertz())
-            .map_or_else(
-                || {
-                    warn!("failed to determine refresh rate, assuming 60 Hz");
-                    1_000.0 / 60.0
-                },
-                |r| {
-                    let refresh_time = 1_000_000.0 / r as f32;
-                    info!("refresh every: {refresh_time:.2} ms");
-                    refresh_time
-                },
-            );
-        check_gt!(refresh_time, 1.0);
-        check_lt!(refresh_time, 1_000.0 / 30.0);
         Self {
             update_gui: TimeIt::new("update_gui"),
             execute: TimeIt::new("execute"),
@@ -579,7 +595,7 @@ impl RenderPerfStats {
             last_step: Instant::now(),
             last_report: Instant::now(),
             totals_ms: Vec::with_capacity(10),
-            refresh_time,
+            refresh_time: window.refresh_time,
             last_perf_stats: None,
         }
     }

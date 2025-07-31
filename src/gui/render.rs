@@ -687,7 +687,7 @@ impl GuiRenderer {
         self.draw_buffer.lock().is_dirty = false;
         node.build()
     }
-    pub(crate) fn is_dirty(&self) -> bool {
+    pub(crate) fn should_build_task_graph(&self) -> bool {
         *self.texture_images_dirty.lock() || self.draw_buffer.lock().is_dirty
     }
 }
@@ -704,7 +704,7 @@ impl GuiRenderer {
     ) -> Result<()> {
         let texture_desc_sets = self.texture_desc_sets.lock();
         let Some((desc_set, _)) = texture_desc_sets.get(&mesh.texture_id) else {
-            if self.is_dirty() {
+            if self.should_build_task_graph() {
                 // Expected case; textures not yet uploaded.
                 return Ok(());
             } else {

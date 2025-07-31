@@ -272,6 +272,11 @@ impl Vec2 {
         Mat3x3::rotation(radians) * *self
     }
 
+    #[must_use]
+    pub fn rotated_to(&self, basis: Vec2) -> Vec2 {
+        self.rotated(basis.angle_radians_clockwise(Vec2::up()))
+    }
+
     /// Reflects the vector about a normal vector.
     ///
     /// # Parameters

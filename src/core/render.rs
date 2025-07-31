@@ -199,11 +199,11 @@ impl UpdateSync {
     }
 
     pub(crate) fn try_render_done(&self) -> bool {
-        SYNC_UPDATE_TO_RENDER
-            && self
+        !SYNC_UPDATE_TO_RENDER
+            || self
                 .render_done
                 .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
-                .is_err()
+                .is_ok()
     }
 
     pub(crate) fn wait_update_done(&self) {
@@ -225,7 +225,7 @@ pub(crate) struct RenderHandler {
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     update_sync: UpdateSync,
     pub(crate) resource_handler: ResourceHandler,
-    window: GgWindow,
+    pub(crate) window: GgWindow,
     viewport: UniqueShared<AdjustedViewport>,
     shaders: Vec<UniqueShared<Box<dyn Shader>>>,
     gui_shader: GuiRenderer,
@@ -419,7 +419,8 @@ impl RenderHandler {
     }
 
     pub(crate) fn should_build_task_graph(&self) -> bool {
-        self.gui_shader.is_dirty()
+        self.gui_shader.should_build_task_graph() ||
+            self.shaders.iter().any(|s| s.lock().should_build_task_graph())
     }
 }
 

@@ -510,7 +510,7 @@ pub(crate) struct UpdateHandler {
     fixed_frame_counter: usize,
 
     is_running: bool,
-    fixed_update_us: u128,
+    fixed_update_ns: u128,
 }
 
 impl UpdateHandler {
@@ -543,7 +543,7 @@ impl UpdateHandler {
             scene_name,
             scene_data,
             gui_ctx: render_handler.gui_ctx.clone(),
-            debug_gui: DebugGui::new()?,
+            debug_gui: DebugGui::new(&render_handler.window)?,
             gui_cmd: None,
             perf_stats: UpdatePerfStats::new(),
             last_render_perf_stats: None,
@@ -553,7 +553,7 @@ impl UpdateHandler {
             frame_counter: 0,
             fixed_frame_counter: 0,
             is_running: true,
-            fixed_update_us: 0,
+            fixed_update_ns: 0,
         };
 
         let input_handler = rv.input_handler.lock().unwrap().clone();
@@ -576,14 +576,26 @@ impl UpdateHandler {
     }
 
     pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
-        let fixed_update_only = self.update_sync.try_render_done();
+        let fixed_update_only = !self.update_sync.try_render_done();
+        let expected_delta = Duration::from_micros((self.viewport.refresh_time() * 1000.0).round() as u64);
+        let elapsed_ns = self
+            .last_update_start
+            .map_or(expected_delta, |i| i.elapsed())
+            .as_nanos();
+        if fixed_update_only && elapsed_ns < UPDATE_THROTTLE_NS {
+            // Throttle spinning a little bit.
+            return None;
+        }
         if !self.is_running {
             return None;
         }
+
+        // Do an update now.
+        self.last_update_start = Some(Instant::now());
         if !fixed_update_only {
             self.delta = self
                 .last_delta_set
-                .map_or(Duration::from_secs(0), |i| i.elapsed());
+                .map_or(expected_delta, |i| i.elapsed());
             self.last_delta_set = Some(Instant::now());
 
             if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
@@ -594,11 +606,8 @@ impl UpdateHandler {
         }
 
         // Count the number of fixed updates to perform.
-        self.fixed_update_us += self
-            .last_update_start
-            .map_or(Duration::from_secs(0), |i| i.elapsed())
-            .as_micros();
-        let fixed_updates = self.fixed_update_us / FIXED_UPDATE_INTERVAL_US;
+        self.fixed_update_ns += elapsed_ns;
+        let fixed_updates = self.fixed_update_ns / (FIXED_UPDATE_INTERVAL_US * 1_000);
         if fixed_updates > 0 {
             let update_span = span!(
                 tracing::Level::INFO,
@@ -607,27 +616,26 @@ impl UpdateHandler {
                 ffc = self.fixed_frame_counter
             );
             let _enter = update_span.enter();
-            self.fixed_update_us -= FIXED_UPDATE_INTERVAL_US;
-            if self.fixed_update_us >= FIXED_UPDATE_WARN_DELAY_US {
+            self.fixed_update_ns -= FIXED_UPDATE_INTERVAL_US * 1_000;
+            if self.fixed_update_ns >= FIXED_UPDATE_WARN_DELAY_US * 1_000 {
                 warn!(
                     "fixed update behind by {:.1} ms",
-                    gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US)
-                        / 1000.0
+                    gg_float::from_u128_or_inf(self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000))
+                        / 1_000_000.0
                 );
             }
-            if self.fixed_update_us >= FIXED_UPDATE_TIMEOUT_US {
+            if self.fixed_update_ns >= (FIXED_UPDATE_TIMEOUT_US * 1_000) {
                 error!(
                     "fixed update behind by {:.1} ms, giving up",
-                    gg_float::from_u128_or_inf(self.fixed_update_us - FIXED_UPDATE_WARN_DELAY_US)
-                        / 1000.0
+                    gg_float::from_u128_or_inf(self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000))
+                        / 1_000_000.0
                 );
-                self.fixed_update_us = 0;
+                self.fixed_update_ns = 0;
             }
         }
 
         // Perform the update.
         let input_handler = self.input_handler.lock().unwrap().clone();
-        self.last_update_start = Some(Instant::now());
         let object_tracker = self.perform_update(fixed_update_only, &input_handler, fixed_updates);
         self.complete_update(fixed_update_only, &input_handler, object_tracker);
 
@@ -1743,8 +1751,6 @@ pub struct FixedUpdateContext<'a> {
     scene: SceneContext<'a>,
     object: ObjectContext<'a>,
     viewport: ViewportContext<'a>,
-    frame_counter: usize,
-    fixed_frame_counter: usize,
 }
 
 impl<'a> FixedUpdateContext<'a> {
@@ -1778,8 +1784,6 @@ impl<'a> FixedUpdateContext<'a> {
                 viewport: &mut caller.viewport,
                 clear_col: &mut caller.clear_col,
             },
-            frame_counter: caller.frame_counter,
-            fixed_frame_counter: caller.fixed_frame_counter,
         })
     }
 
@@ -1810,13 +1814,6 @@ impl<'a> FixedUpdateContext<'a> {
     }
     pub fn transform_mut(&self) -> RefMut<'_, Transform> {
         self.object.transform_mut()
-    }
-
-    pub fn frame_counter(&self) -> usize {
-        self.frame_counter
-    }
-    pub fn fixed_frame_counter(&self) -> usize {
-        self.fixed_frame_counter
     }
 }
 

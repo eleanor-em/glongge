@@ -296,20 +296,22 @@ impl Player {
             .test_collision_along(Vec2::down(), 1.0, vec![BLOCK_COLLISION_TAG])
             .is_none()
         {
-            self.coyote_crt.get_or_insert_with(|| {
-                ctx.scene_mut().start_coroutine_after(
-                    |this, _ctx, _last_state| {
-                        let mut this = this.downcast_mut::<Self>().unwrap();
-                        if !this.has_control() {
-                            return CoroutineResponse::Complete;
-                        }
-                        this.state = PlayerState::Falling;
-                        this.coyote_crt = None;
-                        CoroutineResponse::Complete
-                    },
-                    Duration::from_millis(60),
-                )
-            });
+            if self.state != PlayerState::Falling {
+                self.coyote_crt.get_or_insert_with(|| {
+                    ctx.scene_mut().start_coroutine_after(
+                        |this, _ctx, _last_state| {
+                            let mut this = this.downcast_mut::<Self>().unwrap();
+                            if !this.has_control() {
+                                return CoroutineResponse::Complete;
+                            }
+                            this.state = PlayerState::Falling;
+                            this.coyote_crt = None;
+                            CoroutineResponse::Complete
+                        },
+                        Duration::from_millis(60),
+                    )
+                });
+            }
         } else if let Some(crt) = self.coyote_crt.take() {
             ctx.scene_mut().cancel_coroutine(crt);
         }
@@ -448,6 +450,7 @@ impl Player {
         self.jump_sound.play_shifted(0.03);
         self.state = PlayerState::Falling;
         self.v_speed = self.initial_vspeed();
+        self.v_accel = self.gravity();
     }
 
     fn start_die(&mut self, ctx: &mut UpdateContext) {

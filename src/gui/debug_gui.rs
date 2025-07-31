@@ -3,7 +3,7 @@ use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiCommand};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
-use crate::core::vk::{AdjustedViewport, RenderPerfStats};
+use crate::core::vk::{AdjustedViewport, GgWindow, RenderPerfStats};
 use crate::core::{ObjectId, TreeSceneObject};
 use crate::gui::{GuiUi, TransformCell};
 use crate::util::{NonemptyVec, ValueChannel, ValueChannelSender, gg_err, gg_float, gg_iter};
@@ -1155,14 +1155,14 @@ pub(crate) struct DebugGui {
 }
 
 impl DebugGui {
-    pub fn new() -> Result<Self> {
+    pub fn new(window: &GgWindow) -> Result<Self> {
         Ok(Self {
             enabled: false,
             object_tree: GuiObjectTree::new(),
             object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
             scene_control: GuiSceneControl::new(),
-            last_viewport: AdjustedViewport::default(),
+            last_viewport: AdjustedViewport::new(window),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
                 .inner_margin(egui::Margin::same(6)),

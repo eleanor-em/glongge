@@ -45,7 +45,7 @@ pub struct InputHandler {
     middle_mouse: MouseButtonState,
     queued_events: Vec<InputEvent>,
     mouse_pos: Option<Vec2>,
-    viewport: AdjustedViewport,
+    viewport: Option<AdjustedViewport>,
     mod_shift: bool,
     mod_alt: bool,
     mod_ctrl: bool,
@@ -61,7 +61,7 @@ impl InputHandler {
             middle_mouse: MouseButtonState::default(),
             queued_events: Vec::new(),
             mouse_pos: None,
-            viewport: AdjustedViewport::default(),
+            viewport: None,
             mod_shift: false,
             mod_alt: false,
             mod_ctrl: false,
@@ -102,7 +102,7 @@ impl InputHandler {
         if self.down(KeyCode::ArrowDown) {
             dir += Vec2::down();
         }
-        dir
+        dir.normed()
     }
 
     pub fn mouse_pressed(&self, button: MouseButton) -> bool {
@@ -205,11 +205,11 @@ impl InputHandler {
         });
     }
     pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) {
-        self.viewport = viewport;
+        self.viewport = Some(viewport);
     }
     pub fn screen_mouse_pos(&self) -> Option<Vec2> {
         self.mouse_pos
-            .map(|p| p / self.viewport.global_scale_factor())
+            .and_then(|p| self.viewport.as_ref().map(|v| p / v.global_scale_factor()))
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {

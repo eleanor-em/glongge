@@ -48,6 +48,11 @@ impl GgInternalSpline {
     pub fn push_front(&mut self, point: Vec2) {
         self.control_points.insert(0, point);
     }
+    pub fn replace_last(&mut self, point: Vec2) {
+        if let Some(existing) = self.control_points.last_mut() {
+            *existing = point;
+        }
+    }
 
     pub fn get(&self, i: usize) -> Option<Vec2> {
         self.control_points.get(i).copied()
