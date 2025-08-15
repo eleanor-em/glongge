@@ -496,7 +496,7 @@ impl TextureHandler {
         })?;
         let mut inner = self.inner.lock();
         let texture = inner
-            .create_texture(&self.ctx, filename.to_string(), loaded)
+            .create_texture(&self.ctx, filename.clone(), loaded)
             .with_context(|| {
                 format!("TextureHandler::wait_load_file(): creating texture: {filename}")
             })?;
@@ -576,7 +576,7 @@ impl TextureHandler {
         let mut inner = self.inner.lock();
         let textures = results
             .into_iter()
-            .map(|loaded| inner.create_texture(&self.ctx, filename.to_string(), loaded))
+            .map(|loaded| inner.create_texture(&self.ctx, filename.clone(), loaded))
             .collect::<Result<Vec<_>>>()?;
         inner.loaded_files.insert(filename, textures.clone());
         Ok(textures)

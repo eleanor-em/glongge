@@ -67,7 +67,10 @@ impl GgWindow {
             );
         check_gt!(refresh_time, 1.0);
         check_lt!(refresh_time, 1_000.0 / 30.0);
-        Ok(Self { inner: window, refresh_time })
+        Ok(Self {
+            inner: window,
+            refresh_time,
+        })
     }
 
     pub(crate) fn create_default_viewport(&self) -> AdjustedViewport {

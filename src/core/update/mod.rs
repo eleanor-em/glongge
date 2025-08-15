@@ -577,7 +577,8 @@ impl UpdateHandler {
 
     pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
         let fixed_update_only = !self.update_sync.try_render_done();
-        let expected_delta = Duration::from_micros((self.viewport.refresh_time() * 1000.0).round() as u64);
+        let expected_delta =
+            Duration::from_micros((self.viewport.refresh_time() * 1000.0).round() as u64);
         let elapsed_ns = self
             .last_update_start
             .map_or(expected_delta, |i| i.elapsed())
@@ -593,9 +594,7 @@ impl UpdateHandler {
         // Do an update now.
         self.last_update_start = Some(Instant::now());
         if !fixed_update_only {
-            self.delta = self
-                .last_delta_set
-                .map_or(expected_delta, |i| i.elapsed());
+            self.delta = self.last_delta_set.map_or(expected_delta, |i| i.elapsed());
             self.last_delta_set = Some(Instant::now());
 
             if self.perf_stats.totals_s.len() == self.perf_stats.totals_s.capacity() {
@@ -620,15 +619,17 @@ impl UpdateHandler {
             if self.fixed_update_ns >= FIXED_UPDATE_WARN_DELAY_US * 1_000 {
                 warn!(
                     "fixed update behind by {:.1} ms",
-                    gg_float::from_u128_or_inf(self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000))
-                        / 1_000_000.0
+                    gg_float::from_u128_or_inf(
+                        self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000)
+                    ) / 1_000_000.0
                 );
             }
             if self.fixed_update_ns >= (FIXED_UPDATE_TIMEOUT_US * 1_000) {
                 error!(
                     "fixed update behind by {:.1} ms, giving up",
-                    gg_float::from_u128_or_inf(self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000))
-                        / 1_000_000.0
+                    gg_float::from_u128_or_inf(
+                        self.fixed_update_ns - (FIXED_UPDATE_WARN_DELAY_US * 1_000)
+                    ) / 1_000_000.0
                 );
                 self.fixed_update_ns = 0;
             }

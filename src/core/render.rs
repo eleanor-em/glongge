@@ -419,8 +419,11 @@ impl RenderHandler {
     }
 
     pub(crate) fn should_build_task_graph(&self) -> bool {
-        self.gui_shader.should_build_task_graph() ||
-            self.shaders.iter().any(|s| s.lock().should_build_task_graph())
+        self.gui_shader.should_build_task_graph()
+            || self
+                .shaders
+                .iter()
+                .any(|s| s.lock().should_build_task_graph())
     }
 }
 
