@@ -173,6 +173,18 @@ impl GgInternalSprite {
     pub fn textures_ready(&self) -> bool {
         !self.render_item.is_empty() && self.textures.iter().all(Texture::is_ready)
     }
+
+    pub fn frame(&self) -> usize {
+        let elapsed_ms = self.elapsed_us / 1000;
+        let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
+        let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
+        self.frame_time_ms
+            .iter()
+            .copied()
+            .cumsum()
+            .filter(|&ms| cycle_elapsed_ms >= u128::from(ms))
+            .count()
+    }
 }
 
 #[partially_derive_scene_object]
@@ -271,16 +283,7 @@ impl RenderableObject for GgInternalSprite {
     }
     fn shader_execs(&self) -> Vec<ShaderExec> {
         check_eq!(self.state, SpriteState::Show);
-        let elapsed_ms = self.elapsed_us / 1000;
-        let total_animation_time_ms = u128::from(self.frame_time_ms.iter().sum::<u32>());
-        let cycle_elapsed_ms = elapsed_ms % total_animation_time_ms;
-        let frame = self
-            .frame_time_ms
-            .iter()
-            .copied()
-            .cumsum()
-            .filter(|&ms| cycle_elapsed_ms >= u128::from(ms))
-            .count();
+        let frame = self.frame();
         check_lt!(frame, self.material_indices.len());
         let material_index = self.material_indices[frame];
         let material_id = self.materials[material_index];
@@ -514,6 +517,10 @@ impl Sprite {
 
     pub fn textures_ready(&self) -> bool {
         self.inner_unwrap().textures_ready()
+    }
+
+    pub fn frame(&self) -> usize {
+        self.inner_unwrap().frame()
     }
 }
 
