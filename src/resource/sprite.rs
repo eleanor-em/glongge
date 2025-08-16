@@ -454,20 +454,25 @@ impl Sprite {
         self.translate(by);
         self
     }
+    #[must_use]
+    pub fn with_paused(self) -> Self {
+        self.pause();
+        self
+    }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&self) {
         self.inner_unwrap().elapsed_us = 0;
     }
-    pub fn pause(&mut self) {
+    pub fn pause(&self) {
         self.inner_unwrap().paused = true;
     }
-    pub fn play(&mut self) {
+    pub fn play(&self) {
         self.inner_unwrap().paused = false;
     }
-    pub fn hide(&mut self) {
+    pub fn hide(&self) {
         self.inner_unwrap().state = SpriteState::ShouldHide;
     }
-    pub fn show(&mut self) {
+    pub fn show(&self) {
         self.inner_unwrap().state = SpriteState::ShouldShow;
     }
 
@@ -475,10 +480,10 @@ impl Sprite {
         BoxCollider::from_aa_extent(self)
     }
 
-    pub fn set_name(&mut self, name: impl AsRef<str>) {
+    pub fn set_name(&self, name: impl AsRef<str>) {
         self.inner_unwrap().set_name(name);
     }
-    pub fn set_depth(&mut self, depth: VertexDepth) {
+    pub fn set_depth(&self, depth: VertexDepth) {
         self.inner_unwrap().set_depth(depth);
     }
 

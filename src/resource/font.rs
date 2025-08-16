@@ -897,7 +897,7 @@ impl Label {
                 .layout(&text, self.render_settings.clone())
                 .render_to_sprite(ctx.object_mut())
             {
-                Ok(mut next_sprite) => {
+                Ok(next_sprite) => {
                     if let Some(nickname) = self.nickname.as_ref() {
                         next_sprite.set_name(format!("{nickname}Sprite"));
                     }
