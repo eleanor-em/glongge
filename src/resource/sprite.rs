@@ -113,7 +113,7 @@ impl GgInternalSprite {
             })
             .collect_vec();
         let frame_time_ms = vec![1000; frame_count];
-        let render_item = vertex::rectangle(Vec2::zero(), (tile_size / 2).into());
+        let render_item = vertex::rectangle(Vec2::zero(), tile_size.as_vec2() / 2.0);
         let material_indices = (0..areas.len()).collect_vec();
         let inner = Some(object_ctx.add_child(Self {
             textures,
