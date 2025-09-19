@@ -367,6 +367,18 @@ impl Sprite {
             Vec2i::zero(),
         )
     }
+    pub fn add_from_single_rect(
+        object_ctx: &mut ObjectContext,
+        texture: Texture,
+        rect: Rect,
+    ) -> Sprite {
+        Self::add_from_single_extent(
+            object_ctx,
+            texture,
+            rect.top_left().as_vec2int_lossy(),
+            rect.extent().as_vec2int_lossy(),
+        )
+    }
     pub fn add_from_single_coords(
         object_ctx: &mut ObjectContext,
         texture: Texture,
@@ -458,6 +470,11 @@ impl Sprite {
         self
     }
     #[must_use]
+    pub fn with_scaled(self, by: Vec2) -> Self {
+        self.scale(by);
+        self
+    }
+    #[must_use]
     pub fn with_paused(self) -> Self {
         self.pause();
         self
@@ -500,6 +517,16 @@ impl Sprite {
     pub fn translate(&self, by: Vec2) {
         self.inner.as_ref().unwrap().transform_mut().centre += by;
     }
+    pub fn scale(&self, by: Vec2) {
+        let new_scale = self
+            .inner
+            .as_ref()
+            .unwrap()
+            .transform_mut()
+            .scale
+            .component_wise(by);
+        self.inner.as_ref().unwrap().transform_mut().scale = new_scale;
+    }
     pub fn set_centre(&self, centre: Vec2) {
         self.inner.as_ref().unwrap().transform_mut().centre = centre;
     }
@@ -526,7 +553,8 @@ impl Sprite {
 
 impl AxisAlignedExtent for Sprite {
     fn extent(&self) -> Vec2 {
-        self.inner_unwrap().max_extent()
+        let scale = self.inner.as_ref().unwrap().transform_mut().scale;
+        self.inner_unwrap().max_extent().component_wise(scale)
     }
 
     fn centre(&self) -> Vec2 {

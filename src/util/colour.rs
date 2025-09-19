@@ -177,3 +177,40 @@ impl Mul for Colour {
         }
     }
 }
+
+pub mod gg_col {
+    use crate::core::prelude::*;
+    use std::collections::BTreeSet;
+
+    pub fn flood_fill(pixels: &[Vec<Colour>], start: Vec2i, tolerance: i32) -> BTreeSet<Vec2i> {
+        let mut rv = BTreeSet::new();
+        rv.insert(start);
+        let mut stack = vec![start];
+        while let Some(next) = stack.pop() {
+            for i in 0..=tolerance {
+                let i = i + 1;
+                let mut candidates = vec![
+                    next + i * Vec2i::right(),
+                    next + i * Vec2i::up(),
+                    next + i * Vec2i::left(),
+                    next + i * Vec2i::down(),
+                ];
+                if tolerance > 0 {
+                    candidates.push(next + Vec2i { x: i, y: i });
+                    candidates.push(next + Vec2i { x: i, y: -i });
+                    candidates.push(next + Vec2i { x: -i, y: i });
+                    candidates.push(next + Vec2i { x: -i, y: -i });
+                }
+                for candidate in candidates {
+                    if pixels[candidate.y as usize][candidate.x as usize].a > 0.0
+                        && !rv.contains(&candidate)
+                    {
+                        rv.insert(candidate);
+                        stack.push(candidate);
+                    }
+                }
+            }
+        }
+        rv
+    }
+}

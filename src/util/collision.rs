@@ -1460,19 +1460,14 @@ impl Collider for CompoundCollider {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum GenericCollider {
+    #[default]
     Null,
     Box(BoxCollider),
     OrientedBox(OrientedBoxCollider),
     Convex(ConvexCollider),
     Compound(CompoundCollider),
-}
-
-impl Default for GenericCollider {
-    fn default() -> Self {
-        Self::Null
-    }
 }
 
 impl AxisAlignedExtent for GenericCollider {

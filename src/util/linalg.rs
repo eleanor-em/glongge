@@ -700,6 +700,18 @@ impl Vec2 {
             self_len.total_cmp(&other_len)
         })
     }
+
+    pub fn min_component(&self) -> f32 {
+        self.x.min(self.y)
+    }
+
+    #[must_use]
+    pub fn round(&self) -> Vec2 {
+        Self {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
 }
 
 impl Zero for Vec2 {
@@ -1047,6 +1059,15 @@ impl Vec2i {
         check_lt!(self.x as u32, width);
         check_lt!(self.y as u32, height);
         (self.y as u32 * width + self.x as u32) as usize
+    }
+
+    #[must_use]
+    pub fn splat(value: i32) -> Self {
+        Self { x: value, y: value }
+    }
+
+    pub fn min_component(&self) -> i32 {
+        self.x.min(self.y)
     }
 }
 
@@ -1789,6 +1810,13 @@ impl Rect {
     #[must_use]
     pub fn with_centre(mut self, centre: Vec2) -> Rect {
         self.centre = centre;
+        self
+    }
+
+    #[must_use]
+    pub fn with_extent(mut self, extent: Vec2) -> Rect {
+        self.centre += extent / 2.0 - self.half_widths;
+        self.half_widths = extent / 2.0;
         self
     }
 }
