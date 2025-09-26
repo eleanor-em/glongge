@@ -305,6 +305,17 @@ impl<T: SceneObject> TryFrom<&TreeSceneObject> for TreeObjectOfType<T> {
     }
 }
 
+impl<T: SceneObject + AxisAlignedExtent> TreeObjectOfType<T> {
+    pub fn set_top_left(&self, top_left: Vec2) {
+        let new_centre = top_left + self.borrow().half_widths();
+        self.transform_mut().centre = new_centre;
+    }
+    pub fn set_bottom_right(&self, bottom_right: Vec2) {
+        let new_centre = bottom_right - self.borrow().half_widths();
+        self.transform_mut().centre = new_centre;
+    }
+}
+
 pub trait DowncastRef {
     /// Attempts to downcast a reference to a specific scene object type.
     /// Returns None if the type does not match.

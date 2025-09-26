@@ -175,6 +175,7 @@ fn parse_format_instruction_inner(
 fn parse_colour(start: usize, prefix: &[char], chars: &[char]) -> Option<Colour> {
     match chars.iter().collect::<String>().as_str() {
         "red" => Some(Colour::red()),
+        "white" => Some(Colour::white()),
         unknown => {
             if unknown.starts_with('#')
                 && unknown.len() == 7

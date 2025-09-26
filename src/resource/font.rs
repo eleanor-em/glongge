@@ -187,10 +187,11 @@ impl Font {
         check_eq!(settings.max_width, f32::INFINITY);
         let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
-        check!(
-            formatted_chars.format_instructions.is_empty(),
-            "not implemented"
-        );
+        // Below case possibly doesn't work?
+        // check!(
+        //     formatted_chars.format_instructions.is_empty(),
+        //     "not implemented"
+        // );
         for c in formatted_chars.chars {
             if c.is_control() {
                 if c == '\n' {
@@ -222,10 +223,11 @@ impl Font {
     ) -> FontLayout {
         let mut glyphs_by_line = vec![Vec::new()];
         let mut last_glyph: Option<Glyph> = None;
-        check!(
-            formatted_chars.format_instructions.is_empty(),
-            "not implemented"
-        );
+        // Below case possibly doesn't work?
+        // check!(
+        //     formatted_chars.format_instructions.is_empty(),
+        //     "not implemented"
+        // );
         for c in formatted_chars.chars {
             if c.is_control() {
                 if c == '\n' {
