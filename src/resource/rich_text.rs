@@ -20,6 +20,13 @@ pub struct FormattedChars {
 }
 
 impl FormattedChars {
+    pub fn chars(&self) -> &[char] {
+        &self.chars
+    }
+    pub fn chars_vec(&self) -> Vec<char> {
+        self.chars.clone()
+    }
+
     pub fn unformatted(text: impl AsRef<str>) -> Self {
         Self {
             format_instructions: BTreeMap::new(),
