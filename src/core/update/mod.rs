@@ -2405,6 +2405,20 @@ impl ObjectContext<'_> {
         )
     }
 
+    pub fn this(&self) -> &TreeSceneObject {
+        self.object_handler
+            .objects
+            .get(&self.this_id)
+            .expect("self.this_id should never be missing")
+    }
+    pub fn this_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
+        Some(
+            self.this()
+                .try_into()
+                .expect("should be guaranteed by TreeObjectOfType::of()"),
+        )
+    }
+
     /// Returns the local transform of this object relative to its parent.
     ///
     /// This transform represents the object's local position, rotation and scale,
