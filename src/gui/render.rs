@@ -149,7 +149,6 @@ fn image_size_bytes(delta: &egui::epaint::ImageDelta) -> u64 {
             // Always four bytes per pixel for sRGBA
             (c.width() * c.height() * 4) as u64
         }
-        egui::ImageData::Font(f) => (f.width() * f.height() * 4) as u64,
     }
 }
 
@@ -526,13 +525,6 @@ impl GuiRenderer {
                     "Mismatch between texture size and texel count"
                 );
                 let bytes = image.pixels.iter().flat_map(Color32::to_array);
-                writer
-                    .iter_mut()
-                    .zip(bytes)
-                    .for_each(|(into, from)| *into = from);
-            }
-            egui::ImageData::Font(image) => {
-                let bytes = image.srgba_pixels(None).flat_map(|color| color.to_array());
                 writer
                     .iter_mut()
                     .zip(bytes)
