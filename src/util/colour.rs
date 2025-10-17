@@ -2,7 +2,7 @@ use anyhow::Result;
 use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 use std::ops::Mul;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct Colour {
     pub r: f32,
     pub g: f32,

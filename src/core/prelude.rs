@@ -9,6 +9,8 @@ pub use egui;
 #[allow(unused_imports)]
 pub use tracing::{error, info, warn};
 
+pub use bincode;
+
 #[allow(unused_imports)]
 pub use crate::{
     core::{

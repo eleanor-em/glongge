@@ -2,7 +2,6 @@ use glongge::core::{
     prelude::*,
     scene::{Scene, SceneName},
 };
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub mod block;
@@ -46,7 +45,7 @@ const PIPE_COLLISION_TAG: &str = "PIPE";
 const PLAYER_COLLISION_TAG: &str = "PLAYER";
 const ENEMY_COLLISION_TAG: &str = "ENEMY";
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, bincode::Decode, bincode::Encode)]
 pub struct AliveEnemyMap {
     inner: BTreeMap<Vec2i, bool>,
 }
@@ -109,7 +108,7 @@ impl Scene for MarioOverworldScene {
     }
 
     fn initial_data(&self) -> Vec<u8> {
-        bincode::serialize(&AliveEnemyMap::default()).unwrap()
+        bincode::encode_to_vec(&AliveEnemyMap::default(), bincode::config::standard()).unwrap()
     }
 
     #[allow(clippy::too_many_lines)]

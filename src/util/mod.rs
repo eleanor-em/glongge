@@ -474,7 +474,7 @@ pub mod gg_float {
         if x.is_zero() { 0.0 } else { x.signum() }
     }
 
-    #[derive(Debug, Default, Clone, Copy)]
+    #[derive(Debug, Default, Clone, Copy, bincode::Encode, bincode::Decode)]
     pub struct FloatKey(pub f32);
     impl Hash for FloatKey {
         fn hash<H: Hasher>(&self, state: &mut H) {

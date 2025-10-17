@@ -35,7 +35,6 @@ use crate::{
     },
 };
 use collision::{Collision, CollisionHandler, CollisionNotification, CollisionResponse};
-use serde::{Serialize, de::DeserializeOwned};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{
@@ -1845,7 +1844,7 @@ impl<'a> FixedUpdateContext<'a> {
 /// ```
 pub struct SceneData<T>
 where
-    T: Default + Serialize + DeserializeOwned,
+    T: Default + bincode::Decode<()> + bincode::Encode,
 {
     raw: UniqueShared<Vec<u8>>,
     deserialized: T,
@@ -1854,7 +1853,7 @@ where
 
 impl<T> SceneData<T>
 where
-    T: Default + Serialize + DeserializeOwned,
+    T: Default + bincode::Decode<()> + bincode::Encode,
 {
     fn new(raw: UniqueShared<Vec<u8>>) -> Result<Self> {
         let deserialized = {
@@ -1862,7 +1861,7 @@ where
             if raw.is_empty() {
                 T::default()
             } else {
-                bincode::deserialize::<T>(&raw)?
+                bincode::decode_from_slice::<T, _>(&raw, bincode::config::standard())?.0
             }
         };
         Ok(Self {
@@ -1887,12 +1886,13 @@ where
 
 impl<T> Drop for SceneData<T>
 where
-    T: Default + Serialize + DeserializeOwned,
+    T: Default + bincode::Decode<()> + bincode::Encode,
 {
     fn drop(&mut self) {
         if self.modified {
             *self.raw.lock() =
-                bincode::serialize(&self.deserialized).expect("failed to serialize scene data");
+                bincode::encode_to_vec(&self.deserialized, bincode::config::standard())
+                    .expect("failed to serialize scene data");
         }
     }
 }
@@ -1924,7 +1924,7 @@ impl SceneContext<'_> {
     }
     pub fn data<T>(&mut self) -> SceneData<T>
     where
-        T: Default + Serialize + DeserializeOwned,
+        T: Default + bincode::Decode<()> + bincode::Encode,
     {
         SceneData::new(self.scene_data.clone())
             .expect("failed to ser/de scene_data, do the types match?")

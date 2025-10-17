@@ -354,7 +354,7 @@ impl<T: Polygonal> Polygonal for &T {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct OrientedBoxCollider {
     centre: Vec2,
     rotation: f32,
@@ -514,7 +514,7 @@ impl Collider for OrientedBoxCollider {
         ]
     }
 }
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
 pub struct BoxCollider {
     centre: Vec2,
     extent: Vec2,
@@ -669,7 +669,7 @@ impl Collider for BoxCollider {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
 pub struct BoxCollider3d {
     centre: Vec2,
     extent: Vec2,
@@ -747,7 +747,7 @@ impl BoxCollider3d {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct ConvexCollider {
     vertices: Vec<Vec2>,
     normals_cached: Vec<Vec2>,
@@ -913,7 +913,7 @@ impl Collider for ConvexCollider {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct CompoundCollider {
     inner: Vec<ConvexCollider>,
     override_normals: Vec<Vec2>,

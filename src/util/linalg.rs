@@ -5,7 +5,6 @@ use crate::util::gg_float;
 use crate::util::gg_float::GgFloat;
 use itertools::Product;
 use num_traits::{One, Zero};
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::iter::Sum;
@@ -63,7 +62,7 @@ use std::{
 ///
 /// Note: This ordering doesn't have a particular geometric meaning, it just provides a stable,
 /// deterministic ordering of vectors.
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, bincode::Encode, bincode::Decode)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
@@ -973,7 +972,17 @@ impl Neg for &Vec2 {
 }
 
 #[derive(
-    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
+    Default,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Copy,
+    Clone,
+    Hash,
+    bincode::Encode,
+    bincode::Decode,
 )]
 pub struct Vec2i {
     pub x: i32,
@@ -1139,7 +1148,17 @@ impl fmt::Display for Vec2i {
 /// assert_eq!(reversed, Edge2i(end, start));
 /// ```
 #[derive(
-    Default, Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize,
+    Default,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Copy,
+    Clone,
+    Hash,
+    bincode::Encode,
+    bincode::Decode,
 )]
 pub struct Edge2i(pub Vec2i, pub Vec2i);
 
@@ -1274,7 +1293,7 @@ impl Neg for &Vec2i {
 /// ```
 /// where the first two columns represent linear transformation components,
 /// and the third column represents translation components.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, bincode::Encode, bincode::Decode)]
 #[must_use]
 pub struct Mat3x3 {
     pub xx: f32,
@@ -1763,7 +1782,19 @@ pub trait AxisAlignedExtent {
 /// );
 /// assert_eq!(rect.centre(), Vec2 { x: 1.0, y: 1.0 });
 /// ```
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub struct Rect {
     centre: Vec2,
     half_widths: Vec2,
@@ -1878,7 +1909,7 @@ impl AxisAlignedExtent for Rect {
 /// assert!(rotated.right().almost_eq(Vec2::down())); // Right becomes down
 /// assert!(rotated.up().almost_eq(Vec2::right())); // Up becomes right
 /// ```
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct Transform {
     pub centre: Vec2,
     pub rotation: f32,
