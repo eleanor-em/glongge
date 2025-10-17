@@ -1094,7 +1094,6 @@ dependencies = [
  "png",
  "rand 0.9.1",
  "regex",
- "serde",
  "time",
  "tracing",
  "tracing-subscriber",
