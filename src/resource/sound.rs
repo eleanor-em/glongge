@@ -162,14 +162,11 @@ impl SoundHandler {
                         &FsResourceIo,
                     ))
                     .map_err(|err| {
-                        anyhow!("fyrox-sound error: DataSource::from_file(): {:?}", err)
+                        anyhow!("fyrox-sound error: DataSource::from_file(): {err:?}")
                     })?,
                 )
                 .map_err(|err| {
-                    anyhow!(
-                        "fyrox-sound error: SoundBufferResource::new_generic(): {:?}",
-                        err
-                    )
+                    anyhow!("fyrox-sound error: SoundBufferResource::new_generic(): {err:?}",)
                 })?;
                 inner
                     .lock()

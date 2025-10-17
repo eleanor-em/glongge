@@ -907,11 +907,7 @@ impl UpdateHandler {
         self.perf_stats.coroutines.stop();
     }
 
-    fn call_on_fixed_update(
-        &mut self,
-        mut fixed_updates: u128,
-        object_tracker: &mut ObjectTracker,
-    ) {
+    fn call_on_fixed_update(&mut self, fixed_updates: u128, object_tracker: &mut ObjectTracker) {
         if fixed_updates == 0 {
             return;
         }
@@ -944,7 +940,6 @@ impl UpdateHandler {
                 }
             }
             self.object_handler.update_all_transforms();
-            fixed_updates -= 1;
             self.fixed_frame_counter += 1;
         }
         self.perf_stats.fixed_update.stop();
