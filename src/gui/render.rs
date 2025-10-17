@@ -686,19 +686,18 @@ impl GuiRenderer {
 
 // Execution methods
 impl GuiRenderer {
-    // I think Clippy is wrong on this one.
     #[allow(clippy::redundant_else)]
     fn prepare_mesh_draw(
         &self,
         cbf: &mut RecordingCommandBuffer,
         layout: &PipelineLayout,
         mesh: &Mesh,
-    ) -> Result<()> {
+    ) -> Result<Option<()>> {
         let texture_desc_sets = self.texture_desc_sets.lock();
         let Some((desc_set, _)) = texture_desc_sets.get(&mesh.texture_id) else {
             if self.should_build_task_graph() {
                 // Expected case; textures not yet uploaded.
-                return Ok(());
+                return Ok(None);
             } else {
                 bail!("GUI texture missing: {:?}", mesh.texture_id);
             }
@@ -712,7 +711,7 @@ impl GuiRenderer {
                 &[],
             )?;
         }
-        Ok(())
+        Ok(Some(()))
     }
 }
 
@@ -762,11 +761,14 @@ impl Task for GuiRenderer {
                     ..Default::default()
                 })
                 .unwrap();
-            cbf.bind_pipeline_graphics(&pipeline)?.push_constants(
-                pipeline.layout(),
-                0,
-                &push_constants,
-            )?;
+
+            if !frame.is_empty() {
+                cbf.bind_pipeline_graphics(&pipeline)?.push_constants(
+                    pipeline.layout(),
+                    0,
+                    &push_constants,
+                )?;
+            }
         }
         self.draw_buffer.lock().bind(cbf).unwrap();
         world.perf_stats().lap("GuiRenderer: begin_rendering()");
@@ -774,12 +776,12 @@ impl Task for GuiRenderer {
         let mut vertex_cursor = 0;
         let mut index_cursor = 0;
         for mesh in &frame {
-            if let Err(e) = self.prepare_mesh_draw(cbf, pipeline.layout(), mesh) {
-                error!("{}", e.root_cause());
-            } else {
-                unsafe {
+            match self.prepare_mesh_draw(cbf, pipeline.layout(), mesh) {
+                Err(e) => error!("{}", e.root_cause()),
+                Ok(None) => {}
+                Ok(Some(())) => unsafe {
                     cbf.draw_indexed(mesh.indices.len() as u32, 1, index_cursor, vertex_cursor, 0)?;
-                }
+                },
             }
             index_cursor += mesh.indices.len() as u32;
             vertex_cursor += i32::try_from(mesh.vertices.len())
