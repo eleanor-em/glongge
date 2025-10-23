@@ -32,8 +32,7 @@ use vulkano::swapchain::Swapchain;
 use vulkano::{
     DeviceSize, NonZeroDeviceSize, Validated, buffer::Buffer, buffer::BufferContents,
     buffer::BufferCreateInfo, buffer::BufferUsage, descriptor_set::WriteDescriptorSet,
-    descriptor_set::layout::DescriptorSetLayoutCreateFlags, image::sampler::Sampler,
-    image::sampler::SamplerCreateInfo, image::view::ImageView,
+    image::sampler::Sampler, image::sampler::SamplerCreateInfo, image::view::ImageView,
     memory::allocator::AllocationCreateInfo, memory::allocator::MemoryTypeFilter,
     pipeline::GraphicsPipeline, pipeline::Pipeline, pipeline::PipelineBindPoint,
     pipeline::PipelineLayout, pipeline::PipelineShaderStageCreateInfo,
@@ -45,8 +44,7 @@ use vulkano::{
     pipeline::graphics::multisample::MultisampleState,
     pipeline::graphics::rasterization::RasterizationState,
     pipeline::graphics::vertex_input::VertexDefinition,
-    pipeline::graphics::viewport::ViewportState,
-    pipeline::layout::PipelineDescriptorSetLayoutCreateInfo, shader::ShaderModule,
+    pipeline::graphics::viewport::ViewportState, shader::ShaderModule,
 };
 use vulkano_taskgraph::command_buffer::{
     BufferImageCopy, CopyBufferToImageInfo, RecordingCommandBuffer,
@@ -89,7 +87,8 @@ pub mod fs {
         src: r"
 #version 460
 
-layout(binding = 0, set = 0) uniform sampler2D font_texture;
+layout(binding = 0, set = 0) uniform texture2D font_texture;
+layout(binding = 1, set = 0) uniform sampler s;
 
 layout(location = 0) in vec4 v_rgba_in_gamma;
 layout(location = 1) in vec2 v_tc;
@@ -109,7 +108,7 @@ vec4 srgba_gamma_from_linear(vec4 rgba) {
 }
 
 void main() {
-    vec4 texture_in_gamma = srgba_gamma_from_linear(texture(font_texture, v_tc));
+    vec4 texture_in_gamma = srgba_gamma_from_linear(texture(sampler2D(font_texture, s), v_tc));
 
     // We multiply the colors in gamma space, because that's the only way to get text to look right.
     vec4 frag_color_gamma = v_rgba_in_gamma * texture_in_gamma;
@@ -226,11 +225,11 @@ impl GuiVertexIndexBuffers {
         Ok(ctx
             .resources()
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
@@ -247,11 +246,11 @@ impl GuiVertexIndexBuffers {
         Ok(ctx
             .resources()
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: BufferUsage::INDEX_BUFFER | BufferUsage::TRANSFER_DST,
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
@@ -364,13 +363,14 @@ impl GuiRenderer {
         vk_ctx: VulkanoContext,
         viewport: UniqueShared<AdjustedViewport>,
     ) -> Result<Self> {
-        let device = vk_ctx.device();
+        let vs = vs::load(vk_ctx.device()).context("failed to create shader module")?;
+        let fs = fs::load(vk_ctx.device()).context("failed to create shader module")?;
         let staging_buffer = vk_ctx.resources().create_buffer(
-            BufferCreateInfo {
+            &BufferCreateInfo {
                 usage: BufferUsage::TRANSFER_SRC,
                 ..Default::default()
             },
-            AllocationCreateInfo {
+            &AllocationCreateInfo {
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
@@ -384,8 +384,8 @@ impl GuiRenderer {
         let draw_buffer = UniqueShared::new(GuiVertexIndexBuffers::new(vk_ctx.clone(), 20_000)?);
         Ok(Self {
             vk_ctx,
-            vs: vs::load(device.clone()).context("failed to create shader module")?,
-            fs: fs::load(device).context("failed to create shader module")?,
+            vs,
+            fs,
             viewport,
             pipeline: UniqueShared::default(),
             texture_desc_sets: UniqueShared::new(BTreeMap::new()),
@@ -412,46 +412,39 @@ impl GuiRenderer {
                 .context("fragment shader: entry point missing")?;
             let vertex_input_state = EguiVertex::per_vertex().definition(&vs)?;
             let stages = [
-                PipelineShaderStageCreateInfo::new(vs),
-                PipelineShaderStageCreateInfo::new(fs),
+                PipelineShaderStageCreateInfo::new(&vs),
+                PipelineShaderStageCreateInfo::new(&fs),
             ];
-            let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-            for layout in &mut create_info.set_layouts {
-                layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-            }
-            let layout = PipelineLayout::new(
-                self.vk_ctx.device(),
-                create_info.into_pipeline_layout_create_info(self.vk_ctx.device())?,
-            )
-            .map_err(Validated::unwrap)?;
+            let layout = PipelineLayout::from_stages(self.vk_ctx.device(), &stages)
+                .map_err(Validated::unwrap)?;
             let device = self.vk_ctx.device();
             let swapchain = self.vk_ctx.swapchain()?;
             let subpass = PipelineRenderingCreateInfo {
-                color_attachment_formats: vec![Some(swapchain.image_format())],
+                color_attachment_formats: &[Some(swapchain.image_format())],
                 ..Default::default()
             };
             *self.pipeline.lock() = Some(GraphicsPipeline::new(
                 device,
                 /* cache= */ None,
-                GraphicsPipelineCreateInfo {
-                    stages: stages.into_iter().collect(),
-                    vertex_input_state: Some(vertex_input_state),
-                    input_assembly_state: Some(InputAssemblyState::default()),
-                    viewport_state: Some(ViewportState {
-                        viewports: [self.viewport.lock().inner()].into_iter().collect(),
+                &GraphicsPipelineCreateInfo {
+                    stages: &stages,
+                    vertex_input_state: Some(&vertex_input_state),
+                    input_assembly_state: Some(&InputAssemblyState::default()),
+                    viewport_state: Some(&ViewportState {
+                        viewports: &[self.viewport.lock().inner()],
                         ..Default::default()
                     }),
-                    rasterization_state: Some(RasterizationState::default()),
-                    multisample_state: Some(MultisampleState::default()),
-                    color_blend_state: Some(ColorBlendState::with_attachment_states(
-                        subpass.color_attachment_formats.len() as u32,
-                        ColorBlendAttachmentState {
+                    rasterization_state: Some(&RasterizationState::default()),
+                    multisample_state: Some(&MultisampleState::default()),
+                    color_blend_state: Some(&ColorBlendState {
+                        attachments: &[ColorBlendAttachmentState {
                             blend: Some(AttachmentBlend::alpha()),
                             ..Default::default()
-                        },
-                    )),
-                    subpass: Some(subpass.into()),
-                    ..GraphicsPipelineCreateInfo::layout(layout)
+                        }],
+                        ..Default::default()
+                    }),
+                    subpass: Some((&subpass).into()),
+                    ..GraphicsPipelineCreateInfo::new(&layout)
                 },
             )?);
         }
@@ -473,10 +466,7 @@ impl GuiRenderer {
             })?;
         }
         let image_inner = tcx.image(image)?.image();
-        let view = ImageView::new(
-            image_inner.clone(),
-            ImageViewCreateInfo::from_image(image_inner),
-        )?;
+        let view = ImageView::new(image_inner, &ImageViewCreateInfo::from_image(image_inner))?;
         let pipeline = self.get_or_create_pipeline()?;
         let layout = pipeline
             .layout()
@@ -484,20 +474,22 @@ impl GuiRenderer {
             .first()
             .context("no descriptor sets in pipeline layout")?;
         let desc_set = RawDescriptorSet::new(self.vk_ctx.descriptor_set_allocator(), layout, 0)?;
-        let desc_writes = vec![WriteDescriptorSet::image_view_sampler(
-            0,
-            view.clone(),
-            Sampler::new(
-                self.vk_ctx.device(),
-                SamplerCreateInfo {
-                    mag_filter: Filter::Linear,
-                    min_filter: Filter::Linear,
-                    address_mode: [SamplerAddressMode::ClampToEdge; 3],
-                    mipmap_mode: SamplerMipmapMode::Linear,
-                    ..Default::default()
-                },
-            )?,
-        )];
+        let desc_writes = vec![
+            WriteDescriptorSet::image_view(0, view.clone()),
+            WriteDescriptorSet::sampler(
+                1,
+                Sampler::new(
+                    self.vk_ctx.device(),
+                    &SamplerCreateInfo {
+                        mag_filter: Filter::Linear,
+                        min_filter: Filter::Linear,
+                        address_mode: [SamplerAddressMode::ClampToEdge; 3],
+                        mipmap_mode: SamplerMipmapMode::Linear,
+                        ..Default::default()
+                    },
+                )?,
+            ),
+        ];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
         }
@@ -552,7 +544,7 @@ impl GuiRenderer {
                         image_subresource: ImageSubresourceLayers {
                             aspects: ImageAspects::COLOR,
                             mip_level: 0,
-                            array_layers: 0..1,
+                            ..Default::default()
                         },
                         ..Default::default()
                     }],
@@ -562,14 +554,14 @@ impl GuiRenderer {
         } else {
             let extent = [delta.image.width() as u32, delta.image.height() as u32, 1];
             let img = self.vk_ctx.resources().create_image(
-                ImageCreateInfo {
+                &ImageCreateInfo {
                     image_type: ImageType::Dim2d,
                     format: Format::R8G8B8A8_SRGB,
                     extent,
                     usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
                     ..Default::default()
                 },
-                AllocationCreateInfo::default(),
+                &AllocationCreateInfo::default(),
             )?;
             self.texture_images.lock().insert(id, img);
             *self.texture_images_dirty.lock() = true;
@@ -740,7 +732,7 @@ impl Task for GuiRenderer {
                 color_attachments: vec![Some(RenderingAttachmentInfo {
                     load_op: Load,
                     store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(image_view)
+                    ..RenderingAttachmentInfo::new(image_view)
                 })],
                 render_area_extent: [
                     viewport.inner().extent[0] as u32,

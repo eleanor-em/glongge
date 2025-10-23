@@ -79,7 +79,8 @@ impl GgWindow {
             inner: Viewport {
                 offset: [0.0, 0.0],
                 extent: self.inner_size().into(),
-                depth_range: 0.0..=1.0,
+                min_depth: 0.0,
+                max_depth: 1.0,
             },
             scale_factor: self.scale_factor(),
             global_scale_factor: 1.0,
@@ -334,7 +335,7 @@ fn build_task_graph(
     resource_handler: &ResourceHandler,
 ) -> Result<(ExecutableTaskGraph<VulkanoContext>, Id<Swapchain>)> {
     info_every_seconds!(1, "building task graph");
-    let mut task_graph = TaskGraph::new(&vk_ctx.resources(), 100, 10000);
+    let mut task_graph = TaskGraph::new(vk_ctx.resources());
     let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo::default());
     let (texture_node, images) = resource_handler.texture.build_task_graph(&mut task_graph);
     render_handler.build_shader_task_graphs(
@@ -345,8 +346,8 @@ fn build_task_graph(
     )?;
     let task_graph = unsafe {
         task_graph.compile(&CompileInfo {
-            queues: &[&vk_ctx.queue()],
-            present_queue: Some(&vk_ctx.queue()),
+            queues: &[vk_ctx.queue()],
+            present_queue: Some(vk_ctx.queue()),
             flight_id: vk_ctx.flight_id(),
             ..Default::default()
         })?

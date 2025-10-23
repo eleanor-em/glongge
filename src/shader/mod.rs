@@ -12,7 +12,6 @@ use anyhow::{Context, Result};
 use itertools::Itertools;
 use num_traits::Zero;
 use std::collections::HashMap;
-use std::iter;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -32,7 +31,7 @@ use vulkano::swapchain::Swapchain;
 use vulkano::{
     DeviceSize, NonZeroDeviceSize, Validated,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
-    descriptor_set::{WriteDescriptorSet, layout::DescriptorSetLayoutCreateFlags},
+    descriptor_set::WriteDescriptorSet,
     image::sampler::{Sampler, SamplerCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
@@ -47,7 +46,6 @@ use vulkano::{
             vertex_input::VertexDefinition,
             viewport::ViewportState,
         },
-        layout::PipelineDescriptorSetLayoutCreateInfo,
     },
 };
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
@@ -109,28 +107,6 @@ pub fn get_shader(name: ShaderName) -> ShaderId {
 }
 pub(crate) fn ensure_shaders_locked() {
     SHADERS_LOCKED.swap(true, Ordering::Release);
-}
-
-pub fn basic_shader_pipeline_info(
-    subpass: PipelineRenderingCreateInfo,
-    layout: Arc<PipelineLayout>,
-) -> GraphicsPipelineCreateInfo {
-    GraphicsPipelineCreateInfo {
-        input_assembly_state: Some(InputAssemblyState::default()),
-        viewport_state: Some(ViewportState::default()),
-        rasterization_state: Some(RasterizationState::default()),
-        multisample_state: Some(MultisampleState::default()),
-        dynamic_state: [DynamicState::Viewport].into_iter().collect(),
-        color_blend_state: Some(ColorBlendState::with_attachment_states(
-            subpass.color_attachment_formats.len() as u32,
-            ColorBlendAttachmentState {
-                blend: Some(AttachmentBlend::alpha()),
-                ..Default::default()
-            },
-        )),
-        subpass: Some(subpass.into()),
-        ..GraphicsPipelineCreateInfo::layout(layout)
-    }
 }
 
 pub trait Shader: Send {
@@ -250,11 +226,11 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
         Ok(ctx
             .resources()
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: BufferUsage::VERTEX_BUFFER | BufferUsage::TRANSFER_DST,
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
@@ -324,11 +300,11 @@ impl SpriteShader {
             INITIAL_VERTEX_BUFFER_SIZE,
         )?);
         let materials = ctx.resources().create_buffer(
-            BufferCreateInfo {
+            &BufferCreateInfo {
                 usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
                 ..Default::default()
             },
-            AllocationCreateInfo {
+            &AllocationCreateInfo {
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
@@ -340,10 +316,10 @@ impl SpriteShader {
         )?;
         let sampler = Sampler::new(
             ctx.device(),
-            SamplerCreateInfo {
+            &SamplerCreateInfo {
                 min_filter: Filter::Linear,
                 mipmap_mode: SamplerMipmapMode::Linear,
-                lod: 0.0..=(FONT_SAMPLE_RATIO.log2() + 1.0),
+                max_lod: FONT_SAMPLE_RATIO.log2() + 1.0,
                 ..SamplerCreateInfo::default()
             },
         )
@@ -374,29 +350,35 @@ impl SpriteShader {
             .context("fragment shader: entry point missing")?;
         let vertex_input_state = sprite::Vertex::per_vertex().definition(&vs_entry)?;
         let stages = [
-            PipelineShaderStageCreateInfo::new(vs_entry),
-            PipelineShaderStageCreateInfo::new(fs_entry),
+            PipelineShaderStageCreateInfo::new(&vs_entry),
+            PipelineShaderStageCreateInfo::new(&fs_entry),
         ];
-        let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-        for layout in &mut create_info.set_layouts {
-            layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-        }
-        let layout = PipelineLayout::new(
-            ctx.device(),
-            create_info.into_pipeline_layout_create_info(ctx.device())?,
-        )
-        .map_err(Validated::unwrap)?;
+        let layout =
+            PipelineLayout::from_stages(ctx.device(), &stages).map_err(Validated::unwrap)?;
         let subpass = PipelineRenderingCreateInfo {
-            color_attachment_formats: vec![Some(ctx.swapchain()?.image_format())],
+            color_attachment_formats: &[Some(ctx.swapchain()?.image_format())],
             ..Default::default()
         };
         let pipeline = GraphicsPipeline::new(
             ctx.device(),
             /* cache= */ None,
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                ..basic_shader_pipeline_info(subpass, layout)
+            &GraphicsPipelineCreateInfo {
+                stages: &stages,
+                vertex_input_state: Some(&vertex_input_state),
+                input_assembly_state: Some(&InputAssemblyState::default()),
+                viewport_state: Some(&ViewportState::default()),
+                rasterization_state: Some(&RasterizationState::default()),
+                multisample_state: Some(&MultisampleState::default()),
+                dynamic_state: &[DynamicState::Viewport],
+                color_blend_state: Some(&ColorBlendState {
+                    attachments: &[ColorBlendAttachmentState {
+                        blend: Some(AttachmentBlend::alpha()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+                subpass: Some((&subpass).into()),
+                ..GraphicsPipelineCreateInfo::new(&layout)
             },
         )?;
         Ok(pipeline)
@@ -431,8 +413,7 @@ impl SpriteShader {
             .expect("textures.first() should always contain a blank texture that is loaded");
         let image_views = textures
             .into_iter()
-            .map(|t| t.unwrap_or(blank.clone()))
-            .zip(iter::repeat(self.sampler.clone()))
+            .map(|t| Some(t.unwrap_or(blank.clone())))
             .collect_vec();
 
         let desc_set = Arc::new(RawDescriptorSet::new(
@@ -443,14 +424,17 @@ impl SpriteShader {
         let desc_writes = vec![
             WriteDescriptorSet::buffer(
                 0,
-                self.ctx
-                    .resources()
-                    .buffer(self.materials)?
-                    .buffer()
-                    .clone()
-                    .into(),
+                Some(
+                    self.ctx
+                        .resources()
+                        .buffer(self.materials)?
+                        .buffer()
+                        .clone()
+                        .into(),
+                ),
             ),
-            WriteDescriptorSet::image_view_sampler_array(1, 0, image_views),
+            WriteDescriptorSet::image_view_array(1, 0, image_views),
+            WriteDescriptorSet::sampler(2, self.sampler.clone()),
         ];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
@@ -600,7 +584,6 @@ impl Task for SpriteShader {
         if self.vertex_buffer.lock().vertex_count.is_zero() {
             return Ok(());
         }
-        let layout = self.pipeline.layout().clone();
         let viewport = self.viewport.lock();
         let pc = sprite::vertex_shader::WindowData {
             window_width: viewport.physical_width(),
@@ -617,7 +600,7 @@ impl Task for SpriteShader {
                 color_attachments: vec![Some(RenderingAttachmentInfo {
                     load_op: Load,
                     store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                    ..RenderingAttachmentInfo::new(world.current_image_view(tcx)?)
                 })],
                 render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
                 layer_count: 1,
@@ -629,12 +612,12 @@ impl Task for SpriteShader {
                 .as_raw()
                 .bind_descriptor_sets(
                     PipelineBindPoint::Graphics,
-                    &layout.clone(),
+                    self.pipeline.layout(),
                     0,
                     &[&self.descriptor_set.lock().clone().unwrap()],
                     &[],
                 )?
-                .push_constants(&layout, 0, &pc)?;
+                .push_constants(self.pipeline.layout(), 0, &pc)?;
             world
                 .perf_stats()
                 .lap("SpriteShader: bind_pipeline_graphics()");
@@ -686,33 +669,38 @@ impl WireframeShader {
             .context("fragment shader: entry point missing")?;
         let vertex_input_state = basic::Vertex::per_vertex().definition(&vs_entry)?;
         let stages = [
-            PipelineShaderStageCreateInfo::new(vs_entry),
-            PipelineShaderStageCreateInfo::new(fs_entry),
+            PipelineShaderStageCreateInfo::new(&vs_entry),
+            PipelineShaderStageCreateInfo::new(&fs_entry),
         ];
-        let mut create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages);
-        for layout in &mut create_info.set_layouts {
-            layout.flags |= DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL;
-        }
-        let layout = PipelineLayout::new(
-            ctx.device(),
-            create_info.into_pipeline_layout_create_info(ctx.device())?,
-        )
-        .map_err(Validated::unwrap)?;
+        let layout =
+            PipelineLayout::from_stages(ctx.device(), &stages).map_err(Validated::unwrap)?;
         let subpass = PipelineRenderingCreateInfo {
-            color_attachment_formats: vec![Some(ctx.swapchain()?.image_format())],
+            color_attachment_formats: &[Some(ctx.swapchain()?.image_format())],
             ..Default::default()
         };
         let pipeline = GraphicsPipeline::new(
             ctx.device(),
             /* cache= */ None,
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                rasterization_state: Some(RasterizationState {
+            &GraphicsPipelineCreateInfo {
+                stages: &stages,
+                vertex_input_state: Some(&vertex_input_state),
+                rasterization_state: Some(&RasterizationState {
                     polygon_mode: PolygonMode::Line,
                     ..RasterizationState::default()
                 }),
-                ..basic_shader_pipeline_info(subpass, layout)
+                input_assembly_state: Some(&InputAssemblyState::default()),
+                viewport_state: Some(&ViewportState::default()),
+                multisample_state: Some(&MultisampleState::default()),
+                dynamic_state: &[DynamicState::Viewport],
+                color_blend_state: Some(&ColorBlendState {
+                    attachments: &[ColorBlendAttachmentState {
+                        blend: Some(AttachmentBlend::alpha()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+                subpass: Some((&subpass).into()),
+                ..GraphicsPipelineCreateInfo::new(&layout)
             },
         )?;
         Ok(pipeline)
@@ -804,7 +792,6 @@ impl Task for WireframeShader {
         if self.vertex_buffer.lock().vertex_count.is_zero() {
             return Ok(());
         }
-        let layout = self.pipeline.layout().clone();
         let viewport = self.viewport.lock();
         let pc = basic::vertex_shader::WindowData {
             window_width: viewport.physical_width(),
@@ -821,14 +808,17 @@ impl Task for WireframeShader {
                 color_attachments: vec![Some(RenderingAttachmentInfo {
                     load_op: Load,
                     store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                    ..RenderingAttachmentInfo::new(world.current_image_view(tcx)?)
                 })],
                 render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
                 layer_count: 1,
                 ..Default::default()
             })?;
-            cbf.bind_pipeline_graphics(&self.pipeline)?
-                .push_constants(&layout, 0, &pc)?;
+            cbf.bind_pipeline_graphics(&self.pipeline)?.push_constants(
+                self.pipeline.layout(),
+                0,
+                &pc,
+            )?;
             self.vertex_buffer.lock().draw(cbf).unwrap();
             cbf.as_raw().end_rendering()?;
         }

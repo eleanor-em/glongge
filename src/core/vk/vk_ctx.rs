@@ -121,25 +121,24 @@ impl VulkanoContext {
         check_eq!(size_of::<u64>(), size_of::<usize>()); // assumption made in many places
         info!("operating system: {}", std::env::consts::OS);
         let start = Instant::now();
-        let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
-        let instance = create_instance(event_loop, library)?;
+        let instance = create_instance(event_loop)?;
 
-        let surface = Surface::from_window(instance.clone(), window.inner.clone())?;
+        let surface = Surface::from_window(&instance, &window.inner)?;
         let physical_device = create_any_physical_device(&instance, &surface)?;
-        let (device, queue) = create_any_graphical_queue_family(physical_device.clone())?;
+        let (device, queue) = create_any_graphical_queue_family(&physical_device)?;
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
-            device.clone(),
-            StandardDescriptorSetAllocatorCreateInfo {
+            &device,
+            &StandardDescriptorSetAllocatorCreateInfo {
                 update_after_bind: true,
                 ..Default::default()
             },
         ));
-        let resources = Resources::new(&device, &ResourcesCreateInfo::default());
+        let resources = Resources::new(&device, &ResourcesCreateInfo::default())?;
 
         let has_mailbox = physical_device
             .surface_capabilities(
                 &surface,
-                SurfaceInfo {
+                &SurfaceInfo {
                     present_mode: Some(PresentMode::Mailbox),
                     ..SurfaceInfo::default()
                 },
@@ -148,15 +147,15 @@ impl VulkanoContext {
         let has_immediate = physical_device
             .surface_capabilities(
                 &surface,
-                SurfaceInfo {
+                &SurfaceInfo {
                     present_mode: Some(PresentMode::Immediate),
                     ..SurfaceInfo::default()
                 },
             )
             .is_ok();
-        let caps = physical_device.surface_capabilities(&surface, SurfaceInfo::default())?;
+        let caps = physical_device.surface_capabilities(&surface, &SurfaceInfo::default())?;
         let supported_formats =
-            physical_device.surface_formats(&surface, SurfaceInfo::default())?;
+            physical_device.surface_formats(&surface, &SurfaceInfo::default())?;
         if !supported_formats.contains(&(Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear)) {
             error!(
                 "supported formats missing (Format::B8G8R8A8_SRGB, ColorSpace::SrgbNonLinear):\n{:?}",
@@ -201,9 +200,8 @@ impl VulkanoContext {
             .next()
             .context("vulkano: no composite alpha modes supported")?;
         let swapchain = resources.create_swapchain(
-            flight_id,
-            surface,
-            SwapchainCreateInfo {
+            &surface,
+            &SwapchainCreateInfo {
                 min_image_count,
                 image_format: Format::B8G8R8A8_SRGB,
                 image_color_space: ColorSpace::SrgbNonLinear,
@@ -223,7 +221,7 @@ impl VulkanoContext {
         let image_views = UniqueShared::new(
             images
                 .iter()
-                .map(|image| ImageView::new_default(image.clone()))
+                .map(ImageView::new_default)
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(Validated::unwrap)?,
         );
@@ -255,7 +253,7 @@ impl VulkanoContext {
             self.resources
                 .recreate_swapchain(*self.swapchain.lock(), |create_info| SwapchainCreateInfo {
                     image_extent: window.inner_size().into(),
-                    ..create_info
+                    ..create_info.clone()
                 })?;
         *self.swapchain.lock() = new_swapchain;
         *self.images.lock() = self
@@ -269,24 +267,24 @@ impl VulkanoContext {
             .images
             .lock()
             .iter()
-            .map(|image| ImageView::new_default(image.clone()))
+            .map(ImageView::new_default)
             .collect::<Result<Vec<_>, _>>()
             .map_err(Validated::unwrap)?;
         Ok(())
     }
 
     // The below should never be re-created, so it's safe to store them.
-    pub fn device(&self) -> Arc<Device> {
-        self.device.clone()
+    pub fn device(&self) -> &Arc<Device> {
+        &self.device
     }
-    pub fn queue(&self) -> Arc<Queue> {
-        self.queue.clone()
+    pub fn queue(&self) -> &Arc<Queue> {
+        &self.queue
     }
-    pub fn descriptor_set_allocator(&self) -> Arc<StandardDescriptorSetAllocator> {
-        self.descriptor_set_allocator.clone()
+    pub fn descriptor_set_allocator(&self) -> &Arc<StandardDescriptorSetAllocator> {
+        &self.descriptor_set_allocator
     }
-    pub fn resources(&self) -> Arc<Resources> {
-        self.resources.clone()
+    pub fn resources(&self) -> &Arc<Resources> {
+        &self.resources
     }
     pub fn flight_id(&self) -> Id<Flight> {
         self.flight_id
@@ -340,8 +338,7 @@ fn device_extensions() -> DeviceExtensions {
 }
 fn device_features() -> DeviceFeatures {
     DeviceFeatures {
-        // See comment in `create_instance()`.
-        // descriptor_indexing: true,
+        descriptor_indexing: true,
         fill_mode_non_solid: true,
         // Required to fix sampler cross-talk with AMD drivers:
         shader_sampled_image_array_non_uniform_indexing: true,
@@ -350,31 +347,27 @@ fn device_features() -> DeviceFeatures {
     }
 }
 
-fn create_instance(
-    event_loop: &ActiveEventLoop,
-    library: Arc<VulkanLibrary>,
-) -> Result<Arc<Instance>> {
-    // TODO: this was required at one point. Should not be required due to a MoltenVK update,
-    //  however it may be needed at some point for older versions of macOS.
-    // if std::env::consts::OS == "macos" {
-    //     let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
-    //         Ok(var) => var,
-    //         Err(e) => {
-    //             panic!(
-    //                 "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
-    //                     do you have .cargo/config.toml set up correctly? got: {e:?}"
-    //             );
-    //         }
-    //     };
-    //     check_eq!(var, "1");
-    // }
+fn create_instance(event_loop: &ActiveEventLoop) -> Result<Arc<Instance>> {
+    let library = VulkanLibrary::new().context("vulkano: no local Vulkan library/DLL")?;
+    if std::env::consts::OS == "macos" {
+        let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
+            Ok(var) => var,
+            Err(e) => {
+                panic!(
+                    "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
+                        do you have .cargo/config.toml set up correctly? got: {e:?}"
+                );
+            }
+        };
+        check_eq!(var, "1");
+    }
     let enabled_extensions = instance_extensions(event_loop)?;
     let instance_create_info = InstanceCreateInfo {
         flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
-        enabled_extensions,
+        enabled_extensions: &enabled_extensions,
         ..Default::default()
     };
-    Instance::new(library, instance_create_info).context("vulkano: failed to create instance")
+    Instance::new(&library, &instance_create_info).context("vulkano: failed to create instance")
 }
 fn create_any_physical_device(
     instance: &Arc<Instance>,
@@ -416,7 +409,7 @@ fn create_any_physical_device(
     Ok(device)
 }
 fn create_any_graphical_queue_family(
-    physical_device: Arc<PhysicalDevice>,
+    physical_device: &Arc<PhysicalDevice>,
 ) -> Result<(Arc<Device>, Arc<Queue>)> {
     let queue_family_index = physical_device
         .queue_family_properties()
@@ -434,13 +427,13 @@ fn create_any_graphical_queue_family(
 
     let (device, mut queues) = Device::new(
         physical_device,
-        DeviceCreateInfo {
-            queue_create_infos: vec![QueueCreateInfo {
+        &DeviceCreateInfo {
+            queue_create_infos: &[QueueCreateInfo {
                 queue_family_index: queue_family_index as u32,
                 ..Default::default()
             }],
-            enabled_extensions: device_extensions(),
-            enabled_features: device_features(),
+            enabled_extensions: &device_extensions(),
+            enabled_features: &device_features(),
             ..Default::default()
         },
     )?;

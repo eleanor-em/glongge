@@ -134,13 +134,14 @@ pub mod fragment_shader {
 
             layout(location = 0) out vec4 f_col;
 
-            layout(set = 0, binding = 1) uniform sampler2D tex[1023];
+            layout(set = 0, binding = 1) uniform texture2D tex[127];
+            layout(set = 0, binding = 2) uniform sampler s;
 
             void main() {
                 if (gl_FragCoord.x < f_clip_min.x || gl_FragCoord.y < f_clip_min.y
                         || gl_FragCoord.x > f_clip_max.x || gl_FragCoord.y > f_clip_max.y) {
                 } else {
-                    const vec4 tex_col = texture(nonuniformEXT(tex[f_texture_id]), f_uv);
+                    const vec4 tex_col = texture(sampler2D(nonuniformEXT(tex[f_texture_id]), s), f_uv);
                     f_col = tex_col * f_blend_col;
                 }
             }

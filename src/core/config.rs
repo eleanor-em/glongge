@@ -1,5 +1,5 @@
 // TODO: some way to override these from user code.
-pub const MAX_TEXTURE_COUNT: usize = 1023;
+pub const MAX_TEXTURE_COUNT: usize = 127;
 pub const MAX_MATERIAL_COUNT: usize = 16 * 1024;
 pub const INITIAL_VERTEX_BUFFER_SIZE: usize = 100_000;
 pub const MAX_FIXED_UPDATES: u128 = 3;

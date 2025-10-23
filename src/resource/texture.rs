@@ -35,7 +35,7 @@ use vulkano_taskgraph::{Id, QueueFamilyType, Task, TaskContext, TaskResult};
 #[derive(Clone)]
 struct RawTexture {
     buf: Vec<u8>,
-    info: ImageCreateInfo,
+    info: ImageCreateInfo<'static>,
     duration: Option<Duration>,
 }
 
@@ -145,7 +145,7 @@ impl InternalTexture {
                 })?;
             }
             let image_view =
-                ImageView::new_default(ctx.resources().image(self.image)?.image().clone()).unwrap();
+                ImageView::new_default(ctx.resources().image(self.image)?.image()).unwrap();
             self.uploaded_image_view = Some(image_view);
             self.ready.store(true, Ordering::SeqCst);
         }
@@ -209,11 +209,11 @@ impl TextureHandlerInner {
         let buf = ctx
             .resources()
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_HOST
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
@@ -226,8 +226,8 @@ impl TextureHandlerInner {
         let image = ctx
             .resources()
             .create_image(
-                info.clone(),
-                AllocationCreateInfo {
+                &info,
+                &AllocationCreateInfo {
                     allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
                     ..AllocationCreateInfo::default()
                 },
@@ -283,11 +283,11 @@ impl TextureHandlerInner {
         let buf = ctx
             .resources()
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_HOST
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
@@ -303,8 +303,8 @@ impl TextureHandlerInner {
         let image = ctx
             .resources()
             .create_image(
-                loaded.info.clone(),
-                AllocationCreateInfo {
+                &loaded.info,
+                &AllocationCreateInfo {
                     allocate_preference: MemoryAllocatePreference::AlwaysAllocate,
                     ..AllocationCreateInfo::default()
                 },

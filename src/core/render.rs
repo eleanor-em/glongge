@@ -534,7 +534,7 @@ impl Task for ClearTask {
                     ),
                     load_op: Clear,
                     store_op: Store,
-                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                    ..RenderingAttachmentInfo::new(world.current_image_view(tcx)?)
                 })],
                 render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
                 layer_count: 1,

@@ -21,9 +21,9 @@ time = { version = "0.3.44", features = ["formatting", "macros"] }
 tracing = { version = "0.1.41", default-features = false }
 tracing-subscriber = { version = "0.3.20", default-features = false, features = ["ansi", "fmt", "time"] }
 # vulkan
-vulkano = { version = "0.35.2" , default-features = false, features = ["macros"] }
-vulkano-shaders = { version = "0.35.0", default-features = false  }
-vulkano-taskgraph = { version = "0.35.1", default-features = false  }
+vulkano = { path = "/Users/eleanor/code/vulkano/vulkano", default-features = false, features = ["macros"] }
+vulkano-shaders = { path = "/Users/eleanor/code/vulkano/vulkano-shaders", default-features = false  }
+vulkano-taskgraph = { path = "/Users/eleanor/code/vulkano/vulkano-taskgraph", default-features = false  }
 # windowing
 egui = "0.32.3"
 egui-winit = "0.32.3"
