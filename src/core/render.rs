@@ -337,7 +337,7 @@ impl RenderHandler {
         task_graph: &mut TaskGraph<VulkanoContext>,
         texture_node: NodeId,
         virtual_swapchain_id: Id<Swapchain>,
-        textures: &[Id<Image>],
+        resource_handler_images: &[Id<Image>],
     ) -> Result<()> {
         // Host buffer accesses
         for buffer in self.shaders.iter().flat_map(|s| s.lock().buffer_writes()) {
@@ -387,7 +387,7 @@ impl RenderHandler {
             .iter()
             .map(|s| {
                 s.lock()
-                    .build_task_node(task_graph, virtual_swapchain_id, textures)
+                    .build_task_node(task_graph, virtual_swapchain_id, resource_handler_images)
             })
             .collect_vec();
         if let Some(&first_shader) = shader_nodes.first() {
@@ -519,36 +519,28 @@ impl Task for ClearTask {
         tcx: &mut TaskContext,
         world: &Self::World,
     ) -> TaskResult {
-        let image_idx = tcx
-            .swapchain(world.swapchain_id())
-            .unwrap()
-            .current_image_index()
-            .unwrap() as usize;
-        let image_view = world.current_image_view(image_idx);
         let viewport_extent = self.handler.viewport.lock().inner().extent;
         unsafe {
-            cbf.as_raw()
-                .begin_rendering(&RenderingInfo {
-                    color_attachments: vec![Some(RenderingAttachmentInfo {
-                        clear_value: Some(
-                            self.handler
-                                .render_data_channel
-                                .lock()
-                                .unwrap()
-                                .clear_col
-                                .as_f32()
-                                .into(),
-                        ),
-                        load_op: Clear,
-                        store_op: Store,
-                        ..RenderingAttachmentInfo::image_view(image_view)
-                    })],
-                    render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
-                    layer_count: 1,
-                    ..Default::default()
-                })
-                .unwrap();
-            cbf.as_raw().end_rendering().unwrap();
+            cbf.as_raw().begin_rendering(&RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    clear_value: Some(
+                        self.handler
+                            .render_data_channel
+                            .lock()
+                            .unwrap()
+                            .clear_col
+                            .as_f32()
+                            .into(),
+                    ),
+                    load_op: Clear,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                })],
+                render_area_extent: [viewport_extent[0] as u32, viewport_extent[1] as u32],
+                layer_count: 1,
+                ..Default::default()
+            })?;
+            cbf.as_raw().end_rendering()?;
         }
         world.perf_stats().lap("ClearTask: done");
 

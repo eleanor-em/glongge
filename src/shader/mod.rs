@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use itertools::Itertools;
 use num_traits::Zero;
 use std::collections::HashMap;
+use std::iter;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -152,7 +153,7 @@ pub trait Shader: Send {
         &mut self,
         task_graph: &mut TaskGraph<VulkanoContext>,
         virtual_swapchain_id: Id<Swapchain>,
-        textures: &[Id<Image>],
+        resource_handler_images: &[Id<Image>],
     ) -> NodeId;
 
     fn should_build_task_graph(&self) -> bool;
@@ -295,14 +296,6 @@ impl<T: Default + VkVertex + Copy> CachedVertexBuffer<T> {
     }
 }
 
-#[derive(Clone)]
-struct SpriteShaderDescriptorSet {
-    desc: Arc<RawDescriptorSet>,
-    // Ensure the below are not prematurely dropped:
-    _samplers: Vec<Arc<Sampler>>,
-    _writes: Vec<WriteDescriptorSet>,
-}
-
 // Can also be used as a "basic shader" (no texture) by using material ID 0.
 #[derive(Clone)]
 pub struct SpriteShader {
@@ -312,9 +305,10 @@ pub struct SpriteShader {
     vertex_buffer: UniqueShared<CachedVertexBuffer<sprite::Vertex>>,
     resource_handler: ResourceHandler,
     materials: Id<Buffer>,
-    virtual_swapchain_id: Option<Id<Swapchain>>,
-    descriptor_set: UniqueShared<Option<SpriteShaderDescriptorSet>>,
-    descriptor_set_backup: UniqueShared<Vec<SpriteShaderDescriptorSet>>,
+    sampler: Arc<Sampler>,
+    descriptor_set: UniqueShared<Option<Arc<RawDescriptorSet>>>,
+    // Required to keep these references alive:
+    all_write_descriptors: Vec<WriteDescriptorSet>,
 }
 
 impl SpriteShader {
@@ -324,6 +318,7 @@ impl SpriteShader {
         resource_handler: ResourceHandler,
     ) -> Result<UniqueShared<Box<dyn Shader>>> {
         register_shader::<Self>();
+        let pipeline = Self::create_pipeline(&ctx)?;
         let vertex_buffer = UniqueShared::new(CachedVertexBuffer::new(
             ctx.clone(),
             INITIAL_VERTEX_BUFFER_SIZE,
@@ -343,8 +338,16 @@ impl SpriteShader {
             )
             .unwrap(),
         )?;
-        // Create pipeline:
-        let pipeline = Self::create_pipeline(&ctx)?;
+        let sampler = Sampler::new(
+            ctx.device(),
+            SamplerCreateInfo {
+                min_filter: Filter::Linear,
+                mipmap_mode: SamplerMipmapMode::Linear,
+                lod: 0.0..=(FONT_SAMPLE_RATIO.log2() + 1.0),
+                ..SamplerCreateInfo::default()
+            },
+        )
+        .map_err(Validated::unwrap)?;
         Ok(UniqueShared::new(Box::new(Self {
             ctx,
             viewport,
@@ -352,9 +355,9 @@ impl SpriteShader {
             vertex_buffer,
             resource_handler,
             materials,
-            virtual_swapchain_id: None,
+            sampler,
             descriptor_set: UniqueShared::new(None),
-            descriptor_set_backup: UniqueShared::new(Vec::new()),
+            all_write_descriptors: Vec::new(),
         }) as Box<dyn Shader>))
     }
 
@@ -399,56 +402,44 @@ impl SpriteShader {
         Ok(pipeline)
     }
 
-    fn maybe_update_desc_sets(&mut self, tcx: &mut TaskContext) -> Result<()> {
+    fn maybe_update_desc_set(&mut self, tcx: &mut TaskContext) -> Result<()> {
         let maybe_materials = self.resource_handler.texture.get_updated_materials();
         if maybe_materials.is_none() && self.descriptor_set.lock().is_some() {
             return Ok(());
         }
+        match maybe_materials {
+            None => {
+                if self.descriptor_set.lock().is_some() {
+                    // Nothing to do.
+                    return Ok(());
+                }
+            }
+            Some(materials) => self.update_materials(tcx, materials)?,
+        }
 
         let mut textures = vec![None; MAX_TEXTURE_COUNT];
-        let mut nonempty_texture_ids = Vec::new();
         for texture in self.resource_handler.texture.ready_values() {
             let texture_id = texture.id() as usize;
             check_le!(texture_id, MAX_TEXTURE_COUNT);
             check_is_none!(textures[texture_id]);
             textures[texture_id] = texture.image_view();
-            nonempty_texture_ids.push(texture_id);
         }
-
         let blank = textures
             .first()
             .expect("textures.first() should always contain a blank texture")
             .clone()
             .expect("textures.first() should always contain a blank texture that is loaded");
-        let textures = textures
+        let image_views = textures
             .into_iter()
             .map(|t| t.unwrap_or(blank.clone()))
+            .zip(iter::repeat(self.sampler.clone()))
             .collect_vec();
 
-        let sampler_create_info = SamplerCreateInfo {
-            min_filter: Filter::Linear,
-            mipmap_mode: SamplerMipmapMode::Linear,
-            lod: 0.0..=(FONT_SAMPLE_RATIO.log2() + 1.0),
-            ..SamplerCreateInfo::default()
-        };
-        let sampler = Sampler::new(self.ctx.device(), sampler_create_info.clone())
-            .map_err(Validated::unwrap)?;
-        let samplers = vec![sampler.clone(); MAX_TEXTURE_COUNT];
-
-        if let Some(materials) = maybe_materials {
-            info_every_seconds!(
-                1,
-                "updating materials: materials.len() = {}, texture count: {}",
-                materials.len(),
-                nonempty_texture_ids.len()
-            );
-            self.update_materials(tcx, materials)?;
-        }
-        let desc_set = RawDescriptorSet::new(
+        let desc_set = Arc::new(RawDescriptorSet::new(
             self.ctx.descriptor_set_allocator(),
             &self.pipeline.layout().set_layouts()[0],
             0,
-        )?;
+        )?);
         let desc_writes = vec![
             WriteDescriptorSet::buffer(
                 0,
@@ -459,22 +450,14 @@ impl SpriteShader {
                     .clone()
                     .into(),
             ),
-            WriteDescriptorSet::image_view_sampler_array(1, 0, textures.into_iter().zip(samplers)),
+            WriteDescriptorSet::image_view_sampler_array(1, 0, image_views),
         ];
         unsafe {
             desc_set.update(&desc_writes, &[])?;
         }
-        if let Some(desc_set) = self.descriptor_set.lock().take() {
-            self.descriptor_set_backup.lock().push(desc_set);
-            if self.descriptor_set_backup.lock().len() > 1 {
-                self.descriptor_set_backup.lock().remove(0);
-            }
-        }
-        *self.descriptor_set.lock() = Some(SpriteShaderDescriptorSet {
-            desc: Arc::new(desc_set),
-            _samplers: vec![sampler],
-            _writes: desc_writes,
-        });
+        *self.descriptor_set.lock() = Some(desc_set);
+        // XXX: memory: this vector is never shrunk
+        self.all_write_descriptors.extend(desc_writes);
         Ok(())
     }
 
@@ -483,6 +466,12 @@ impl SpriteShader {
         tcx: &mut TaskContext,
         materials: Vec<(MaterialId, Material)>,
     ) -> Result<()> {
+        info_every_seconds!(
+            1,
+            "updating materials: materials.len() = {}, texture count: {}",
+            materials.len(),
+            self.resource_handler.texture.ready_values().len()
+        );
         let mut data = vec![
             sprite::vertex_shader::Material {
                 texture_id: 0,
@@ -532,7 +521,7 @@ impl Shader for SpriteShader {
         render_frame: ShaderRenderFrame,
         tcx: &mut TaskContext,
     ) -> Result<()> {
-        self.maybe_update_desc_sets(tcx)?;
+        self.maybe_update_desc_set(tcx)?;
         let render_infos = render_frame
             .render_infos
             .iter()
@@ -571,7 +560,6 @@ impl Shader for SpriteShader {
         textures: &[Id<Image>],
     ) -> NodeId {
         self.vertex_buffer.lock().dirty = false;
-        self.virtual_swapchain_id = Some(virtual_swapchain_id);
         let mut node = task_graph.create_task_node(
             self.name_concrete().0,
             QueueFamilyType::Graphics,
@@ -624,28 +612,17 @@ impl Task for SpriteShader {
 
         let viewport = viewport.inner();
         unsafe {
-            cbf.set_viewport(0, std::slice::from_ref(&viewport))
-                .unwrap();
-        }
-        let image_idx = tcx
-            .swapchain(world.swapchain_id())
-            .unwrap()
-            .current_image_index()
-            .unwrap() as usize;
-        let image_view = world.current_image_view(image_idx);
-        unsafe {
-            cbf.as_raw()
-                .begin_rendering(&RenderingInfo {
-                    color_attachments: vec![Some(RenderingAttachmentInfo {
-                        load_op: Load,
-                        store_op: Store,
-                        ..RenderingAttachmentInfo::image_view(image_view)
-                    })],
-                    render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
-                    layer_count: 1,
-                    ..Default::default()
-                })
-                .unwrap();
+            cbf.set_viewport(0, std::slice::from_ref(&viewport))?;
+            cbf.as_raw().begin_rendering(&RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    load_op: Load,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                })],
+                render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
+                layer_count: 1,
+                ..Default::default()
+            })?;
             world.perf_stats().lap("SpriteShader: begin_rendering()");
 
             cbf.bind_pipeline_graphics(&self.pipeline)?
@@ -654,20 +631,18 @@ impl Task for SpriteShader {
                     PipelineBindPoint::Graphics,
                     &layout.clone(),
                     0,
-                    &[&self.descriptor_set.lock().clone().unwrap().desc],
+                    &[&self.descriptor_set.lock().clone().unwrap()],
                     &[],
                 )?
                 .push_constants(&layout, 0, &pc)?;
             world
                 .perf_stats()
                 .lap("SpriteShader: bind_pipeline_graphics()");
-        }
 
-        self.vertex_buffer.lock().draw(cbf).unwrap();
-        world.perf_stats().lap("SpriteShader: draw()");
+            self.vertex_buffer.lock().draw(cbf).unwrap();
+            world.perf_stats().lap("SpriteShader: draw()");
 
-        unsafe {
-            cbf.as_raw().end_rendering().unwrap();
+            cbf.as_raw().end_rendering()?;
         }
         world.perf_stats().lap("SpriteShader: end_rendering()");
 
@@ -680,7 +655,6 @@ pub struct WireframeShader {
     viewport: UniqueShared<AdjustedViewport>,
     pipeline: Arc<GraphicsPipeline>,
     vertex_buffer: UniqueShared<CachedVertexBuffer<basic::Vertex>>,
-    virtual_swapchain_id: Option<Id<Swapchain>>,
 }
 
 impl WireframeShader {
@@ -692,12 +666,10 @@ impl WireframeShader {
         let pipeline = Self::create_pipeline(&ctx)?;
         let vertex_buffer =
             UniqueShared::new(CachedVertexBuffer::new(ctx, INITIAL_VERTEX_BUFFER_SIZE)?);
-        // Create pipeline:
         Ok(UniqueShared::new(Box::new(Self {
             viewport,
             pipeline,
             vertex_buffer,
-            virtual_swapchain_id: None,
         }) as Box<dyn Shader>))
     }
 
@@ -798,7 +770,6 @@ impl Shader for WireframeShader {
         _textures: &[Id<Image>],
     ) -> NodeId {
         self.vertex_buffer.lock().dirty = false;
-        self.virtual_swapchain_id = Some(virtual_swapchain_id);
         let mut node = task_graph.create_task_node(
             self.name_concrete().0,
             QueueFamilyType::Graphics,
@@ -845,37 +816,21 @@ impl Task for WireframeShader {
 
         let viewport = viewport.inner();
         unsafe {
-            cbf.set_viewport(0, std::slice::from_ref(&viewport))
-                .unwrap();
-        }
-        let image_idx = tcx
-            .swapchain(world.swapchain_id())
-            .unwrap()
-            .current_image_index()
-            .unwrap() as usize;
-        let image_view = world.current_image_view(image_idx);
-        unsafe {
-            cbf.as_raw()
-                .begin_rendering(&RenderingInfo {
-                    color_attachments: vec![Some(RenderingAttachmentInfo {
-                        load_op: Load,
-                        store_op: Store,
-                        ..RenderingAttachmentInfo::image_view(image_view)
-                    })],
-                    render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
-                    layer_count: 1,
-                    ..Default::default()
-                })
-                .unwrap();
-
+            cbf.set_viewport(0, std::slice::from_ref(&viewport))?;
+            cbf.as_raw().begin_rendering(&RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    load_op: Load,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(world.current_image_view(tcx)?)
+                })],
+                render_area_extent: [viewport.extent[0] as u32, viewport.extent[1] as u32],
+                layer_count: 1,
+                ..Default::default()
+            })?;
             cbf.bind_pipeline_graphics(&self.pipeline)?
                 .push_constants(&layout, 0, &pc)?;
-        }
-
-        self.vertex_buffer.lock().draw(cbf).unwrap();
-
-        unsafe {
-            cbf.as_raw().end_rendering().unwrap();
+            self.vertex_buffer.lock().draw(cbf).unwrap();
+            cbf.as_raw().end_rendering()?;
         }
 
         Ok(())

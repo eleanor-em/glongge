@@ -24,8 +24,8 @@ use vulkano::swapchain::{
     ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo,
 };
 use vulkano::{Validated, Version, VulkanLibrary};
-use vulkano_taskgraph::Id;
 use vulkano_taskgraph::resource::{Flight, Resources, ResourcesCreateInfo};
+use vulkano_taskgraph::{Id, TaskContext, TaskResult};
 
 static VULKANO_CONTEXT_CREATED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
@@ -303,8 +303,15 @@ impl VulkanoContext {
         *self.swapchain.lock()
     }
 
-    pub(crate) fn current_image_view(&self, image_idx: usize) -> Arc<ImageView> {
-        self.image_views.lock()[image_idx].clone()
+    pub(crate) fn current_image_view(
+        &self,
+        tcx: &mut TaskContext<'_>,
+    ) -> TaskResult<Arc<ImageView>> {
+        let image_idx = tcx
+            .swapchain(self.swapchain_id())?
+            .current_image_index()
+            .unwrap() as usize;
+        Ok(self.image_views.lock()[image_idx].clone())
     }
     // May change between frames, e.g. due to recreate_swapchain().
     pub fn image_count(&self) -> usize {

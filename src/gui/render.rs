@@ -561,20 +561,16 @@ impl GuiRenderer {
             }
         } else {
             let extent = [delta.image.width() as u32, delta.image.height() as u32, 1];
-            let img = self
-                .vk_ctx
-                .resources()
-                .create_image(
-                    ImageCreateInfo {
-                        image_type: ImageType::Dim2d,
-                        format: Format::R8G8B8A8_SRGB,
-                        extent,
-                        usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo::default(),
-                )
-                .unwrap();
+            let img = self.vk_ctx.resources().create_image(
+                ImageCreateInfo {
+                    image_type: ImageType::Dim2d,
+                    format: Format::R8G8B8A8_SRGB,
+                    extent,
+                    usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                    ..Default::default()
+                },
+                AllocationCreateInfo::default(),
+            )?;
             self.texture_images.lock().insert(id, img);
             *self.texture_images_dirty.lock() = true;
         }
@@ -604,8 +600,7 @@ impl GuiRenderer {
             self.last_nonempty_frame.lock().clone_from(&meshes);
         }
         let image_idx = tcx
-            .swapchain(world.swapchain_id())
-            .unwrap()
+            .swapchain(world.swapchain_id())?
             .current_image_index()
             .unwrap() as usize;
         self.draw_buffer.lock().write(
@@ -738,29 +733,22 @@ impl Task for GuiRenderer {
             }
         };
 
-        let image_idx = tcx
-            .swapchain(world.swapchain_id())
-            .unwrap()
-            .current_image_index()
-            .unwrap() as usize;
-        let image_view = world.current_image_view(image_idx);
+        let image_view = world.current_image_view(tcx)?;
         let pipeline = self.get_or_create_pipeline().unwrap();
         unsafe {
-            cbf.as_raw()
-                .begin_rendering(&RenderingInfo {
-                    color_attachments: vec![Some(RenderingAttachmentInfo {
-                        load_op: Load,
-                        store_op: Store,
-                        ..RenderingAttachmentInfo::image_view(image_view)
-                    })],
-                    render_area_extent: [
-                        viewport.inner().extent[0] as u32,
-                        viewport.inner().extent[1] as u32,
-                    ],
-                    layer_count: 1,
-                    ..Default::default()
-                })
-                .unwrap();
+            cbf.as_raw().begin_rendering(&RenderingInfo {
+                color_attachments: vec![Some(RenderingAttachmentInfo {
+                    load_op: Load,
+                    store_op: Store,
+                    ..RenderingAttachmentInfo::image_view(image_view)
+                })],
+                render_area_extent: [
+                    viewport.inner().extent[0] as u32,
+                    viewport.inner().extent[1] as u32,
+                ],
+                layer_count: 1,
+                ..Default::default()
+            })?;
 
             if !frame.is_empty() {
                 cbf.bind_pipeline_graphics(&pipeline)?.push_constants(
