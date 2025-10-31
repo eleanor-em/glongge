@@ -21,9 +21,8 @@ time = { version = "0.3.44", features = ["formatting", "macros"] }
 tracing = { version = "0.1.41", default-features = false }
 tracing-subscriber = { version = "0.3.20", default-features = false, features = ["ansi", "fmt", "time"] }
 # vulkan
-vulkano = { path = "/Users/eleanor/code/vulkano/vulkano", default-features = false, features = ["macros"] }
-vulkano-shaders = { path = "/Users/eleanor/code/vulkano/vulkano-shaders", default-features = false  }
-vulkano-taskgraph = { path = "/Users/eleanor/code/vulkano/vulkano-taskgraph", default-features = false  }
+ash = { version = "0.38.0", default-features = false, features = ["linked", "debug", "std"] }
+ash-window = "0.13.0"
 # windowing
 egui = "0.32.3"
 egui-winit = "0.32.3"
@@ -35,9 +34,6 @@ png = "0.17.16"
 
 [profile.dev]
 opt-level = 1
-
-[profile.dev.package.vulkano]
-opt-level = 3
 
 [profile.dev.package.asefile]
 opt-level = 3

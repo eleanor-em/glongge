@@ -35,32 +35,30 @@ impl Pipe {
 
 #[partially_derive_scene_object]
 impl SceneObject for Pipe {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx
+            .resource()
             .texture
             .wait_load_file("res/world_sheet.png")?;
         self.sprite = if self.orientation.x.is_zero() {
             Sprite::add_from_single_coords(
-                object_ctx,
+                ctx,
                 texture,
                 Vec2i { x: 112, y: 612 },
                 Vec2i { x: 144, y: 676 },
             )
         } else {
             Sprite::add_from_single_coords(
-                object_ctx,
+                ctx,
                 texture,
                 Vec2i { x: 192, y: 644 },
                 Vec2i { x: 256, y: 676 },
             )
         }
         .with_depth(VertexDepth::Front(1000));
-        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
-        object_ctx.add_child(CollisionShape::from_object_sprite(self, &self.sprite));
+        ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();
+        ctx.object_mut()
+            .add_child(CollisionShape::from_object_sprite(self, &self.sprite));
         Ok(None)
     }
 

@@ -3,8 +3,9 @@ use crate::core::prelude::*;
 use crate::core::input::InputHandler;
 use crate::core::render::RenderHandler;
 use crate::core::scene::SceneHandler;
-use crate::core::vk::WindowEventHandler;
+use crate::core::tulivuori::WindowEventHandler;
 use crate::gui::{GuiContext, GuiUi};
+use crate::resource::ResourceHandler;
 use egui::{Button, WidgetText};
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
@@ -288,10 +289,6 @@ pub mod gg_iter {
 pub mod gg_err {
     use anyhow::Result;
     use tracing::error;
-    use vulkano::command_buffer::CommandBufferExecError;
-    use vulkano::{Validated, ValidationError, VulkanError};
-    use vulkano_taskgraph::InvalidSlotError;
-    use vulkano_taskgraph::graph::ExecuteError;
 
     fn log_error(e: &anyhow::Error) {
         error!("{}", e);
@@ -352,62 +349,6 @@ pub mod gg_err {
             Err(e) => {
                 log_error(&e);
                 None
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) enum CatchOutOfDate {
-        Anyhow(anyhow::Error),
-        VulkanOutOfDateError,
-    }
-
-    impl From<VulkanError> for CatchOutOfDate {
-        fn from(value: VulkanError) -> Self {
-            match value {
-                VulkanError::OutOfDate => Self::VulkanOutOfDateError,
-                e => Self::Anyhow(e.into()),
-            }
-        }
-    }
-    impl From<Validated<VulkanError>> for CatchOutOfDate {
-        fn from(value: Validated<VulkanError>) -> Self {
-            match value {
-                Validated::Error(e) => e.into(),
-                Validated::ValidationError(_) => Self::Anyhow(value.into()),
-            }
-        }
-    }
-    impl From<Box<ValidationError>> for CatchOutOfDate {
-        fn from(value: Box<ValidationError>) -> Self {
-            Self::Anyhow(value.into())
-        }
-    }
-    impl From<CommandBufferExecError> for CatchOutOfDate {
-        fn from(value: CommandBufferExecError) -> Self {
-            Self::Anyhow(value.into())
-        }
-    }
-    impl From<InvalidSlotError> for CatchOutOfDate {
-        fn from(value: InvalidSlotError) -> Self {
-            Self::Anyhow(value.into())
-        }
-    }
-    impl From<ExecuteError> for CatchOutOfDate {
-        fn from(value: ExecuteError) -> Self {
-            Self::Anyhow(value.into())
-        }
-    }
-    impl From<anyhow::Error> for CatchOutOfDate {
-        fn from(value: anyhow::Error) -> Self {
-            Self::Anyhow(value)
-        }
-    }
-    impl From<CatchOutOfDate> for anyhow::Error {
-        fn from(value: CatchOutOfDate) -> Self {
-            match value {
-                CatchOutOfDate::Anyhow(e) => e,
-                CatchOutOfDate::VulkanOutOfDateError => VulkanError::OutOfDate.into(),
             }
         }
     }
@@ -813,7 +754,7 @@ fn setup_log() -> Result<()> {
 pub struct GgContextBuilder {
     window_size: Vec2i,
     gui_ctx: GuiContext,
-    global_scale_factor: f32,
+    extra_scale_factor: f32,
     clear_col: Colour,
 }
 
@@ -824,7 +765,7 @@ impl GgContextBuilder {
         Ok(Self {
             window_size: window_size.into(),
             gui_ctx,
-            global_scale_factor: 1.0,
+            extra_scale_factor: 1.0,
             clear_col: Colour::black(),
         })
     }
@@ -838,8 +779,8 @@ impl GgContextBuilder {
     //     self
     // }
     #[must_use]
-    pub fn with_global_scale_factor(mut self, global_scale_factor: f32) -> Self {
-        self.global_scale_factor = global_scale_factor;
+    pub fn with_extra_scale_factor(mut self, extra_scale_factor: f32) -> Self {
+        self.extra_scale_factor = extra_scale_factor;
         self
     }
     #[must_use]
@@ -848,13 +789,13 @@ impl GgContextBuilder {
         self
     }
 
-    pub fn build_and_run_window<F>(self, create_and_start_scene_handler: F) -> Result<()>
-    where
-        F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
-    {
+    pub fn build_and_run_window<F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static>(
+        self,
+        create_and_start_scene_handler: F,
+    ) -> Result<()> {
         WindowEventHandler::create_and_run(
             self.window_size,
-            self.global_scale_factor,
+            self.extra_scale_factor,
             self.clear_col,
             self.gui_ctx,
             create_and_start_scene_handler,
@@ -878,12 +819,16 @@ impl SceneHandlerBuilder {
         }
     }
 
-    pub fn resource_handler(&self) -> &ResourceHandler {
-        &self.render_handler.resource_handler
-    }
+    // pub fn resource_handler(&self) -> &ResourceHandler {
+    //     &self.render_handler.resource_handler
+    // }
 
     pub fn build(self) -> SceneHandler {
         SceneHandler::new(self.input_handler, self.render_handler)
+    }
+
+    pub fn resource_handler(&self) -> &ResourceHandler {
+        &self.render_handler.resource_handler
     }
 }
 

@@ -44,16 +44,13 @@ impl Stompable for Goomba {
 
 #[partially_derive_scene_object]
 impl SceneObject for Goomba {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx
+            .resource()
             .texture
             .wait_load_file("res/enemies_sheet.png")?;
         self.sprite = Sprite::add_from_tileset(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 2, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -62,14 +59,14 @@ impl SceneObject for Goomba {
         )
         .with_fixed_ms_per_frame(200);
         self.die_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 36, y: 16 },
             Vec2i { x: 16, y: 16 },
         )
         .with_hidden();
-        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
-        object_ctx.add_child(CollisionShape::from_collider(
+        ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();
+        ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),

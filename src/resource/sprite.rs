@@ -1,7 +1,8 @@
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
-use crate::core::update::RenderContext;
-use crate::shader::{Shader, SpriteShader, get_shader, vertex};
+use crate::core::update::{ObjectContext, RenderContext};
+use crate::resource::ResourceHandler;
+use crate::shader::vertex;
 use crate::util::{collision::BoxCollider, gg_iter::GgIter};
 use crate::{
     core::prelude::*,
@@ -44,7 +45,7 @@ pub struct GgInternalSprite {
 }
 
 impl GgInternalSprite {
-    fn add_from_textures(object_ctx: &mut ObjectContext, textures: Vec<Texture>) -> Sprite {
+    fn add_from_textures(ctx: &mut LoadContext, textures: Vec<Texture>) -> Sprite {
         check_false!(textures.is_empty());
         let areas = textures.iter().map(Texture::as_rect).collect_vec();
         let frame_time_ms = textures
@@ -56,7 +57,7 @@ impl GgInternalSprite {
             .collect_vec();
         let render_item = vertex::rectangle(Vec2::zero(), textures[0].half_widths());
         let material_indices = (0..areas.len()).collect_vec();
-        let inner = Some(object_ctx.add_child(Self {
+        let inner = Some(ctx.object_mut().add_child(Self {
             textures,
             areas,
             materials: Vec::new(),
@@ -94,7 +95,7 @@ impl GgInternalSprite {
     }
 
     fn add_from_tileset(
-        object_ctx: &mut ObjectContext,
+        ctx: &mut LoadContext,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
@@ -115,7 +116,7 @@ impl GgInternalSprite {
         let frame_time_ms = vec![1000; frame_count];
         let render_item = vertex::rectangle(Vec2::zero(), tile_size.as_vec2() / 2.0);
         let material_indices = (0..areas.len()).collect_vec();
-        let inner = Some(object_ctx.add_child(Self {
+        let inner = Some(ctx.object_mut().add_child(Self {
             textures,
             areas,
             materials: Vec::new(),
@@ -193,13 +194,9 @@ impl SceneObject for GgInternalSprite {
         self.name.clone()
     }
 
-    fn on_load(
-        &mut self,
-        _object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         if let Some(deferred) = self.deferred.take() {
-            let texture = deferred(resource_handler)?;
+            let texture = deferred(ctx.resource())?;
             let areas = vec![texture.as_rect()];
             let frame_time_ms = vec![
                 texture
@@ -219,7 +216,11 @@ impl SceneObject for GgInternalSprite {
             .textures
             .iter()
             .zip(&self.areas)
-            .map(|(tex, area)| resource_handler.texture.material_from_texture(tex, area))
+            .map(|(tex, area)| {
+                ctx.resource()
+                    .texture
+                    .create_material_from_texture(tex, area)
+            })
             .collect_vec();
 
         check_false!(self.textures.is_empty());
@@ -289,7 +290,6 @@ impl RenderableObject for GgInternalSprite {
         let material_id = self.materials[material_index];
         if self.textures_ready() {
             vec![ShaderExec {
-                shader_id: get_shader(SpriteShader::name()),
                 material_id,
                 ..Default::default()
             }]
@@ -320,77 +320,104 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    pub fn add_from_file(
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-        filename: impl AsRef<str>,
-    ) -> Result<Sprite> {
-        Ok(GgInternalSprite::add_from_textures(
-            object_ctx,
-            vec![resource_handler.texture.wait_load_file(filename)?],
-        ))
-    }
-    pub fn add_from_file_animated(
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-        filename: impl AsRef<str>,
-    ) -> Result<Sprite> {
-        Ok(GgInternalSprite::add_from_textures(
-            object_ctx,
-            resource_handler.texture.wait_load_file_animated(filename)?,
-        ))
-    }
     pub fn add_from_tileset(
-        object_ctx: &mut ObjectContext,
+        ctx: &mut LoadContext,
         texture: Texture,
         tile_count: Vec2i,
         tile_size: Vec2i,
         offset: Vec2i,
         margin: Vec2i,
     ) -> Sprite {
-        GgInternalSprite::add_from_tileset(
-            object_ctx, texture, tile_count, tile_size, offset, margin,
-        )
+        GgInternalSprite::add_from_tileset(ctx, texture, tile_count, tile_size, offset, margin)
     }
     pub fn add_from_single_extent(
-        object_ctx: &mut ObjectContext,
+        ctx: &mut LoadContext,
         texture: Texture,
         top_left: Vec2i,
         extent: Vec2i,
     ) -> Sprite {
-        Self::add_from_tileset(
-            object_ctx,
-            texture,
-            Vec2i::one(),
-            extent,
-            top_left,
-            Vec2i::zero(),
-        )
+        Self::add_from_tileset(ctx, texture, Vec2i::one(), extent, top_left, Vec2i::zero())
     }
-    pub fn add_from_single_rect(
-        object_ctx: &mut ObjectContext,
-        texture: Texture,
-        rect: Rect,
-    ) -> Sprite {
+    pub fn add_from_single_rect(ctx: &mut LoadContext, texture: Texture, rect: Rect) -> Sprite {
         Self::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture,
             rect.top_left().as_vec2int_lossy(),
             rect.extent().as_vec2int_lossy(),
         )
     }
     pub fn add_from_single_coords(
-        object_ctx: &mut ObjectContext,
+        ctx: &mut LoadContext,
         texture: Texture,
         top_left: Vec2i,
         bottom_right: Vec2i,
     ) -> Sprite {
-        Self::add_from_single_extent(object_ctx, texture, top_left, bottom_right - top_left)
+        Self::add_from_single_extent(ctx, texture, top_left, bottom_right - top_left)
+    }
+    pub fn add_from_file(ctx: &mut LoadContext, filename: impl AsRef<str>) -> Result<Sprite> {
+        Ok(GgInternalSprite::add_from_textures(
+            ctx,
+            vec![ctx.resource().texture.wait_load_file(filename)?],
+        ))
+    }
+    pub fn add_from_file_animated(
+        ctx: &mut LoadContext,
+        filename: impl AsRef<str>,
+    ) -> Result<Sprite> {
+        Ok(GgInternalSprite::add_from_textures(
+            ctx,
+            ctx.resource().texture.wait_load_file_animated(filename)?,
+        ))
+    }
+    pub fn add_from_tileset_file(
+        ctx: &mut LoadContext,
+        filename: impl AsRef<str>,
+        tile_count: Vec2i,
+        tile_size: Vec2i,
+        offset: Vec2i,
+        margin: Vec2i,
+    ) -> Result<Sprite> {
+        Ok(GgInternalSprite::add_from_tileset(
+            ctx,
+            ctx.resource().texture.wait_load_file(filename)?,
+            tile_count,
+            tile_size,
+            offset,
+            margin,
+        ))
+    }
+    pub fn add_from_single_extent_file(
+        ctx: &mut LoadContext,
+        filename: impl AsRef<str>,
+        top_left: Vec2i,
+        extent: Vec2i,
+    ) -> Result<Sprite> {
+        Self::add_from_tileset_file(ctx, filename, Vec2i::one(), extent, top_left, Vec2i::zero())
+    }
+    pub fn add_from_single_rect_file(
+        ctx: &mut LoadContext,
+        filename: impl AsRef<str>,
+        rect: Rect,
+    ) -> Result<Sprite> {
+        Self::add_from_single_extent_file(
+            ctx,
+            filename,
+            rect.top_left().as_vec2int_lossy(),
+            rect.extent().as_vec2int_lossy(),
+        )
+    }
+    pub fn add_from_single_coords_file(
+        ctx: &mut LoadContext,
+        filename: impl AsRef<str>,
+        top_left: Vec2i,
+        bottom_right: Vec2i,
+    ) -> Result<Sprite> {
+        Self::add_from_single_extent_file(ctx, filename, top_left, bottom_right - top_left)
     }
 
-    pub(crate) fn add_from_texture(object_ctx: &mut ObjectContext, texture: Texture) -> Sprite {
+    pub(crate) fn add_from_texture(ctx: &mut LoadContext, texture: Texture) -> Sprite {
         let extent = texture.extent().as_vec2int_lossy();
-        Self::add_from_single_extent(object_ctx, texture, Vec2i::zero(), extent)
+        Self::add_from_single_extent(ctx, texture, Vec2i::zero(), extent)
     }
     pub(crate) fn add_from_texture_deferred(
         object_ctx: &mut ObjectContext,

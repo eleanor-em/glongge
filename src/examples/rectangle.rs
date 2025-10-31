@@ -56,14 +56,10 @@ impl RectanglePlayer {
 
 #[partially_derive_scene_object]
 impl SceneObject for RectanglePlayer {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/mario.png")?;
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx.resource().texture.wait_load_file("res/mario.png")?;
         self.sprite = Sprite::add_from_tileset(
-            object_ctx,
+            ctx,
             texture,
             Vec2i { x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -149,14 +145,10 @@ impl SpinningRectangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject for SpinningRectangle {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler.texture.wait_load_file("res/goomba.png")?;
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx.resource().texture.wait_load_file("res/goomba.png")?;
         self.sprite = Sprite::add_from_tileset(
-            object_ctx,
+            ctx,
             texture,
             Vec2i { x: 1, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -165,8 +157,9 @@ impl SceneObject for SpinningRectangle {
         )
         .with_fixed_ms_per_frame(500)
         .with_blend_col(self.col);
-        object_ctx.transform_mut().centre = self.pos;
-        object_ctx.add_child(CollisionShape::from_object_sprite(self, &self.sprite));
+        ctx.object().transform_mut().centre = self.pos;
+        ctx.object_mut()
+            .add_child(CollisionShape::from_object_sprite(self, &self.sprite));
         self.alive_since = Some(Instant::now());
         Ok(None)
     }

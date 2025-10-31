@@ -1713,13 +1713,6 @@ impl SceneObject for GgInternalCollisionShape {
         format!("CollisionShape [{:?}]", self.collider.get_type()).to_string()
     }
 
-    fn on_load(
-        &mut self,
-        _object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        Ok(None)
-    }
     fn on_ready(&mut self, ctx: &mut UpdateContext) {
         check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
     }
@@ -1811,18 +1804,10 @@ impl RenderableObject for GgInternalCollisionShape {
     }
     fn shader_execs(&self) -> Vec<ShaderExec> {
         check!(self.show_wireframe);
-        vec![
-            ShaderExec {
-                blend_col: Colour::cyan().with_alpha(0.2),
-                shader_id: get_shader(SpriteShader::name()),
-                ..Default::default()
-            },
-            ShaderExec {
-                blend_col: Colour::green(),
-                shader_id: get_shader(WireframeShader::name()),
-                ..Default::default()
-            },
-        ]
+        vec![ShaderExec {
+            blend_col: Colour::cyan().with_alpha(0.2),
+            ..Default::default()
+        }]
     }
 }
 
@@ -1897,6 +1882,5 @@ impl GuiObject for GgInternalCollisionShape {
 use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
 use crate::gui::EditCell;
-use crate::shader::{Shader, SpriteShader, WireframeShader, get_shader};
 use crate::util::canvas::Canvas;
 pub use GgInternalCollisionShape as CollisionShape;

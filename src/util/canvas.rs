@@ -1,6 +1,6 @@
 use crate::core::prelude::*;
 use crate::core::render::VertexDepth;
-use crate::shader::{Shader, SpriteShader, get_shader, vertex};
+use crate::shader::vertex;
 use glongge_derive::partially_derive_scene_object;
 
 #[derive(Default)]
@@ -80,11 +80,7 @@ impl SceneObject for GgInternalCanvas {
         "Canvas".to_string()
     }
 
-    fn on_load(
-        &mut self,
-        _object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, _ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         if self.depth.is_none() {
             self.depth = Some(VertexDepth::Front(u16::MAX));
         }
@@ -122,7 +118,6 @@ impl RenderableObject for GgInternalCanvas {
     }
     fn shader_execs(&self) -> Vec<ShaderExec> {
         vec![ShaderExec {
-            shader_id: get_shader(SpriteShader::name()),
             ..Default::default()
         }]
     }

@@ -16,8 +16,8 @@ pub mod input;
 pub mod prelude;
 pub mod render;
 pub mod scene;
+pub mod tulivuori;
 pub mod update;
-pub mod vk;
 
 // Start at 1 because ObjectId(0) represents the root object.
 static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1);

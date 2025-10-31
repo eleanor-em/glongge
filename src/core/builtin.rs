@@ -1,6 +1,5 @@
 use crate::core::SceneObjectWrapper;
 use crate::core::prelude::*;
-use crate::resource::ResourceHandler;
 use crate::resource::sprite::Sprite;
 use glongge_derive::partially_derive_scene_object;
 use itertools::Itertools;
@@ -29,12 +28,9 @@ impl SceneObject for GgInternalContainer {
     fn gg_type_name(&self) -> String {
         self.label.clone()
     }
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        object_ctx.add_vec(self.children.drain(..).collect_vec());
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        ctx.object_mut()
+            .add_vec(self.children.drain(..).collect_vec());
         Ok(None)
     }
 }
@@ -131,15 +127,11 @@ impl SceneObject for GgInternalStaticSprite {
         }
     }
 
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         let sprite = if let Some(tex_segment) = self.tex_segment {
             Sprite::add_from_single_coords(
-                object_ctx,
-                resource_handler
+                ctx,
+                ctx.resource()
                     .texture
                     .wait_load_file(self.filename.clone())?,
                 tex_segment.top_left().as_vec2int_lossy(),
@@ -147,8 +139,8 @@ impl SceneObject for GgInternalStaticSprite {
             )
         } else {
             Sprite::add_from_texture(
-                object_ctx,
-                resource_handler
+                ctx,
+                ctx.resource()
                     .texture
                     .wait_load_file(self.filename.clone())?,
             )
@@ -163,7 +155,7 @@ impl SceneObject for GgInternalStaticSprite {
             CreateCoord::TopLeft(v) => v + self.sprite.half_widths(),
             CreateCoord::Centre(v) => v,
         };
-        object_ctx.transform_mut().centre = centre;
+        ctx.object().transform_mut().centre = centre;
         Ok(None)
     }
 }
@@ -182,12 +174,8 @@ impl SceneObject for GgInternalCollidingSprite {
             .replace("Static", "Colliding")
     }
 
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        self.inner.on_load(object_ctx, resource_handler)
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        self.inner.on_load(ctx)
     }
 
     fn on_ready(&mut self, ctx: &mut UpdateContext) {

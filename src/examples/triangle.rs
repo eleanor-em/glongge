@@ -99,11 +99,7 @@ impl SpinningTriangle {
 }
 #[partially_derive_scene_object]
 impl SceneObject for SpinningTriangle {
-    fn on_load(
-        &mut self,
-        _object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, _ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         let tri_height = SpinningTriangle::TRI_WIDTH * 3.0_f32.sqrt();
         let centre_correction = -tri_height / 6.0;
         let vertex1 = Vec2 {

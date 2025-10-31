@@ -330,21 +330,18 @@ impl SceneObject for GgInternalTileset {
         "TilesetSegment".to_string()
     }
 
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         self.texture = Some(
-            resource_handler
+            ctx.resource()
                 .texture
                 .wait_load_file(self.filename.clone())?,
         );
         let mut rv = RenderItem::default();
         for tile in &self.tiles {
-            self.material_id = resource_handler
+            self.material_id = ctx
+                .resource()
                 .texture
-                .material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area);
+                .create_material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area);
             let vertices = vertex::rectangle(
                 (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
                 (self.tile_size * Vec2i::one() / 2).into(),
@@ -355,7 +352,7 @@ impl SceneObject for GgInternalTileset {
                 clip: Rect::unbounded(),
             });
         }
-        object_ctx.add_child(CollisionShape::from_collider(
+        ctx.object_mut().add_child(CollisionShape::from_collider(
             self.collider.clone(),
             &self.emitting_tags,
             &[],
@@ -374,14 +371,17 @@ impl SceneObject for GgInternalTileset {
 
 impl RenderableObject for GgInternalTileset {
     fn shader_execs(&self) -> Vec<ShaderExec> {
-        vec![ShaderExec {
-            shader_id: get_shader(SpriteShader::name()),
-            material_id: self.material_id,
-            ..Default::default()
-        }]
+        if self.texture.as_ref().is_some_and(Texture::is_ready) {
+            vec![ShaderExec {
+                material_id: self.material_id,
+                ..Default::default()
+            }]
+        } else {
+            Vec::new()
+        }
     }
 }
 
 use crate::core::builtin::Container;
-use crate::shader::{Shader, SpriteShader, get_shader, vertex};
+use crate::shader::vertex;
 pub use GgInternalTileset as Tileset;

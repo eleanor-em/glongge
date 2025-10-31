@@ -3,12 +3,12 @@ pub mod collision;
 use crate::core::TreeObjectOfType;
 use crate::core::render::{RenderHandler, UpdateSync};
 use crate::gui::GuiContext;
-use crate::shader::SpriteShader;
+use crate::resource::ResourceHandler;
 use crate::util::{GLOBAL_STATS, InspectMut, UniqueShared, gg_float};
 use crate::{
     core::render::StoredRenderItem,
     core::scene::GuiClosure,
-    core::vk::RenderPerfStats,
+    core::tulivuori::RenderPerfStats,
     core::{
         ObjectId, SceneObjectWrapper, TreeSceneObject,
         config::{FIXED_UPDATE_INTERVAL_US, MAX_FIXED_UPDATES},
@@ -17,12 +17,10 @@ use crate::{
         prelude::*,
         render::{RenderDataChannel, RenderItem, ShaderExecWithVertexData, VertexMap},
         scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
-        vk::AdjustedViewport,
+        tulivuori::GgViewport,
     },
     gui::debug_gui::DebugGui,
-    resource::ResourceHandler,
     resource::sprite::GgInternalSprite,
-    shader::{Shader, get_shader},
     util::collision::BoxCollider,
     util::gg_err,
     util::{
@@ -66,10 +64,11 @@ pub(crate) struct ObjectHandler {
     last_reported_leaked_ids_at: Option<Instant>,
 
     collision_handler: CollisionHandler,
+    resource_handler: ResourceHandler,
 }
 
 impl ObjectHandler {
-    fn new() -> Self {
+    fn new(resource_handler: ResourceHandler) -> Self {
         Self {
             objects: BTreeMap::new(),
             parents: BTreeMap::new(),
@@ -80,6 +79,7 @@ impl ObjectHandler {
             last_reported_leaked_ids: vec![],
             last_reported_leaked_ids_at: None,
             collision_handler: CollisionHandler::new(),
+            resource_handler,
         }
     }
 
@@ -326,7 +326,11 @@ impl ObjectHandler {
         self.update_all_transforms();
         for (id, object) in &self.objects {
             if let Some(renderable) = object.inner_mut().as_renderable_object() {
-                renderable.on_render(&mut RenderContext::new(*id, vertex_map));
+                renderable.on_render(&mut RenderContext::new(
+                    *id,
+                    vertex_map,
+                    self.resource_handler.clone(),
+                ));
             }
         }
         let mut shader_execs = Vec::with_capacity(vertex_map.len());
@@ -354,12 +358,7 @@ impl ObjectHandler {
                 );
                 continue;
             };
-            let mut shader_exec_inner = renderable.shader_execs();
-            for shader_exec in &mut shader_exec_inner {
-                if !shader_exec.shader_id.is_valid() {
-                    shader_exec.shader_id = get_shader(SpriteShader::name());
-                }
-            }
+            let shader_exec_inner = renderable.shader_execs();
 
             let end = start + item.len() as u32;
             shader_execs.push(ShaderExecWithVertexData {
@@ -484,7 +483,7 @@ pub(crate) struct UpdateHandler {
     object_handler: ObjectHandler,
 
     vertex_map: VertexMap,
-    viewport: AdjustedViewport,
+    viewport: GgViewport,
     resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     update_sync: UpdateSync,
@@ -525,7 +524,7 @@ impl UpdateHandler {
         let clear_col = render_data_channel.lock().unwrap().get_clear_col();
         let mut rv = Self {
             input_handler,
-            object_handler: ObjectHandler::new(),
+            object_handler: ObjectHandler::new(render_handler.resource_handler.clone()),
             vertex_map: VertexMap::new(),
             viewport: render_data_channel
                 .clone()
@@ -792,7 +791,10 @@ impl UpdateHandler {
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
             if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
-                let mouse_pos = self.viewport.top_left() + screen_mouse_pos;
+                let mouse_pos = Vec2 {
+                    x: self.viewport.logical_left(),
+                    y: self.viewport.logical_top(),
+                } + screen_mouse_pos;
                 if let Some(collisions) = gg_err::log_and_ok(
                     UpdateContext::new(self, input_handler, ObjectId::root(), object_tracker)
                         .context("UpdateHandler::call_on_gui(): on_mouseovers"),
@@ -1187,19 +1189,27 @@ impl UpdateHandler {
                     .on_add_object(&self.object_handler, &new_obj)
                     .context("UpdateHandler::call_on_load()"),
             );
-            let mut object_ctx = ObjectContext {
-                object_handler: &self.object_handler,
-                this_id: new_obj.object_id,
-                this_parent: parent,
-                this_children: &Vec::new(),
-                object_tracker,
-                dummy_transform: Rc::new(RefCell::new(Transform::default())),
+            let mut load_ctx = LoadContext {
+                object: ObjectContext {
+                    object_handler: &self.object_handler,
+                    this_id: new_obj.object_id,
+                    this_parent: parent,
+                    this_children: &Vec::new(),
+                    object_tracker,
+                    dummy_transform: Rc::new(RefCell::new(Transform::default())),
+                },
+                viewport: ViewportContext {
+                    viewport: &mut self.viewport,
+                    clear_col: &mut self.clear_col,
+                },
+                resource_handler: &mut self.resource_handler,
             };
+
             let then = Instant::now();
             if let Some(new_vertices) = gg_err::log_and_ok(
                 new_obj
                     .inner_mut()
-                    .on_load(&mut object_ctx, &mut self.resource_handler)
+                    .on_load(&mut load_ctx)
                     .context("UpdateHandler::call_on_load()"),
             )
             .flatten()
@@ -1297,9 +1307,9 @@ impl UpdateHandler {
             render_data_channel.vertices = vertices;
         }
         render_data_channel.shader_execs = shader_execs;
-        render_data_channel.set_global_scale_factor(self.viewport.global_scale_factor());
+        render_data_channel.set_extra_scale_factor(self.viewport.extra_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
-        render_data_channel.set_translation(self.viewport.translation);
+        render_data_channel.set_viewport_physical_top_left(self.viewport.physical_top_left());
         self.viewport = render_data_channel.current_viewport();
         self.update_sync.mark_update_done();
     }
@@ -1386,6 +1396,45 @@ impl UpdatePerfStats {
 
     pub fn fps(&self) -> f32 {
         self.totals_s.iter().map(|t| 1.0 / t).sum::<f32>() / self.totals_s.len() as f32
+    }
+}
+
+pub struct LoadContext<'a> {
+    object: ObjectContext<'a>,
+    viewport: ViewportContext<'a>,
+    resource_handler: &'a mut ResourceHandler,
+}
+
+impl<'a> LoadContext<'a> {
+    pub fn new(
+        object: ObjectContext<'a>,
+        viewport: ViewportContext<'a>,
+        resource_handler: &'a mut ResourceHandler,
+    ) -> Self {
+        Self {
+            object,
+            viewport,
+            resource_handler,
+        }
+    }
+
+    pub fn object(&self) -> &ObjectContext<'a> {
+        &self.object
+    }
+    pub fn object_mut(&mut self) -> &mut ObjectContext<'a> {
+        &mut self.object
+    }
+    pub fn viewport(&self) -> &ViewportContext<'a> {
+        &self.viewport
+    }
+    pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> {
+        &mut self.viewport
+    }
+    pub fn resource(&self) -> &ResourceHandler {
+        self.resource_handler
+    }
+    pub fn resource_mut(&mut self) -> &mut ResourceHandler {
+        self.resource_handler
     }
 }
 
@@ -1620,7 +1669,7 @@ impl<'a> UpdateContext<'a> {
     /// ctx.viewport_mut().clear_col().set_rgba(1.0, 0.0, 0.0, 1.0);
     ///
     /// // Change viewport scale
-    /// ctx.viewport_mut().set_global_scale_factor(2.0);
+    /// ctx.viewport_mut().set_extra_scale_factor(2.0);
     /// ```
     pub fn viewport_mut(&mut self) -> &mut ViewportContext<'a> {
         &mut self.viewport
@@ -2887,7 +2936,7 @@ impl ObjectContext<'_> {
 /// ctx.viewport_mut().clear_col().set_rgba(1.0, 0.0, 0.0, 1.0);
 /// ```
 pub struct ViewportContext<'a> {
-    viewport: &'a mut AdjustedViewport,
+    viewport: &'a mut GgViewport,
     clear_col: &'a mut Colour,
 }
 
@@ -2908,14 +2957,14 @@ impl ViewportContext<'_> {
     /// ```
     pub fn clamp_to_left(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min
-            && self.viewport.left() < min
+            && self.left() < min
         {
-            self.translate((min - self.viewport.left()) * Vec2::right());
+            self.translate((min - self.left()) * Vec2::right());
         }
         if let Some(max) = max
-            && self.viewport.left() > max
+            && self.left() > max
         {
-            self.translate((self.viewport.left() - max) * Vec2::left());
+            self.translate((self.left() - max) * Vec2::left());
         }
     }
 
@@ -2935,14 +2984,14 @@ impl ViewportContext<'_> {
     /// ```
     pub fn clamp_to_right(&mut self, min: Option<f32>, max: Option<f32>) {
         if let Some(min) = min
-            && self.viewport.right() < min
+            && self.right() < min
         {
-            self.translate((min - self.viewport.right()) * Vec2::right());
+            self.translate((min - self.right()) * Vec2::right());
         }
         if let Some(max) = max
-            && self.viewport.right() > max
+            && self.right() > max
         {
-            self.translate((self.viewport.right() - max) * Vec2::left());
+            self.translate((self.right() - max) * Vec2::left());
         }
     }
 
@@ -2954,7 +3003,7 @@ impl ViewportContext<'_> {
     /// # Returns
     /// * `&mut Self` - Allows method chaining
     pub fn centre_at(&mut self, centre: Vec2) -> &mut Self {
-        self.translate(centre - self.viewport.centre());
+        self.translate(centre - self.centre());
         self
     }
 
@@ -2966,7 +3015,9 @@ impl ViewportContext<'_> {
     /// # Returns
     /// * `&mut Self` - Allows method chaining
     pub fn translate(&mut self, delta: Vec2) -> &mut Self {
-        self.viewport.translation += delta;
+        let delta_transformed = delta * self.viewport.combined_scale_factor();
+        self.viewport
+            .set_physical_top_left(self.viewport.physical_top_left() + delta_transformed);
         self
     }
 
@@ -2974,33 +3025,21 @@ impl ViewportContext<'_> {
     pub fn clear_col(&mut self) -> &mut Colour {
         self.clear_col
     }
-
-    /// Sets the global scale factor for the viewport.
-    ///
-    /// # Arguments
-    /// * `global_scale_factor` - New scale factor to apply to the viewport
-    pub fn set_global_scale_factor(&mut self, global_scale_factor: f32) {
-        self.viewport.set_global_scale_factor(global_scale_factor);
-    }
-    pub fn global_scale_factor(&self) -> f32 {
-        self.viewport.global_scale_factor()
-    }
-    // Includes Hi-DPI scaling.
-    pub fn gui_scale_factor(&self) -> f32 {
-        self.viewport.gui_scale_factor()
-    }
-    pub fn total_scale_factor(&self) -> f32 {
-        self.global_scale_factor() * self.gui_scale_factor()
-    }
 }
 
 impl AxisAlignedExtent for ViewportContext<'_> {
     fn extent(&self) -> Vec2 {
-        self.viewport.extent()
+        Vec2 {
+            x: self.viewport.physical_width() / self.viewport.combined_scale_factor(),
+            y: self.viewport.physical_height() / self.viewport.combined_scale_factor(),
+        }
     }
 
     fn centre(&self) -> Vec2 {
-        self.viewport.centre()
+        Vec2 {
+            x: self.viewport.world_left(),
+            y: self.viewport.world_top(),
+        } + self.extent() / 2.0
     }
 }
 
@@ -3044,13 +3083,19 @@ impl AxisAlignedExtent for ViewportContext<'_> {
 pub struct RenderContext<'a> {
     pub(crate) this_id: ObjectId,
     vertex_map: &'a mut VertexMap,
+    resource_handler: ResourceHandler,
 }
 
 impl<'a> RenderContext<'a> {
-    pub(crate) fn new(this_id: ObjectId, vertex_map: &'a mut VertexMap) -> Self {
+    pub(crate) fn new(
+        this_id: ObjectId,
+        vertex_map: &'a mut VertexMap,
+        resource_handler: ResourceHandler,
+    ) -> Self {
         Self {
             this_id,
             vertex_map,
+            resource_handler,
         }
     }
 
@@ -3088,6 +3133,17 @@ impl<'a> RenderContext<'a> {
     pub fn remove_render_item(&mut self) {
         if self.vertex_map.remove(self.this_id).is_none() {
             error!("removed nonexistent vertices: {:?}", self.this_id);
+        }
+    }
+
+    pub fn wait_upload_textures(&mut self) {
+        if let Err(e) = self
+            .resource_handler
+            .texture
+            .wait_for_upload()
+            .and(self.resource_handler.texture.maybe_upload_pending())
+        {
+            panic_or_error!("failed to upload textures: {e:?}");
         }
     }
 }

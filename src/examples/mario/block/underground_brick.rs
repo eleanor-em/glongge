@@ -27,23 +27,20 @@ impl UndergroundBrick {
 
 #[partially_derive_scene_object]
 impl SceneObject for UndergroundBrick {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx
+            .resource()
             .texture
             .wait_load_file("res/world_sheet.png")?;
         self.sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture,
             Vec2i { x: 164, y: 16 },
             Vec2i { x: 16, y: 16 },
         );
-        object_ctx.transform_mut().centre = self.top_left + self.sprite.half_widths();
+        ctx.object().transform_mut().centre = self.top_left + self.sprite.half_widths();
         self.initial_y += self.sprite.half_widths().y;
-        object_ctx.add_child(CollisionShape::from_collider(
+        ctx.object_mut().add_child(CollisionShape::from_collider(
             self.sprite.as_box_collider(),
             &self.emitting_tags(),
             &self.listening_tags(),

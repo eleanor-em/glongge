@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::core::prelude::*;
-use crate::core::vk::AdjustedViewport;
+use crate::core::tulivuori::GgViewport;
 pub use egui_winit::winit::keyboard::KeyCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +45,7 @@ pub struct InputHandler {
     middle_mouse: MouseButtonState,
     queued_events: Vec<InputEvent>,
     mouse_pos: Option<Vec2>,
-    viewport: Option<AdjustedViewport>,
+    viewport: Option<GgViewport>,
     mod_shift: bool,
     mod_alt: bool,
     mod_ctrl: bool,
@@ -149,6 +149,7 @@ impl InputHandler {
         self.mod_super
     }
 
+    #[allow(unused)]
     pub(crate) fn update_mouse(&mut self, ctx: &egui::Context) {
         self.mouse_pos = ctx.pointer_latest_pos().map(|p| Vec2 { x: p.x, y: p.y });
         ctx.input(|input| {
@@ -204,12 +205,13 @@ impl InputHandler {
             }
         });
     }
-    pub(crate) fn set_viewport(&mut self, viewport: AdjustedViewport) {
+    #[allow(unused)]
+    pub(crate) fn set_viewport(&mut self, viewport: GgViewport) {
         self.viewport = Some(viewport);
     }
     pub fn screen_mouse_pos(&self) -> Option<Vec2> {
         self.mouse_pos
-            .and_then(|p| self.viewport.as_ref().map(|v| p / v.global_scale_factor()))
+            .and_then(|p| self.viewport.as_ref().map(|v| p / v.extra_scale_factor()))
     }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {

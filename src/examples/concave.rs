@@ -92,21 +92,17 @@ pub struct PixelPerfect {}
 
 #[partially_derive_scene_object]
 impl SceneObject for PixelPerfect {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
-        let Some(tex_raw) = resource_handler.texture.wait_get_raw(tex.id())? else {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let tex = ctx.resource().texture.wait_load_file("res/mario.png")?;
+        let Some(tex_raw) = ctx.resource().texture.wait_get_raw(tex.id())? else {
             panic!("missing sprite")
         };
-        object_ctx.add_child(CollisionShape::from_object(
+        ctx.object_mut().add_child(CollisionShape::from_object(
             self,
             CompoundCollider::pixel_perfect(&tex_raw)?,
         ));
-        object_ctx.transform_mut().centre = [400.0, 200.0].into();
-        object_ctx.transform_mut().scale = [8.0, 8.0].into();
+        ctx.object().transform_mut().centre = [400.0, 200.0].into();
+        ctx.object().transform_mut().scale = [8.0, 8.0].into();
         Ok(None)
     }
 }
@@ -116,21 +112,17 @@ pub struct PixelPerfectConvex {}
 
 #[partially_derive_scene_object]
 impl SceneObject for PixelPerfectConvex {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let tex = resource_handler.texture.wait_load_file("res/mario.png")?;
-        let Some(tex_raw) = resource_handler.texture.wait_get_raw(tex.id())? else {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let tex = ctx.resource().texture.wait_load_file("res/mario.png")?;
+        let Some(tex_raw) = ctx.resource().texture.wait_get_raw(tex.id())? else {
             panic!("missing sprite")
         };
-        object_ctx.add_child(CollisionShape::from_object(
+        ctx.object_mut().add_child(CollisionShape::from_object(
             self,
             CompoundCollider::pixel_perfect_convex(&tex_raw)?,
         ));
-        object_ctx.transform_mut().centre = [400.0, 300.0].into();
-        object_ctx.transform_mut().scale = [8.0, 8.0].into();
+        ctx.object().transform_mut().centre = [400.0, 300.0].into();
+        ctx.object().transform_mut().scale = [8.0, 8.0].into();
         Ok(None)
     }
 }

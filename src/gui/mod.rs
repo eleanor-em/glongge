@@ -9,8 +9,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, mpsc};
 
 pub mod debug_gui;
-pub mod render;
-
 #[derive(Clone)]
 pub struct GuiContext {
     pub(crate) inner: egui::Context,

@@ -18,7 +18,7 @@ use crate::examples::{
 fn main() -> Result<()> {
     run_test_cases();
     GgContextBuilder::new([1280, 800])?
-        .with_global_scale_factor(2.0)
+        .with_extra_scale_factor(2.0)
         .build_and_run_window(|scene_handler| {
             let resource_handler = scene_handler.resource_handler();
             for sound in [

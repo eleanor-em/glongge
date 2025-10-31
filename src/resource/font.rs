@@ -5,10 +5,10 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::{ErrorKind, Read};
 use std::sync::OnceLock;
-use vulkano::format::Format;
 
 use crate::core::render::VertexDepth;
 use crate::core::scene::{GuiCommand, GuiObject};
+use crate::core::update::{ObjectContext, RenderContext};
 use crate::resource::rich_text::{FormatInstruction, FormattedChars};
 use crate::util::gg_float::{FloatKey, GgFloat};
 use crate::util::gg_iter::GgFloatIter;
@@ -18,6 +18,7 @@ use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{
     Font as AbGlyphFontTrait, FontVec, Glyph, OutlinedGlyph, PxScale, PxScaleFont, ScaleFont,
 };
+use ash::vk;
 use glongge_derive::partially_derive_scene_object;
 
 pub static LOADED_FONTS: OnceLock<UniqueShared<BTreeMap<String, BTreeMap<FloatKey, Font>>>> =
@@ -600,11 +601,10 @@ impl FontLayout {
                 object_ctx,
                 Box::new(move |resource_handler| {
                     resource_handler.texture.wait_load_reader_rgba(
-                        "[font]".to_string(),
                         &mut reader,
                         width,
                         height,
-                        Format::R8G8B8A8_UNORM,
+                        vk::Format::R8G8B8A8_UNORM,
                     )
                 }),
             ))
@@ -920,12 +920,8 @@ impl Label {
 
 #[partially_derive_scene_object]
 impl SceneObject for Label {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        _resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        object_ctx.transform_mut().scale = Vec2::one() / self.font.sample_ratio();
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        ctx.object().transform_mut().scale = Vec2::one() / self.font.sample_ratio();
         Ok(None)
     }
 
@@ -972,6 +968,9 @@ impl SceneObject for Label {
     fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
         Some(self)
     }
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
+        Some(self)
+    }
 }
 
 impl GuiObject for Label {
@@ -984,6 +983,16 @@ impl GuiObject for Label {
         } else {
             GuiCommand::new(move |_ui| {})
         }
+    }
+}
+
+impl RenderableObject for Label {
+    fn on_render(&mut self, render_ctx: &mut RenderContext) {
+        render_ctx.wait_upload_textures();
+    }
+
+    fn shader_execs(&self) -> Vec<ShaderExec> {
+        Vec::new()
     }
 }
 

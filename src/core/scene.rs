@@ -1,18 +1,14 @@
 use crate::core::render::RenderHandler;
 use crate::core::update::RenderContext;
-use crate::gui::GuiUi;
-use crate::shader::ensure_shaders_locked;
-use crate::util::UniqueShared;
-use crate::{
-    core::{
-        SceneObjectWrapper, TreeSceneObject,
-        input::InputHandler,
-        prelude::*,
-        render::{RenderItem, ShaderExec},
-        update::{ObjectContext, UpdateContext, UpdateHandler, collision::CollisionResponse},
-    },
-    resource::ResourceHandler,
+use crate::core::{
+    SceneObjectWrapper, TreeSceneObject,
+    input::InputHandler,
+    prelude::*,
+    render::{RenderItem, ShaderExec},
+    update::{UpdateContext, UpdateHandler, collision::CollisionResponse},
 };
+use crate::gui::GuiUi;
+use crate::util::UniqueShared;
 use egui::text::LayoutJob;
 use egui::{Color32, TextFormat};
 use std::cell::RefCell;
@@ -248,7 +244,7 @@ pub(crate) enum SceneHandlerInstruction {
 /// use glongge::core::prelude::*;
 ///
 /// GgContextBuilder::::new([1280, 800])?
-///     .with_global_scale_factor(2.0)
+///     .with_extra_scale_factor(2.0)
 ///     .build_and_run_window(|scene_handler| {
 ///         std::thread::spawn(move || {
 ///             // Create scene handler
@@ -302,7 +298,6 @@ impl SceneHandler {
     }
 
     pub fn set_initial_scene(&mut self, name: SceneName, entrance_id: usize) {
-        ensure_shaders_locked();
         check_is_none!(self.current_scene);
         self.current_scene = Some(self.init_scene(name, entrance_id));
     }
@@ -394,7 +389,7 @@ impl SceneHandler {
 ///     fn on_load(
 ///         &mut self,
 ///         object_ctx: &mut ObjectContext,
-///         _resource_handler: &mut ResourceHandler,
+///         _resource_handler: &mut ResourceHandler2,
 ///     ) -> Result<Option<RenderItem>> {
 ///         // Create collision shape
 ///         object_ctx.add_child(CollisionShape::from_rect(
@@ -422,7 +417,7 @@ pub trait SceneObject: 'static {
     /// fn on_load(
     ///     &mut self,
     ///     object_ctx: &mut ObjectContext,
-    ///     resource_handler: &mut ResourceHandler,
+    ///     resource_handler: &mut ResourceHandler2,
     /// ) -> Result<Option<RenderItem>> {
     ///     // Setup initial vertices for rendering a triangle
     ///     let vertices = vec![
@@ -441,11 +436,7 @@ pub trait SceneObject: 'static {
     /// - `Ok(None)` - This object does not require rendering.
     /// - `Err(_)` - Loading failed; the object should not be added.
     #[allow(unused_variables)]
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
         Ok(None)
     }
     /// Called after all objects for this update are added to the object handler.

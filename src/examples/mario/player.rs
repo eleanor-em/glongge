@@ -486,23 +486,20 @@ impl Player {
 
 #[partially_derive_scene_object]
 impl SceneObject for Player {
-    fn on_load(
-        &mut self,
-        object_ctx: &mut ObjectContext,
-        resource_handler: &mut ResourceHandler,
-    ) -> Result<Option<RenderItem>> {
-        let texture = resource_handler
+    fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        let texture = ctx
+            .resource()
             .texture
             .wait_load_file("res/mario_sheet.png")?;
         self.idle_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 0, y: 8 },
             Vec2i { x: 16, y: 16 },
         )
         .with_name("Sprite[Idle]");
         self.walk_sprite = Sprite::add_from_tileset(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -513,7 +510,7 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Walk]");
         self.run_sprite = Sprite::add_from_tileset(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 3, y: 1 },
             Vec2i { x: 16, y: 16 },
@@ -524,7 +521,7 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Run]");
         self.skid_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 76, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -532,7 +529,7 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Skid]");
         self.fall_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 96, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -540,7 +537,7 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Fall]");
         self.die_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 116, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -548,7 +545,7 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Die]");
         self.flagpole_sprite = Sprite::add_from_single_extent(
-            object_ctx,
+            ctx,
             texture.clone(),
             Vec2i { x: 136, y: 8 },
             Vec2i { x: 16, y: 16 },
@@ -556,26 +553,21 @@ impl SceneObject for Player {
         .with_hidden()
         .with_name("Sprite[Flagpole]");
 
-        self.jump_sound = resource_handler
-            .sound
-            .wait_load_file("res/jump-small.wav")?;
-        self.stomp_sound = resource_handler.sound.wait_load_file("res/stomp.wav")?;
-        self.die_sound = resource_handler.sound.wait_load_file("res/death.wav")?;
-        self.pipe_sound = resource_handler.sound.wait_load_file("res/pipe.wav")?;
-        self.bump_sound = resource_handler.sound.wait_load_file("res/bump.wav")?;
-        self.flagpole_sound = resource_handler.sound.wait_load_file("res/flagpole.wav")?;
-        self.clear_sound = resource_handler
-            .sound
-            .wait_load_file("res/stage-clear.wav")?;
+        self.jump_sound = ctx.resource().sound.wait_load_file("res/jump-small.wav")?;
+        self.stomp_sound = ctx.resource().sound.wait_load_file("res/stomp.wav")?;
+        self.die_sound = ctx.resource().sound.wait_load_file("res/death.wav")?;
+        self.pipe_sound = ctx.resource().sound.wait_load_file("res/pipe.wav")?;
+        self.bump_sound = ctx.resource().sound.wait_load_file("res/bump.wav")?;
+        self.flagpole_sound = ctx.resource().sound.wait_load_file("res/flagpole.wav")?;
+        self.clear_sound = ctx.resource().sound.wait_load_file("res/stage-clear.wav")?;
 
-        self.overworld_music = resource_handler.sound.wait_load_file("res/overworld.ogg")?;
-        self.underground_music = resource_handler
-            .sound
-            .wait_load_file("res/underground.ogg")?;
-        object_ctx.add_child(CollisionShape::from_object_sprite(
-            self,
-            self.current_sprite(),
-        ));
+        self.overworld_music = ctx.resource().sound.wait_load_file("res/overworld.ogg")?;
+        self.underground_music = ctx.resource().sound.wait_load_file("res/underground.ogg")?;
+        ctx.object_mut()
+            .add_child(CollisionShape::from_object_sprite(
+                self,
+                self.current_sprite(),
+            ));
         self.last_nonzero_dir = Vec2::right();
         Ok(None)
     }
