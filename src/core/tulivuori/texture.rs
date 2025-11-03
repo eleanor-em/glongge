@@ -261,7 +261,7 @@ impl TextureManager {
                         vk::DescriptorSetLayoutBinding {
                             binding: 0,
                             descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                            descriptor_count: MAX_MATERIAL_COUNT as u32,
+                            descriptor_count: 1,
                             stage_flags: vk::ShaderStageFlags::VERTEX,
                             ..Default::default()
                         },
@@ -600,23 +600,17 @@ impl TextureManager {
         self.material_buffer
             .write(&data, self.next_material_buffer_index)?;
         unsafe {
-            let mut buffer_infos = Vec::new();
-            for i in 0..MAX_MATERIAL_COUNT {
-                buffer_infos.push(
-                    vk::DescriptorBufferInfo::default()
-                        .buffer(self.material_buffer.buffer(self.next_material_buffer_index))
-                        .offset((i * size_of::<RawMaterial>()) as vk::DeviceSize)
-                        .range(size_of::<RawMaterial>() as vk::DeviceSize),
-                );
-            }
-
             self.ctx.device().update_descriptor_sets(
                 &[vk::WriteDescriptorSet {
                     dst_set: self.descriptor_set,
                     dst_binding: 0,
-                    descriptor_count: MAX_MATERIAL_COUNT as u32,
+                    descriptor_count: 1,
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                    p_buffer_info: buffer_infos.as_ptr(),
+                    p_buffer_info: [vk::DescriptorBufferInfo::default()
+                        .buffer(self.material_buffer.buffer(self.next_material_buffer_index))
+                        .offset(0)
+                        .range((MAX_MATERIAL_COUNT * size_of::<RawMaterial>()) as vk::DeviceSize)]
+                    .as_ptr(),
                     ..Default::default()
                 }],
                 &[],
