@@ -1,3 +1,4 @@
+use crate::check_le;
 use crate::core::tulivuori::TvWindowContext;
 use crate::util::colour::Colour;
 use anyhow::{Context, Result, bail};
@@ -33,20 +34,18 @@ impl<'a> SwapchainBuilder<'a> {
         }
     }
 
-    fn desired_image_count(&self, surface_capabilities: vk::SurfaceCapabilitiesKHR) -> Result<u32> {
+    fn desired_image_count(&self, surface_capabilities: vk::SurfaceCapabilitiesKHR) -> u32 {
         let rv = if let Some(get_desired_image_count) = self.get_desired_image_count {
             get_desired_image_count(surface_capabilities)
         } else {
             // Default case
             surface_capabilities.min_image_count + 1
         };
-        if rv > surface_capabilities.max_image_count {
-            bail!(
-                "calculated desired_image_count > max_image_count: {rv} vs. {}",
-                surface_capabilities.max_image_count
-            );
+        // Some platforms (especially Intel) use 0 to mean "no limit".
+        if surface_capabilities.max_image_count > 0 {
+            check_le!(rv, surface_capabilities.max_image_count);
         }
-        Ok(rv)
+        rv
     }
     fn desired_frames_in_flight(
         &self,
@@ -58,7 +57,7 @@ impl<'a> SwapchainBuilder<'a> {
             // Default case
             2
         };
-        let desired_image_count = self.desired_image_count(surface_capabilities)?;
+        let desired_image_count = self.desired_image_count(surface_capabilities);
         if rv > desired_image_count as usize {
             bail!(
                 "more frames in flight than images, this is almost certainly unintended: {rv} vs. {desired_image_count}",
@@ -80,7 +79,7 @@ impl<'a> SwapchainBuilder<'a> {
         };
 
         let surface_capabilities = self.ctx.get_physical_device_surface_capabilities()?;
-        let desired_image_count = self.desired_image_count(surface_capabilities)?;
+        let desired_image_count = self.desired_image_count(surface_capabilities);
         let desired_frames_in_flight = self.desired_frames_in_flight(surface_capabilities)?;
         let surface_resolution = match surface_capabilities.current_extent.width {
             u32::MAX => vk::Extent2D {

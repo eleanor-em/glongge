@@ -600,6 +600,7 @@ impl TextureManager {
         self.material_buffer
             .write(&data, self.next_material_buffer_index)?;
         unsafe {
+            let upload_size = MAX_MATERIAL_COUNT * size_of::<RawMaterial>();
             self.ctx.device().update_descriptor_sets(
                 &[vk::WriteDescriptorSet {
                     dst_set: self.descriptor_set,
@@ -608,8 +609,8 @@ impl TextureManager {
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                     p_buffer_info: [vk::DescriptorBufferInfo::default()
                         .buffer(self.material_buffer.buffer(self.next_material_buffer_index))
-                        .offset(0)
-                        .range((MAX_MATERIAL_COUNT * size_of::<RawMaterial>()) as vk::DeviceSize)]
+                        .offset((upload_size * self.next_material_buffer_index) as vk::DeviceSize)
+                        .range(upload_size as vk::DeviceSize)]
                     .as_ptr(),
                     ..Default::default()
                 }],
