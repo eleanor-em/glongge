@@ -216,6 +216,14 @@ impl UpdateSync {
 }
 
 #[derive(Clone)]
+pub(crate) struct RenderHandlerLite {
+    pub(crate) render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    pub(crate) update_sync: UpdateSync,
+    pub(crate) resource_handler: ResourceHandler,
+    pub(crate) gui_ctx: GuiContext,
+    pub(crate) window: GgWindow,
+}
+
 pub(crate) struct RenderHandler {
     ctx: Arc<TvWindowContext>,
     pub(crate) window: GgWindow,
@@ -225,10 +233,10 @@ pub(crate) struct RenderHandler {
     update_sync: UpdateSync,
     pub(crate) gui_ctx: GuiContext,
 
-    swapchain: Arc<Swapchain>,
-    vertex_buffer: Arc<VertexBuffer<SpriteVertex>>,
-    _shader: Arc<VertFragShader>,
-    pipeline: Arc<Pipeline>,
+    swapchain: Swapchain,
+    vertex_buffer: VertexBuffer<SpriteVertex>,
+    shader: Arc<VertFragShader>,
+    pipeline: Pipeline,
 }
 
 impl RenderHandler {
@@ -241,8 +249,8 @@ impl RenderHandler {
     ) -> Result<Self> {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
 
-        let swapchain = SwapchainBuilder::new(&ctx, &window.inner).build()?;
-        let vertex_buffer = VertexBuffer::new(ctx.clone(), swapchain.clone(), 100 * 1024)?;
+        let swapchain = SwapchainBuilder::new(&ctx, window.inner.clone()).build()?;
+        let vertex_buffer = VertexBuffer::new(ctx.clone(), &swapchain, 100 * 1024)?;
         let shader = VertFragShader::new(
             ctx.clone(),
             &mut Cursor::new(&include_bytes!("../shader/glsl/vert.spv")[..]),
@@ -316,7 +324,7 @@ impl RenderHandler {
             gui_ctx,
             swapchain,
             vertex_buffer,
-            _shader: shader,
+            shader,
             window,
             viewport,
             resource_handler,
@@ -345,10 +353,6 @@ impl RenderHandler {
             .unwrap()
             .set_clear_col(clear_col);
         self
-    }
-
-    pub(crate) fn get_receiver(&self) -> (Arc<Mutex<RenderDataChannel>>, UpdateSync) {
-        (self.render_data_channel.clone(), self.update_sync.clone())
     }
 
     pub(crate) fn wait_update_done(&self) {
@@ -439,6 +443,32 @@ impl RenderHandler {
             self.update_sync.mark_render_done();
         }
         Ok(())
+    }
+
+    pub(crate) fn as_lite(&self) -> RenderHandlerLite {
+        RenderHandlerLite {
+            render_data_channel: self.render_data_channel.clone(),
+            update_sync: self.update_sync.clone(),
+            resource_handler: self.resource_handler.clone(),
+            gui_ctx: self.gui_ctx.clone(),
+            window: self.window.clone(),
+        }
+    }
+
+    pub fn vk_free(&self) {
+        self.pipeline.vk_free();
+        self.shader.vk_free();
+        self.vertex_buffer.vk_free();
+        self.resource_handler.texture.vk_free();
+        self.swapchain.vk_free();
+        self.ctx.vk_free();
+    }
+}
+
+impl Drop for RenderHandler {
+    fn drop(&mut self) {
+        check!(self.ctx.did_vk_free());
+        info!("RenderHandler dropped, all Vulkan objects should have been freed");
     }
 }
 

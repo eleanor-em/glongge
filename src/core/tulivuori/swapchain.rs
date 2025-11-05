@@ -1,33 +1,38 @@
-use crate::check_le;
-use crate::core::tulivuori::TvWindowContext;
-use crate::util::colour::Colour;
+use crate::{
+    check_false, check_le,
+    core::tulivuori::{TvWindowContext, tv},
+    util::colour::Colour,
+};
 use anyhow::{Context, Result, bail};
-use ash::khr::swapchain;
-use ash::vk;
+use ash::{khr::swapchain, vk};
 use egui_winit::winit::window::Window;
 use itertools::Itertools;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::{Arc, Mutex},
+};
+use tracing::{error, info};
 
 pub struct SwapchainBuilder<'a> {
     ctx: Arc<TvWindowContext>,
-    window: &'a Arc<Window>,
+    window: Arc<Window>,
 
     // Settings:
-    filter_surface_format: Option<fn(&'_ vk::SurfaceFormatKHR) -> bool>,
-    filter_present_mode: Option<fn(&'_ vk::PresentModeKHR) -> bool>,
+    filter_surface_format: fn(&'_ vk::SurfaceFormatKHR) -> bool,
     get_desired_image_count: Option<fn(vk::SurfaceCapabilitiesKHR) -> u32>,
     get_desired_frames_in_flight: Option<fn(vk::SurfaceCapabilitiesKHR) -> usize>,
     swapchain_create_info: Option<vk::SwapchainCreateInfoKHR<'a>>,
 }
 
 impl<'a> SwapchainBuilder<'a> {
-    pub fn new(ctx: &Arc<TvWindowContext>, window: &'a Arc<Window>) -> SwapchainBuilder<'a> {
+    pub fn new(ctx: &Arc<TvWindowContext>, window: Arc<Window>) -> SwapchainBuilder<'a> {
         Self {
             ctx: ctx.clone(),
             window,
-            filter_surface_format: None,
-            filter_present_mode: None,
+            filter_surface_format: |format| {
+                format.format == vk::Format::B8G8R8A8_SRGB
+                    && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            },
             get_desired_image_count: None,
             get_desired_frames_in_flight: None,
             swapchain_create_info: None,
@@ -67,25 +72,19 @@ impl<'a> SwapchainBuilder<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn build(mut self) -> Result<Arc<Swapchain>> {
-        let surface_format = {
-            let all_surface_formats = self.ctx.get_physical_device_surface_formats()?;
-            if let Some(filter) = self.filter_surface_format {
-                all_surface_formats.into_iter().find_or_first(filter)
-            } else {
-                all_surface_formats.first().copied()
-            }
-            .context("get_physical_device_surface_formats() returned empty")?
-        };
-
+    pub fn build(self) -> Result<Swapchain> {
+        let surface_format =
+            self.ctx.get_physical_device_surface_formats()?
+                .into_iter()
+                .find(self.filter_surface_format)
+                .context("get_physical_device_surface_formats(): could not find surface format matching filter")?;
         let surface_capabilities = self.ctx.get_physical_device_surface_capabilities()?;
         let desired_image_count = self.desired_image_count(surface_capabilities);
         let desired_frames_in_flight = self.desired_frames_in_flight(surface_capabilities)?;
         let surface_resolution = match surface_capabilities.current_extent.width {
-            u32::MAX => vk::Extent2D {
-                width: self.window.inner_size().width,
-                height: self.window.inner_size().height,
-            },
+            u32::MAX => vk::Extent2D::default()
+                .width(self.window.inner_size().width)
+                .height(self.window.inner_size().height),
             _ => surface_capabilities.current_extent,
         };
 
@@ -98,14 +97,13 @@ impl<'a> SwapchainBuilder<'a> {
             surface_capabilities.current_transform
         };
         let present_mode = {
-            let all_present_modes = self.ctx.get_physical_device_surface_present_modes()?;
-            if let Some(filter) = self.filter_present_mode.take() {
-                all_present_modes.into_iter().find_or_first(filter)
-            } else {
-                all_present_modes.first().copied()
-            }
-            .context("UNEXPECTED: get_physical_device_surface_present_modes() returned empty")?
+            self.ctx
+                .get_physical_device_surface_present_modes()?
+                .into_iter()
+                .min_by_key(tv::present_mode_key)
+                .context("get_physical_device_surface_present_modes() returned empty?")?
         };
+        info!("using present mode: {present_mode:?}");
 
         let swapchain_loader = self.ctx.create_swapchain_device();
         let swapchain_khr = unsafe {
@@ -176,7 +174,7 @@ impl<'a> SwapchainBuilder<'a> {
             for _ in 0..desired_frames_in_flight {
                 let command_pool = self.ctx.device().create_command_pool(
                     &vk::CommandPoolCreateInfo::default()
-                        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
                         .queue_family_index(self.ctx.queue_family_index()),
                     None,
                 )?;
@@ -196,7 +194,7 @@ impl<'a> SwapchainBuilder<'a> {
         let image_index = PresentIndex::new();
         let last_frame_index = AtomicUsize::new(frame_index.lock().unwrap().current);
 
-        Ok(Arc::new(Swapchain {
+        Ok(Swapchain {
             ctx: self.ctx,
             khr: swapchain_khr,
             loader: swapchain_loader,
@@ -212,8 +210,9 @@ impl<'a> SwapchainBuilder<'a> {
             present_command_buffers,
             frame_index,
             image_index,
-            current_frame_index: last_frame_index,
-        }))
+            current_frame_index: Arc::new(last_frame_index),
+            did_vk_free: AtomicBool::new(false),
+        })
     }
 }
 
@@ -248,6 +247,7 @@ struct SwapchainImages {
     ctx: Arc<TvWindowContext>,
     present_images: Vec<vk::Image>,
     present_image_views: Vec<vk::ImageView>,
+    did_vk_free: AtomicBool,
 }
 
 impl SwapchainImages {
@@ -262,24 +262,15 @@ impl SwapchainImages {
             let present_image_views = present_images
                 .iter()
                 .map(|&image| {
-                    let create_view_info = vk::ImageViewCreateInfo::default()
-                        .view_type(vk::ImageViewType::TYPE_2D)
-                        .format(surface_format.format)
-                        .components(vk::ComponentMapping {
-                            r: vk::ComponentSwizzle::R,
-                            g: vk::ComponentSwizzle::G,
-                            b: vk::ComponentSwizzle::B,
-                            a: vk::ComponentSwizzle::A,
-                        })
-                        .subresource_range(vk::ImageSubresourceRange {
-                            aspect_mask: vk::ImageAspectFlags::COLOR,
-                            base_mip_level: 0,
-                            level_count: 1,
-                            base_array_layer: 0,
-                            layer_count: 1,
-                        })
-                        .image(image);
-                    let image_view = ctx.device().create_image_view(&create_view_info, None)?;
+                    let image_view = ctx.device().create_image_view(
+                        &vk::ImageViewCreateInfo::default()
+                            .view_type(vk::ImageViewType::TYPE_2D)
+                            .format(surface_format.format)
+                            .components(tv::default_component_mapping())
+                            .subresource_range(tv::default_image_subresource_range())
+                            .image(image),
+                        None,
+                    )?;
                     Ok(image_view)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -287,18 +278,27 @@ impl SwapchainImages {
                 ctx: ctx.clone(),
                 present_images,
                 present_image_views,
+                did_vk_free: AtomicBool::new(false),
             })
         }
+    }
+
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.ctx.device().device_wait_idle().unwrap();
+            for &image_view in &self.present_image_views {
+                self.ctx.device().destroy_image_view(image_view, None);
+            }
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 
 impl Drop for SwapchainImages {
     fn drop(&mut self) {
-        unsafe {
-            self.ctx.device().device_wait_idle().unwrap();
-            for image_view in self.present_image_views.drain(..) {
-                self.ctx.device().destroy_image_view(image_view, None);
-            }
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: SwapchainImages");
         }
     }
 }
@@ -345,24 +345,31 @@ pub struct Swapchain {
 
     frame_index: Mutex<FrameIndex>,
     image_index: Mutex<PresentIndex>,
-    current_frame_index: AtomicUsize,
+    pub(crate) current_frame_index: Arc<AtomicUsize>,
+
+    did_vk_free: AtomicBool,
 }
 
 impl Swapchain {
     pub fn surface_resolution(&self) -> vk::Extent2D {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.surface_resolution
     }
     pub fn frames_in_flight(&self) -> usize {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.frames_in_flight
     }
     pub fn current_frame_index(&self) -> usize {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.current_frame_index.load(Ordering::Relaxed)
     }
     pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.surface_format
     }
 
     pub fn acquire_next_image(&self, extra_fences: &[vk::Fence]) -> Result<SwapchainAcquireInfo> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.acquire_next_image_timeout(extra_fences, u64::MAX, u64::MAX)?
             .context("timeout even though we waited forever")
     }
@@ -372,6 +379,7 @@ impl Swapchain {
         wait_timeout: u64,
         acquire_timeout: u64,
     ) -> Result<Option<SwapchainAcquireInfo>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         {
             // Update {frame,present}_index.
             let mut frame_index = self.frame_index.lock().unwrap();
@@ -421,6 +429,7 @@ impl Swapchain {
     }
 
     pub fn acquire_present_command_buffer(&self) -> Result<vk::CommandBuffer> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let current_frame_index = self.current_frame_index.load(Ordering::Relaxed);
         unsafe {
             self.ctx.device().reset_command_pool(
@@ -432,6 +441,7 @@ impl Swapchain {
     }
 
     pub fn cmd_begin_rendering(&self, command_buffer: vk::CommandBuffer, clear_col: Colour) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().cmd_pipeline_barrier2(
                 command_buffer,
@@ -444,12 +454,7 @@ impl Swapchain {
                         .src_access_mask(vk::AccessFlags2::NONE)
                         .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
                         .image(self.current_present_image())
-                        .subresource_range(
-                            vk::ImageSubresourceRange::default()
-                                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                .layer_count(1)
-                                .level_count(1),
-                        ),
+                        .subresource_range(tv::default_image_subresource_range()),
                 ]),
             );
             self.ctx.device().cmd_begin_rendering(
@@ -484,18 +489,14 @@ impl Swapchain {
                         .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
                         .dst_access_mask(vk::AccessFlags2::NONE)
                         .image(self.current_present_image())
-                        .subresource_range(
-                            vk::ImageSubresourceRange::default()
-                                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                .layer_count(1)
-                                .level_count(1),
-                        ),
+                        .subresource_range(tv::default_image_subresource_range()),
                 ]),
             );
         }
     }
 
     pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().queue_submit2(
                 self.ctx.present_queue(),
@@ -548,28 +549,37 @@ impl Swapchain {
     fn current_present_image_view(&self) -> vk::ImageView {
         self.images.present_image_views[self.image_index.lock().unwrap().current]
     }
+
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.ctx.device().device_wait_idle().unwrap();
+            for &command_pool in &self.present_command_pools {
+                self.ctx.device().destroy_command_pool(command_pool, None);
+            }
+            for &semaphore in &self.present_semaphores {
+                self.ctx.device().destroy_semaphore(semaphore, None);
+            }
+            for &semaphore in &self.submit_semaphores {
+                self.ctx.device().destroy_semaphore(semaphore, None);
+            }
+            for &fence in &self.acquire_fences {
+                self.ctx.device().destroy_fence(fence, None);
+            }
+            for &fence in &self.present_fences {
+                self.ctx.device().destroy_fence(fence, None);
+            }
+            self.images.vk_free();
+            self.loader.destroy_swapchain(self.khr, None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
 }
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        unsafe {
-            self.ctx.device().device_wait_idle().unwrap();
-            for command_pool in self.present_command_pools.drain(..) {
-                self.ctx.device().destroy_command_pool(command_pool, None);
-            }
-            for semaphore in self.present_semaphores.drain(..) {
-                self.ctx.device().destroy_semaphore(semaphore, None);
-            }
-            for semaphore in self.submit_semaphores.drain(..) {
-                self.ctx.device().destroy_semaphore(semaphore, None);
-            }
-            for fence in self.acquire_fences.drain(..) {
-                self.ctx.device().destroy_fence(fence, None);
-            }
-            for fence in self.present_fences.drain(..) {
-                self.ctx.device().destroy_fence(fence, None);
-            }
-            self.loader.destroy_swapchain(self.khr, None);
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: Swapchain");
         }
     }
 }

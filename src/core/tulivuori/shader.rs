@@ -1,8 +1,11 @@
-use crate::core::tulivuori::TvWindowContext;
+use crate::{check_false, core::tulivuori::TvWindowContext};
 use anyhow::{Context, Result};
-use ash::util::read_spv;
-use ash::vk;
-use std::sync::Arc;
+use ash::{util::read_spv, vk};
+use std::{
+    sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
+};
+use tracing::error;
 
 pub struct VertFragShader {
     ctx: Arc<TvWindowContext>,
@@ -13,6 +16,7 @@ pub struct VertFragShader {
     vertex_input_attribute_descriptions: Vec<vk::VertexInputAttributeDescription>,
     vertex_input_binding_descriptions: Vec<vk::VertexInputBindingDescription>,
     vertex_input_state: vk::PipelineVertexInputStateCreateInfo<'static>,
+    did_vk_free: AtomicBool,
 }
 
 impl VertFragShader {
@@ -39,19 +43,14 @@ impl VertFragShader {
 
         let shader_entry_name = c"main";
         let shader_stage_create_infos = [
-            vk::PipelineShaderStageCreateInfo {
-                module: vert,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::VERTEX,
-                ..Default::default()
-            },
-            vk::PipelineShaderStageCreateInfo {
-                s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
-                module: frag,
-                p_name: shader_entry_name.as_ptr(),
-                stage: vk::ShaderStageFlags::FRAGMENT,
-                ..Default::default()
-            },
+            vk::PipelineShaderStageCreateInfo::default()
+                .module(vert)
+                .name(shader_entry_name)
+                .stage(vk::ShaderStageFlags::VERTEX),
+            vk::PipelineShaderStageCreateInfo::default()
+                .module(frag)
+                .name(shader_entry_name)
+                .stage(vk::ShaderStageFlags::FRAGMENT),
         ];
 
         let mut rv = Self {
@@ -61,11 +60,10 @@ impl VertFragShader {
             shader_stage_create_infos,
             vertex_input_attribute_descriptions,
             vertex_input_binding_descriptions,
-            vertex_input_assembly_state_info: vk::PipelineInputAssemblyStateCreateInfo {
-                topology: vk::PrimitiveTopology::TRIANGLE_LIST,
-                ..Default::default()
-            },
+            vertex_input_assembly_state_info: vk::PipelineInputAssemblyStateCreateInfo::default()
+                .topology(vk::PrimitiveTopology::TRIANGLE_LIST),
             vertex_input_state: vk::PipelineVertexInputStateCreateInfo::default(),
+            did_vk_free: AtomicBool::new(false),
         };
 
         // Avoid annoying lifetime issues.
@@ -87,14 +85,22 @@ impl VertFragShader {
             .vertex_input_state(&self.vertex_input_state)
             .input_assembly_state(&self.vertex_input_assembly_state_info)
     }
-}
 
-impl Drop for VertFragShader {
-    fn drop(&mut self) {
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             self.ctx.device().destroy_shader_module(self.vert, None);
             self.ctx.device().destroy_shader_module(self.frag, None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for VertFragShader {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: VertFragShader");
         }
     }
 }

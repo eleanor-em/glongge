@@ -22,7 +22,7 @@ use std::{
 struct RawTexture {
     buf: Vec<u8>,
     extent: vk::Extent2D,
-    _format: vk::Format,
+    format: vk::Format,
     duration: Option<Duration>,
 }
 
@@ -178,6 +178,10 @@ impl TextureHandlerInner {
                 },
             );
         }
+    }
+
+    fn vk_free(&mut self) {
+        self.texture_manager.lock().vk_free();
     }
 }
 
@@ -356,7 +360,7 @@ impl TextureHandler {
         Ok(RawTexture {
             buf,
             extent: vk::Extent2D { width, height },
-            _format: format,
+            format,
             duration: None,
         })
     }
@@ -384,7 +388,12 @@ impl TextureHandler {
         let texture = inner
             .texture_manager
             .lock()
-            .create_texture(loaded.extent, &loaded.buf, ready_flag.clone())
+            .create_texture(
+                loaded.extent,
+                loaded.format,
+                &loaded.buf,
+                ready_flag.clone(),
+            )
             .with_context(|| {
                 format!("TextureHandler::wait_load_file(): creating texture: {filename}")
             })?
@@ -427,7 +436,12 @@ impl TextureHandler {
                 let texture = inner
                     .texture_manager
                     .lock()
-                    .create_texture(loaded.extent, &loaded.buf, ready_flag.clone())?
+                    .create_texture(
+                        loaded.extent,
+                        loaded.format,
+                        &loaded.buf,
+                        ready_flag.clone(),
+                    )?
                     .unwrap();
                 Ok(Texture {
                     id: texture.id(),
@@ -494,7 +508,12 @@ impl TextureHandler {
             .lock()
             .texture_manager
             .lock()
-            .create_texture(loaded.extent, &loaded.buf, ready_flag.clone())?
+            .create_texture(
+                loaded.extent,
+                loaded.format,
+                &loaded.buf,
+                ready_flag.clone(),
+            )?
             .unwrap();
         let texture = Texture {
             id: texture.id(),
@@ -598,5 +617,9 @@ impl TextureHandler {
             return false;
         };
         self.is_texture_ready(texture_id)
+    }
+
+    pub fn vk_free(&self) {
+        self.inner.lock().vk_free();
     }
 }

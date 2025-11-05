@@ -1,35 +1,724 @@
-use std::borrow::Cow;
-// tulivuori
-use crate::core::prelude::*;
-use crate::core::render::RenderHandler;
-use crate::core::scene::SceneHandler;
-use crate::gui::GuiContext;
-use crate::resource::ResourceHandler;
-use crate::util::{SceneHandlerBuilder, UniqueShared, gg_float};
-use crate::{info_every_seconds, util::gg_time::TimeIt, warn_every_seconds};
+use crate::{
+    core::prelude::*,
+    core::render::RenderHandler,
+    core::scene::SceneHandler,
+    gui::GuiContext,
+    info_every_seconds,
+    resource::ResourceHandler,
+    util::gg_time::TimeIt,
+    util::{SceneHandlerBuilder, UniqueShared, gg_float},
+    warn_every_seconds,
+};
 use anyhow::{Context, Result};
-use ash::ext::debug_utils;
-use ash::khr::surface;
-use ash::{Device, Entry, Instance, vk};
+use ash::{Device, Entry, Instance, ext::debug_utils, khr::surface, vk};
 use egui::ViewportId;
-use egui_winit::winit::application::ApplicationHandler;
-use egui_winit::winit::dpi::PhysicalSize;
-use egui_winit::winit::event_loop::ActiveEventLoop;
-use egui_winit::winit::keyboard::PhysicalKey;
-use egui_winit::winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use egui_winit::winit::window::{Window, WindowAttributes, WindowId};
-use egui_winit::winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop};
-use std::ffi::CString;
-use std::str::FromStr;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::SystemTime;
+use egui_winit::{
+    winit::application::ApplicationHandler,
+    winit::dpi::PhysicalSize,
+    winit::event_loop::ActiveEventLoop,
+    winit::keyboard::PhysicalKey,
+    winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle},
+    winit::window::{Window, WindowAttributes, WindowId},
+    winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop},
+};
 use std::{
+    borrow::Cow,
     ffi,
+    ffi::CString,
+    mem::offset_of,
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::mpsc,
+    sync::mpsc::{Receiver, Sender},
     sync::{Arc, Mutex},
     time::Instant,
+    time::SystemTime,
 };
 use tracing::{error, info_span, warn};
+
+pub mod tv {
+    use crate::core::config::USE_VSYNC;
+    use ash::vk;
+
+    pub fn default_component_mapping() -> vk::ComponentMapping {
+        vk::ComponentMapping::default()
+            .r(vk::ComponentSwizzle::R)
+            .g(vk::ComponentSwizzle::G)
+            .b(vk::ComponentSwizzle::B)
+            .a(vk::ComponentSwizzle::A)
+    }
+    pub fn default_image_subresource_range() -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .layer_count(1)
+            .level_count(1)
+    }
+
+    pub fn find_memorytype_index(
+        memory_req: &vk::MemoryRequirements,
+        memory_prop: &vk::PhysicalDeviceMemoryProperties,
+        flags: vk::MemoryPropertyFlags,
+    ) -> Option<u32> {
+        memory_prop.memory_types[..memory_prop.memory_type_count as _]
+            .iter()
+            .enumerate()
+            .find(|(index, memory_type)| {
+                (1 << index) & memory_req.memory_type_bits != 0
+                    && memory_type.property_flags & flags == flags
+            })
+            .map(|(index, _memory_type)| index as _)
+    }
+
+    pub fn present_mode_key(present_mode: &vk::PresentModeKHR) -> usize {
+        if !USE_VSYNC && *present_mode == vk::PresentModeKHR::IMMEDIATE {
+            return 0;
+        }
+        match *present_mode {
+            vk::PresentModeKHR::MAILBOX => 1,
+            vk::PresentModeKHR::FIFO => 2,
+            vk::PresentModeKHR::IMMEDIATE => 3,
+            _ => 4,
+        }
+    }
+
+    pub(crate) unsafe fn any_as_u32_slice<T: Sized>(p: &T) -> &[u32] {
+        unsafe {
+            std::slice::from_raw_parts(
+                std::ptr::from_ref(p).cast::<u32>(),
+                size_of::<T>() / size_of::<u32>(),
+            )
+        }
+    }
+}
+
+pub struct TvWindowContext {
+    _entry: Entry,
+    instance: Instance,
+    debug_handler: Option<DebugHandler>,
+
+    // Just seems prudent to also have this.
+    #[allow(unused)]
+    window: Arc<Window>,
+
+    surface: vk::SurfaceKHR,
+    surface_loader: surface::Instance,
+    physical_device: vk::PhysicalDevice,
+    queue_family_index: u32,
+    device: Device,
+    present_queue: vk::Queue,
+
+    did_vk_free: AtomicBool,
+}
+
+impl TvWindowContext {
+    pub fn surface(&self) -> vk::SurfaceKHR {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        self.surface
+    }
+    pub fn queue_family_index(&self) -> u32 {
+        self.queue_family_index
+    }
+    pub fn device(&self) -> &Device {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        &self.device
+    }
+    pub fn present_queue(&self) -> vk::Queue {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        self.present_queue
+    }
+
+    pub(crate) fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        ash::khr::swapchain::Device::new(&self.instance, &self.device)
+    }
+
+    pub fn get_physical_device_memory_properties(&self) -> vk::PhysicalDeviceMemoryProperties {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.instance
+                .get_physical_device_memory_properties(self.physical_device)
+        }
+    }
+    pub fn get_physical_device_surface_capabilities(&self) -> Result<vk::SurfaceCapabilitiesKHR> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            Ok(self
+                .surface_loader
+                .get_physical_device_surface_capabilities(self.physical_device, self.surface)?)
+        }
+    }
+    pub fn get_physical_device_surface_formats(&self) -> Result<Vec<vk::SurfaceFormatKHR>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            Ok(self
+                .surface_loader
+                .get_physical_device_surface_formats(self.physical_device, self.surface)?)
+        }
+    }
+    pub fn get_physical_device_surface_present_modes(&self) -> Result<Vec<vk::PresentModeKHR>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            Ok(self
+                .surface_loader
+                .get_physical_device_surface_present_modes(self.physical_device, self.surface)?)
+        }
+    }
+
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.device.device_wait_idle().unwrap();
+            self.device.destroy_device(None);
+            self.surface_loader.destroy_surface(self.surface, None);
+            if let Some(debug_handler) = self.debug_handler.as_ref() {
+                debug_handler.vk_free();
+            }
+            self.instance.destroy_instance(None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+    pub fn did_vk_free(&self) -> bool {
+        self.did_vk_free.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for TvWindowContext {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: TvWindowContext");
+        }
+    }
+}
+
+pub struct TvWindowContextBuilder {
+    app_name: CString,
+    instance_extension_names: Vec<*const ffi::c_char>,
+    logical_device_extension_names: Vec<*const ffi::c_char>,
+
+    flag_add_validation_layers: bool,
+    flag_use_debug_tools: bool,
+    flag_verbose_logging: bool,
+}
+
+impl Default for TvWindowContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TvWindowContextBuilder {
+    pub fn new() -> TvWindowContextBuilder {
+        TvWindowContextBuilder {
+            app_name: CString::from_str("tulivuori").unwrap(),
+            instance_extension_names: Vec::new(),
+            logical_device_extension_names: Vec::new(),
+            flag_add_validation_layers: false,
+            flag_use_debug_tools: false,
+            flag_verbose_logging: false,
+        }
+    }
+
+    #[must_use]
+    pub fn with_app_name(mut self, app_name: CString) -> Self {
+        self.app_name = app_name;
+        self
+    }
+    #[must_use]
+    pub fn with_instance_extension(mut self, extension: &ffi::CStr) -> Self {
+        self.instance_extension_names.push(extension.as_ptr());
+        self
+    }
+    #[must_use]
+    pub fn with_logical_device_extension(mut self, logical_device_extension: &ffi::CStr) -> Self {
+        self.logical_device_extension_names
+            .push(logical_device_extension.as_ptr());
+        self
+    }
+    #[must_use]
+    pub fn with_flag_debug_tools(mut self) -> Self {
+        self.flag_use_debug_tools = true;
+        self
+    }
+    #[must_use]
+    pub fn with_flag_validation_layers(mut self) -> Self {
+        self.flag_add_validation_layers = true;
+        self
+    }
+    #[must_use]
+    pub fn with_flag_verbose_logging(mut self) -> Self {
+        self.flag_verbose_logging = true;
+        self
+    }
+
+    pub fn build(self, window: &Arc<Window>) -> Result<Arc<TvWindowContext>> {
+        let span = info_span!("TvWindowContext");
+        let _enter = span.enter();
+
+        let perf_stats = PerfStats::new("vulkan_init");
+        perf_stats.start();
+
+        let entry = Entry::linked();
+
+        let mut layers_names_raw = Vec::new();
+        if self.flag_add_validation_layers {
+            layers_names_raw.push(c"VK_LAYER_KHRONOS_validation".as_ptr());
+        }
+
+        let mut instance_extension_names = Self::create_min_instance_extension_names(window)?;
+        instance_extension_names.extend(self.instance_extension_names);
+        if self.flag_verbose_logging {
+            info!("create instance");
+        }
+        let instance = unsafe {
+            Self::create_instance(
+                &self.app_name,
+                &entry,
+                &layers_names_raw,
+                &instance_extension_names,
+            )?
+        };
+        perf_stats.lap("create instance");
+
+        let debug_handler = if self.flag_use_debug_tools {
+            #[cfg(not(debug_assertions))]
+            {
+                error!("should not enable debug tools in release mode!");
+            }
+            Some(DebugHandler::new(&entry, &instance)?)
+        } else {
+            None
+        };
+
+        if self.flag_verbose_logging {
+            info!("create surface");
+        }
+        let surface = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.display_handle()?.as_raw(),
+                window.window_handle()?.as_raw(),
+                None,
+            )?
+        };
+        perf_stats.lap("create surface");
+
+        // TODO: find a way to make these into struct members.
+        let features = vk::PhysicalDeviceFeatures::default();
+        let features_v12 = vk::PhysicalDeviceVulkan12Features::default()
+            .descriptor_binding_sampled_image_update_after_bind(true)
+            .descriptor_binding_storage_buffer_update_after_bind(true)
+            .descriptor_indexing(true)
+            .shader_sampled_image_array_non_uniform_indexing(true);
+        let features_v13 = vk::PhysicalDeviceVulkan13Features::default()
+            .dynamic_rendering(true)
+            .synchronization2(true);
+
+        if self.flag_verbose_logging {
+            info!("create physical device");
+        }
+        let (surface_loader, physical_device, queue_family_index) = Self::create_physical_device(
+            &entry,
+            &instance,
+            surface,
+            &features,
+            &features_v12,
+            &features_v13,
+        )?;
+        perf_stats.lap("create physical device");
+
+        if self.flag_verbose_logging {
+            info!("create logical device (and present queue)");
+        }
+        let mut logical_device_extension_names = vec![
+            ash::khr::swapchain::NAME.as_ptr(),
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            ash::khr::portability_subset::NAME.as_ptr(),
+        ];
+        logical_device_extension_names.extend(self.logical_device_extension_names);
+        let device = Self::create_device(
+            &instance,
+            physical_device,
+            queue_family_index,
+            &logical_device_extension_names,
+            features,
+            features_v12,
+            features_v13,
+        )?;
+        let present_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+        perf_stats.lap("create logical device");
+
+        perf_stats.report(0);
+
+        Ok(Arc::new(TvWindowContext {
+            _entry: entry,
+            instance,
+            debug_handler,
+            window: window.clone(),
+            surface,
+            surface_loader,
+            physical_device,
+            queue_family_index,
+            device,
+            present_queue,
+            did_vk_free: AtomicBool::new(false),
+        }))
+    }
+
+    fn create_min_instance_extension_names(
+        window: &Arc<Window>,
+    ) -> Result<Vec<*const ffi::c_char>> {
+        let mut min_extension_names =
+            ash_window::enumerate_required_extensions(window.display_handle()?.as_raw())?.to_vec();
+        min_extension_names.push(debug_utils::NAME.as_ptr());
+
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            min_extension_names.push(ash::khr::portability_enumeration::NAME.as_ptr());
+        }
+
+        Ok(min_extension_names)
+    }
+
+    unsafe fn create_instance(
+        app_name: &ffi::CStr,
+        entry: &Entry,
+        layers_names_raw: &[*const ffi::c_char],
+        min_extension_names: &[*const ffi::c_char],
+    ) -> Result<Instance> {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
+                Ok(var) => var,
+                Err(e) => {
+                    panic!(
+                        "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
+                        do you have .cargo/config.toml set up correctly? got: {e:?}"
+                    );
+                }
+            };
+            check_eq!(var, "1");
+        }
+        let app_info = vk::ApplicationInfo::default()
+            .application_name(app_name)
+            .application_version(0)
+            .engine_name(app_name)
+            .engine_version(0)
+            .api_version(vk::make_api_version(0, 1, 3, 0));
+        let create_flags = {
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            {
+                vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            {
+                vk::InstanceCreateFlags::empty()
+            }
+        };
+        let create_info = vk::InstanceCreateInfo::default()
+            .application_info(&app_info)
+            .enabled_layer_names(layers_names_raw)
+            .enabled_extension_names(min_extension_names)
+            .flags(create_flags);
+        let instance = unsafe { entry.create_instance(&create_info, None)? };
+        Ok(instance)
+    }
+
+    fn create_physical_device(
+        entry: &Entry,
+        instance: &Instance,
+        surface: vk::SurfaceKHR,
+        required_features: &vk::PhysicalDeviceFeatures,
+        required_features_v12: &vk::PhysicalDeviceVulkan12Features,
+        required_features_v13: &vk::PhysicalDeviceVulkan13Features,
+    ) -> Result<(surface::Instance, vk::PhysicalDevice, u32)> {
+        let physical_devices = unsafe { instance.enumerate_physical_devices()? };
+        let surface_loader = surface::Instance::new(entry, instance);
+        let (physical_device, queue_family_index) = physical_devices
+            .iter()
+            // API support:
+            .filter(|&&candidate| unsafe {
+                let props = instance.get_physical_device_properties(candidate);
+                let rv = vk::api_version_major(props.api_version) >= 1
+                    && vk::api_version_minor(props.api_version) >= 3;
+                check!(rv);
+                rv
+            })
+            // Features support:
+            .filter(|&&candidate| unsafe {
+                Self::does_support_features(
+                    instance,
+                    required_features,
+                    required_features_v12,
+                    required_features_v13,
+                    candidate,
+                )
+            })
+            // Surface and graphics queue support:
+            .filter_map(|&candidate| unsafe {
+                let (queue_family_index, _queue_family_properties) = instance
+                    .get_physical_device_queue_family_properties(candidate)
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, info)| info.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+                    .find(|(index, _)| {
+                        surface_loader
+                            .get_physical_device_surface_support(candidate, *index as u32, surface)
+                            .unwrap_or_else(|e| {
+                                error!(
+                                    "get_physical_device_surface_support(): index={index}: {e:?}"
+                                );
+                                false
+                            })
+                    })?;
+                Some((candidate, queue_family_index))
+            })
+            // Preferred device type:
+            .sorted_by_key(|&(candidate, _)| unsafe {
+                let props = instance.get_physical_device_properties(candidate);
+                match props.device_type {
+                    vk::PhysicalDeviceType::DISCRETE_GPU => 0,
+                    vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
+                    vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+                    vk::PhysicalDeviceType::CPU => 3,
+                    _ => 4,
+                }
+            })
+            // Preferred present mode:
+            .min_by_key(|(candidate, _)| {
+                let present_modes = match unsafe {
+                    surface_loader.get_physical_device_surface_present_modes(*candidate, surface)
+                } {
+                    Ok(present_modes) => {
+                        if present_modes.is_empty() {
+                            error!("get_physical_device_surface_present_modes() returned empty?");
+                        }
+                        present_modes
+                    }
+                    Err(e) => {
+                        error!("get_physical_device_surface_present_modes(): {e:?}");
+                        return usize::MAX;
+                    }
+                };
+                present_modes
+                    .iter()
+                    .map(tv::present_mode_key)
+                    .min()
+                    .unwrap_or(usize::MAX)
+            })
+            .context("Couldn't find suitable device.")?;
+        let queue_family_index = queue_family_index as u32;
+        Ok((surface_loader, physical_device, queue_family_index))
+    }
+
+    unsafe fn does_support_features(
+        instance: &Instance,
+        required_features: &vk::PhysicalDeviceFeatures,
+        required_features_v12: &vk::PhysicalDeviceVulkan12Features,
+        required_features_v13: &vk::PhysicalDeviceVulkan13Features,
+        candidate: vk::PhysicalDevice,
+    ) -> bool {
+        unsafe {
+            let mut supported_features_v12 = vk::PhysicalDeviceVulkan12Features::default();
+            let mut supported_features_v13 = vk::PhysicalDeviceVulkan13Features::default();
+            let mut supported_features = vk::PhysicalDeviceFeatures2::default()
+                .push_next(&mut supported_features_v12)
+                .push_next(&mut supported_features_v13);
+            let mut rv = true;
+            instance.get_physical_device_features2(candidate, &mut supported_features);
+            {
+                let required_features_bytes = tv::any_as_u32_slice(required_features);
+                let supported_features_bytes = tv::any_as_u32_slice(&supported_features.features);
+                check_gt!(supported_features_bytes.iter().sum::<u32>(), 0u32);
+                for (i, (&required, &supported)) in required_features_bytes
+                    .iter()
+                    .zip(supported_features_bytes)
+                    .enumerate()
+                {
+                    check!(required == 0 || required == 1);
+                    check!(supported == 0 || supported == 1);
+                    if required != 0 && supported == 0 {
+                        error!("missing required feature: {i}");
+                        rv = false;
+                    }
+                }
+            }
+            {
+                let offset = offset_of!(
+                    vk::PhysicalDeviceVulkan12Features,
+                    sampler_mirror_clamp_to_edge
+                ) / size_of::<u32>();
+                let required_features_bytes_v12 =
+                    &tv::any_as_u32_slice(required_features_v12)[offset..];
+                let supported_features_bytes_v12 =
+                    &tv::any_as_u32_slice(&supported_features_v12)[offset..];
+                // last element is a marker
+                let required_features_bytes_v12 =
+                    &required_features_bytes_v12[..required_features_bytes_v12.len() - 1];
+                let supported_features_bytes_v12 =
+                    &supported_features_bytes_v12[..supported_features_bytes_v12.len() - 1];
+                check_gt!(supported_features_bytes_v12.iter().sum::<u32>(), 0);
+                for (i, (&required, &supported)) in required_features_bytes_v12
+                    .iter()
+                    .zip(supported_features_bytes_v12)
+                    .enumerate()
+                {
+                    check!(required == 0 || required == 1, i);
+                    check!(supported == 0 || supported == 1, i);
+                    if required != 0 && supported == 0 {
+                        error!("missing required Vulkan 1.2 feature: {i}");
+                        rv = false;
+                    }
+                }
+            }
+            {
+                let offset = offset_of!(vk::PhysicalDeviceVulkan13Features, robust_image_access)
+                    / size_of::<u32>();
+                let required_features_bytes_v13 =
+                    &tv::any_as_u32_slice(required_features_v13)[offset..];
+                let supported_features_bytes_v13 =
+                    &tv::any_as_u32_slice(&supported_features_v13)[offset..];
+                // last element is a marker
+                let required_features_bytes_v13 =
+                    &required_features_bytes_v13[..required_features_bytes_v13.len() - 1];
+                let supported_features_bytes_v13 =
+                    &supported_features_bytes_v13[..supported_features_bytes_v13.len() - 1];
+                check_gt!(supported_features_bytes_v13.iter().sum::<u32>(), 0);
+                for (i, (&required, &supported)) in required_features_bytes_v13
+                    .iter()
+                    .zip(supported_features_bytes_v13)
+                    .enumerate()
+                {
+                    check!(required == 0 || required == 1, i);
+                    check!(supported == 0 || supported == 1, i);
+                    if required != 0 && supported == 0 {
+                        error!("missing required Vulkan 1.3 feature: {i}");
+                        rv = false;
+                    }
+                }
+            }
+            rv
+        }
+    }
+
+    fn create_device(
+        instance: &Instance,
+        physical_device: vk::PhysicalDevice,
+        queue_family_index: u32,
+        device_extension_names_raw: &[*const ffi::c_char],
+        features: vk::PhysicalDeviceFeatures,
+        mut features_v12: vk::PhysicalDeviceVulkan12Features,
+        mut features_v13: vk::PhysicalDeviceVulkan13Features,
+    ) -> Result<Device> {
+        let priorities = [1.0];
+
+        let queue_info = vk::DeviceQueueCreateInfo::default()
+            .queue_family_index(queue_family_index)
+            .queue_priorities(&priorities);
+
+        let device_create_info = vk::DeviceCreateInfo::default()
+            .queue_create_infos(std::slice::from_ref(&queue_info))
+            .enabled_extension_names(device_extension_names_raw)
+            .enabled_features(&features)
+            .push_next(&mut features_v12)
+            .push_next(&mut features_v13);
+        let device = unsafe { instance.create_device(physical_device, &device_create_info, None)? };
+        Ok(device)
+    }
+}
+
+pub(crate) struct DebugHandler {
+    debug_utils_loader: debug_utils::Instance,
+    debug_callback: vk::DebugUtilsMessengerEXT,
+    did_vk_free: AtomicBool,
+}
+
+impl DebugHandler {
+    pub fn new(entry: &Entry, instance: &Instance) -> Result<Self> {
+        let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
+            .message_severity(
+                vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
+            )
+            .message_type(
+                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+            )
+            .pfn_user_callback(Some(Self::vulkan_debug_callback));
+        let debug_utils_loader = debug_utils::Instance::new(entry, instance);
+        let debug_callback =
+            unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
+        Ok(Self {
+            debug_utils_loader,
+            debug_callback,
+            did_vk_free: AtomicBool::new(false),
+        })
+    }
+
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.debug_utils_loader
+                .destroy_debug_utils_messenger(self.debug_callback, None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+
+    /// # Safety: lol
+    unsafe extern "system" fn vulkan_debug_callback(
+        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+        message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+        p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
+        _user_data: *mut std::os::raw::c_void,
+    ) -> vk::Bool32 {
+        let vk_span = info_span!("vulkan");
+        let _enter = vk_span.enter();
+        let callback_data = unsafe { *p_callback_data };
+        let message_id_number = callback_data.message_id_number;
+
+        let message_id_name = if callback_data.p_message_id_name.is_null() {
+            Cow::from("")
+        } else {
+            unsafe { ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy() }
+        };
+
+        let message = if callback_data.p_message.is_null() {
+            Cow::from("")
+        } else {
+            unsafe { ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy() }
+        };
+
+        match message_severity {
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => {
+                info!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
+            }
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => {
+                warn!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
+            }
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => {
+                error!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
+            }
+            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => {
+                // ignored
+            }
+            value => {
+                panic!("unexpected DebugUtilsMessageSeverityFlagsEXT value: {value:?}");
+            }
+        }
+
+        vk::FALSE
+    }
+}
+
+impl Drop for DebugHandler {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: DebugHandler");
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct GgWindow {
@@ -91,14 +780,11 @@ impl GgViewport {
     pub(crate) fn new(window: &GgWindow) -> Self {
         Self {
             window: window.clone(),
-            inner: vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: window.inner_size().width as f32,
-                height: window.inner_size().height as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
+            inner: vk::Viewport::default()
+                .width(window.inner_size().width as f32)
+                .height(window.inner_size().height as f32)
+                .min_depth(0.0)
+                .max_depth(1.0),
             winit_scale_factor: window.winit_scale_factor(),
             extra_scale_factor: 1.0,
         }
@@ -173,13 +859,17 @@ struct WindowEventHandlerInner {
     window_event_rx: Receiver<WindowEvent>,
     scale_factor_rx: Receiver<f32>,
     recreate_swapchain_rx: Receiver<Instant>,
-    render_handler: RenderHandler,
+    render_handler: Option<RenderHandler>,
     render_count: usize,
 }
 impl WindowEventHandlerInner {
     fn handle_window_events(&mut self) {
         while let Ok(event) = self.window_event_rx.try_recv() {
             let _response = self.platform.on_window_event(&self.window.inner, &event);
+            if event == WindowEvent::CloseRequested {
+                self.render_handler.take().unwrap().vk_free();
+                std::process::exit(0);
+            }
         }
         if let Some(new_scale_factor) = self.scale_factor_rx.try_iter().last() {
             // Since scale_factor is given by winit, we expect an exact comparison to work.
@@ -209,10 +899,14 @@ impl WindowEventHandlerInner {
         let n = self.render_count;
         let span = info_span!("render_update", n);
         let _enter = span.enter();
-        self.render_handler.wait_update_done();
+        self.render_handler.as_ref().unwrap().wait_update_done();
         self.handle_window_events();
 
-        self.render_handler.render_update().unwrap();
+        self.render_handler
+            .as_mut()
+            .unwrap()
+            .render_update()
+            .unwrap();
         self.render_count += 1;
     }
 }
@@ -279,7 +973,7 @@ where
         Ok(event_loop.run_app(&mut this)?)
     }
 
-    fn create_inner2(
+    fn create_inner(
         &mut self,
         event_loop: &ActiveEventLoop,
         scene_handler_builder_callback: SceneHandlerBuilderCallback,
@@ -316,7 +1010,7 @@ where
         .with_extra_scale_factor(self.create_info.extra_scale_factor)
         .with_clear_col(self.create_info.clear_col);
         let scene_handler_builder =
-            SceneHandlerBuilder::new(input_handler.clone(), render_handler.clone());
+            SceneHandlerBuilder::new(input_handler.clone(), render_handler.as_lite());
         std::thread::spawn(move || {
             let mut scene_handler = scene_handler_builder_callback(scene_handler_builder);
             loop {
@@ -337,7 +1031,7 @@ where
                 window_event_rx,
                 scale_factor_rx,
                 recreate_swapchain_rx,
-                render_handler,
+                render_handler: Some(render_handler),
                 render_count: 0,
             };
             loop {
@@ -358,7 +1052,7 @@ where
         {
             // First event. Note winit documentation:
             // "This is a common indicator that you can create a window."
-            self.create_inner2(event_loop, scene_handler_builder_callback)
+            self.create_inner(event_loop, scene_handler_builder_callback)
                 .expect("error initialising");
         }
     }
@@ -371,10 +1065,6 @@ where
     ) {
         self.window_event_tx.send(event.clone()).unwrap();
         match event {
-            WindowEvent::CloseRequested => {
-                info!("received WindowEvent::CloseRequested, calling exit(0)");
-                std::process::exit(0);
-            }
             WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
                 PhysicalKey::Code(keycode) => {
                     self.input_handler
@@ -539,523 +1229,62 @@ pub mod pipeline;
 pub mod shader;
 pub mod swapchain;
 pub mod texture;
+
 #[derive(Clone)]
-pub struct VulkanPerfStats {
-    active: bool,
+pub struct PerfStats {
     stats: Arc<Mutex<Vec<(String, SystemTime)>>>,
+    name: String,
 }
 
-impl Default for VulkanPerfStats {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl VulkanPerfStats {
-    pub fn new() -> Self {
+impl PerfStats {
+    pub fn new(name: &'static str) -> Self {
         Self {
-            active: false,
             stats: Arc::new(Mutex::new(Vec::new())),
+            name: "@".to_string() + name,
         }
+    }
+
+    pub fn start(&self) {
+        self.lap("");
     }
 
     pub fn lap(&self, name: impl AsRef<str>) {
-        if self.active {
-            if let Some((_, last)) = self.stats.try_lock().unwrap().last().cloned() {
-                check_ge!(SystemTime::now(), last);
-            }
-            self.stats
-                .try_lock()
-                .unwrap()
-                .push((name.as_ref().to_string(), SystemTime::now()));
+        if let Some((_, last)) = self.stats.try_lock().unwrap().last().cloned() {
+            check_ge!(SystemTime::now(), last);
         }
+        self.stats
+            .try_lock()
+            .unwrap()
+            .push((name.as_ref().to_string(), SystemTime::now()));
     }
 
-    pub fn report(&self, threshold_ms: u128) {
-        if self.active {
-            let span = info_span!("VulkanPerfStats");
-            let _enter = span.enter();
-            let stats_ms = self
-                .stats
-                .try_lock()
-                .unwrap()
-                .drain(..)
-                .tuple_windows()
-                .map(|((_, i1), (name, i2))| {
-                    (
-                        name,
-                        i2.duration_since(i1).unwrap().as_micros() as f32 / 1000.0,
-                    )
-                })
-                .collect_vec();
-            let total_ms = stats_ms
-                .iter()
-                .map(|(_, elapsed_ms)| elapsed_ms)
-                .sum::<f32>();
-            if total_ms >= threshold_ms as f32 {
-                for (name, elapsed_ms) in stats_ms {
-                    info!("{name}: {:.2} ms", elapsed_ms);
-                }
-                info!("total: {:.2} ms", total_ms);
-            } else {
-                info_every_millis!(1000, "{total_ms:.2} ms");
-            }
-        }
-    }
-}
-
-pub(crate) struct DebugHandler {
-    debug_utils_loader: debug_utils::Instance,
-    debug_callback: vk::DebugUtilsMessengerEXT,
-}
-
-impl DebugHandler {
-    pub fn new(entry: &Entry, instance: &Instance) -> Result<Self> {
-        let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
-            .message_severity(
-                vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-                    | vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
-            )
-            .message_type(
-                vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
-                    | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
-                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
-            )
-            .pfn_user_callback(Some(vulkan_debug_callback));
-        let debug_utils_loader = debug_utils::Instance::new(entry, instance);
-        let debug_callback =
-            unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
-        Ok(Self {
-            debug_utils_loader,
-            debug_callback,
-        })
-    }
-}
-
-impl Drop for DebugHandler {
-    fn drop(&mut self) {
-        unsafe {
-            self.debug_utils_loader
-                .destroy_debug_utils_messenger(self.debug_callback, None);
-        }
-    }
-}
-
-/// # Safety: lol
-unsafe extern "system" fn vulkan_debug_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
-    _user_data: *mut std::os::raw::c_void,
-) -> vk::Bool32 {
-    let vk_span = info_span!("vulkan");
-    let _enter = vk_span.enter();
-    let callback_data = unsafe { *p_callback_data };
-    let message_id_number = callback_data.message_id_number;
-
-    let message_id_name = if callback_data.p_message_id_name.is_null() {
-        Cow::from("")
-    } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy() }
-    };
-
-    let message = if callback_data.p_message.is_null() {
-        Cow::from("")
-    } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy() }
-    };
-
-    if message_severity == vk::DebugUtilsMessageSeverityFlagsEXT::INFO {
-        info!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
-    } else if message_severity == vk::DebugUtilsMessageSeverityFlagsEXT::WARNING {
-        warn!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
-    } else if message_severity == vk::DebugUtilsMessageSeverityFlagsEXT::ERROR {
-        error!("{message_type:?} [{message_id_name} ({message_id_number})] : {message}",);
-    }
-
-    vk::FALSE
-}
-
-pub struct TvWindowContextBuilder {
-    app_name: CString,
-    instance_extension_names: Vec<*const ffi::c_char>,
-    device_extension_names: Vec<*const ffi::c_char>,
-    features: vk::PhysicalDeviceFeatures,
-
-    flag_add_validation_layers: bool,
-    flag_use_debug_tools: bool,
-    flag_verbose_logging: bool,
-}
-
-impl Default for TvWindowContextBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TvWindowContextBuilder {
-    pub fn new() -> TvWindowContextBuilder {
-        TvWindowContextBuilder {
-            app_name: CString::from_str("tulivuori").unwrap(),
-            instance_extension_names: Vec::new(),
-            device_extension_names: Vec::new(),
-            features: vk::PhysicalDeviceFeatures::default(),
-            flag_add_validation_layers: false,
-            flag_use_debug_tools: false,
-            flag_verbose_logging: false,
-        }
-    }
-
-    #[must_use]
-    pub fn with_app_name(mut self, app_name: CString) -> Self {
-        self.app_name = app_name;
-        self
-    }
-    #[allow(unused)]
-    #[must_use]
-    pub fn with_instance_extension(mut self, extension: &ffi::CStr) -> Self {
-        self.instance_extension_names.push(extension.as_ptr());
-        self
-    }
-    #[allow(unused)]
-    #[must_use]
-    pub fn with_device_extension(mut self, device_extension: &ffi::CStr) -> Self {
-        self.device_extension_names.push(device_extension.as_ptr());
-        self
-    }
-    #[allow(unused)]
-    #[must_use]
-    pub fn with_features(mut self, features: vk::PhysicalDeviceFeatures) -> Self {
-        self.features = features;
-        self
-    }
-    #[must_use]
-    pub fn with_flag_debug_tools(mut self) -> Self {
-        self.flag_use_debug_tools = true;
-        self
-    }
-    #[must_use]
-    pub fn with_flag_validation_layers(mut self) -> Self {
-        self.flag_add_validation_layers = true;
-        self
-    }
-    #[must_use]
-    pub fn with_flag_verbose_logging(mut self) -> Self {
-        self.flag_verbose_logging = true;
-        self
-    }
-
-    pub fn build(self, window: &Arc<Window>) -> Result<Arc<TvWindowContext>> {
-        let span = info_span!("TvWindowContext");
+    pub fn report(&self, threshold_us: u128) {
+        let span = info_span!("PerfStats", %self.name);
         let _enter = span.enter();
-
-        let entry = Entry::linked();
-
-        let mut layers_names_raw = Vec::new();
-        if self.flag_add_validation_layers {
-            layers_names_raw.push(c"VK_LAYER_KHRONOS_validation".as_ptr());
-        }
-
-        let mut instance_extension_names = Self::create_min_instance_extension_names(window)?;
-        instance_extension_names.extend(self.instance_extension_names);
-        if self.flag_verbose_logging {
-            info!("create instance");
-        }
-        let instance = unsafe {
-            Self::create_instance(
-                &self.app_name,
-                &entry,
-                &layers_names_raw,
-                &instance_extension_names,
-            )?
-        };
-
-        let debug_handler = if self.flag_use_debug_tools {
-            Some(DebugHandler::new(&entry, &instance)?)
-        } else {
-            None
-        };
-
-        if self.flag_verbose_logging {
-            info!("create surface");
-        }
-        let surface = unsafe {
-            ash_window::create_surface(
-                &entry,
-                &instance,
-                window.display_handle()?.as_raw(),
-                window.window_handle()?.as_raw(),
-                None,
-            )?
-        };
-        if self.flag_verbose_logging {
-            info!("create physical device");
-        }
-        let (surface_loader, physical_device, queue_family_index) =
-            unsafe { Self::create_physical_device(&entry, &instance, surface)? };
-
-        if self.flag_verbose_logging {
-            info!("create logical device (and present queue)");
-        }
-        let mut device_extension_names_raw = vec![
-            ash::khr::swapchain::NAME.as_ptr(),
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
-            ash::khr::portability_subset::NAME.as_ptr(),
-            // Dynamic rendering:
-            ash::khr::dynamic_rendering::NAME.as_ptr(),
-        ];
-        device_extension_names_raw.extend(self.device_extension_names);
-        // TODO: find a way to make these into struct members.
-        let v12_features = vk::PhysicalDeviceVulkan12Features {
-            descriptor_indexing: 1,
-            descriptor_binding_sampled_image_update_after_bind: 1,
-            descriptor_binding_storage_buffer_update_after_bind: 1,
-            shader_sampled_image_array_non_uniform_indexing: 1,
-            ..vk::PhysicalDeviceVulkan12Features::default()
-        };
-        let v13_features = vk::PhysicalDeviceVulkan13Features {
-            dynamic_rendering: 1,
-            synchronization2: 1,
-            ..vk::PhysicalDeviceVulkan13Features::default()
-        };
-        let device = Self::create_device(
-            &instance,
-            physical_device,
-            queue_family_index,
-            &device_extension_names_raw,
-            &self.features,
-            v12_features,
-            v13_features,
-        )?;
-        let present_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
-
-        Ok(Arc::new(TvWindowContext {
-            _entry: entry,
-            instance,
-            debug_handler,
-            window: window.clone(),
-            surface,
-            surface_loader,
-            physical_device,
-            queue_family_index,
-            device,
-            present_queue,
-        }))
-    }
-
-    fn create_min_instance_extension_names(
-        window: &Arc<Window>,
-    ) -> Result<Vec<*const ffi::c_char>> {
-        let mut min_extension_names =
-            ash_window::enumerate_required_extensions(window.display_handle()?.as_raw())?.to_vec();
-        min_extension_names.push(debug_utils::NAME.as_ptr());
-
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        {
-            min_extension_names.push(ash::khr::portability_enumeration::NAME.as_ptr());
-            // Enabling this extension is a requirement when using `VK_KHR_portability_subset`
-            min_extension_names.push(ash::khr::get_physical_device_properties2::NAME.as_ptr());
-        }
-
-        Ok(min_extension_names)
-    }
-
-    unsafe fn create_instance(
-        app_name: &ffi::CStr,
-        entry: &Entry,
-        layers_names_raw: &[*const ffi::c_char],
-        min_extension_names: &[*const ffi::c_char],
-    ) -> Result<Instance> {
-        if std::env::consts::OS == "macos" {
-            let var = match std::env::var("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS") {
-                Ok(var) => var,
-                Err(e) => {
-                    panic!(
-                        "on macOS, environment variable `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` must be set; \
-                        do you have .cargo/config.toml set up correctly? got: {e:?}"
-                    );
-                }
-            };
-            check_eq!(var, "1");
-        }
-        let app_info = vk::ApplicationInfo::default()
-            .application_name(app_name)
-            .application_version(0)
-            .engine_name(app_name)
-            .engine_version(0)
-            .api_version(vk::make_api_version(0, 1, 3, 0));
-        let create_flags = if cfg!(any(target_os = "macos", target_os = "ios")) {
-            vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
-        } else {
-            vk::InstanceCreateFlags::default()
-        };
-        let create_info = vk::InstanceCreateInfo::default()
-            .application_info(&app_info)
-            .enabled_layer_names(layers_names_raw)
-            .enabled_extension_names(min_extension_names)
-            .flags(create_flags);
-        let instance = unsafe { entry.create_instance(&create_info, None)? };
-        Ok(instance)
-    }
-
-    unsafe fn create_physical_device(
-        entry: &Entry,
-        instance: &Instance,
-        surface: vk::SurfaceKHR,
-    ) -> Result<(surface::Instance, vk::PhysicalDevice, u32)> {
-        let physical_devices = unsafe { instance.enumerate_physical_devices()? };
-        let surface_loader = surface::Instance::new(entry, instance);
-        let (physical_device, queue_family_index) = physical_devices
-            .iter()
-            .find_map(|&candidate| unsafe {
-                // TODO: check supported features and extensions.
-                let queue_family_index = instance
-                    .get_physical_device_queue_family_properties(candidate)
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, info)| {
-                        if !info.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                            return None;
-                        }
-                        match surface_loader.get_physical_device_surface_support(
-                            candidate,
-                            index as u32,
-                            surface,
-                        ) {
-                            Ok(true) => {}
-                            Ok(false) => {
-                                return None;
-                            }
-                            Err(e) => {
-                                error!(
-                                    "get_physical_device_surface_support(): index={index}: {e:?}"
-                                );
-                                return None;
-                            }
-                        }
-                        Some(index)
-                    })?;
-                Some((candidate, queue_family_index))
+        let stats_ms = self
+            .stats
+            .try_lock()
+            .unwrap()
+            .drain(..)
+            .tuple_windows()
+            .map(|((_, i1), (name, i2))| {
+                (
+                    name,
+                    i2.duration_since(i1).unwrap().as_micros() as f32 / 1000.0,
+                )
             })
-            .context("Couldn't find suitable device.")?;
-        let queue_family_index = queue_family_index as u32;
-        Ok((surface_loader, physical_device, queue_family_index))
-    }
-
-    fn create_device(
-        instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-        queue_family_index: u32,
-        device_extension_names_raw: &[*const ffi::c_char],
-        features: &vk::PhysicalDeviceFeatures,
-        mut features_v12: vk::PhysicalDeviceVulkan12Features,
-        mut features_v13: vk::PhysicalDeviceVulkan13Features,
-    ) -> Result<Device> {
-        let priorities = [1.0];
-
-        let queue_info = vk::DeviceQueueCreateInfo::default()
-            .queue_family_index(queue_family_index)
-            .queue_priorities(&priorities);
-
-        let device_create_info = vk::DeviceCreateInfo::default()
-            .queue_create_infos(std::slice::from_ref(&queue_info))
-            .enabled_extension_names(device_extension_names_raw)
-            .enabled_features(features)
-            .push_next(&mut features_v12)
-            .push_next(&mut features_v13);
-        let device = unsafe { instance.create_device(physical_device, &device_create_info, None)? };
-        Ok(device)
-    }
-}
-
-pub struct TvWindowContext {
-    _entry: Entry,
-    instance: Instance,
-    debug_handler: Option<DebugHandler>,
-
-    // Just seems prudent to also have this.
-    #[allow(unused)]
-    window: Arc<Window>,
-
-    surface: vk::SurfaceKHR,
-    surface_loader: surface::Instance,
-    physical_device: vk::PhysicalDevice,
-    queue_family_index: u32,
-    device: Device,
-    present_queue: vk::Queue,
-}
-
-impl TvWindowContext {
-    pub fn surface(&self) -> vk::SurfaceKHR {
-        self.surface
-    }
-    pub fn queue_family_index(&self) -> u32 {
-        self.queue_family_index
-    }
-    pub fn device(&self) -> &Device {
-        &self.device
-    }
-    pub fn present_queue(&self) -> vk::Queue {
-        self.present_queue
-    }
-
-    pub fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
-        ash::khr::swapchain::Device::new(&self.instance, &self.device)
-    }
-
-    pub fn get_physical_device_memory_properties(&self) -> vk::PhysicalDeviceMemoryProperties {
-        unsafe {
-            self.instance
-                .get_physical_device_memory_properties(self.physical_device)
+            .collect_vec();
+        let total_ms = stats_ms
+            .iter()
+            .map(|(_, elapsed_ms)| elapsed_ms)
+            .sum::<f32>();
+        if total_ms >= threshold_us as f32 / 1000.0 {
+            for (name, elapsed_ms) in stats_ms {
+                info!("{name}: {:.2} ms", elapsed_ms);
+            }
+            info!("total: {:.2} ms", total_ms);
+        } else {
+            info_every_millis!(1000, "{total_ms:.2} ms");
         }
     }
-    pub fn get_physical_device_surface_capabilities(&self) -> Result<vk::SurfaceCapabilitiesKHR> {
-        unsafe {
-            Ok(self
-                .surface_loader
-                .get_physical_device_surface_capabilities(self.physical_device, self.surface)?)
-        }
-    }
-    pub fn get_physical_device_surface_formats(&self) -> Result<Vec<vk::SurfaceFormatKHR>> {
-        unsafe {
-            Ok(self
-                .surface_loader
-                .get_physical_device_surface_formats(self.physical_device, self.surface)?)
-        }
-    }
-    pub fn get_physical_device_surface_present_modes(&self) -> Result<Vec<vk::PresentModeKHR>> {
-        unsafe {
-            Ok(self
-                .surface_loader
-                .get_physical_device_surface_present_modes(self.physical_device, self.surface)?)
-        }
-    }
-}
-
-impl Drop for TvWindowContext {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.device_wait_idle().unwrap();
-            self.device.destroy_device(None);
-            self.surface_loader.destroy_surface(self.surface, None);
-            self.debug_handler.take();
-            self.instance.destroy_instance(None);
-        }
-    }
-}
-
-pub fn find_memorytype_index(
-    memory_req: &vk::MemoryRequirements,
-    memory_prop: &vk::PhysicalDeviceMemoryProperties,
-    flags: vk::MemoryPropertyFlags,
-) -> Option<u32> {
-    memory_prop.memory_types[..memory_prop.memory_type_count as _]
-        .iter()
-        .enumerate()
-        .find(|(index, memory_type)| {
-            (1 << index) & memory_req.memory_type_bits != 0
-                && memory_type.property_flags & flags == flags
-        })
-        .map(|(index, _memory_type)| index as _)
 }

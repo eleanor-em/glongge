@@ -1,18 +1,29 @@
-use crate::core::prelude::*;
-
-use crate::core::input::InputHandler;
-use crate::core::render::RenderHandler;
-use crate::core::scene::SceneHandler;
-use crate::core::tulivuori::WindowEventHandler;
-use crate::gui::{GuiContext, GuiUi};
-use crate::resource::ResourceHandler;
+use crate::{
+    core::input::InputHandler,
+    core::prelude::*,
+    core::render::RenderHandlerLite,
+    core::scene::SceneHandler,
+    core::tulivuori::WindowEventHandler,
+    gui::{GuiContext, GuiUi},
+    resource::ResourceHandler,
+};
 use egui::{Button, WidgetText};
-use std::collections::BTreeSet;
-use std::fmt::{Debug, Display, Formatter};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
-use std::{hash::Hash, ops::Deref, vec::IntoIter};
-use tracing_subscriber::fmt::time::OffsetTime;
+use std::fmt::Write;
+use std::{
+    collections::BTreeSet,
+    fmt,
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
+    ops::Deref,
+    sync::mpsc::{Receiver, Sender},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
+    vec::IntoIter,
+};
+use tracing::{field::Field, metadata::LevelFilter};
+use tracing_subscriber::{
+    Layer, field::Visit, fmt::FormatFields, fmt::format::Writer, fmt::time::OffsetTime,
+    layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 pub mod assert;
 pub mod canvas;
@@ -730,6 +741,53 @@ impl<T: Default> Default for UniqueShared<T> {
 }
 
 fn setup_log() -> Result<()> {
+    // XXX: hacky crap mostly written by ChatGPT.
+    struct AllowValuesOnly;
+    impl FormatFields<'_> for AllowValuesOnly {
+        fn format_fields<R>(&self, w: Writer<'_>, fields: R) -> fmt::Result
+        where
+            R: tracing_subscriber::field::RecordFields,
+        {
+            struct V<'a> {
+                w: Writer<'a>,
+                first: bool,
+                dropped_message: bool,
+            }
+            impl Visit for V<'_> {
+                fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+                    if field.name() == "message" {
+                        check_false!(self.dropped_message);
+                        write!(self.w, "{value:?}").unwrap();
+                        self.dropped_message = true;
+                    } else {
+                        let mut peek = String::new();
+                        write!(&mut peek, "{value:?}").unwrap();
+                        if peek.starts_with('@') {
+                            peek = peek.split_off(1);
+                            if self.first {
+                                write!(self.w, "{peek}").unwrap();
+                            } else {
+                                write!(self.w, " {peek}").unwrap();
+                            }
+                        } else if self.first {
+                            write!(self.w, "{field}={peek}").unwrap();
+                        } else {
+                            write!(self.w, " {field}={peek}").unwrap();
+                        }
+                    }
+                    self.first = false;
+                }
+            }
+
+            fields.record(&mut V {
+                w,
+                first: true,
+                dropped_message: false,
+            });
+            Ok(())
+        }
+    }
+
     let logfile = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -739,14 +797,28 @@ fn setup_log() -> Result<()> {
         time::UtcOffset::UTC,
         time::macros::format_description!("[hour]:[minute]:[second].[subsecond digits:6]"),
     );
-    tracing_subscriber::fmt()
+    let file_layer = tracing_subscriber::fmt::layer()
+        .event_format(
+            tracing_subscriber::fmt::format()
+                .with_target(false)
+                .with_source_location(true)
+                .with_timer(timer.clone()),
+        )
+        .fmt_fields(AllowValuesOnly)
+        .with_writer(logfile)
+        .with_filter(LevelFilter::INFO);
+    let stdout_layer = tracing_subscriber::fmt::layer()
         .event_format(
             tracing_subscriber::fmt::format()
                 .with_target(false)
                 .with_source_location(true)
                 .with_timer(timer),
         )
-        .with_writer(logfile)
+        .fmt_fields(AllowValuesOnly)
+        .with_filter(LevelFilter::WARN);
+    tracing_subscriber::registry()
+        .with(file_layer)
+        .with(stdout_layer)
         .init();
     Ok(())
 }
@@ -770,14 +842,6 @@ impl GgContextBuilder {
         })
     }
 
-    // #[must_use]
-    // pub fn with_extra_shaders(
-    //     mut self,
-    //     create_shaders: impl FnOnce(&GgContextBuilder) -> Vec<UniqueShared<Box<dyn Shader>>>
-    // ) -> Self {
-    //     self.shaders.extend(create_shaders(&self));
-    //     self
-    // }
     #[must_use]
     pub fn with_extra_scale_factor(mut self, extra_scale_factor: f32) -> Self {
         self.extra_scale_factor = extra_scale_factor;
@@ -805,13 +869,13 @@ impl GgContextBuilder {
 
 pub struct SceneHandlerBuilder {
     input_handler: Arc<Mutex<InputHandler>>,
-    render_handler: RenderHandler,
+    render_handler: RenderHandlerLite,
 }
 
 impl SceneHandlerBuilder {
     pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
-        render_handler: RenderHandler,
+        render_handler: RenderHandlerLite,
     ) -> Self {
         Self {
             input_handler,

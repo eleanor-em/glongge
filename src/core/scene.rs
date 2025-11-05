@@ -1,4 +1,4 @@
-use crate::core::render::RenderHandler;
+use crate::core::render::RenderHandlerLite;
 use crate::core::update::RenderContext;
 use crate::core::{
     SceneObjectWrapper, TreeSceneObject,
@@ -23,7 +23,7 @@ struct InternalScene {
     scene: Arc<Mutex<dyn Scene + Send>>,
     name: SceneName,
     input_handler: Arc<Mutex<InputHandler>>,
-    render_handler: RenderHandler,
+    render_handler: RenderHandlerLite,
     update_handler: Option<UpdateHandler>,
 }
 
@@ -31,7 +31,7 @@ impl InternalScene {
     fn new(
         scene: Arc<Mutex<dyn Scene + Send>>,
         input_handler: Arc<Mutex<InputHandler>>,
-        render_handler: RenderHandler,
+        render_handler: RenderHandlerLite,
     ) -> Self {
         let name = scene
             .try_lock()
@@ -261,7 +261,7 @@ pub(crate) enum SceneHandlerInstruction {
 /// ```
 pub struct SceneHandler {
     input_handler: Arc<Mutex<InputHandler>>,
-    render_handler: RenderHandler,
+    render_handler: RenderHandlerLite,
     scenes: BTreeMap<SceneName, Rc<RefCell<InternalScene>>>,
     scene_data: BTreeMap<SceneName, UniqueShared<Vec<u8>>>,
     current_scene: Option<Rc<RefCell<InternalScene>>>,
@@ -271,7 +271,7 @@ pub struct SceneHandler {
 impl SceneHandler {
     pub(crate) fn new(
         input_handler: Arc<Mutex<InputHandler>>,
-        render_handler: RenderHandler,
+        render_handler: RenderHandlerLite,
     ) -> Self {
         Self {
             input_handler,

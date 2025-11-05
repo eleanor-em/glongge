@@ -1,7 +1,7 @@
 pub mod collision;
 
 use crate::core::TreeObjectOfType;
-use crate::core::render::{RenderHandler, UpdateSync};
+use crate::core::render::{RenderHandlerLite, UpdateSync};
 use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
 use crate::util::{GLOBAL_STATS, InspectMut, UniqueShared, gg_float};
@@ -515,12 +515,13 @@ impl UpdateHandler {
     pub(crate) fn new(
         objects: Vec<SceneObjectWrapper>,
         input_handler: Arc<Mutex<InputHandler>>,
-        render_handler: &RenderHandler,
+        render_handler: &RenderHandlerLite,
         scene_name: SceneName,
         scene_data: UniqueShared<Vec<u8>>,
     ) -> Result<Self> {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
-        let (render_data_channel, update_sync) = render_handler.get_receiver();
+        let render_data_channel = render_handler.render_data_channel.clone();
+        let update_sync = render_handler.update_sync.clone();
         let clear_col = render_data_channel.lock().unwrap().get_clear_col();
         let mut rv = Self {
             input_handler,

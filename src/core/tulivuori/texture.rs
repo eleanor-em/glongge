@@ -1,15 +1,19 @@
-use crate::core::config::{FONT_SAMPLE_RATIO, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT};
-use crate::core::prelude::{AxisAlignedExtent, Vec2};
-use crate::core::tulivuori;
-use crate::core::tulivuori::TvWindowContext;
-use crate::core::tulivuori::buffer::GenericBuffer;
-use crate::util::UniqueShared;
+use crate::{
+    check_false,
+    core::config::{FONT_SAMPLE_RATIO, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT},
+    core::prelude::{AxisAlignedExtent, Vec2},
+    core::tulivuori::buffer::GenericBuffer,
+    core::tulivuori::{TvWindowContext, tv},
+    util::UniqueShared,
+};
 use anyhow::{Context, Result};
-use ash::util::Align;
-use ash::vk;
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use ash::{util::Align, vk};
+use std::{
+    collections::BTreeMap,
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::{Arc, Mutex},
+};
+use tracing::error;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default, Hash)]
 pub struct TextureId(u32);
@@ -31,6 +35,7 @@ pub struct TvInternalTexture {
     tex_image: vk::Image,
     data: Vec<u8>,
     ready_flag: Arc<AtomicBool>,
+    did_vk_free: AtomicBool,
 }
 
 impl TvInternalTexture {
@@ -38,6 +43,7 @@ impl TvInternalTexture {
         ctx: Arc<TvWindowContext>,
         id: TextureId,
         image_extent: vk::Extent2D,
+        format: vk::Format,
         image_data: &[u8],
         ready_flag: Arc<AtomicBool>,
     ) -> Result<Arc<Self>> {
@@ -45,7 +51,7 @@ impl TvInternalTexture {
             let device_memory_properties = ctx.get_physical_device_memory_properties();
             let image_buffer = ctx.device().create_buffer(
                 &vk::BufferCreateInfo {
-                    size: std::mem::size_of_val(image_data) as u64,
+                    size: size_of_val(image_data) as u64,
                     usage: vk::BufferUsageFlags::TRANSFER_SRC,
                     sharing_mode: vk::SharingMode::EXCLUSIVE,
                     ..Default::default()
@@ -53,17 +59,17 @@ impl TvInternalTexture {
                 None,
             )?;
             let image_buffer_memory_req = ctx.device().get_buffer_memory_requirements(image_buffer);
-            let image_buffer_memory_index = tulivuori::find_memorytype_index(
-                &image_buffer_memory_req,
-                &device_memory_properties,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .context("Unable to find suitable memorytype for the image buffer.")?;
 
             let image_buffer_memory = ctx.device().allocate_memory(
                 &vk::MemoryAllocateInfo {
                     allocation_size: image_buffer_memory_req.size,
-                    memory_type_index: image_buffer_memory_index,
+                    memory_type_index: tv::find_memorytype_index(
+                        &image_buffer_memory_req,
+                        &device_memory_properties,
+                        vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | vk::MemoryPropertyFlags::HOST_COHERENT,
+                    )
+                    .context("Unable to find suitable memorytype for the image buffer.")?,
                     ..Default::default()
                 },
                 None,
@@ -74,63 +80,54 @@ impl TvInternalTexture {
                 image_buffer_memory_req.size,
                 vk::MemoryMapFlags::empty(),
             )?;
-            let mut image_slice = Align::new(
+            Align::new(
                 image_ptr,
                 align_of::<u8>() as u64,
                 image_buffer_memory_req.size,
-            );
-            image_slice.copy_from_slice(image_data);
+            )
+            .copy_from_slice(image_data);
             ctx.device().unmap_memory(image_buffer_memory);
             ctx.device()
                 .bind_buffer_memory(image_buffer, image_buffer_memory, 0)?;
 
-            let texture_create_info = vk::ImageCreateInfo {
-                image_type: vk::ImageType::TYPE_2D,
-                format: vk::Format::R8G8B8A8_UNORM,
-                extent: image_extent.into(),
-                mip_levels: 1,
-                array_layers: 1,
-                samples: vk::SampleCountFlags::TYPE_1,
-                tiling: vk::ImageTiling::OPTIMAL,
-                usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-                sharing_mode: vk::SharingMode::EXCLUSIVE,
-                ..Default::default()
-            };
-            let tex_image = ctx.device().create_image(&texture_create_info, None)?;
+            let tex_image = ctx.device().create_image(
+                &vk::ImageCreateInfo {
+                    image_type: vk::ImageType::TYPE_2D,
+                    format,
+                    extent: image_extent.into(),
+                    mip_levels: 1,
+                    array_layers: 1,
+                    samples: vk::SampleCountFlags::TYPE_1,
+                    tiling: vk::ImageTiling::OPTIMAL,
+                    usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+                    sharing_mode: vk::SharingMode::EXCLUSIVE,
+                    ..Default::default()
+                },
+                None,
+            )?;
             let tex_memory_req = ctx.device().get_image_memory_requirements(tex_image);
-            let tex_memory_index = tulivuori::find_memorytype_index(
-                &tex_memory_req,
-                &device_memory_properties,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )
-            .context("Unable to find suitable memory index for depth image.")?;
 
             let texture_allocate_info = vk::MemoryAllocateInfo {
                 allocation_size: tex_memory_req.size,
-                memory_type_index: tex_memory_index,
+                memory_type_index: tv::find_memorytype_index(
+                    &tex_memory_req,
+                    &device_memory_properties,
+                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                )
+                .context("Unable to find suitable memory index for depth image.")?,
                 ..Default::default()
             };
             let tex_memory = ctx.device().allocate_memory(&texture_allocate_info, None)?;
             ctx.device().bind_image_memory(tex_image, tex_memory, 0)?;
-            let tex_image_view_info = vk::ImageViewCreateInfo {
-                view_type: vk::ImageViewType::TYPE_2D,
-                format: texture_create_info.format,
-                components: vk::ComponentMapping {
-                    r: vk::ComponentSwizzle::R,
-                    g: vk::ComponentSwizzle::G,
-                    b: vk::ComponentSwizzle::B,
-                    a: vk::ComponentSwizzle::A,
-                },
-                subresource_range: vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    level_count: 1,
-                    layer_count: 1,
-                    ..Default::default()
-                },
-                image: tex_image,
-                ..Default::default()
-            };
-            let tex_image_view = ctx.device().create_image_view(&tex_image_view_info, None)?;
+            let tex_image_view = ctx.device().create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(format)
+                    .components(tv::default_component_mapping())
+                    .subresource_range(tv::default_image_subresource_range())
+                    .image(tex_image),
+                None,
+            )?;
 
             Ok(Arc::new(Self {
                 ctx,
@@ -143,6 +140,7 @@ impl TvInternalTexture {
                 tex_image,
                 data: image_data.to_vec(),
                 ready_flag,
+                did_vk_free: AtomicBool::new(false),
             }))
         }
     }
@@ -156,10 +154,9 @@ impl TvInternalTexture {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
-}
 
-impl Drop for TvInternalTexture {
-    fn drop(&mut self) {
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx
                 .device()
@@ -170,6 +167,15 @@ impl Drop for TvInternalTexture {
                 .device()
                 .destroy_image_view(self.tex_image_view, None);
             self.ctx.device().destroy_image(self.tex_image, None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for TvInternalTexture {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: TvInternalTexture");
         }
     }
 }
@@ -210,6 +216,8 @@ pub(crate) struct TextureManager {
 
     next_material_buffer_index: usize,
     material_buffer: GenericBuffer<RawMaterial>,
+
+    did_vk_free: AtomicBool,
 }
 
 impl TextureManager {
@@ -349,6 +357,7 @@ impl TextureManager {
                 unused_texture_ids: Mutex::new(Vec::new()),
                 next_material_buffer_index: 0,
                 material_buffer,
+                did_vk_free: AtomicBool::new(false),
             };
 
             // Set up blank initial textures.
@@ -358,6 +367,7 @@ impl TextureManager {
                         width: 1,
                         height: 1,
                     },
+                    vk::Format::R8G8B8A8_UNORM,
                     &[255; 4],
                     Arc::new(AtomicBool::new(true)),
                 )?
@@ -389,6 +399,7 @@ impl TextureManager {
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().cmd_bind_descriptor_sets(
                 command_buffer,
@@ -413,13 +424,22 @@ impl TextureManager {
     pub fn create_texture(
         &self,
         extent: vk::Extent2D,
+        format: vk::Format,
         image_data: &[u8],
         ready_signal: Arc<AtomicBool>,
     ) -> Result<Option<Arc<TvInternalTexture>>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let Some(id) = self.get_next_texture_id() else {
             return Ok(None);
         };
-        let tex = TvInternalTexture::new(self.ctx.clone(), id, extent, image_data, ready_signal)?;
+        let tex = TvInternalTexture::new(
+            self.ctx.clone(),
+            id,
+            extent,
+            format,
+            image_data,
+            ready_signal,
+        )?;
         self.pending_textures
             .lock()
             .unwrap()
@@ -428,6 +448,7 @@ impl TextureManager {
     }
 
     pub fn wait_for_upload(&self) -> Result<bool> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         if self.is_upload_in_progress.swap(false, Ordering::Relaxed) {
             unsafe {
                 self.ctx
@@ -467,6 +488,7 @@ impl TextureManager {
         }
     }
     pub fn upload_pending(&self) -> Result<()> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let pending_textures = self.pending_textures.lock().unwrap().clone();
         if pending_textures.is_empty() {
             return Ok(());
@@ -496,12 +518,7 @@ impl TextureManager {
                             .src_access_mask(vk::AccessFlags2::NONE)
                             .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
                             .image(texture.tex_image)
-                            .subresource_range(vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                level_count: 1,
-                                layer_count: 1,
-                                ..Default::default()
-                            }),
+                            .subresource_range(tv::default_image_subresource_range()),
                     ]),
                 );
                 let buffer_copy_regions = vk::BufferImageCopy::default()
@@ -530,12 +547,7 @@ impl TextureManager {
                             .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
                             .dst_access_mask(vk::AccessFlags2::SHADER_READ)
                             .image(texture.tex_image)
-                            .subresource_range(
-                                vk::ImageSubresourceRange::default()
-                                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                    .level_count(1)
-                                    .layer_count(1),
-                            ),
+                            .subresource_range(tv::default_image_subresource_range()),
                     ]),
                 );
                 uploading_textures.insert(id, texture.clone());
@@ -579,6 +591,7 @@ impl TextureManager {
         &mut self,
         material_handler: &UniqueShared<crate::resource::texture::MaterialHandler>,
     ) -> Result<()> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let mut data = vec![
             RawMaterial {
                 texture_id: TextureId::default(),
@@ -640,6 +653,7 @@ impl TextureManager {
         &self,
         texture: TextureId,
     ) -> Option<Arc<TvInternalTexture>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.textures
             .lock()
             .unwrap()
@@ -652,19 +666,24 @@ impl TextureManager {
         &mut self,
         texture_id: TextureId,
     ) -> Option<Arc<TvInternalTexture>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let rv = self.textures.lock().unwrap().remove(&texture_id)?;
         let mut descriptor_image_infos = self.descriptor_image_infos.lock().unwrap();
         // Overwrite with blank texture.
         descriptor_image_infos[texture_id.as_usize()] = descriptor_image_infos[0];
         self.unused_texture_ids.lock().unwrap().push(texture_id);
+        rv.vk_free();
         Some(rv)
     }
-}
 
-impl Drop for TextureManager {
-    fn drop(&mut self) {
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
+            self.material_buffer.vk_free();
+            for texture in self.textures.lock().unwrap().values() {
+                texture.vk_free();
+            }
             self.ctx
                 .device()
                 .destroy_command_pool(self.command_pool, None);
@@ -679,6 +698,15 @@ impl Drop for TextureManager {
                 .device()
                 .destroy_descriptor_pool(self.descriptor_pool, None);
             self.ctx.device().destroy_sampler(self.sampler, None);
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for TextureManager {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: TextureManager");
         }
     }
 }

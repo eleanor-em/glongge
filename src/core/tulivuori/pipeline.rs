@@ -1,11 +1,14 @@
-use crate::check_eq;
-use crate::core::tulivuori::GgViewport;
-use crate::core::tulivuori::TvWindowContext;
-use crate::core::tulivuori::shader::VertFragShader;
-use crate::core::tulivuori::swapchain::Swapchain;
+use crate::{
+    check_eq, check_false, core::tulivuori::GgViewport, core::tulivuori::TvWindowContext,
+    core::tulivuori::shader::VertFragShader, core::tulivuori::swapchain::Swapchain,
+};
 use anyhow::Result;
 use ash::vk;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
+};
+use tracing::error;
 
 pub(crate) struct Pipeline {
     ctx: Arc<TvWindowContext>,
@@ -13,16 +16,17 @@ pub(crate) struct Pipeline {
     #[allow(clippy::struct_field_names)]
     pipeline_layout: vk::PipelineLayout,
     graphics_pipelines: Vec<vk::Pipeline>,
+    did_vk_free: AtomicBool,
 }
 
 impl Pipeline {
     pub fn new(
         ctx: Arc<TvWindowContext>,
-        swapchain: &Arc<Swapchain>,
+        swapchain: &Swapchain,
         shader: &Arc<VertFragShader>,
         pipeline_layout: vk::PipelineLayout,
         viewport: &GgViewport,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<Self> {
         match unsafe {
             check_eq!(
                 swapchain.surface_resolution().width as f32,
@@ -55,16 +59,17 @@ impl Pipeline {
                             .scissors(&[swapchain.surface_resolution().into()])
                             .viewports(&[viewport.inner]),
                     )
-                    .rasterization_state(&vk::PipelineRasterizationStateCreateInfo {
-                        front_face: vk::FrontFace::COUNTER_CLOCKWISE,
-                        line_width: 1.0,
-                        polygon_mode: vk::PolygonMode::FILL,
-                        ..Default::default()
-                    })
-                    .multisample_state(&vk::PipelineMultisampleStateCreateInfo {
-                        rasterization_samples: vk::SampleCountFlags::TYPE_1,
-                        ..Default::default()
-                    })
+                    .rasterization_state(
+                        &vk::PipelineRasterizationStateCreateInfo::default()
+                            .cull_mode(vk::CullModeFlags::NONE)
+                            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+                            .line_width(1.0)
+                            .polygon_mode(vk::PolygonMode::FILL),
+                    )
+                    .multisample_state(
+                        &vk::PipelineMultisampleStateCreateInfo::default()
+                            .rasterization_samples(vk::SampleCountFlags::TYPE_1),
+                    )
                     .dynamic_state(
                         &vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&[
                             vk::DynamicState::VIEWPORT,
@@ -80,17 +85,19 @@ impl Pipeline {
                 None,
             )
         } {
-            Ok(graphics_pipelines) => Ok(Arc::new(Self {
+            Ok(graphics_pipelines) => Ok(Self {
                 ctx,
                 _shader: shader.clone(),
                 pipeline_layout,
                 graphics_pipelines,
-            })),
+                did_vk_free: AtomicBool::new(false),
+            }),
             Err((_graphics_pipelines, err_code)) => Err(err_code.into()),
         }
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer, viewport: &GgViewport) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             let scissor = vk::Rect2D::default().extent(vk::Extent2D {
                 width: viewport.physical_width().floor() as u32,
@@ -133,15 +140,23 @@ impl Pipeline {
             );
         }
     }
-}
 
-impl Drop for Pipeline {
-    fn drop(&mut self) {
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for pipeline in &self.graphics_pipelines {
                 self.ctx.device().destroy_pipeline(*pipeline, None);
             }
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for Pipeline {
+    fn drop(&mut self) {
+        if !self.did_vk_free.load(Ordering::Relaxed) {
+            error!("leaked resource: Pipeline");
         }
     }
 }
