@@ -101,6 +101,9 @@ impl<T: Copy> GenericBuffer<T> {
     pub fn len(&self) -> usize {
         self.length
     }
+    pub fn size(&self) -> vk::DeviceSize {
+        self.buffer_memory_req.size
+    }
 }
 
 impl<T: Copy> Drop for GenericBuffer<T> {

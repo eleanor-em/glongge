@@ -485,26 +485,24 @@ impl TextureManager {
 
             let mut uploading_textures = BTreeMap::new();
             for (&id, texture) in &pending_textures {
-                let texture_barrier = vk::ImageMemoryBarrier {
-                    dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-                    new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    image: texture.tex_image,
-                    subresource_range: vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        level_count: 1,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-                self.ctx.device().cmd_pipeline_barrier(
+                self.ctx.device().cmd_pipeline_barrier2(
                     self.command_buffer,
-                    vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[texture_barrier],
+                    &vk::DependencyInfo::default().image_memory_barriers(&[
+                        vk::ImageMemoryBarrier2::default()
+                            .src_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE)
+                            .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                            .old_layout(vk::ImageLayout::UNDEFINED)
+                            .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                            .src_access_mask(vk::AccessFlags2::NONE)
+                            .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                            .image(texture.tex_image)
+                            .subresource_range(vk::ImageSubresourceRange {
+                                aspect_mask: vk::ImageAspectFlags::COLOR,
+                                level_count: 1,
+                                layer_count: 1,
+                                ..Default::default()
+                            }),
+                    ]),
                 );
                 let buffer_copy_regions = vk::BufferImageCopy::default()
                     .image_subresource(
@@ -521,28 +519,24 @@ impl TextureManager {
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                     &[buffer_copy_regions],
                 );
-                let texture_barrier_end = vk::ImageMemoryBarrier {
-                    src_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-                    dst_access_mask: vk::AccessFlags::SHADER_READ,
-                    old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    new_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image: texture.tex_image,
-                    subresource_range: vk::ImageSubresourceRange {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        level_count: 1,
-                        layer_count: 1,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-                self.ctx.device().cmd_pipeline_barrier(
+                self.ctx.device().cmd_pipeline_barrier2(
                     self.command_buffer,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[texture_barrier_end],
+                    &vk::DependencyInfo::default().image_memory_barriers(&[
+                        vk::ImageMemoryBarrier2::default()
+                            .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+                            .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                            .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                            .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+                            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+                            .image(texture.tex_image)
+                            .subresource_range(
+                                vk::ImageSubresourceRange::default()
+                                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                    .level_count(1)
+                                    .layer_count(1),
+                            ),
+                    ]),
                 );
                 uploading_textures.insert(id, texture.clone());
             }
@@ -551,9 +545,11 @@ impl TextureManager {
 
             self.ctx.device().end_command_buffer(self.command_buffer)?;
 
-            self.ctx.device().queue_submit(
+            self.ctx.device().queue_submit2(
                 self.ctx.present_queue(),
-                &[vk::SubmitInfo::default().command_buffers(&[self.command_buffer])],
+                &[vk::SubmitInfo2::default().command_buffer_infos(&[
+                    vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer),
+                ])],
                 self.upload_fence,
             )?;
             self.is_upload_in_progress.store(true, Ordering::Relaxed);
@@ -566,6 +562,19 @@ impl TextureManager {
         self.pipeline_layout
     }
 
+    pub(crate) fn initialise_materials(
+        &mut self,
+        material_handler: &UniqueShared<crate::resource::texture::MaterialHandler>,
+    ) -> Result<()> {
+        loop {
+            self.upload_materials(material_handler)?;
+            self.set_next_material_buffer_index();
+            if self.next_material_buffer_index == 0 {
+                break;
+            }
+        }
+        Ok(())
+    }
     pub fn upload_materials(
         &mut self,
         material_handler: &UniqueShared<crate::resource::texture::MaterialHandler>,
@@ -600,7 +609,6 @@ impl TextureManager {
         self.material_buffer
             .write(&data, self.next_material_buffer_index)?;
         unsafe {
-            let upload_size = MAX_MATERIAL_COUNT * size_of::<RawMaterial>();
             self.ctx.device().update_descriptor_sets(
                 &[vk::WriteDescriptorSet {
                     dst_set: self.descriptor_set,
@@ -609,18 +617,20 @@ impl TextureManager {
                     descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
                     p_buffer_info: [vk::DescriptorBufferInfo::default()
                         .buffer(self.material_buffer.buffer(self.next_material_buffer_index))
-                        .offset((upload_size * self.next_material_buffer_index) as vk::DeviceSize)
-                        .range(upload_size as vk::DeviceSize)]
+                        .offset(0)
+                        .range(self.material_buffer.size())]
                     .as_ptr(),
                     ..Default::default()
                 }],
                 &[],
             );
         }
-
-        self.next_material_buffer_index = 1 - self.next_material_buffer_index;
+        self.set_next_material_buffer_index();
 
         Ok(())
+    }
+    fn set_next_material_buffer_index(&mut self) {
+        self.next_material_buffer_index = 1 - self.next_material_buffer_index;
     }
 
     pub fn is_texture_ready(&self, texture: TextureId) -> bool {

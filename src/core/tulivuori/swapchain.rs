@@ -433,24 +433,24 @@ impl Swapchain {
 
     pub fn cmd_begin_rendering(&self, command_buffer: vk::CommandBuffer, clear_col: Colour) {
         unsafe {
-            self.ctx.device().cmd_pipeline_barrier(
+            self.ctx.device().cmd_pipeline_barrier2(
                 command_buffer,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[vk::ImageMemoryBarrier::default()
-                    .image(self.current_present_image())
-                    .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .old_layout(vk::ImageLayout::UNDEFINED)
-                    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .subresource_range(
-                        vk::ImageSubresourceRange::default()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .layer_count(1)
-                            .level_count(1),
-                    )],
+                &vk::DependencyInfo::default().image_memory_barriers(&[
+                    vk::ImageMemoryBarrier2::default()
+                        .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+                        .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+                        .old_layout(vk::ImageLayout::UNDEFINED)
+                        .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .src_access_mask(vk::AccessFlags2::NONE)
+                        .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                        .image(self.current_present_image())
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .layer_count(1)
+                                .level_count(1),
+                        ),
+                ]),
             );
             self.ctx.device().cmd_begin_rendering(
                 command_buffer,
@@ -473,37 +473,45 @@ impl Swapchain {
     pub fn cmd_end_rendering(&self, command_buffer: vk::CommandBuffer) {
         unsafe {
             self.ctx.device().cmd_end_rendering(command_buffer);
-            self.ctx.device().cmd_pipeline_barrier(
+            self.ctx.device().cmd_pipeline_barrier2(
                 command_buffer,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[vk::ImageMemoryBarrier::default()
-                    .image(self.current_present_image())
-                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                    .subresource_range(
-                        vk::ImageSubresourceRange::default()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .layer_count(1)
-                            .level_count(1),
-                    )],
+                &vk::DependencyInfo::default().image_memory_barriers(&[
+                    vk::ImageMemoryBarrier2::default()
+                        .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+                        .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+                        .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                        .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                        .dst_access_mask(vk::AccessFlags2::NONE)
+                        .image(self.current_present_image())
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .layer_count(1)
+                                .level_count(1),
+                        ),
+                ]),
             );
         }
     }
 
     pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
         unsafe {
-            self.ctx.device().queue_submit(
+            self.ctx.device().queue_submit2(
                 self.ctx.present_queue(),
-                &[vk::SubmitInfo::default()
-                    .wait_semaphores(&[self.present_semaphore()])
-                    .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-                    .command_buffers(command_buffers)
-                    .signal_semaphores(&[self.submit_semaphore()])],
+                &[vk::SubmitInfo2::default()
+                    .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
+                        .semaphore(self.present_semaphore())
+                        .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)])
+                    .signal_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
+                        .semaphore(self.submit_semaphore())
+                        .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)])
+                    .command_buffer_infos(
+                        &command_buffers
+                            .iter()
+                            .map(|&cb| vk::CommandBufferSubmitInfo::default().command_buffer(cb))
+                            .collect_vec(),
+                    )],
                 self.current_present_fence(),
             )?;
             self.loader.queue_present(

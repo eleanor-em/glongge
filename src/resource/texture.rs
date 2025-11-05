@@ -273,7 +273,13 @@ impl TextureHandler {
     pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
         let material_handler = UniqueShared::new(MaterialHandler::new());
         let inner = UniqueShared::new(TextureHandlerInner::new(ctx, material_handler.clone())?);
-        Ok(Self { inner })
+        let rv = Self { inner };
+        rv.inner
+            .lock()
+            .texture_manager
+            .lock()
+            .initialise_materials(&material_handler)?;
+        Ok(rv)
     }
     fn load_file_inner(filename: &str) -> Result<RawTexture> {
         let path = Path::new(filename);

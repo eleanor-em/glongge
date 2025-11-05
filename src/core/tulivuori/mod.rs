@@ -816,6 +816,7 @@ impl TvWindowContextBuilder {
         };
         let v13_features = vk::PhysicalDeviceVulkan13Features {
             dynamic_rendering: 1,
+            synchronization2: 1,
             ..vk::PhysicalDeviceVulkan13Features::default()
         };
         let device = Self::create_device(
