@@ -110,24 +110,23 @@ impl ZombieTexture {
 
 struct TextureHandlerInner {
     loaded_files: BTreeMap<String, Vec<TextureId>>,
+    loaded_files_inverse: BTreeMap<TextureId, String>,
     textures: BTreeMap<TextureId, Texture>,
     zombie_textures: BTreeMap<TextureId, ZombieTexture>,
-    material_handler: UniqueShared<MaterialHandler>,
-    texture_manager: UniqueShared<TextureManager>,
+    material_handler: MaterialHandler,
+    texture_manager: TextureManager,
     frames_in_flight: Option<usize>,
 }
 
 impl TextureHandlerInner {
-    fn new(
-        ctx: Arc<TvWindowContext>,
-        material_handler: UniqueShared<MaterialHandler>,
-    ) -> Result<Self> {
+    fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
         Ok(Self {
             loaded_files: BTreeMap::new(),
+            loaded_files_inverse: BTreeMap::new(),
             textures: BTreeMap::new(),
             zombie_textures: BTreeMap::new(),
-            material_handler,
-            texture_manager: UniqueShared::new(TextureManager::new(ctx)?),
+            material_handler: MaterialHandler::new(),
+            texture_manager: TextureManager::new(ctx)?,
             frames_in_flight: None,
         })
     }
@@ -142,16 +141,6 @@ impl TextureHandlerInner {
         }
     }
 
-    fn maybe_upload_materials(&self) -> Result<()> {
-        if self.material_handler.lock().dirty {
-            self.texture_manager
-                .lock()
-                .upload_materials(&self.material_handler)?;
-            self.material_handler.lock().dirty = false;
-        }
-        Ok(())
-    }
-
     fn free_unused_textures(&mut self) {
         let Some(frames_in_flight) = self.frames_in_flight else {
             return;
@@ -164,15 +153,19 @@ impl TextureHandlerInner {
             .copied()
             .collect::<BTreeSet<_>>();
         for &id in &to_remove {
-            self.texture_manager.lock().free_internal_texture(id);
-
+            if self.loaded_files_inverse.contains_key(&id) {
+                // Don't free textures for loaded files.
+                // TODO: some sort of more controlled cleanup for loaded files.
+                continue;
+            }
+            self.texture_manager.free_internal_texture(id);
             self.zombie_textures.insert(
                 id,
                 ZombieTexture {
                     _texture: self
                         .textures
                         .remove(&id)
-                        .context("missing texture id {id:?}")
+                        .with_context(|| format!("TextureHandlerInner::free_unused_textures(): missing texture: {id:?}"))
                         .unwrap(),
                     waited_frames_in_flight: (0..frames_in_flight).map(|i| (i, false)).collect(),
                 },
@@ -181,7 +174,7 @@ impl TextureHandlerInner {
     }
 
     fn vk_free(&mut self) {
-        self.texture_manager.lock().vk_free();
+        self.texture_manager.vk_free();
     }
 }
 
@@ -198,7 +191,7 @@ pub struct Material {
 pub(crate) struct MaterialHandler {
     materials: BTreeMap<MaterialId, Material>,
     materials_inverse: HashMap<Material, MaterialId>,
-    dirty: bool,
+    dirty: AtomicBool,
 }
 
 impl MaterialHandler {
@@ -215,7 +208,7 @@ impl MaterialHandler {
         Self {
             materials,
             materials_inverse,
-            dirty: false,
+            dirty: AtomicBool::new(false),
         }
     }
     fn create_material_from_texture(&mut self, texture: &Texture, area: &Rect) -> MaterialId {
@@ -246,7 +239,7 @@ impl MaterialHandler {
             }
             self.materials.insert(id, material.clone());
             self.materials_inverse.insert(material, id);
-            self.dirty = true;
+            self.dirty.store(true, Ordering::Relaxed);
             id
         }
     }
@@ -255,7 +248,7 @@ impl MaterialHandler {
         self.materials_inverse.retain(|material, material_id| {
             if material.texture_id == texture_id {
                 self.materials.remove(material_id);
-                self.dirty = true;
+                self.dirty.store(true, Ordering::Relaxed);
                 false
             } else {
                 true
@@ -275,15 +268,9 @@ pub struct TextureHandler {
 
 impl TextureHandler {
     pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
-        let material_handler = UniqueShared::new(MaterialHandler::new());
-        let inner = UniqueShared::new(TextureHandlerInner::new(ctx, material_handler.clone())?);
-        let rv = Self { inner };
-        rv.inner
-            .lock()
-            .texture_manager
-            .lock()
-            .initialise_materials(&material_handler)?;
-        Ok(rv)
+        Ok(Self {
+            inner: UniqueShared::new(TextureHandlerInner::new(ctx)?),
+        })
     }
     fn load_file_inner(filename: &str) -> Result<RawTexture> {
         let path = Path::new(filename);
@@ -378,7 +365,7 @@ impl TextureHandler {
             return Ok(inner
                 .textures
                 .get(&texture_id)
-                .context("missing texture {texture_id:?}")?
+                .with_context(|| format!("TextureHandler::wait_load_file(\"{filename}\"): missing texture: {texture_id:?}"))?
                 .clone());
         }
         let loaded = Self::load_file_inner(&filename).with_context(|| {
@@ -387,7 +374,6 @@ impl TextureHandler {
         let ready_flag = Arc::new(AtomicBool::new(false));
         let texture = inner
             .texture_manager
-            .lock()
             .create_texture(
                 loaded.extent,
                 loaded.format,
@@ -409,7 +395,10 @@ impl TextureHandler {
             ready: ready_flag,
         };
         info!("loaded texture: {filename} = {:?}", texture.id());
-        inner.loaded_files.insert(filename, vec![texture.id()]);
+        inner
+            .loaded_files
+            .insert(filename.clone(), vec![texture.id()]);
+        inner.loaded_files_inverse.insert(texture.id(), filename);
         inner.textures.insert(texture.id(), texture.clone());
         Ok(texture)
     }
@@ -423,7 +412,11 @@ impl TextureHandler {
                     inner
                         .textures
                         .get(id)
-                        .context("missing texture id {id:?}")
+                        .with_context(|| {
+                            format!(
+                                "TextureHandler::wait_load_file_animated(): missing texture: {id:?}"
+                            )
+                        })
                         .cloned()
                 })
                 .collect();
@@ -435,7 +428,6 @@ impl TextureHandler {
                 let ready_flag = Arc::new(AtomicBool::new(false));
                 let texture = inner
                     .texture_manager
-                    .lock()
                     .create_texture(
                         loaded.extent,
                         loaded.format,
@@ -457,10 +449,13 @@ impl TextureHandler {
             .collect::<Result<Vec<_>>>()?;
         let texture_ids = textures.iter().map(Texture::id).collect();
         info!("loaded texture: {filename} = {texture_ids:?}");
-        inner.loaded_files.insert(filename, texture_ids);
         for texture in &textures {
             inner.textures.insert(texture.id(), texture.clone());
+            inner
+                .loaded_files_inverse
+                .insert(texture.id(), filename.clone());
         }
+        inner.loaded_files.insert(filename, texture_ids);
         Ok(textures)
     }
     fn load_file_inner_animated(filename: &str) -> Result<Vec<RawTexture>> {
@@ -507,7 +502,6 @@ impl TextureHandler {
             .inner
             .lock()
             .texture_manager
-            .lock()
             .create_texture(
                 loaded.extent,
                 loaded.format,
@@ -535,7 +529,6 @@ impl TextureHandler {
         self.inner
             .lock()
             .material_handler
-            .lock()
             .create_material_from_texture(texture, area)
     }
 
@@ -544,7 +537,6 @@ impl TextureHandler {
             .inner
             .lock()
             .texture_manager
-            .lock()
             .get_internal_texture(texture_id)
         else {
             return Ok(None);
@@ -567,11 +559,16 @@ impl TextureHandler {
     }
 
     pub fn wait_for_upload(&self) -> Result<bool> {
-        self.inner.lock().texture_manager.lock().wait_for_upload()
+        self.inner.lock().texture_manager.wait_for_upload()
     }
     pub fn maybe_upload_pending(&self) -> Result<()> {
-        self.inner.lock().texture_manager.lock().upload_pending()?;
-        self.inner.lock().maybe_upload_materials()
+        let mut inner = self.inner.lock();
+        if inner.material_handler.dirty.swap(false, Ordering::Relaxed) {
+            let materials = inner.material_handler.materials().clone();
+            inner.texture_manager.upload_materials(materials)?;
+        }
+        inner.texture_manager.upload_pending()?;
+        Ok(())
     }
 
     pub(crate) fn on_render_done(&self, acquire: &SwapchainAcquireInfo) -> Result<()> {
@@ -585,29 +582,20 @@ impl TextureHandler {
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
-        self.inner
-            .lock()
-            .texture_manager
-            .lock()
-            .bind(command_buffer);
+        self.inner.lock().texture_manager.bind(command_buffer);
     }
 
     pub fn pipeline_layout(&self) -> vk::PipelineLayout {
-        self.inner.lock().texture_manager.lock().pipeline_layout()
+        self.inner.lock().texture_manager.pipeline_layout()
     }
 
     pub fn is_texture_ready(&self, texture: TextureId) -> bool {
-        self.inner
-            .lock()
-            .texture_manager
-            .lock()
-            .is_texture_ready(texture)
+        self.inner.lock().texture_manager.is_texture_ready(texture)
     }
     pub fn material_to_texture(&self, material: MaterialId) -> Option<TextureId> {
         self.inner
             .lock()
             .material_handler
-            .lock()
             .materials
             .get(&material)
             .map(|material| material.texture_id)

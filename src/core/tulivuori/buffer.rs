@@ -10,6 +10,71 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use vk_mem::Alloc;
+pub(crate) struct GenericDeviceBuffer<T: Copy> {
+    ctx: Arc<TvWindowContext>,
+    copy_count: usize,
+    buffer_vec: Vec<vk::Buffer>,
+    buffer_alloc_vec: Vec<TvAllocation>,
+    did_vk_free: AtomicBool,
+    phantom: PhantomData<T>,
+}
+
+impl<T: Copy> GenericDeviceBuffer<T> {
+    pub fn new(
+        ctx: Arc<TvWindowContext>,
+        copy_count: usize,
+        length: usize,
+        usage: vk::BufferUsageFlags,
+    ) -> Result<Self> {
+        unsafe {
+            let mut buffer_alloc_vec = Vec::new();
+            let mut buffer_vec = Vec::new();
+            for _ in 0..copy_count {
+                let (buffer, alloc) = ctx.allocator().create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .size((length * size_of::<T>()) as u64)
+                        .usage(usage)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    &vk_mem::AllocationCreateInfo {
+                        usage: vk_mem::MemoryUsage::AutoPreferDevice,
+                        ..Default::default()
+                    },
+                )?;
+                buffer_vec.push(buffer);
+                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc));
+            }
+
+            Ok(Self {
+                ctx,
+                copy_count,
+                buffer_vec,
+                buffer_alloc_vec,
+                did_vk_free: AtomicBool::new(false),
+                phantom: PhantomData,
+            })
+        }
+    }
+
+    pub fn buffer(&self, copy_index: usize) -> vk::Buffer {
+        check_lt!(copy_index, self.copy_count);
+        self.buffer_vec[copy_index]
+    }
+
+    pub fn size(&self) -> vk::DeviceSize {
+        self.buffer_alloc_vec[0].size()
+    }
+
+    pub fn vk_free(&self) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            self.ctx.device().device_wait_idle().unwrap();
+            for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
+                self.ctx.allocator().destroy_buffer(buffer, alloc.as_mut());
+            }
+        }
+        self.did_vk_free.store(true, Ordering::Relaxed);
+    }
+}
 
 pub(crate) struct GenericBuffer<T: Copy> {
     ctx: Arc<TvWindowContext>,
@@ -71,6 +136,7 @@ impl<T: Copy> GenericBuffer<T> {
     }
 
     pub fn buffer(&self, copy_index: usize) -> vk::Buffer {
+        check_lt!(copy_index, self.copy_count);
         self.buffer_vec[copy_index]
     }
 
@@ -183,11 +249,7 @@ pub struct IndexBuffer32 {
 }
 
 impl IndexBuffer32 {
-    pub fn new(
-        ctx: Arc<TvWindowContext>,
-        swapchain: &Swapchain,
-        length: usize,
-    ) -> Result<Self> {
+    pub fn new(ctx: Arc<TvWindowContext>, swapchain: &Swapchain, length: usize) -> Result<Self> {
         Ok(Self {
             inner: SwapchainGenericBuffer::new(
                 ctx,

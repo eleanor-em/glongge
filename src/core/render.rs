@@ -467,7 +467,9 @@ impl RenderHandler {
 
 impl Drop for RenderHandler {
     fn drop(&mut self) {
-        check!(self.ctx.did_vk_free());
+        if !self.ctx.did_vk_free() {
+            error!("leaked resource: RenderHandler");
+        }
         info!("RenderHandler dropped, all Vulkan objects should have been freed");
     }
 }

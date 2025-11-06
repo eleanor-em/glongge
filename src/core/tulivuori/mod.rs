@@ -192,6 +192,8 @@ impl Drop for TvWindowContext {
     fn drop(&mut self) {
         if !self.did_vk_free.load(Ordering::Relaxed) {
             error!("leaked resource: TvWindowContext");
+            // vk_mem uses RAII for freeing resources, which could crash in this case.
+            std::mem::forget(self.allocator.lock().take().unwrap());
         }
     }
 }
