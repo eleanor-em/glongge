@@ -284,14 +284,13 @@ impl SwapchainImages {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for &image_view in &self.present_image_views {
                 self.ctx.device().destroy_image_view(image_view, None);
             }
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 
@@ -551,7 +550,7 @@ impl Swapchain {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for &command_pool in &self.present_command_pools {
@@ -572,7 +571,6 @@ impl Swapchain {
             self.images.vk_free();
             self.loader.destroy_swapchain(self.khr, None);
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 

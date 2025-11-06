@@ -3138,12 +3138,11 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn wait_upload_textures(&mut self) {
-        if let Err(e) = self
-            .resource_handler
-            .texture
-            .wait_for_upload()
-            .and(self.resource_handler.texture.maybe_upload_pending())
-        {
+        check!(
+            SYNC_UPDATE_TO_RENDER,
+            "requires a different design to allow update thread to wait on render thread here"
+        );
+        if let Err(e) = self.resource_handler.texture.maybe_stage_and_upload() {
             panic_or_error!("failed to upload textures: {e:?}");
         }
     }

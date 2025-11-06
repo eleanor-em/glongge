@@ -1,10 +1,10 @@
 use crate::core::scene::GuiClosure;
-use crate::core::tulivuori::TvWindowContext;
 use crate::core::tulivuori::buffer::VertexBuffer;
 use crate::core::tulivuori::pipeline::Pipeline;
 use crate::core::tulivuori::shader::VertFragShader;
 use crate::core::tulivuori::swapchain::{Swapchain, SwapchainBuilder};
 use crate::core::tulivuori::{GgWindow, RenderPerfStats};
+use crate::core::tulivuori::{TvWindowContext, tv};
 use crate::core::{ObjectId, prelude::*, tulivuori::GgViewport};
 use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
@@ -361,79 +361,34 @@ impl RenderHandler {
 
     pub(crate) fn render_update(&mut self) -> Result<()> {
         unsafe {
-            let mut rx = self.render_data_channel.lock().unwrap();
-            if let Some(extra_scale_factor) = rx.should_resize_with_scale_factor() {
-                self.viewport
-                    .lock()
-                    .set_extra_scale_factor(extra_scale_factor);
-            }
-            self.viewport
-                .lock()
-                .set_physical_top_left(rx.viewport.physical_top_left());
-            let combined_scale_factor = self.viewport.lock().combined_scale_factor();
-
-            let render_frame = rx.next_frame();
-            let shader_render_frame = render_frame.for_shader(ShaderId::default());
-            let render_infos = shader_render_frame
-                .render_infos
-                .iter()
-                .sorted_unstable_by_key(|item| item.depth);
-            let mut vertices = Vec::new();
-            for render_info in render_infos {
-                for vertex_index in render_info.vertex_indices.clone() {
-                    let vertex = render_frame.vertices[vertex_index as usize];
-                    for ri in &render_info.inner {
-                        if self
-                            .resource_handler
-                            .texture
-                            .is_material_ready(ri.material_id)
-                        {
-                            vertices.push(SpriteVertex {
-                                position: vertex.inner.into(),
-                                material_id: ri.material_id,
-                                translation: (render_info.transform.centre
-                                    - rx.viewport.world_top_left())
-                                .into(),
-                                rotation: render_info.transform.rotation,
-                                scale: render_info.transform.scale.into(),
-                                blend_col: (vertex.blend_col * ri.blend_col).into(),
-                                clip_min: (render_info.clip.top_left() * combined_scale_factor)
-                                    .into(),
-                                clip_max: (render_info.clip.bottom_right() * combined_scale_factor)
-                                    .into(),
-                            });
-                        } else {
-                            error!(
-                                "material not ready: {:?} {:?}",
-                                ri.material_id,
-                                self.resource_handler
-                                    .texture
-                                    .material_to_texture(ri.material_id)
-                            );
-                        }
-                    }
+            let (viewport, vertex_count, clear_col) = {
+                let mut rx = self.render_data_channel.lock().unwrap();
+                let mut viewport = self.viewport.lock();
+                if let Some(extra_scale_factor) = rx.should_resize_with_scale_factor() {
+                    viewport.set_extra_scale_factor(extra_scale_factor);
                 }
-            }
-            self.vertex_buffer.write(&vertices)?;
-
+                viewport.set_physical_top_left(rx.viewport.physical_top_left());
+                let vertex_count = self.update_vertex_buffer(&rx.next_frame(), &viewport)?;
+                (viewport.clone(), vertex_count, rx.clear_col)
+            };
+            // TODO: in theory this should not be necessary, there is some kind of bug where
+            // removing it causes a deadlock.
             self.resource_handler.texture.wait_for_upload()?;
 
             let acquire = self.swapchain.acquire_next_image(&[])?;
             let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
             self.ctx.device().begin_command_buffer(
                 draw_command_buffer,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                &tv::default_command_buffer_begin_info(),
             )?;
             self.swapchain
-                .cmd_begin_rendering(draw_command_buffer, rx.clear_col);
+                .cmd_begin_rendering(draw_command_buffer, clear_col);
             self.resource_handler.texture.bind(draw_command_buffer);
-            self.pipeline
-                .bind(draw_command_buffer, &self.viewport.lock());
+            self.pipeline.bind(draw_command_buffer, &viewport);
             self.vertex_buffer.bind(draw_command_buffer);
             self.ctx
                 .device()
-                .cmd_draw(draw_command_buffer, vertices.len() as u32, 1, 0, 0);
+                .cmd_draw(draw_command_buffer, vertex_count, 1, 0, 0);
             self.swapchain.cmd_end_rendering(draw_command_buffer);
             self.ctx.device().end_command_buffer(draw_command_buffer)?;
 
@@ -443,6 +398,57 @@ impl RenderHandler {
             self.update_sync.mark_render_done();
         }
         Ok(())
+    }
+
+    fn update_vertex_buffer(
+        &self,
+        render_frame: &RenderFrame,
+        viewport: &GgViewport,
+    ) -> Result<u32> {
+        let shader_render_frame = render_frame.for_shader(ShaderId::default());
+        let render_infos = shader_render_frame
+            .render_infos
+            .iter()
+            .sorted_unstable_by_key(|item| item.depth);
+        let mut vertices = Vec::new();
+        for render_info in render_infos {
+            for vertex_index in render_info.vertex_indices.clone() {
+                let vertex = render_frame.vertices[vertex_index as usize];
+                for ri in &render_info.inner {
+                    if self
+                        .resource_handler
+                        .texture
+                        .is_material_ready(ri.material_id)
+                    {
+                        vertices.push(SpriteVertex {
+                            position: vertex.inner.into(),
+                            material_id: ri.material_id,
+                            translation: (render_info.transform.centre - viewport.world_top_left())
+                                .into(),
+                            rotation: render_info.transform.rotation,
+                            scale: render_info.transform.scale.into(),
+                            blend_col: (vertex.blend_col * ri.blend_col).into(),
+                            clip_min: (render_info.clip.top_left()
+                                * viewport.combined_scale_factor())
+                            .into(),
+                            clip_max: (render_info.clip.bottom_right()
+                                * viewport.combined_scale_factor())
+                            .into(),
+                        });
+                    } else {
+                        error!(
+                            "material not ready: {:?} {:?}",
+                            ri.material_id,
+                            self.resource_handler
+                                .texture
+                                .material_to_texture(ri.material_id)
+                        );
+                    }
+                }
+            }
+        }
+        self.vertex_buffer.write(&vertices)?;
+        Ok(vertices.len() as u32)
     }
 
     pub(crate) fn as_lite(&self) -> RenderHandlerLite {

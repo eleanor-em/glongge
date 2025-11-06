@@ -40,6 +40,9 @@ pub mod tv {
     use crate::core::config::USE_VSYNC;
     use ash::vk;
 
+    pub fn default_command_buffer_begin_info() -> vk::CommandBufferBeginInfo<'static> {
+        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+    }
     pub fn default_component_mapping() -> vk::ComponentMapping {
         vk::ComponentMapping::default()
             .r(vk::ComponentSwizzle::R)
@@ -170,7 +173,7 @@ impl TvWindowContext {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.device.device_wait_idle().unwrap();
             self.allocator.lock().take().unwrap();
@@ -181,7 +184,6 @@ impl TvWindowContext {
             }
             self.instance.destroy_instance(None);
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
     pub fn did_vk_free(&self) -> bool {
         self.did_vk_free.load(Ordering::Relaxed)
@@ -676,12 +678,11 @@ impl DebugHandler {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.debug_utils_loader
                 .destroy_debug_utils_messenger(self.debug_callback, None);
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 
     /// # Safety: lol

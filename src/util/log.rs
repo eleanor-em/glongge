@@ -3,8 +3,9 @@ use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 
 pub static LAST_LOG: LazyLock<Mutex<HashMap<String, Instant>>> =
-    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
+// TODO: info_every_frames
 #[macro_export]
 macro_rules! info_every_seconds {
     ($seconds:expr, $($args:expr),+) => {

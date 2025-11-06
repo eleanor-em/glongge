@@ -87,13 +87,12 @@ impl VertFragShader {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             self.ctx.device().destroy_shader_module(self.vert, None);
             self.ctx.device().destroy_shader_module(self.frag, None);
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 

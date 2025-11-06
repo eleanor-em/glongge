@@ -7,6 +7,7 @@ use asefile::AsepriteFile;
 use ash::vk;
 use png::ColorType;
 use std::collections::BTreeSet;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{
@@ -141,7 +142,7 @@ impl TextureHandlerInner {
         }
     }
 
-    fn free_unused_textures(&mut self) {
+    fn clean_up_textures(&mut self) {
         let Some(frames_in_flight) = self.frames_in_flight else {
             return;
         };
@@ -149,15 +150,14 @@ impl TextureHandlerInner {
             .textures
             .iter()
             .filter(|(_, texture)| *texture.ref_count.lock() == 1)
-            .map(|(id, _)| id)
-            .copied()
-            .collect::<BTreeSet<_>>();
-        for &id in &to_remove {
-            if self.loaded_files_inverse.contains_key(&id) {
+            .filter(|(id, _)| {
                 // Don't free textures for loaded files.
                 // TODO: some sort of more controlled cleanup for loaded files.
-                continue;
-            }
+                !self.loaded_files_inverse.contains_key(id)
+            })
+            .map(|(&id, _)| id)
+            .collect::<BTreeSet<_>>();
+        for &id in &to_remove {
             self.texture_manager.free_internal_texture(id);
             self.zombie_textures.insert(
                 id,
@@ -170,6 +170,9 @@ impl TextureHandlerInner {
                     waited_frames_in_flight: (0..frames_in_flight).map(|i| (i, false)).collect(),
                 },
             );
+        }
+        if !to_remove.is_empty() {
+            info_every_millis!(100, "cleaned up {} unused texture(s)", to_remove.len());
         }
     }
 
@@ -191,7 +194,7 @@ pub struct Material {
 pub(crate) struct MaterialHandler {
     materials: BTreeMap<MaterialId, Material>,
     materials_inverse: HashMap<Material, MaterialId>,
-    dirty: AtomicBool,
+    dirty: bool,
 }
 
 impl MaterialHandler {
@@ -208,7 +211,7 @@ impl MaterialHandler {
         Self {
             materials,
             materials_inverse,
-            dirty: AtomicBool::new(false),
+            dirty: false,
         }
     }
     fn create_material_from_texture(&mut self, texture: &Texture, area: &Rect) -> MaterialId {
@@ -239,21 +242,32 @@ impl MaterialHandler {
             }
             self.materials.insert(id, material.clone());
             self.materials_inverse.insert(material, id);
-            self.dirty.store(true, Ordering::Relaxed);
+            self.dirty = true;
             id
         }
     }
-    #[allow(unused)]
-    fn on_remove_texture(&mut self, texture_id: TextureId) {
-        self.materials_inverse.retain(|material, material_id| {
-            if material.texture_id == texture_id {
-                self.materials.remove(material_id);
-                self.dirty.store(true, Ordering::Relaxed);
-                false
-            } else {
-                true
-            }
-        });
+
+    // Required to avoid concurrent borrows.
+    fn get_unused_material_ids(&self, texture_manager: &TextureManager) -> Vec<MaterialId> {
+        self.materials
+            .iter()
+            .filter(|(_, material)| texture_manager.is_texture_id_unused(material.texture_id))
+            .map(|(id, _)| id)
+            .copied()
+            .collect()
+    }
+    fn clean_up_materials(&mut self, unused_ids: Vec<MaterialId>) -> Result<()> {
+        if !unused_ids.is_empty() {
+            info_every_millis!(100, "cleaned up {} unused material(s)", unused_ids.len());
+        }
+        for id in unused_ids {
+            self.materials_inverse
+                .remove(self.materials.get(&id).with_context(|| {
+                    format!("MaterialHandler::clean_up_materials(): missing material: {id:?}")
+                })?);
+            self.materials.remove(&id);
+        }
+        Ok(())
     }
 
     pub fn materials(&self) -> &BTreeMap<MaterialId, Material> {
@@ -263,13 +277,14 @@ impl MaterialHandler {
 
 #[derive(Clone)]
 pub struct TextureHandler {
-    inner: UniqueShared<TextureHandlerInner>,
+    // TODO: better lock design (avoid constant locking and unlocking).
+    inner: Arc<Mutex<TextureHandlerInner>>,
 }
 
 impl TextureHandler {
     pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
         Ok(Self {
-            inner: UniqueShared::new(TextureHandlerInner::new(ctx)?),
+            inner: Arc::new(Mutex::new(TextureHandlerInner::new(ctx)?)),
         })
     }
     fn load_file_inner(filename: &str) -> Result<RawTexture> {
@@ -353,7 +368,7 @@ impl TextureHandler {
     }
     pub fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Texture> {
         let filename = filename.as_ref().to_string();
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.lock().unwrap();
         if let Some(&texture_id) = inner.loaded_files.get(&filename).and_then(|v| {
             check_eq!(
                 v.len(),
@@ -404,7 +419,7 @@ impl TextureHandler {
     }
     pub fn wait_load_file_animated(&self, filename: impl AsRef<str>) -> Result<Vec<Texture>> {
         let filename = filename.as_ref().to_string();
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.lock().unwrap();
         if let Some(textures) = inner.loaded_files.get(&filename) {
             return textures
                 .iter()
@@ -501,6 +516,7 @@ impl TextureHandler {
         let texture = self
             .inner
             .lock()
+            .unwrap()
             .texture_manager
             .create_texture(
                 loaded.extent,
@@ -521,6 +537,7 @@ impl TextureHandler {
         };
         self.inner
             .lock()
+            .unwrap()
             .textures
             .insert(texture.id(), texture.clone());
         Ok(texture)
@@ -528,6 +545,7 @@ impl TextureHandler {
     pub fn create_material_from_texture(&self, texture: &Texture, area: &Rect) -> MaterialId {
         self.inner
             .lock()
+            .unwrap()
             .material_handler
             .create_material_from_texture(texture, area)
     }
@@ -536,6 +554,7 @@ impl TextureHandler {
         let Some(tex) = self
             .inner
             .lock()
+            .unwrap()
             .texture_manager
             .get_internal_texture(texture_id)
         else {
@@ -559,42 +578,58 @@ impl TextureHandler {
     }
 
     pub fn wait_for_upload(&self) -> Result<bool> {
-        self.inner.lock().texture_manager.wait_for_upload()
+        self.inner.lock().unwrap().texture_manager.wait_for_upload()
     }
-    pub fn maybe_upload_pending(&self) -> Result<()> {
-        let mut inner = self.inner.lock();
-        if inner.material_handler.dirty.swap(false, Ordering::Relaxed) {
+    pub fn maybe_stage_and_upload(&self) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.material_handler.dirty {
+            let unused_material_ids = inner
+                .material_handler
+                .get_unused_material_ids(&inner.texture_manager);
+            inner
+                .material_handler
+                .clean_up_materials(unused_material_ids)?;
             let materials = inner.material_handler.materials().clone();
-            inner.texture_manager.upload_materials(materials)?;
+            inner.texture_manager.stage_materials(materials)?;
+            inner.material_handler.dirty = false;
         }
-        inner.texture_manager.upload_pending()?;
+        inner.texture_manager.upload_all()?;
         Ok(())
     }
 
     pub(crate) fn on_render_done(&self, acquire: &SwapchainAcquireInfo) -> Result<()> {
-        self.maybe_upload_pending()?;
-        self.inner.lock().update_with_acquire_info(acquire);
-        self.free_unused_textures();
+        self.maybe_stage_and_upload()?;
+        self.inner.lock().unwrap().update_with_acquire_info(acquire);
+        self.clean_up_textures();
         Ok(())
     }
-    pub fn free_unused_textures(&self) {
-        self.inner.lock().free_unused_textures();
+    pub fn clean_up_textures(&self) {
+        self.inner.lock().unwrap().clean_up_textures();
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
-        self.inner.lock().texture_manager.bind(command_buffer);
+        self.inner
+            .lock()
+            .unwrap()
+            .texture_manager
+            .bind(command_buffer);
     }
 
     pub fn pipeline_layout(&self) -> vk::PipelineLayout {
-        self.inner.lock().texture_manager.pipeline_layout()
+        self.inner.lock().unwrap().texture_manager.pipeline_layout()
     }
 
     pub fn is_texture_ready(&self, texture: TextureId) -> bool {
-        self.inner.lock().texture_manager.is_texture_ready(texture)
+        self.inner
+            .lock()
+            .unwrap()
+            .texture_manager
+            .is_texture_ready(texture)
     }
     pub fn material_to_texture(&self, material: MaterialId) -> Option<TextureId> {
         self.inner
             .lock()
+            .unwrap()
             .material_handler
             .materials
             .get(&material)
@@ -608,6 +643,6 @@ impl TextureHandler {
     }
 
     pub fn vk_free(&self) {
-        self.inner.lock().vk_free();
+        self.inner.lock().unwrap().vk_free();
     }
 }

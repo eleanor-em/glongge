@@ -65,14 +65,13 @@ impl<T: Copy> GenericDeviceBuffer<T> {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx.allocator().destroy_buffer(buffer, alloc.as_mut());
             }
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 
@@ -148,14 +147,13 @@ impl<T: Copy> GenericBuffer<T> {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx.allocator().destroy_buffer(buffer, alloc.as_mut());
             }
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 

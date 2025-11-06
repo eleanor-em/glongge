@@ -142,14 +142,13 @@ impl Pipeline {
     }
 
     pub fn vk_free(&self) {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
             for pipeline in &self.graphics_pipelines {
                 self.ctx.device().destroy_pipeline(*pipeline, None);
             }
         }
-        self.did_vk_free.store(true, Ordering::Relaxed);
     }
 }
 
