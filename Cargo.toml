@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3.20", default-features = false, features = 
 # vulkan
 ash = { version = "0.38.0", default-features = false, features = ["linked", "debug", "std"] }
 ash-window = "0.13.0"
+vk-mem = "0.5.0"
 # windowing
 egui = "0.32.3"
 egui-winit = "0.32.3"

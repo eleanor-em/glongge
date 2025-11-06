@@ -6,7 +6,7 @@ use crate::{
     core::tulivuori::{TvWindowContext, tv},
     util::UniqueShared,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ash::{util::Align, vk};
 use std::{
     collections::BTreeMap,
@@ -14,6 +14,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tracing::error;
+use vk_mem::Alloc;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default, Hash)]
 pub struct TextureId(u32);
@@ -28,11 +29,11 @@ pub struct TvInternalTexture {
     ctx: Arc<TvWindowContext>,
     id: TextureId,
     image_buffer: vk::Buffer,
-    image_buffer_memory: vk::DeviceMemory,
+    image_buffer_alloc: vk_mem::Allocation,
     image_extent: vk::Extent2D,
-    tex_memory: vk::DeviceMemory,
     tex_image_view: vk::ImageView,
     tex_image: vk::Image,
+    tex_alloc: vk_mem::Allocation,
     data: Vec<u8>,
     ready_flag: Arc<AtomicBool>,
     did_vk_free: AtomicBool,
@@ -48,49 +49,27 @@ impl TvInternalTexture {
         ready_flag: Arc<AtomicBool>,
     ) -> Result<Arc<Self>> {
         unsafe {
-            let device_memory_properties = ctx.get_physical_device_memory_properties();
-            let image_buffer = ctx.device().create_buffer(
-                &vk::BufferCreateInfo {
-                    size: size_of_val(image_data) as u64,
-                    usage: vk::BufferUsageFlags::TRANSFER_SRC,
-                    sharing_mode: vk::SharingMode::EXCLUSIVE,
+            let (image_buffer, mut image_buffer_alloc) = ctx.allocator().create_buffer(
+                &vk::BufferCreateInfo::default()
+                    .size(size_of_val(image_data) as u64)
+                    .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                &vk_mem::AllocationCreateInfo {
+                    flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
+                    usage: vk_mem::MemoryUsage::Auto,
                     ..Default::default()
                 },
-                None,
             )?;
-            let image_buffer_memory_req = ctx.device().get_buffer_memory_requirements(image_buffer);
+            let image_alloc_size = ctx
+                .allocator()
+                .get_allocation_info(&image_buffer_alloc)
+                .size;
+            let image_ptr = ctx.allocator().map_memory(&mut image_buffer_alloc)?;
+            Align::new(image_ptr.cast(), align_of::<u8>() as u64, image_alloc_size)
+                .copy_from_slice(image_data);
+            ctx.allocator().unmap_memory(&mut image_buffer_alloc);
 
-            let image_buffer_memory = ctx.device().allocate_memory(
-                &vk::MemoryAllocateInfo {
-                    allocation_size: image_buffer_memory_req.size,
-                    memory_type_index: tv::find_memorytype_index(
-                        &image_buffer_memory_req,
-                        &device_memory_properties,
-                        vk::MemoryPropertyFlags::HOST_VISIBLE
-                            | vk::MemoryPropertyFlags::HOST_COHERENT,
-                    )
-                    .context("Unable to find suitable memorytype for the image buffer.")?,
-                    ..Default::default()
-                },
-                None,
-            )?;
-            let image_ptr = ctx.device().map_memory(
-                image_buffer_memory,
-                0,
-                image_buffer_memory_req.size,
-                vk::MemoryMapFlags::empty(),
-            )?;
-            Align::new(
-                image_ptr,
-                align_of::<u8>() as u64,
-                image_buffer_memory_req.size,
-            )
-            .copy_from_slice(image_data);
-            ctx.device().unmap_memory(image_buffer_memory);
-            ctx.device()
-                .bind_buffer_memory(image_buffer, image_buffer_memory, 0)?;
-
-            let tex_image = ctx.device().create_image(
+            let (tex_image, tex_alloc) = ctx.allocator().create_image(
                 &vk::ImageCreateInfo {
                     image_type: vk::ImageType::TYPE_2D,
                     format,
@@ -103,22 +82,11 @@ impl TvInternalTexture {
                     sharing_mode: vk::SharingMode::EXCLUSIVE,
                     ..Default::default()
                 },
-                None,
+                &vk_mem::AllocationCreateInfo {
+                    usage: vk_mem::MemoryUsage::AutoPreferDevice,
+                    ..Default::default()
+                },
             )?;
-            let tex_memory_req = ctx.device().get_image_memory_requirements(tex_image);
-
-            let texture_allocate_info = vk::MemoryAllocateInfo {
-                allocation_size: tex_memory_req.size,
-                memory_type_index: tv::find_memorytype_index(
-                    &tex_memory_req,
-                    &device_memory_properties,
-                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                )
-                .context("Unable to find suitable memory index for depth image.")?,
-                ..Default::default()
-            };
-            let tex_memory = ctx.device().allocate_memory(&texture_allocate_info, None)?;
-            ctx.device().bind_image_memory(tex_image, tex_memory, 0)?;
             let tex_image_view = ctx.device().create_image_view(
                 &vk::ImageViewCreateInfo::default()
                     .view_type(vk::ImageViewType::TYPE_2D)
@@ -133,11 +101,11 @@ impl TvInternalTexture {
                 ctx,
                 id,
                 image_buffer,
-                image_buffer_memory,
+                image_buffer_alloc,
                 image_extent,
-                tex_memory,
                 tex_image_view,
                 tex_image,
+                tex_alloc,
                 data: image_data.to_vec(),
                 ready_flag,
                 did_vk_free: AtomicBool::new(false),
@@ -159,14 +127,14 @@ impl TvInternalTexture {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx
-                .device()
-                .free_memory(self.image_buffer_memory, None);
-            self.ctx.device().destroy_buffer(self.image_buffer, None);
-            self.ctx.device().free_memory(self.tex_memory, None);
+                .allocator()
+                .destroy_buffer(self.image_buffer, &mut self.image_buffer_alloc.clone());
             self.ctx
                 .device()
                 .destroy_image_view(self.tex_image_view, None);
-            self.ctx.device().destroy_image(self.tex_image, None);
+            self.ctx
+                .allocator()
+                .destroy_image(self.tex_image, &mut self.tex_alloc.clone());
         }
         self.did_vk_free.store(true, Ordering::Relaxed);
     }

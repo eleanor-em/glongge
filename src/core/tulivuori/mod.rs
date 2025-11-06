@@ -107,6 +107,8 @@ pub struct TvWindowContext {
     device: Device,
     present_queue: vk::Queue,
 
+    allocator: UniqueShared<Option<Arc<vk_mem::Allocator>>>,
+
     did_vk_free: AtomicBool,
 }
 
@@ -125,6 +127,9 @@ impl TvWindowContext {
     pub fn present_queue(&self) -> vk::Queue {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.present_queue
+    }
+    pub fn allocator(&self) -> Arc<vk_mem::Allocator> {
+        self.allocator.lock().as_ref().cloned().unwrap()
     }
 
     pub(crate) fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
@@ -168,6 +173,7 @@ impl TvWindowContext {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.device.device_wait_idle().unwrap();
+            self.allocator.lock().take().unwrap();
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
             if let Some(debug_handler) = self.debug_handler.as_ref() {
@@ -250,6 +256,7 @@ impl TvWindowContextBuilder {
         self
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn build(self, window: &Arc<Window>) -> Result<Arc<TvWindowContext>> {
         let span = info_span!("TvWindowContext");
         let _enter = span.enter();
@@ -348,6 +355,14 @@ impl TvWindowContextBuilder {
         let present_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         perf_stats.lap("create logical device");
 
+        let allocator = unsafe {
+            vk_mem::Allocator::new(vk_mem::AllocatorCreateInfo::new(
+                &instance,
+                &device,
+                physical_device,
+            ))?
+        };
+        perf_stats.lap("create allocator");
         perf_stats.report(0);
 
         Ok(Arc::new(TvWindowContext {
@@ -361,6 +376,7 @@ impl TvWindowContextBuilder {
             queue_family_index,
             device,
             present_queue,
+            allocator: UniqueShared::new(Some(Arc::new(allocator))),
             did_vk_free: AtomicBool::new(false),
         }))
     }
@@ -1229,6 +1245,7 @@ pub mod pipeline;
 pub mod shader;
 pub mod swapchain;
 pub mod texture;
+pub mod tv_mem;
 
 #[derive(Clone)]
 pub struct PerfStats {

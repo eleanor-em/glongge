@@ -1,22 +1,21 @@
+use crate::core::tulivuori::tv_mem::TvAllocation;
 use crate::{
-    core::prelude::*,
-    core::tulivuori::swapchain::Swapchain,
-    core::tulivuori::{TvWindowContext, tv},
+    core::prelude::*, core::tulivuori::TvWindowContext, core::tulivuori::swapchain::Swapchain,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ash::{util::Align, vk};
 use std::{
     marker::PhantomData,
     sync::Arc,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use vk_mem::Alloc;
 
 pub(crate) struct GenericBuffer<T: Copy> {
     ctx: Arc<TvWindowContext>,
     copy_count: usize,
-    buffer_memory: Vec<vk::DeviceMemory>,
-    buffer: Vec<vk::Buffer>,
-    buffer_memory_req: vk::MemoryRequirements,
+    buffer_vec: Vec<vk::Buffer>,
+    buffer_alloc_vec: Vec<TvAllocation>,
     length: usize,
     did_vk_free: AtomicBool,
     phantom: PhantomData<T>,
@@ -30,41 +29,29 @@ impl<T: Copy> GenericBuffer<T> {
         usage: vk::BufferUsageFlags,
     ) -> Result<Self> {
         unsafe {
-            let mut buffer_memory_vec = Vec::new();
+            let mut buffer_alloc_vec = Vec::new();
             let mut buffer_vec = Vec::new();
             for _ in 0..copy_count {
-                let buffer = ctx.device().create_buffer(
+                let (buffer, alloc) = ctx.allocator().create_buffer(
                     &vk::BufferCreateInfo::default()
                         .size((length * size_of::<T>()) as u64)
                         .usage(usage)
                         .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                    None,
+                    &vk_mem::AllocationCreateInfo {
+                        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
+                        usage: vk_mem::MemoryUsage::AutoPreferHost,
+                        ..Default::default()
+                    },
                 )?;
-                let buffer_memory_req = ctx.device().get_buffer_memory_requirements(buffer);
-                let buffer_memory_index = tv::find_memorytype_index(
-                    &buffer_memory_req,
-                    &ctx.get_physical_device_memory_properties(),
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                )
-                .context("Unable to find suitable memorytype for the vertex buffer.")?;
-                let buffer_memory = ctx.device().allocate_memory(
-                    &vk::MemoryAllocateInfo::default()
-                        .allocation_size(buffer_memory_req.size)
-                        .memory_type_index(buffer_memory_index),
-                    None,
-                )?;
-                ctx.device().bind_buffer_memory(buffer, buffer_memory, 0)?;
                 buffer_vec.push(buffer);
-                buffer_memory_vec.push(buffer_memory);
+                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc));
             }
 
-            let buffer_memory_req = ctx.device().get_buffer_memory_requirements(buffer_vec[0]);
             Ok(Self {
                 ctx,
                 copy_count,
-                buffer_memory: buffer_memory_vec,
-                buffer: buffer_vec,
-                buffer_memory_req,
+                buffer_vec,
+                buffer_alloc_vec,
                 length,
                 did_vk_free: AtomicBool::new(false),
                 phantom: PhantomData,
@@ -75,42 +62,31 @@ impl<T: Copy> GenericBuffer<T> {
     pub fn write(&self, data: &[T], copy_index: usize) -> Result<()> {
         check_lt!(copy_index, self.copy_count);
         unsafe {
-            let ptr = self.ctx.device().map_memory(
-                self.buffer_memory[copy_index],
-                0,
-                self.buffer_memory_req.size,
-                vk::MemoryMapFlags::empty(),
-            )?;
-
-            Align::new(ptr, align_of::<T>() as u64, self.buffer_memory_req.size)
-                .copy_from_slice(data);
-            self.ctx
-                .device()
-                .unmap_memory(self.buffer_memory[copy_index]);
+            let alloc = &self.buffer_alloc_vec[copy_index];
+            let ptr = self.ctx.allocator().map_memory(alloc.as_mut())?;
+            Align::new(ptr.cast(), align_of::<T>() as u64, alloc.size()).copy_from_slice(data);
+            self.ctx.allocator().unmap_memory(alloc.as_mut());
         }
         Ok(())
     }
 
     pub fn buffer(&self, copy_index: usize) -> vk::Buffer {
-        self.buffer[copy_index]
+        self.buffer_vec[copy_index]
     }
 
     pub fn len(&self) -> usize {
         self.length
     }
     pub fn size(&self) -> vk::DeviceSize {
-        self.buffer_memory_req.size
+        self.buffer_alloc_vec[0].size()
     }
 
     pub fn vk_free(&self) {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();
-            for &buffer_memory in &self.buffer_memory {
-                self.ctx.device().free_memory(buffer_memory, None);
-            }
-            for &buffer in &self.buffer {
-                self.ctx.device().destroy_buffer(buffer, None);
+            for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
+                self.ctx.allocator().destroy_buffer(buffer, alloc.as_mut());
             }
         }
         self.did_vk_free.store(true, Ordering::Relaxed);
@@ -211,15 +187,15 @@ impl IndexBuffer32 {
         ctx: Arc<TvWindowContext>,
         swapchain: &Swapchain,
         length: usize,
-    ) -> Result<Arc<Self>> {
-        Ok(Arc::new(Self {
+    ) -> Result<Self> {
+        Ok(Self {
             inner: SwapchainGenericBuffer::new(
                 ctx,
                 swapchain,
                 length,
                 vk::BufferUsageFlags::INDEX_BUFFER,
             )?,
-        }))
+        })
     }
 
     pub fn write(&self, data: &[u32]) -> Result<()> {
