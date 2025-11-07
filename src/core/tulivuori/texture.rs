@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
 };
-use tracing::error;
+use tracing::{error, info};
 use vk_mem::Alloc;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default, Hash)]
@@ -39,6 +39,7 @@ pub struct TvInternalTexture {
     tex_alloc: vk_mem::Allocation,
     data: Vec<u8>,
     ready_flag: Arc<AtomicBool>,
+    do_bind: bool,
     did_vk_free: AtomicBool,
 }
 
@@ -49,10 +50,12 @@ impl TvInternalTexture {
         image_extent: vk::Extent2D,
         format: vk::Format,
         image_data: &[u8],
+        do_bind: bool,
         ready_flag: Arc<AtomicBool>,
     ) -> Result<Arc<Self>> {
         unsafe {
-            let (image_buffer, mut image_buffer_alloc) = ctx.allocator().create_buffer(
+            let allocator = ctx.allocator("TvInternalTexture::new");
+            let (image_buffer, mut image_buffer_alloc) = allocator.create_buffer(
                 &vk::BufferCreateInfo::default()
                     .size(size_of_val(image_data) as u64)
                     .usage(vk::BufferUsageFlags::TRANSFER_SRC)
@@ -63,16 +66,13 @@ impl TvInternalTexture {
                     ..Default::default()
                 },
             )?;
-            let image_alloc_size = ctx
-                .allocator()
-                .get_allocation_info(&image_buffer_alloc)
-                .size;
-            let image_ptr = ctx.allocator().map_memory(&mut image_buffer_alloc)?;
+            let image_alloc_size = allocator.get_allocation_info(&image_buffer_alloc).size;
+            let image_ptr = allocator.map_memory(&mut image_buffer_alloc)?;
             Align::new(image_ptr.cast(), align_of::<u8>() as u64, image_alloc_size)
                 .copy_from_slice(image_data);
-            ctx.allocator().unmap_memory(&mut image_buffer_alloc);
+            allocator.unmap_memory(&mut image_buffer_alloc);
 
-            let (tex_image, tex_alloc) = ctx.allocator().create_image(
+            let (tex_image, tex_alloc) = allocator.create_image(
                 &vk::ImageCreateInfo {
                     image_type: vk::ImageType::TYPE_2D,
                     format,
@@ -111,6 +111,7 @@ impl TvInternalTexture {
                 tex_alloc,
                 data: image_data.to_vec(),
                 ready_flag,
+                do_bind,
                 did_vk_free: AtomicBool::new(false),
             }))
         }
@@ -125,19 +126,22 @@ impl TvInternalTexture {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+    pub fn is_ready(&self) -> bool {
+        self.ready_flag.load(Ordering::Relaxed)
+    }
+    pub fn tex_image_view(&self) -> vk::ImageView {
+        self.tex_image_view
+    }
 
     pub fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.ctx
-                .allocator()
-                .destroy_buffer(self.image_buffer, &mut self.image_buffer_alloc.clone());
+            let allocator = self.ctx.allocator("TvInternalTexture::vk_free");
+            allocator.destroy_buffer(self.image_buffer, &mut self.image_buffer_alloc.clone());
             self.ctx
                 .device()
                 .destroy_image_view(self.tex_image_view, None);
-            self.ctx
-                .allocator()
-                .destroy_image(self.tex_image, &mut self.tex_alloc.clone());
+            allocator.destroy_image(self.tex_image, &mut self.tex_alloc.clone());
         }
     }
 }
@@ -411,12 +415,12 @@ impl TextureManager {
         }
     }
 
-    pub fn create_texture(
+    pub fn create_texture_unbound(
         &mut self,
         extent: vk::Extent2D,
         format: vk::Format,
         image_data: &[u8],
-        ready_signal: Arc<AtomicBool>,
+        ready_flag: Arc<AtomicBool>,
     ) -> Result<Option<Arc<TvInternalTexture>>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let Some(id) = self.get_next_texture_id() else {
@@ -428,7 +432,31 @@ impl TextureManager {
             extent,
             format,
             image_data,
-            ready_signal,
+            false,
+            ready_flag,
+        )?;
+        self.pending_textures.insert(id, tex.clone());
+        Ok(Some(tex))
+    }
+    pub fn create_texture(
+        &mut self,
+        extent: vk::Extent2D,
+        format: vk::Format,
+        image_data: &[u8],
+        ready_flag: Arc<AtomicBool>,
+    ) -> Result<Option<Arc<TvInternalTexture>>> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        let Some(id) = self.get_next_texture_id() else {
+            return Ok(None);
+        };
+        let tex = TvInternalTexture::new(
+            self.ctx.clone(),
+            id,
+            extent,
+            format,
+            image_data,
+            true,
+            ready_flag,
         )?;
         self.pending_textures.insert(id, tex.clone());
         Ok(Some(tex))
@@ -452,11 +480,13 @@ impl TextureManager {
             for (&id, texture) in &self.uploading_textures {
                 texture.ready_flag.store(true, Ordering::Relaxed);
                 self.textures.insert(id, texture.clone());
-                self.descriptor_image_infos[id.as_usize()] = vk::DescriptorImageInfo {
-                    sampler: self.sampler,
-                    image_view: texture.tex_image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                };
+                if texture.do_bind {
+                    self.descriptor_image_infos[id.as_usize()] = vk::DescriptorImageInfo {
+                        sampler: self.sampler,
+                        image_view: texture.tex_image_view,
+                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    };
+                }
             }
             self.uploading_textures.clear();
 
@@ -606,11 +636,7 @@ impl TextureManager {
                 );
                 self.uploading_textures.insert(id, texture.clone());
             }
-            info_every_millis!(
-                100,
-                "uploading {} texture(s)",
-                self.uploading_textures.len()
-            );
+            info!("uploading {} texture(s)", self.uploading_textures.len());
             self.pending_textures.clear();
         }
     }

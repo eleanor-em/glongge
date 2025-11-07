@@ -1,17 +1,21 @@
 use crate::core::scene::GuiClosure;
-use crate::core::tulivuori::buffer::VertexBuffer;
+use crate::core::tulivuori::buffer::{IndexBuffer32, VertexBuffer};
 use crate::core::tulivuori::pipeline::Pipeline;
-use crate::core::tulivuori::shader::VertFragShader;
+use crate::core::tulivuori::shader::{GuiVertFragShader, ShaderInfo, VertFragShader};
 use crate::core::tulivuori::swapchain::{Swapchain, SwapchainBuilder};
+use crate::core::tulivuori::texture::TvInternalTexture;
 use crate::core::tulivuori::{GgWindow, RenderPerfStats};
 use crate::core::tulivuori::{TvWindowContext, tv};
 use crate::core::{ObjectId, prelude::*, tulivuori::GgViewport};
 use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
-use crate::resource::texture::MaterialId;
+use crate::resource::texture::{MaterialId, TextureHandler};
 use crate::shader::{ShaderId, SpriteVertex, vertex};
-use crate::util::UniqueShared;
+use crate::util::{UniqueShared, gg_err};
 use ash::vk;
+use egui::epaint;
+use num_traits::ToPrimitive;
+use std::collections::VecDeque;
 use std::io::Cursor;
 use std::mem::offset_of;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -55,7 +59,7 @@ pub(crate) struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithCol>,
     pub(crate) shader_execs: Vec<ShaderExecWithVertexData>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
-    pub(crate) gui_enabled: bool,
+    pub(crate) is_gui_enabled: bool,
     viewport: GgViewport,
     should_resize: bool,
     clear_col: Colour,
@@ -68,7 +72,7 @@ impl RenderDataChannel {
             vertices: Vec::new(),
             shader_execs: Vec::new(),
             gui_commands: Vec::new(),
-            gui_enabled: false,
+            is_gui_enabled: false,
             viewport,
             should_resize: false,
             clear_col: Colour::black(),
@@ -231,12 +235,15 @@ pub(crate) struct RenderHandler {
     pub(crate) resource_handler: ResourceHandler,
     render_data_channel: Arc<Mutex<RenderDataChannel>>,
     update_sync: UpdateSync,
-    pub(crate) gui_ctx: GuiContext,
 
     swapchain: Swapchain,
     vertex_buffer: VertexBuffer<SpriteVertex>,
     shader: Arc<VertFragShader>,
     pipeline: Pipeline,
+
+    gui: GuiRenderHandler,
+    perf_stats: RenderPerfStats,
+    last_perf_stats: Option<RenderPerfStats>,
 }
 
 impl RenderHandler {
@@ -246,15 +253,16 @@ impl RenderHandler {
         window: GgWindow,
         viewport: UniqueShared<GgViewport>,
         resource_handler: ResourceHandler,
+        input_handler: Arc<Mutex<InputHandler>>,
     ) -> Result<Self> {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
 
         let swapchain = SwapchainBuilder::new(&ctx, window.inner.clone()).build()?;
         let vertex_buffer = VertexBuffer::new(ctx.clone(), &swapchain, 100 * 1024)?;
-        let shader = VertFragShader::new(
+        let shader = Arc::new(VertFragShader::new(
             ctx.clone(),
-            &mut Cursor::new(&include_bytes!("../shader/glsl/vert.spv")[..]),
-            &mut Cursor::new(&include_bytes!("../shader/glsl/frag.spv")[..]),
+            &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-vert.spv")[..]),
+            &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-frag.spv")[..]),
             vec![vk::VertexInputBindingDescription {
                 binding: 0,
                 stride: size_of::<SpriteVertex>() as u32,
@@ -310,18 +318,28 @@ impl RenderHandler {
                     offset: offset_of!(SpriteVertex, clip_max) as u32,
                 },
             ],
-        )?;
+        )?);
         let pipeline = Pipeline::new(
             ctx.clone(),
             &swapchain,
-            &shader,
+            &(shader.clone() as Arc<dyn ShaderInfo>),
             resource_handler.texture.pipeline_layout(),
             &viewport.lock(),
         )?;
 
+        let gui = GuiRenderHandler::new(
+            ctx.clone(),
+            &swapchain,
+            viewport.clone(),
+            window.clone(),
+            gui_ctx,
+            input_handler,
+            resource_handler.texture.clone(),
+        )?;
+        let perf_stats = RenderPerfStats::new(&window);
+
         Ok(Self {
             ctx,
-            gui_ctx,
             swapchain,
             vertex_buffer,
             shader,
@@ -331,6 +349,9 @@ impl RenderHandler {
             render_data_channel,
             update_sync: UpdateSync::new(),
             pipeline,
+            gui,
+            perf_stats,
+            last_perf_stats: None,
         })
     }
     #[must_use]
@@ -359,21 +380,35 @@ impl RenderHandler {
         self.update_sync.wait_update_done();
     }
 
-    pub(crate) fn render_update(&mut self) -> Result<()> {
+    pub(crate) fn render_update(&mut self, egui_state: &mut egui_winit::State) -> Result<()> {
         unsafe {
-            let (viewport, vertex_count, clear_col) = {
+            self.perf_stats.start();
+            self.perf_stats.update_vertices.start();
+            let (viewport, vertex_count, gui_commands, clear_col) = {
                 let mut rx = self.render_data_channel.lock().unwrap();
+                rx.last_render_stats.clone_from(&self.last_perf_stats);
                 let mut viewport = self.viewport.lock();
                 if let Some(extra_scale_factor) = rx.should_resize_with_scale_factor() {
                     viewport.set_extra_scale_factor(extra_scale_factor);
                 }
                 viewport.set_physical_top_left(rx.viewport.physical_top_left());
                 let vertex_count = self.update_vertex_buffer(&rx.next_frame(), &viewport)?;
-                (viewport.clone(), vertex_count, rx.clear_col)
+                let gui_commands = rx.gui_commands.drain(..).collect_vec();
+                self.gui.is_gui_enabled = rx.is_gui_enabled;
+                (viewport.clone(), vertex_count, gui_commands, rx.clear_col)
             };
+            self.perf_stats.update_vertices.stop();
 
+            self.perf_stats.update_gui.start();
+            let do_render_gui = self.gui.pre_render_update(egui_state, gui_commands)?;
+            self.perf_stats.update_gui.stop();
+
+            self.perf_stats.acquire.start();
             let acquire = self.swapchain.acquire_next_image(&[])?;
             let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
+            self.perf_stats.acquire.stop();
+
+            self.perf_stats.record_command_buffer.start();
             self.ctx.device().begin_command_buffer(
                 draw_command_buffer,
                 &tv::default_command_buffer_begin_info(),
@@ -382,20 +417,39 @@ impl RenderHandler {
                 .texture
                 .upload_all_pending_with(draw_command_buffer)?;
             self.swapchain
-                .cmd_begin_rendering(draw_command_buffer, clear_col);
+                .cmd_begin_rendering(draw_command_buffer, Some(clear_col));
             self.resource_handler.texture.bind(draw_command_buffer)?;
-            self.pipeline.bind(draw_command_buffer, &viewport);
+            let mut bytes = (viewport.physical_width() / viewport.combined_scale_factor())
+                .to_le_bytes()
+                .to_vec();
+            bytes.extend(
+                (viewport.physical_height() / viewport.combined_scale_factor())
+                    .to_le_bytes()
+                    .to_vec(),
+            );
+            self.pipeline
+                .bind(draw_command_buffer, &viewport, &bytes, &[]);
             self.vertex_buffer.bind(draw_command_buffer);
             self.ctx
                 .device()
                 .cmd_draw(draw_command_buffer, vertex_count, 1, 0, 0);
             self.swapchain.cmd_end_rendering(draw_command_buffer);
-            self.ctx.device().end_command_buffer(draw_command_buffer)?;
 
+            if do_render_gui {
+                self.gui.do_render(draw_command_buffer, &self.swapchain)?;
+            }
+
+            self.ctx.device().end_command_buffer(draw_command_buffer)?;
+            self.perf_stats.record_command_buffer.stop();
+            self.perf_stats.submit.start();
             self.swapchain
                 .submit_and_present_queue(&[draw_command_buffer])?;
+            self.perf_stats.submit.stop();
+            self.perf_stats.end_render.start();
             self.resource_handler.texture.on_render_done(&acquire)?;
             self.update_sync.mark_render_done();
+            self.perf_stats.end_render.stop();
+            self.last_perf_stats = self.perf_stats.end();
         }
         Ok(())
     }
@@ -456,12 +510,13 @@ impl RenderHandler {
             render_data_channel: self.render_data_channel.clone(),
             update_sync: self.update_sync.clone(),
             resource_handler: self.resource_handler.clone(),
-            gui_ctx: self.gui_ctx.clone(),
+            gui_ctx: self.gui.gui_ctx.clone(),
             window: self.window.clone(),
         }
     }
 
     pub fn vk_free(&self) {
+        self.gui.vk_free();
         self.pipeline.vk_free();
         self.shader.vk_free();
         self.vertex_buffer.vk_free();
@@ -477,6 +532,335 @@ impl Drop for RenderHandler {
             error!("leaked resource: RenderHandler");
         }
         info!("RenderHandler dropped, all Vulkan objects should have been freed");
+    }
+}
+
+struct GuiRenderHandler {
+    ctx: Arc<TvWindowContext>,
+    texture_handler: Arc<TextureHandler>,
+    is_gui_enabled: bool,
+    viewport: UniqueShared<GgViewport>,
+    window: GgWindow,
+
+    gui_ctx: GuiContext,
+    input_handler: Arc<Mutex<InputHandler>>,
+    gui_vertex_buffer: VertexBuffer<epaint::Vertex>,
+    gui_index_buffer: IndexBuffer32,
+    gui_shader: Arc<GuiVertFragShader>,
+    gui_pipeline: Pipeline,
+
+    last_meshes: Vec<egui::Mesh>,
+    next_meshes: Vec<egui::Mesh>,
+    font_texture: Option<Arc<TvInternalTexture>>,
+    next_font_textures: VecDeque<Arc<TvInternalTexture>>,
+}
+
+impl GuiRenderHandler {
+    fn new(
+        ctx: Arc<TvWindowContext>,
+        swapchain: &Swapchain,
+        viewport: UniqueShared<GgViewport>,
+        window: GgWindow,
+        gui_ctx: GuiContext,
+        input_handler: Arc<Mutex<InputHandler>>,
+        texture_handler: Arc<TextureHandler>,
+    ) -> Result<Self> {
+        let gui_vertex_buffer = VertexBuffer::new(ctx.clone(), swapchain, 100 * 1024)?;
+        let gui_index_buffer = IndexBuffer32::new(ctx.clone(), swapchain, 100 * 1024)?;
+        let gui_shader = Arc::new(GuiVertFragShader::new(ctx.clone())?);
+        let gui_pipeline = Pipeline::new(
+            ctx.clone(),
+            swapchain,
+            &(gui_shader.clone() as Arc<dyn ShaderInfo>),
+            gui_shader.pipeline_layout(),
+            &viewport.lock(),
+        )?;
+        Ok(Self {
+            ctx,
+            texture_handler,
+            is_gui_enabled: false,
+            viewport,
+            window,
+            gui_ctx,
+            input_handler,
+            gui_vertex_buffer,
+            gui_index_buffer,
+            gui_shader,
+            gui_pipeline,
+            last_meshes: Vec::new(),
+            next_meshes: Vec::new(),
+            font_texture: None,
+            next_font_textures: VecDeque::new(),
+        })
+    }
+
+    fn pre_render_update(
+        &mut self,
+        egui_state: &mut egui_winit::State,
+        mut gui_commands: Vec<Box<GuiClosure>>,
+    ) -> Result<bool> {
+        let egui_input = egui_state.take_egui_input(&self.window.inner);
+        {
+            let mut input = self.input_handler.lock().unwrap();
+            input.set_viewport(self.viewport.clone_inner());
+            input.update_mouse(&self.gui_ctx.inner);
+        }
+        if !self.gui_ctx.is_ever_enabled() {
+            return Ok(false);
+        }
+        let full_output = self.gui_ctx.inner.run(egui_input, move |ctx| {
+            for cmd in gui_commands.drain(..) {
+                cmd(ctx);
+            }
+        });
+        let image_deltas = full_output.textures_delta.set;
+        egui_state.handle_platform_output(&self.window.inner, full_output.platform_output.clone());
+
+        for (id, delta) in image_deltas {
+            check_eq!(id, egui::TextureId::Managed(0));
+            let bytes_per_pixel = delta
+                .image
+                .bytes_per_pixel()
+                .to_i32()
+                .context("bytes_per_pixel wrapped around")?;
+            check_eq!(
+                bytes_per_pixel,
+                size_of::<egui::Color32>()
+                    .to_i32()
+                    .context("size_of::<egui::Color32>() wrapped around")?
+            );
+            #[allow(irrefutable_let_patterns)]
+            let egui::ImageData::Color(color_image) = delta.image else {
+                unreachable!()
+            };
+            self.update_font_texture(delta.pos, &color_image, bytes_per_pixel)?;
+        }
+        while self
+            .next_font_textures
+            .front()
+            .is_some_and(|t| t.is_ready())
+        {
+            if let Some(last_font_texture) = self.font_texture.take() {
+                self.texture_handler
+                    .free_internal_texture(last_font_texture.id())?;
+            } else {
+                self.gui_shader
+                    .init_font_texture(self.next_font_textures.front().unwrap());
+            }
+            self.font_texture = self.next_font_textures.pop_front();
+        }
+        let next_meshes = self
+            .gui_ctx
+            .inner
+            .tessellate(full_output.shapes, full_output.pixels_per_point)
+            .into_iter()
+            .filter_map(|mesh| match mesh.primitive {
+                epaint::Primitive::Mesh(m) => Some(m),
+                epaint::Primitive::Callback(_) => unimplemented!(),
+            })
+            .collect_vec();
+        if self.next_font_textures.is_empty() && !next_meshes.is_empty() {
+            self.last_meshes = self.next_meshes.drain(..).collect_vec();
+            self.next_meshes = next_meshes;
+        } else {
+            self.next_meshes = self.last_meshes.clone();
+        }
+        self.gui_vertex_buffer.write(
+            &self
+                .next_meshes
+                .iter()
+                .flat_map(|m| m.vertices.clone())
+                .collect_vec(),
+        )?;
+        self.gui_index_buffer.write(
+            &self
+                .next_meshes
+                .iter()
+                .flat_map(|m| m.indices.clone())
+                .collect_vec(),
+        )?;
+        if self.font_texture.is_some() {
+            Ok(true)
+        } else {
+            info!("GUI: font texture not ready yet, do not render");
+            Ok(false)
+        }
+    }
+
+    fn update_font_texture(
+        &mut self,
+        image_pos: Option<[usize; 2]>,
+        color_image: &Arc<egui::ColorImage>,
+        bytes_per_pixel: i32,
+    ) -> Result<()> {
+        let color_image_data = color_image
+            .pixels
+            .iter()
+            .flat_map(egui::Color32::to_array)
+            .collect_vec();
+        let color_image_extent = vk::Extent2D {
+            width: color_image.width() as u32,
+            height: color_image.height() as u32,
+        };
+        let color_image_width_in_bytes = bytes_per_pixel
+            * color_image
+                .width()
+                .to_i32()
+                .context("color_image.width() wrapped around")?;
+        if let Some(old_font_texture) = self
+            .next_font_textures
+            .back()
+            .or(self.font_texture.as_ref())
+            .cloned()
+        {
+            let (new_data, new_extent) = if let Some(image_pos) = image_pos {
+                check_le!(color_image_extent.width, old_font_texture.extent().width);
+                check_le!(color_image_extent.height, old_font_texture.extent().height);
+                check_le!(
+                    image_pos[0] + color_image_extent.width as usize,
+                    old_font_texture.extent().width as usize
+                );
+                check_le!(
+                    image_pos[1] + color_image_extent.height as usize,
+                    old_font_texture.extent().height as usize
+                );
+                check_eq!(
+                    color_image_data
+                        .len()
+                        .to_u32()
+                        .context("color_image_data.len() wrapped around")?
+                        / (bytes_per_pixel
+                            .to_u32()
+                            .context("bytes_per_pixel is negative")?
+                            * color_image_extent.width),
+                    color_image_extent.height
+                );
+                let mut new_data = old_font_texture.data().to_vec();
+                let origin = Vec2i {
+                    x: image_pos[0]
+                        .to_i32()
+                        .context("image_pos[0] wrapped around")?
+                        * bytes_per_pixel,
+                    y: image_pos[1]
+                        .to_i32()
+                        .context("image_pos[0] wrapped around")?,
+                };
+                for (i, &byte) in color_image_data.iter().enumerate() {
+                    let i = i
+                        .to_i32()
+                        .context("color_image_data count wrapped around")?;
+                    let x = i % color_image_width_in_bytes;
+                    let y = i / color_image_width_in_bytes;
+                    let write_pos = origin + Vec2i { x, y };
+                    new_data[write_pos.as_index(
+                        old_font_texture.extent().width * bytes_per_pixel as u32,
+                        old_font_texture.extent().height,
+                    )] = byte;
+                }
+                (new_data, old_font_texture.extent())
+            } else {
+                (color_image_data, color_image_extent)
+            };
+
+            self.next_font_textures.push_back(
+                self.texture_handler
+                    .create_internal_texture(
+                        new_extent,
+                        vk::Format::R8G8B8A8_SRGB,
+                        &new_data,
+                        false,
+                        Arc::new(AtomicBool::new(false)),
+                    )?
+                    .context("GuiRenderHandler::update_font_texture(): failed to create texture")?,
+            );
+        } else {
+            check_is_none!(image_pos);
+            self.next_font_textures.push_back(
+                self.texture_handler
+                    .create_internal_texture(
+                        color_image_extent,
+                        vk::Format::R8G8B8A8_SRGB,
+                        &color_image_data,
+                        false,
+                        Arc::new(AtomicBool::new(false)),
+                    )?
+                    .unwrap(),
+            );
+        }
+        Ok(())
+    }
+
+    fn do_render(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        swapchain: &Swapchain,
+    ) -> Result<()> {
+        unsafe {
+            self.gui_shader
+                .update_font_texture(self.font_texture.as_ref().unwrap(), swapchain);
+            swapchain.cmd_begin_rendering(command_buffer, None);
+            let viewport = self.viewport.lock();
+            let mut vert_bytes = (viewport.physical_width() / viewport.combined_scale_factor()
+                * 2.0)
+                .to_le_bytes()
+                .to_vec();
+            vert_bytes.extend(
+                (viewport.physical_height() / viewport.combined_scale_factor() * 2.0)
+                    .to_le_bytes()
+                    .to_vec(),
+            );
+            let frag_bytes = (swapchain.current_frame_index() as u32)
+                .to_le_bytes()
+                .to_vec();
+            self.gui_pipeline
+                .bind(command_buffer, &viewport, &vert_bytes, &frag_bytes);
+            self.gui_shader.bind(command_buffer);
+            self.gui_index_buffer.bind(command_buffer);
+            self.gui_vertex_buffer.bind(command_buffer);
+            let mut index = 0;
+            let mut vertex = 0;
+            for mesh in &self.next_meshes {
+                self.ctx.device().cmd_draw_indexed(
+                    command_buffer,
+                    mesh.indices.len() as u32,
+                    1,
+                    index,
+                    vertex,
+                    0,
+                );
+                index += mesh
+                    .indices
+                    .len()
+                    .to_u32()
+                    .context("index count wrapped around")?;
+                vertex += mesh
+                    .vertices
+                    .len()
+                    .to_i32()
+                    .context("vertex count wrapped around")?;
+            }
+            swapchain.cmd_end_rendering(command_buffer);
+            Ok(())
+        }
+    }
+
+    fn vk_free(&self) {
+        self.gui_pipeline.vk_free();
+        self.gui_shader.vk_free();
+        self.gui_index_buffer.vk_free();
+        self.gui_vertex_buffer.vk_free();
+        if let Some(font_texture) = self.font_texture.as_ref() {
+            gg_err::log_err_and_ignore(
+                self.texture_handler
+                    .free_internal_texture(font_texture.id()),
+            );
+        }
+        for font_texture in &self.next_font_textures {
+            gg_err::log_err_and_ignore(
+                self.texture_handler
+                    .free_internal_texture(font_texture.id()),
+            );
+        }
     }
 }
 

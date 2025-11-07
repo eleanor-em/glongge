@@ -16,3 +16,11 @@ pub struct SpriteVertex {
     pub clip_min: [f32; 2],
     pub clip_max: [f32; 2],
 }
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct GuiVertex {
+    pub a_pos: [f32; 2],
+    pub a_tc: [f32; 2],
+    pub a_srgba: [u8; 4],
+}

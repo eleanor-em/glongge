@@ -440,7 +440,11 @@ impl Swapchain {
         Ok(self.present_command_buffers[current_frame_index])
     }
 
-    pub fn cmd_begin_rendering(&self, command_buffer: vk::CommandBuffer, clear_col: Colour) {
+    pub fn cmd_begin_rendering(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        clear_col: Option<Colour>,
+    ) {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().cmd_pipeline_barrier2(
@@ -452,7 +456,10 @@ impl Swapchain {
                         .old_layout(vk::ImageLayout::UNDEFINED)
                         .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                         .src_access_mask(vk::AccessFlags2::NONE)
-                        .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+                        .dst_access_mask(
+                            vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
+                                | vk::AccessFlags2::COLOR_ATTACHMENT_READ,
+                        )
                         .image(self.current_present_image())
                         .subresource_range(tv::default_image_subresource_range()),
                 ]),
@@ -462,10 +469,14 @@ impl Swapchain {
                 &vk::RenderingInfo::default()
                     .color_attachments(&[vk::RenderingAttachmentInfo::default()
                         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .load_op(if clear_col.is_some() {
+                            vk::AttachmentLoadOp::CLEAR
+                        } else {
+                            vk::AttachmentLoadOp::LOAD
+                        })
                         .clear_value(vk::ClearValue {
                             color: vk::ClearColorValue {
-                                float32: clear_col.into(),
+                                float32: clear_col.unwrap_or(Colour::empty()).into(),
                             },
                         })
                         .store_op(vk::AttachmentStoreOp::STORE)

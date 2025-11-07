@@ -1,3 +1,4 @@
+use crate::core::tulivuori::texture::TvInternalTexture;
 use crate::util::gg_sync::GgMutex;
 use crate::{
     core::prelude::*,
@@ -313,6 +314,31 @@ impl TextureHandler {
             inner: GgMutex::new(inner),
             pipeline_layout,
         })
+    }
+
+    pub(crate) fn create_internal_texture(
+        &self,
+        extent: vk::Extent2D,
+        format: vk::Format,
+        image_data: &[u8],
+        do_bind: bool,
+        ready_signal: Arc<AtomicBool>,
+    ) -> Result<Option<Arc<TvInternalTexture>>> {
+        if do_bind {
+            self.lock_inner("create_internal_texture")?
+                .texture_manager
+                .create_texture(extent, format, image_data, ready_signal)
+        } else {
+            self.lock_inner("create_internal_texture")?
+                .texture_manager
+                .create_texture_unbound(extent, format, image_data, ready_signal)
+        }
+    }
+    pub(crate) fn free_internal_texture(&self, id: TextureId) -> Result<()> {
+        self.lock_inner("free_internal_texture")?
+            .texture_manager
+            .free_internal_texture(id);
+        Ok(())
     }
 
     fn lock_inner(&self, by: &'static str) -> Result<MutexGuard<'_, TextureHandlerInner>> {

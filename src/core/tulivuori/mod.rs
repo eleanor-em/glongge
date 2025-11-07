@@ -1,4 +1,5 @@
 use crate::util::gg_sync;
+use crate::util::gg_sync::GgMutex;
 use crate::{
     core::prelude::*,
     core::render::RenderHandler,
@@ -113,7 +114,7 @@ pub struct TvWindowContext {
     device: Device,
     present_queue: Arc<Mutex<vk::Queue>>,
 
-    allocator: UniqueShared<Option<Arc<vk_mem::Allocator>>>,
+    allocator: GgMutex<Option<Arc<vk_mem::Allocator>>>,
 
     did_vk_free: AtomicBool,
 }
@@ -134,8 +135,8 @@ impl TvWindowContext {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         gg_sync::spin_lock_for(&self.present_queue, Duration::from_millis(100))
     }
-    pub fn allocator(&self) -> Arc<vk_mem::Allocator> {
-        self.allocator.lock().as_ref().cloned().unwrap()
+    pub fn allocator(&self, by: &'static str) -> Arc<vk_mem::Allocator> {
+        self.allocator.lock(by).as_ref().cloned().unwrap()
     }
 
     pub(crate) fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
@@ -179,7 +180,10 @@ impl TvWindowContext {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.device.device_wait_idle().unwrap();
-            self.allocator.lock().take().unwrap();
+            self.allocator
+                .lock("TvWindowContext::vk_free")
+                .take()
+                .unwrap();
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
             if let Some(debug_handler) = self.debug_handler.as_ref() {
@@ -198,7 +202,7 @@ impl Drop for TvWindowContext {
         if !self.did_vk_free.load(Ordering::Relaxed) {
             error!("leaked resource: TvWindowContext");
             // vk_mem uses RAII for freeing resources, which could crash in this case.
-            std::mem::forget(self.allocator.lock().take().unwrap());
+            std::mem::forget(self.allocator.lock("TvWindowContext::drop").take().unwrap());
         }
     }
 }
@@ -383,7 +387,7 @@ impl TvWindowContextBuilder {
             queue_family_index,
             device,
             present_queue: Arc::new(Mutex::new(present_queue)),
-            allocator: UniqueShared::new(Some(Arc::new(allocator))),
+            allocator: GgMutex::new(Some(Arc::new(allocator))),
             did_vk_free: AtomicBool::new(false),
         }))
     }
@@ -871,7 +875,7 @@ impl GgViewport {
 #[allow(unused)]
 struct WindowEventHandlerInner {
     window: GgWindow,
-    platform: egui_winit::State,
+    egui_state: egui_winit::State,
     winit_scale_factor_for_logging: f32,
     input_handler: Arc<Mutex<InputHandler>>,
     render_stats: RenderPerfStats,
@@ -887,7 +891,7 @@ struct WindowEventHandlerInner {
 impl WindowEventHandlerInner {
     fn handle_window_events(&mut self) {
         while let Ok(event) = self.window_event_rx.try_recv() {
-            let _response = self.platform.on_window_event(&self.window.inner, &event);
+            let _response = self.egui_state.on_window_event(&self.window.inner, &event);
             if event == WindowEvent::CloseRequested {
                 self.render_handler.take().unwrap().vk_free();
                 std::process::exit(0);
@@ -918,8 +922,8 @@ impl WindowEventHandlerInner {
     }
 
     fn render_update(&mut self) {
-        let n = self.render_count;
-        let span = info_span!("render_update", n);
+        let frame = self.render_count;
+        let span = info_span!("render_update", frame);
         let _enter = span.enter();
         self.render_handler.as_ref().unwrap().wait_update_done();
         self.handle_window_events();
@@ -927,7 +931,7 @@ impl WindowEventHandlerInner {
         self.render_handler
             .as_mut()
             .unwrap()
-            .render_update()
+            .render_update(&mut self.egui_state)
             .unwrap();
         self.render_count += 1;
     }
@@ -1007,7 +1011,7 @@ where
             .with_flag_validation_layers()
             .with_flag_verbose_logging()
             .build(&window.inner)?;
-        let platform = egui_winit::State::new(
+        let egui_state = egui_winit::State::new(
             self.gui_ctx.clone().unwrap().inner.clone(),
             ViewportId::ROOT,
             &event_loop,
@@ -1028,6 +1032,7 @@ where
             window.clone(),
             viewport,
             resource_handler,
+            input_handler.clone(),
         )?
         .with_extra_scale_factor(self.create_info.extra_scale_factor)
         .with_clear_col(self.create_info.clear_col);
@@ -1044,7 +1049,7 @@ where
             let render_stats = RenderPerfStats::new(&window);
             let mut inner = WindowEventHandlerInner {
                 window,
-                platform,
+                egui_state,
                 winit_scale_factor_for_logging,
                 input_handler,
                 render_stats,
@@ -1122,8 +1127,12 @@ where
 #[allow(unused)]
 #[derive(Clone)]
 pub(crate) struct RenderPerfStats {
-    update_gui: TimeIt,
-    execute: TimeIt,
+    pub(crate) update_vertices: TimeIt,
+    pub(crate) update_gui: TimeIt,
+    pub(crate) acquire: TimeIt,
+    pub(crate) record_command_buffer: TimeIt,
+    pub(crate) submit: TimeIt,
+    pub(crate) end_render: TimeIt,
     between_renders: TimeIt,
     extra_debug: TimeIt,
 
@@ -1141,10 +1150,14 @@ pub(crate) struct RenderPerfStats {
 }
 
 impl RenderPerfStats {
-    fn new(window: &GgWindow) -> Self {
+    pub(crate) fn new(window: &GgWindow) -> Self {
         Self {
+            update_vertices: TimeIt::new("update_vertices"),
             update_gui: TimeIt::new("update_gui"),
-            execute: TimeIt::new("execute"),
+            acquire: TimeIt::new("acquire"),
+            record_command_buffer: TimeIt::new("record_command_buffer"),
+            submit: TimeIt::new("submit"),
+            end_render: TimeIt::new("end_render"),
             between_renders: TimeIt::new("between renders"),
             extra_debug: TimeIt::new("extra_debug"),
             total: TimeIt::new("total"),
@@ -1159,13 +1172,11 @@ impl RenderPerfStats {
         }
     }
 
-    #[allow(unused)]
-    fn start(&mut self) {
+    pub(crate) fn start(&mut self) {
         self.between_renders.stop();
     }
 
-    #[allow(unused)]
-    fn end(&mut self) -> Option<Self> {
+    pub(crate) fn end(&mut self) -> Option<Self> {
         // Allow a bit of slack.
         let deadline_ms = self.refresh_time * 1.2;
 
@@ -1209,8 +1220,12 @@ impl RenderPerfStats {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {
+                update_vertices: self.update_vertices.report_take(),
                 update_gui: self.update_gui.report_take(),
-                execute: self.execute.report_take(),
+                acquire: self.acquire.report_take(),
+                record_command_buffer: self.record_command_buffer.report_take(),
+                submit: self.submit.report_take(),
+                end_render: self.end_render.report_take(),
                 between_renders: self.between_renders.report_take(),
                 extra_debug: self.extra_debug.report_take(),
                 total: self.total.report_take(),
@@ -1235,8 +1250,12 @@ impl RenderPerfStats {
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
+            self.update_vertices.as_tuple_ms(),
             self.update_gui.as_tuple_ms(),
-            self.execute.as_tuple_ms(),
+            self.acquire.as_tuple_ms(),
+            self.record_command_buffer.as_tuple_ms(),
+            self.submit.as_tuple_ms(),
+            self.end_render.as_tuple_ms(),
             self.between_renders.as_tuple_ms(),
         ];
         if self.extra_debug.last_ms() != 0.0 {

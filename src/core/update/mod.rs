@@ -1303,7 +1303,7 @@ impl UpdateHandler {
         let mut render_data_channel = self.render_data_channel.lock().unwrap();
         self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
         render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
-        render_data_channel.gui_enabled = self.debug_gui.is_enabled();
+        render_data_channel.is_gui_enabled = self.debug_gui.is_enabled();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;
         }

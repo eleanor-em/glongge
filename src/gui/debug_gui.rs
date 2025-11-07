@@ -987,6 +987,10 @@ impl GuiConsoleLog {
                     if !log_output.is_empty() {
                         let last_log = log_output.len() - 1;
                         for (i, line) in log_output.into_iter().enumerate() {
+                            if line.starts_with('\t') {
+                                // Vulkan log broken onto a new line.
+                                continue;
+                            }
                             let segments = if i == last_log {
                                 line.trim()
                             } else {

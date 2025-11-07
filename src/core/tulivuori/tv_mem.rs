@@ -14,7 +14,9 @@ pub struct TvAllocation {
 
 impl TvAllocation {
     pub fn new(ctx: &Arc<TvWindowContext>, alloc: vk_mem::Allocation) -> Self {
-        let info = ctx.allocator().get_allocation_info(&alloc);
+        let info = ctx
+            .allocator("TvAllocation::new")
+            .get_allocation_info(&alloc);
         Self {
             alloc: UnsafeCell::new(alloc),
             memory_type: info.memory_type,
