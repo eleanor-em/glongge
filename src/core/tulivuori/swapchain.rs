@@ -8,8 +8,8 @@ use ash::{khr::swapchain, vk};
 use egui_winit::winit::window::Window;
 use itertools::Itertools;
 use std::{
+    sync::Arc,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-    sync::{Arc, Mutex},
 };
 use tracing::{error, info};
 
@@ -192,7 +192,7 @@ impl<'a> SwapchainBuilder<'a> {
 
         let frame_index = FrameIndex::new(desired_frames_in_flight);
         let image_index = PresentIndex::new();
-        let last_frame_index = AtomicUsize::new(frame_index.lock().unwrap().current);
+        let last_frame_index = AtomicUsize::new(frame_index.current);
 
         Ok(Swapchain {
             ctx: self.ctx,
@@ -222,11 +222,11 @@ struct FrameIndex {
 }
 
 impl FrameIndex {
-    fn new(frames_in_flight: usize) -> Mutex<Self> {
-        Mutex::new(Self {
+    fn new(frames_in_flight: usize) -> Self {
+        Self {
             last: 0,
             current: frames_in_flight - 1,
-        })
+        }
     }
 }
 struct PresentIndex {
@@ -235,11 +235,11 @@ struct PresentIndex {
 }
 
 impl PresentIndex {
-    fn new() -> Mutex<Self> {
-        Mutex::new(Self {
+    fn new() -> Self {
+        Self {
             last: 0,
             current: 0,
-        })
+        }
     }
 }
 
@@ -342,8 +342,8 @@ pub struct Swapchain {
     present_command_pools: Vec<vk::CommandPool>,
     present_command_buffers: Vec<vk::CommandBuffer>,
 
-    frame_index: Mutex<FrameIndex>,
-    image_index: Mutex<PresentIndex>,
+    frame_index: FrameIndex,
+    image_index: PresentIndex,
     pub(crate) current_frame_index: Arc<AtomicUsize>,
 
     did_vk_free: AtomicBool,
@@ -367,13 +367,16 @@ impl Swapchain {
         self.surface_format
     }
 
-    pub fn acquire_next_image(&self, extra_fences: &[vk::Fence]) -> Result<SwapchainAcquireInfo> {
+    pub fn acquire_next_image(
+        &mut self,
+        extra_fences: &[vk::Fence],
+    ) -> Result<SwapchainAcquireInfo> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.acquire_next_image_timeout(extra_fences, u64::MAX, u64::MAX)?
             .context("timeout even though we waited forever")
     }
     pub fn acquire_next_image_timeout(
-        &self,
+        &mut self,
         extra_fences: &[vk::Fence],
         wait_timeout: u64,
         acquire_timeout: u64,
@@ -381,14 +384,12 @@ impl Swapchain {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         {
             // Update {frame,present}_index.
-            let mut frame_index = self.frame_index.lock().unwrap();
-            frame_index.last = frame_index.current;
-            frame_index.current = (frame_index.last + 1) % self.frames_in_flight;
+            self.frame_index.last = self.frame_index.current;
+            self.frame_index.current = (self.frame_index.last + 1) % self.frames_in_flight;
             self.current_frame_index
-                .store(frame_index.current, Ordering::Relaxed);
+                .store(self.frame_index.current, Ordering::Relaxed);
 
-            let mut present_index = self.image_index.lock().unwrap();
-            present_index.last = present_index.current;
+            self.image_index.last = self.image_index.current;
         }
 
         match unsafe {
@@ -414,7 +415,7 @@ impl Swapchain {
         } {
             Ok((next_image_index, is_suboptimal)) => {
                 let next_image_index = next_image_index as usize;
-                self.image_index.lock().unwrap().current = next_image_index;
+                self.image_index.current = next_image_index;
                 Ok(Some(SwapchainAcquireInfo {
                     acquired_image_index: next_image_index,
                     acquired_frame_index: self.current_frame_index.load(Ordering::Relaxed),
@@ -497,8 +498,9 @@ impl Swapchain {
     pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
+            let queue = self.ctx.present_queue()?;
             self.ctx.device().queue_submit2(
-                self.ctx.present_queue(),
+                *queue,
                 &[vk::SubmitInfo2::default()
                     .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
                         .semaphore(self.present_semaphore())
@@ -515,11 +517,11 @@ impl Swapchain {
                 self.current_present_fence(),
             )?;
             self.loader.queue_present(
-                self.ctx.present_queue(),
+                *queue,
                 &vk::PresentInfoKHR::default()
                     .wait_semaphores(&[self.submit_semaphore()])
                     .swapchains(&[self.khr])
-                    .image_indices(&[self.image_index.lock().unwrap().current as u32]),
+                    .image_indices(&[self.image_index.current as u32]),
             )?;
         }
         Ok(())
@@ -528,25 +530,25 @@ impl Swapchain {
     fn present_semaphore(&self) -> vk::Semaphore {
         // The present semaphore must be chosen before we know the next image index,
         // so we have to use `.last`.
-        self.present_semaphores[self.image_index.lock().unwrap().last]
+        self.present_semaphores[self.image_index.last]
     }
     fn submit_semaphore(&self) -> vk::Semaphore {
-        self.submit_semaphores[self.image_index.lock().unwrap().current]
+        self.submit_semaphores[self.image_index.current]
     }
     fn last_acquire_fence(&self) -> vk::Fence {
-        self.acquire_fences[self.frame_index.lock().unwrap().last]
+        self.acquire_fences[self.frame_index.last]
     }
     fn last_present_fence(&self) -> vk::Fence {
-        self.present_fences[self.frame_index.lock().unwrap().last]
+        self.present_fences[self.frame_index.last]
     }
     fn current_present_fence(&self) -> vk::Fence {
-        self.present_fences[self.frame_index.lock().unwrap().current]
+        self.present_fences[self.frame_index.current]
     }
     fn current_present_image(&self) -> vk::Image {
-        self.images.present_images[self.image_index.lock().unwrap().current]
+        self.images.present_images[self.image_index.current]
     }
     fn current_present_image_view(&self) -> vk::ImageView {
-        self.images.present_image_views[self.image_index.lock().unwrap().current]
+        self.images.present_image_views[self.image_index.current]
     }
 
     pub fn vk_free(&self) {

@@ -221,7 +221,7 @@ impl SceneObject for GgInternalSprite {
                     .texture
                     .create_material_from_texture(tex, area)
             })
-            .collect_vec();
+            .collect::<Result<Vec<_>>>()?;
 
         check_false!(self.textures.is_empty());
         check_eq!(self.textures.len(), self.areas.len());

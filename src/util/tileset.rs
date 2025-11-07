@@ -341,7 +341,7 @@ impl SceneObject for GgInternalTileset {
             self.material_id = ctx
                 .resource()
                 .texture
-                .create_material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area);
+                .create_material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area)?;
             let vertices = vertex::rectangle(
                 (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
                 (self.tile_size * Vec2i::one() / 2).into(),

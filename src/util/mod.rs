@@ -485,6 +485,82 @@ pub mod gg_range {
     }
 }
 
+pub mod gg_sync {
+    use crate::core::config::MUTEX_THROTTLE_NS;
+    use anyhow::{Context, Result, bail};
+    use std::{
+        sync::{Arc, Mutex, MutexGuard, TryLockError},
+        time::{Duration, Instant},
+    };
+
+    pub struct GgMutex<T> {
+        inner: Arc<Mutex<T>>,
+        last_acquire: Arc<Mutex<Option<&'static str>>>,
+    }
+
+    impl<T> Clone for GgMutex<T> {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+                last_acquire: self.last_acquire.clone(),
+            }
+        }
+    }
+
+    impl<T> GgMutex<T> {
+        pub fn new(x: T) -> Self {
+            Self {
+                inner: Arc::new(Mutex::new(x)),
+                last_acquire: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        pub fn lock(&self, by: &'static str) -> MutexGuard<'_, T> {
+            self.last_acquire.lock().unwrap().replace(by);
+            self.inner.lock().unwrap()
+        }
+
+        pub fn spin_lock_for(
+            &self,
+            duration: Duration,
+            by: &'static str,
+        ) -> Result<MutexGuard<'_, T>> {
+            let lock = spin_lock_for(&self.inner, duration).with_context(|| {
+                format!(
+                    "tried: {by}, last acquired by: {:?}",
+                    spin_lock_for(
+                        &self.last_acquire,
+                        Duration::from_nanos(10 * MUTEX_THROTTLE_NS)
+                    )
+                )
+            })?;
+            self.last_acquire.lock().unwrap().replace(by);
+            Ok(lock)
+        }
+    }
+
+    pub fn spin_lock_for<T>(
+        mutex: &Arc<Mutex<T>>,
+        duration: Duration,
+    ) -> Result<MutexGuard<'_, T>> {
+        let start = Instant::now();
+        loop {
+            match mutex.try_lock() {
+                Ok(guard) => return Ok(guard),
+                Err(TryLockError::WouldBlock) => {
+                    if start.elapsed() > duration {
+                        bail!("spin_lock_for(): took too long (>{duration:?})");
+                    }
+                    std::thread::sleep(Duration::from_nanos(MUTEX_THROTTLE_NS));
+                }
+                Err(TryLockError::Poisoned(e)) => {
+                    bail!("spin_lock_for(): mutex poisoned: {e:?}");
+                }
+            }
+        }
+    }
+}
+
 pub mod gg_vec {
     pub trait GgVec<T> {
         fn rsplit_owned<P: for<'a> FnMut(&'a T) -> bool>(

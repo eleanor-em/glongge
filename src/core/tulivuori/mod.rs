@@ -1,3 +1,4 @@
+use crate::util::gg_sync;
 use crate::{
     core::prelude::*,
     core::render::RenderHandler,
@@ -21,6 +22,8 @@ use egui_winit::{
     winit::window::{Window, WindowAttributes, WindowId},
     winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop},
 };
+use std::sync::MutexGuard;
+use std::time::Duration;
 use std::{
     borrow::Cow,
     ffi,
@@ -108,7 +111,7 @@ pub struct TvWindowContext {
     physical_device: vk::PhysicalDevice,
     queue_family_index: u32,
     device: Device,
-    present_queue: vk::Queue,
+    present_queue: Arc<Mutex<vk::Queue>>,
 
     allocator: UniqueShared<Option<Arc<vk_mem::Allocator>>>,
 
@@ -127,9 +130,9 @@ impl TvWindowContext {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         &self.device
     }
-    pub fn present_queue(&self) -> vk::Queue {
+    pub fn present_queue(&self) -> Result<MutexGuard<'_, vk::Queue>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        self.present_queue
+        gg_sync::spin_lock_for(&self.present_queue, Duration::from_millis(100))
     }
     pub fn allocator(&self) -> Arc<vk_mem::Allocator> {
         self.allocator.lock().as_ref().cloned().unwrap()
@@ -379,7 +382,7 @@ impl TvWindowContextBuilder {
             physical_device,
             queue_family_index,
             device,
-            present_queue,
+            present_queue: Arc::new(Mutex::new(present_queue)),
             allocator: UniqueShared::new(Some(Arc::new(allocator))),
             did_vk_free: AtomicBool::new(false),
         }))

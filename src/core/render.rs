@@ -371,9 +371,6 @@ impl RenderHandler {
                 let vertex_count = self.update_vertex_buffer(&rx.next_frame(), &viewport)?;
                 (viewport.clone(), vertex_count, rx.clear_col)
             };
-            // TODO: in theory this should not be necessary, there is some kind of bug where
-            // removing it causes a deadlock.
-            self.resource_handler.texture.wait_for_upload()?;
 
             let acquire = self.swapchain.acquire_next_image(&[])?;
             let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
@@ -381,9 +378,12 @@ impl RenderHandler {
                 draw_command_buffer,
                 &tv::default_command_buffer_begin_info(),
             )?;
+            self.resource_handler
+                .texture
+                .upload_all_pending_with(draw_command_buffer)?;
             self.swapchain
                 .cmd_begin_rendering(draw_command_buffer, clear_col);
-            self.resource_handler.texture.bind(draw_command_buffer);
+            self.resource_handler.texture.bind(draw_command_buffer)?;
             self.pipeline.bind(draw_command_buffer, &viewport);
             self.vertex_buffer.bind(draw_command_buffer);
             self.ctx
@@ -418,7 +418,7 @@ impl RenderHandler {
                     if self
                         .resource_handler
                         .texture
-                        .is_material_ready(ri.material_id)
+                        .is_material_ready(ri.material_id)?
                     {
                         vertices.push(SpriteVertex {
                             position: vertex.inner.into(),

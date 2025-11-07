@@ -1,7 +1,7 @@
 use crate::{
     check, check_false,
     core::config::{FONT_SAMPLE_RATIO, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT},
-    core::prelude::{AxisAlignedExtent, Vec2},
+    core::linalg::AxisAlignedExtent,
     core::tulivuori::buffer::GenericBuffer,
     core::tulivuori::buffer::GenericDeviceBuffer,
     core::tulivuori::{TvWindowContext, tv},
@@ -13,8 +13,8 @@ use ash::{util::Align, vk};
 use std::collections::BTreeSet;
 use std::{
     collections::BTreeMap,
+    sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
-    sync::{Arc, Mutex},
 };
 use tracing::error;
 use vk_mem::Alloc;
@@ -150,7 +150,7 @@ impl Drop for TvInternalTexture {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 struct RawMaterial {
     uv_top_left: [f32; 2],
@@ -170,19 +170,19 @@ pub(crate) struct TextureManager {
     descriptor_pool: vk::DescriptorPool,
     desc_set_layout: vk::DescriptorSetLayout,
     descriptor_set: vk::DescriptorSet,
-    descriptor_image_infos: Mutex<Vec<vk::DescriptorImageInfo>>,
+    descriptor_image_infos: Vec<vk::DescriptorImageInfo>,
     pipeline_layout: vk::PipelineLayout,
 
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     upload_fence: vk::Fence,
-    is_upload_in_progress: bool,
+    is_upload_fence_in_use: bool,
 
     next_texture_id: u32,
-    pending_textures: Mutex<BTreeMap<TextureId, Arc<TvInternalTexture>>>,
-    uploading_textures: Mutex<BTreeMap<TextureId, Arc<TvInternalTexture>>>,
-    textures: Mutex<BTreeMap<TextureId, Arc<TvInternalTexture>>>,
-    unused_texture_ids: Mutex<BTreeSet<TextureId>>,
+    pending_textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
+    uploading_textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
+    textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
+    unused_texture_ids: BTreeSet<TextureId>,
 
     materials_changed: bool,
     next_material_buffer_index: usize,
@@ -289,7 +289,7 @@ impl TextureManager {
 
             let command_pool = ctx.device().create_command_pool(
                 &vk::CommandPoolCreateInfo::default()
-                    .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                    .flags(vk::CommandPoolCreateFlags::TRANSIENT)
                     .queue_family_index(ctx.queue_family_index()),
                 None,
             )?;
@@ -322,17 +322,17 @@ impl TextureManager {
                 descriptor_pool,
                 desc_set_layout,
                 descriptor_set,
-                descriptor_image_infos: Mutex::new(Vec::new()),
+                descriptor_image_infos: Vec::new(),
                 pipeline_layout,
                 command_pool,
                 command_buffer,
                 upload_fence,
-                is_upload_in_progress: false,
+                is_upload_fence_in_use: false,
                 next_texture_id: 0,
-                pending_textures: Mutex::new(BTreeMap::new()),
-                uploading_textures: Mutex::new(BTreeMap::new()),
-                textures: Mutex::new(BTreeMap::new()),
-                unused_texture_ids: Mutex::new(BTreeSet::new()),
+                pending_textures: BTreeMap::new(),
+                uploading_textures: BTreeMap::new(),
+                textures: BTreeMap::new(),
+                unused_texture_ids: BTreeSet::new(),
                 materials_changed: false,
                 next_material_buffer_index: 0,
                 material_device_buffer: material_buffer,
@@ -352,9 +352,9 @@ impl TextureManager {
                     Arc::new(AtomicBool::new(true)),
                 )?
                 .unwrap();
-            rv.upload_all()?;
+            rv.upload_all_pending()?;
 
-            *rv.descriptor_image_infos.lock().unwrap() = vec![
+            rv.descriptor_image_infos = vec![
                 vk::DescriptorImageInfo {
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     image_view: blank.tex_image_view,
@@ -364,26 +364,21 @@ impl TextureManager {
             ];
             rv.ctx.device().update_descriptor_sets(
                 &[
-                    vk::WriteDescriptorSet {
-                        dst_set: rv.descriptor_set,
-                        dst_binding: 0,
-                        descriptor_count: 1,
-                        descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                        p_buffer_info: [vk::DescriptorBufferInfo::default()
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(rv.descriptor_set)
+                        .dst_binding(0)
+                        .descriptor_count(1)
+                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                        .buffer_info(&[vk::DescriptorBufferInfo::default()
                             .buffer(rv.material_device_buffer.buffer(0))
                             .offset(0)
-                            .range(rv.material_device_buffer.size())]
-                        .as_ptr(),
-                        ..Default::default()
-                    },
-                    vk::WriteDescriptorSet {
-                        dst_set: rv.descriptor_set,
-                        dst_binding: 2,
-                        descriptor_count: MAX_TEXTURE_COUNT as u32,
-                        descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
-                        p_image_info: rv.descriptor_image_infos.lock().unwrap().as_ptr(),
-                        ..Default::default()
-                    },
+                            .range(rv.material_device_buffer.size())]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(rv.descriptor_set)
+                        .dst_binding(2)
+                        .descriptor_count(MAX_TEXTURE_COUNT as u32)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&rv.descriptor_image_infos),
                 ],
                 &[],
             );
@@ -412,7 +407,7 @@ impl TextureManager {
         if id < MAX_TEXTURE_COUNT as u32 {
             Some(TextureId(id))
         } else {
-            self.unused_texture_ids.lock().unwrap().pop_first()
+            self.unused_texture_ids.pop_first()
         }
     }
 
@@ -435,65 +430,61 @@ impl TextureManager {
             image_data,
             ready_signal,
         )?;
-        self.pending_textures
-            .lock()
-            .unwrap()
-            .insert(id, tex.clone());
+        self.pending_textures.insert(id, tex.clone());
         Ok(Some(tex))
     }
 
-    pub fn wait_for_upload(&mut self) -> Result<bool> {
+    pub fn wait_complete_upload(&mut self) -> Result<bool> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        if self.is_upload_in_progress {
+        if self.is_upload_fence_in_use {
             unsafe {
                 self.ctx
                     .device()
-                    .wait_for_fences(&[self.upload_fence], true, u64::MAX)?;
+                    .wait_for_fences(&[self.upload_fence], true, 1_000_000_000)?;
                 self.ctx.device().reset_fences(&[self.upload_fence])?;
+                self.is_upload_fence_in_use = false;
+            }
+        }
 
-                let mut uploading_textures = self.uploading_textures.lock().unwrap();
-                let mut textures = self.textures.lock().unwrap();
-                let mut descriptor_image_infos = self.descriptor_image_infos.lock().unwrap();
-                for (&id, texture) in uploading_textures.iter() {
-                    texture.ready_flag.store(true, Ordering::Relaxed);
-                    textures.insert(id, texture.clone());
-                    descriptor_image_infos[id.as_usize()] = vk::DescriptorImageInfo {
-                        image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                        image_view: texture.tex_image_view,
-                        sampler: self.sampler,
-                    };
-                }
-                uploading_textures.clear();
+        if self.uploading_textures.is_empty() {
+            Ok(false)
+        } else {
+            for (&id, texture) in &self.uploading_textures {
+                texture.ready_flag.store(true, Ordering::Relaxed);
+                self.textures.insert(id, texture.clone());
+                self.descriptor_image_infos[id.as_usize()] = vk::DescriptorImageInfo {
+                    sampler: self.sampler,
+                    image_view: texture.tex_image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                };
+            }
+            self.uploading_textures.clear();
 
+            unsafe {
                 self.ctx.device().update_descriptor_sets(
-                    &[vk::WriteDescriptorSet {
-                        dst_set: self.descriptor_set,
-                        dst_binding: 2,
-                        descriptor_count: MAX_TEXTURE_COUNT as u32,
-                        descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
-                        p_image_info: descriptor_image_infos.as_ptr(),
-                        ..Default::default()
-                    }],
+                    &[vk::WriteDescriptorSet::default()
+                        .dst_set(self.descriptor_set)
+                        .dst_binding(2)
+                        .descriptor_count(MAX_TEXTURE_COUNT as u32)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&self.descriptor_image_infos)],
                     &[],
                 );
             }
-            self.is_upload_in_progress = false;
             Ok(true)
-        } else {
-            Ok(false)
         }
     }
 
     pub fn is_anything_pending(&self) -> bool {
-        !self.pending_textures.lock().unwrap().is_empty() || self.materials_changed
+        !self.pending_textures.is_empty() || self.materials_changed
     }
-    pub fn upload_all(&mut self) -> Result<()> {
+    pub fn upload_all_pending(&mut self) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         if !self.is_anything_pending() {
             return Ok(());
         }
 
-        self.wait_for_upload()?;
+        self.wait_complete_upload()?;
         unsafe {
             self.ctx.device().reset_command_pool(
                 self.command_pool,
@@ -503,23 +494,31 @@ impl TextureManager {
                 self.command_buffer,
                 &tv::default_command_buffer_begin_info(),
             )?;
-            self.upload_materials();
-            self.upload_textures();
+            self.upload_materials(self.command_buffer);
+            self.upload_textures(self.command_buffer);
             self.ctx.device().end_command_buffer(self.command_buffer)?;
+            let queue = self.ctx.present_queue()?;
             self.ctx.device().queue_submit2(
-                self.ctx.present_queue(),
+                *queue,
                 &[vk::SubmitInfo2::default().command_buffer_infos(&[
                     vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer),
                 ])],
                 self.upload_fence,
             )?;
-            self.is_upload_in_progress = true;
+            self.is_upload_fence_in_use = true;
 
             Ok(())
         }
     }
+    pub fn upload_all_pending_with(&mut self, command_buffer: vk::CommandBuffer) {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        if self.is_anything_pending() {
+            self.upload_materials(command_buffer);
+            self.upload_textures(command_buffer);
+        }
+    }
 
-    fn upload_materials(&mut self) {
+    fn upload_materials(&mut self, command_buffer: vk::CommandBuffer) {
         unsafe {
             if self.materials_changed {
                 let staging_buffer = self
@@ -527,7 +526,7 @@ impl TextureManager {
                     .buffer(1 - self.next_material_buffer_index);
                 let device_buffer = self.material_device_buffer.buffer(0);
                 self.ctx.device().cmd_copy_buffer2(
-                    self.command_buffer,
+                    command_buffer,
                     &vk::CopyBufferInfo2::default()
                         .src_buffer(staging_buffer)
                         .dst_buffer(device_buffer)
@@ -537,7 +536,7 @@ impl TextureManager {
                             .size(self.material_staging_buffer.size())]),
                 );
                 self.ctx.device().cmd_pipeline_barrier2(
-                    self.command_buffer,
+                    command_buffer,
                     &vk::DependencyInfo::default().buffer_memory_barriers(&[
                         vk::BufferMemoryBarrier2::default()
                             .src_stage_mask(vk::PipelineStageFlags2::COPY)
@@ -558,14 +557,12 @@ impl TextureManager {
         }
     }
 
-    fn upload_textures(&mut self) {
+    fn upload_textures(&mut self, command_buffer: vk::CommandBuffer) {
         unsafe {
-            let mut pending_textures = self.pending_textures.lock().unwrap();
-            let mut uploading_textures = self.uploading_textures.lock().unwrap();
-            check!(uploading_textures.is_empty());
-            for (&id, texture) in &*pending_textures {
+            check!(self.uploading_textures.is_empty());
+            for (&id, texture) in &self.pending_textures {
                 self.ctx.device().cmd_pipeline_barrier2(
-                    self.command_buffer,
+                    command_buffer,
                     &vk::DependencyInfo::default().image_memory_barriers(&[
                         vk::ImageMemoryBarrier2::default()
                             .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
@@ -587,14 +584,14 @@ impl TextureManager {
                     .image_extent(texture.image_extent.into());
 
                 self.ctx.device().cmd_copy_buffer_to_image(
-                    self.command_buffer,
+                    command_buffer,
                     texture.image_buffer,
                     texture.tex_image,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                     &[buffer_copy_regions],
                 );
                 self.ctx.device().cmd_pipeline_barrier2(
-                    self.command_buffer,
+                    command_buffer,
                     &vk::DependencyInfo::default().image_memory_barriers(&[
                         vk::ImageMemoryBarrier2::default()
                             .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
@@ -607,10 +604,14 @@ impl TextureManager {
                             .subresource_range(tv::default_image_subresource_range()),
                     ]),
                 );
-                uploading_textures.insert(id, texture.clone());
+                self.uploading_textures.insert(id, texture.clone());
             }
-            info_every_millis!(100, "uploading {} texture(s)", uploading_textures.len());
-            pending_textures.clear();
+            info_every_millis!(
+                100,
+                "uploading {} texture(s)",
+                self.uploading_textures.len()
+            );
+            self.pending_textures.clear();
         }
     }
 
@@ -620,17 +621,7 @@ impl TextureManager {
 
     pub fn stage_materials(&mut self, materials: BTreeMap<MaterialId, Material>) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        let mut data = vec![
-            RawMaterial {
-                texture_id: TextureId::default(),
-                uv_top_left: Vec2::zero().into(),
-                uv_bottom_right: Vec2::one().into(),
-                dummy1: 0,
-                dummy2: 0,
-                dummy3: 0,
-            };
-            MAX_MATERIAL_COUNT
-        ];
+        let mut data = vec![RawMaterial::default(); MAX_MATERIAL_COUNT];
         info_every_millis!(100, "staging {} material(s)", materials.len());
         for (id, mat) in materials {
             let entry = &mut data[id as usize];
@@ -646,6 +637,7 @@ impl TextureManager {
                 .into();
             entry.texture_id = mat.texture_id;
         }
+        // TODO: write only part of the buffer?
         self.material_staging_buffer
             .write(&data, self.next_material_buffer_index)?;
         self.advance_material_buffer_index();
@@ -658,10 +650,10 @@ impl TextureManager {
     }
 
     pub fn is_texture_ready(&self, texture: TextureId) -> bool {
-        self.textures.lock().unwrap().contains_key(&texture)
+        self.textures.contains_key(&texture)
     }
     pub fn is_texture_id_unused(&self, texture: TextureId) -> bool {
-        self.unused_texture_ids.lock().unwrap().contains(&texture)
+        self.unused_texture_ids.contains(&texture)
     }
     pub(crate) fn get_internal_texture(
         &self,
@@ -669,11 +661,9 @@ impl TextureManager {
     ) -> Option<Arc<TvInternalTexture>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.textures
-            .lock()
-            .unwrap()
             .get(&texture)
-            .or(self.uploading_textures.lock().unwrap().get(&texture))
-            .or(self.pending_textures.lock().unwrap().get(&texture))
+            .or(self.uploading_textures.get(&texture))
+            .or(self.pending_textures.get(&texture))
             .cloned()
     }
     pub(crate) fn free_internal_texture(
@@ -681,11 +671,10 @@ impl TextureManager {
         texture_id: TextureId,
     ) -> Option<Arc<TvInternalTexture>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        let rv = self.textures.lock().unwrap().remove(&texture_id)?;
-        let mut descriptor_image_infos = self.descriptor_image_infos.lock().unwrap();
+        let rv = self.textures.remove(&texture_id)?;
         // Overwrite with blank texture.
-        descriptor_image_infos[texture_id.as_usize()] = descriptor_image_infos[0];
-        self.unused_texture_ids.lock().unwrap().insert(texture_id);
+        self.descriptor_image_infos[texture_id.as_usize()] = self.descriptor_image_infos[0];
+        self.unused_texture_ids.insert(texture_id);
         rv.vk_free();
         Some(rv)
     }
@@ -696,7 +685,7 @@ impl TextureManager {
             self.ctx.device().device_wait_idle().unwrap();
             self.material_device_buffer.vk_free();
             self.material_staging_buffer.vk_free();
-            for texture in self.textures.lock().unwrap().values() {
+            for texture in self.textures.values() {
                 texture.vk_free();
             }
             self.ctx

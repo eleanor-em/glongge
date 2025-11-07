@@ -582,7 +582,7 @@ impl UpdateHandler {
             .last_update_start
             .map_or(expected_delta, |i| i.elapsed())
             .as_nanos();
-        if fixed_update_only && elapsed_ns < UPDATE_THROTTLE_NS {
+        if (!SYNC_UPDATE_TO_RENDER || fixed_update_only) && elapsed_ns < UPDATE_THROTTLE_NS {
             // Throttle spinning a little bit.
             return None;
         }
@@ -3138,11 +3138,7 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn wait_upload_textures(&mut self) {
-        check!(
-            SYNC_UPDATE_TO_RENDER,
-            "requires a different design to allow update thread to wait on render thread here"
-        );
-        if let Err(e) = self.resource_handler.texture.maybe_stage_and_upload() {
+        if let Err(e) = self.resource_handler.texture.upload_all_pending() {
             panic_or_error!("failed to upload textures: {e:?}");
         }
     }
