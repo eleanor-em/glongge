@@ -8,13 +8,12 @@ use crate::{
 };
 use asefile::AsepriteFile;
 use ash::vk;
-use png::ColorType;
+use image::{ImageReader, metadata::Cicp};
 use std::{
     collections::BTreeSet,
     collections::{BTreeMap, HashMap},
     fmt::{Display, Formatter},
-    fs,
-    io::{Cursor, Read},
+    io::Read,
     path::Path,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     sync::{Arc, MutexGuard},
@@ -86,17 +85,6 @@ impl Display for Texture {
 impl Drop for Texture {
     fn drop(&mut self) {
         self.ref_count.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-struct WrappedPngReader<R: Read>(png::Reader<R>);
-
-impl<R: Read> Read for WrappedPngReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0
-            .next_frame(buf)
-            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
-        Ok(self.0.output_buffer_size())
     }
 }
 
@@ -361,51 +349,18 @@ impl TextureHandler {
             ext => bail!("unknown file extension: {ext} (while loading {filename})"),
         }
     }
+
     fn load_file_inner_png(filename: &str) -> Result<RawTexture> {
-        let png_bytes = fs::read(filename)?;
-        let cursor = Cursor::new(png_bytes);
-        let decoder = png::Decoder::new(cursor);
-        let reader = decoder.read_info()?;
-        let info = reader.info();
-
-        if info.srgb.is_none() {
-            error!(
-                "loading {}: SRGB not enabled, may display incorrectly",
-                filename
-            );
-        }
-        if info.color_type != ColorType::Rgba {
-            error!(
-                "loading {}: no alpha channel, *will* display incorrectly (re-encode as RGBA)",
-                filename
-            );
-        }
-        if let Some(animation_control) = info.animation_control
-            && animation_control.num_frames != 1
-        {
-            error!(
-                "loading {}: unexpected num_frames {} (animated PNG not supported)",
-                filename, animation_control.num_frames
-            );
-        }
-        let format = match info.srgb {
-            Some(_) => vk::Format::R8G8B8A8_SRGB,
-            None => vk::Format::R8G8B8A8_UNORM,
-        };
-
-        let mut image_data = Vec::new();
-        let depth: u32 = match info.bit_depth {
-            png::BitDepth::One => 1,
-            png::BitDepth::Two => 2,
-            png::BitDepth::Four => 4,
-            png::BitDepth::Eight => 8,
-            png::BitDepth::Sixteen => 16,
-        };
-        let width = info.width;
-        let height = info.height;
-        image_data.resize((width * height * depth) as usize, 0);
-        Self::load_reader_rgba_inner(&mut WrappedPngReader(reader), width, height, format)
+        let mut image = ImageReader::open(filename)?.decode()?.into_rgba8();
+        image.set_color_space(Cicp::SRGB)?;
+        Self::load_reader_rgba_inner(
+            &mut image.to_vec().as_slice(),
+            image.width(),
+            image.height(),
+            vk::Format::R8G8B8A8_SRGB,
+        )
     }
+
     fn load_reader_rgba_inner<R: Read>(
         reader: &mut R,
         width: u32,
@@ -424,6 +379,7 @@ impl TextureHandler {
             duration: None,
         })
     }
+
     pub fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Texture> {
         let filename = filename.as_ref().to_string();
         let mut inner = self.lock_inner("wait_load_file")?;

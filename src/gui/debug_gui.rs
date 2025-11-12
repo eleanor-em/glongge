@@ -14,7 +14,7 @@ use egui::{
     TextBuffer, TextFormat, TextStyle, Ui,
 };
 use itertools::Itertools;
-use regex::Regex;
+use regex_lite::Regex;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
