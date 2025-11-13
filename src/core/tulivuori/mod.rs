@@ -831,6 +831,9 @@ impl GgViewport {
     pub(crate) fn set_extra_scale_factor(&mut self, extra_scale_factor: f32) {
         self.extra_scale_factor = extra_scale_factor;
     }
+    pub(crate) fn winit_scale_factor(&self) -> f32 {
+        self.winit_scale_factor
+    }
     pub(crate) fn extra_scale_factor(&self) -> f32 {
         self.extra_scale_factor
     }
@@ -894,16 +897,13 @@ impl WindowEventHandlerInner {
     }
 
     fn render_update(&mut self) {
-        let frame = self.render_count;
-        let span = info_span!("render_update", frame);
-        let _enter = span.enter();
         self.render_handler.as_ref().unwrap().wait_update_done();
         self.handle_window_events();
 
         self.render_handler
             .as_mut()
             .unwrap()
-            .render_update(&mut self.egui_state)
+            .render_update(self.render_count, &mut self.egui_state)
             .unwrap();
         self.render_count += 1;
     }
@@ -1100,8 +1100,8 @@ where
 #[derive(Clone)]
 pub(crate) struct RenderPerfStats {
     pub(crate) update_vertices: TimeIt,
-    pub(crate) update_gui: TimeIt,
     pub(crate) acquire: TimeIt,
+    pub(crate) update_gui: TimeIt,
     pub(crate) record_command_buffer: TimeIt,
     pub(crate) submit: TimeIt,
     pub(crate) end_render: TimeIt,
@@ -1125,8 +1125,8 @@ impl RenderPerfStats {
     pub(crate) fn new(window: &GgWindow) -> Self {
         Self {
             update_vertices: TimeIt::new("update_vertices"),
-            update_gui: TimeIt::new("update_gui"),
             acquire: TimeIt::new("acquire"),
+            update_gui: TimeIt::new("update_gui"),
             record_command_buffer: TimeIt::new("record_command_buffer"),
             submit: TimeIt::new("submit"),
             end_render: TimeIt::new("end_render"),
@@ -1193,8 +1193,8 @@ impl RenderPerfStats {
             }
             self.last_perf_stats = Some(Box::new(Self {
                 update_vertices: self.update_vertices.report_take(),
-                update_gui: self.update_gui.report_take(),
                 acquire: self.acquire.report_take(),
+                update_gui: self.update_gui.report_take(),
                 record_command_buffer: self.record_command_buffer.report_take(),
                 submit: self.submit.report_take(),
                 end_render: self.end_render.report_take(),
@@ -1223,8 +1223,8 @@ impl RenderPerfStats {
         let mut default = vec![
             self.total.as_tuple_ms(),
             self.update_vertices.as_tuple_ms(),
-            self.update_gui.as_tuple_ms(),
             self.acquire.as_tuple_ms(),
+            self.update_gui.as_tuple_ms(),
             self.record_command_buffer.as_tuple_ms(),
             self.submit.as_tuple_ms(),
             self.end_render.as_tuple_ms(),

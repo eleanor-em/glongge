@@ -1,3 +1,4 @@
+use crate::core::config::TEXTURE_STATS_INTERVAL_S;
 use crate::{
     check, check_false,
     core::config::{FONT_SAMPLE_RATIO, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT},
@@ -5,12 +6,12 @@ use crate::{
     core::tulivuori::buffer::GenericBuffer,
     core::tulivuori::buffer::GenericDeviceBuffer,
     core::tulivuori::{TvWindowContext, tv},
-    info_every_millis,
     resource::texture::{Material, MaterialId},
 };
 use anyhow::Result;
 use ash::{util::Align, vk};
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
     sync::Arc,
@@ -193,6 +194,11 @@ pub struct TextureManager {
     material_device_buffer: GenericDeviceBuffer<RawMaterial>,
     material_staging_buffer: GenericBuffer<RawMaterial>,
 
+    last_reported_stage: Option<Instant>,
+    staged_since_last_report: usize,
+    last_reported_upload: Option<Instant>,
+    uploaded_since_last_report: usize,
+
     did_vk_free: AtomicBool,
 }
 
@@ -215,7 +221,7 @@ impl TextureManager {
                             .limits
                             .max_sampler_anisotropy,
                     )
-                    .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE),
+                    .border_color(vk::BorderColor::FLOAT_TRANSPARENT_BLACK),
                 None,
             )?;
 
@@ -336,6 +342,10 @@ impl TextureManager {
                 next_material_buffer_index: 0,
                 material_device_buffer: material_buffer,
                 material_staging_buffer,
+                last_reported_stage: None,
+                staged_since_last_report: 0,
+                last_reported_upload: None,
+                uploaded_since_last_report: 0,
                 did_vk_free: AtomicBool::new(false),
             };
 
@@ -555,7 +565,16 @@ impl TextureManager {
     ) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         let mut data = vec![RawMaterial::default(); MAX_MATERIAL_COUNT];
-        info_every_millis!(100, "staging {} material(s)", materials.len());
+        self.staged_since_last_report = self.staged_since_last_report.max(materials.len());
+        if self.staged_since_last_report > 0
+            && self
+                .last_reported_stage
+                .is_none_or(|i| i.elapsed() >= Duration::from_secs_f32(TEXTURE_STATS_INTERVAL_S))
+        {
+            info!("staged {} material(s)", self.staged_since_last_report);
+            self.staged_since_last_report = 0;
+            self.last_reported_stage = Some(Instant::now());
+        }
         for (id, mat) in materials {
             let entry = &mut data[id as usize];
             entry.uv_top_left = mat
@@ -669,7 +688,16 @@ impl TextureManager {
                 );
                 self.uploading_textures.insert(id, texture.clone());
             }
-            info!("uploading {} texture(s)", self.uploading_textures.len());
+            self.uploaded_since_last_report += self.uploading_textures.len();
+            if self.uploaded_since_last_report > 0
+                && self.last_reported_upload.is_none_or(|i| {
+                    i.elapsed() >= Duration::from_secs_f32(TEXTURE_STATS_INTERVAL_S)
+                })
+            {
+                info!("uploaded {} texture(s)", self.uploaded_since_last_report);
+                self.uploaded_since_last_report = 0;
+                self.last_reported_upload = Some(Instant::now());
+            }
             self.pending_textures.clear();
         }
     }

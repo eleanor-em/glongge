@@ -1311,6 +1311,7 @@ impl UpdateHandler {
         render_data_channel.set_extra_scale_factor(self.viewport.extra_scale_factor());
         render_data_channel.set_clear_col(self.clear_col);
         render_data_channel.set_viewport_physical_top_left(self.viewport.physical_top_left());
+        render_data_channel.last_frame_counter = self.frame_counter;
         self.viewport = render_data_channel.current_viewport();
         self.update_sync.mark_update_done();
     }

@@ -1010,6 +1010,7 @@ impl GuiConsoleLog {
                                 );
                                 let text = &segment[sep + 1..];
                                 let mut rich_text = egui::RichText::new(text)
+                                    .size(12.0)
                                     .color(match col {
                                         2 => Color32::from_gray(120),
                                         31 => Color32::from_rgb(197, 15, 31),

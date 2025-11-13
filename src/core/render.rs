@@ -26,6 +26,7 @@ use std::{
     ops::Range,
     sync::{Arc, Mutex},
 };
+use tracing::info_span;
 
 #[derive(Clone, Debug)]
 pub struct ShaderExec {
@@ -64,6 +65,7 @@ pub(crate) struct RenderDataChannel {
     should_resize: bool,
     clear_col: Colour,
 
+    pub(crate) last_frame_counter: usize,
     pub(crate) last_render_stats: Option<RenderPerfStats>,
 }
 impl RenderDataChannel {
@@ -76,6 +78,7 @@ impl RenderDataChannel {
             viewport,
             should_resize: false,
             clear_col: Colour::black(),
+            last_frame_counter: 0,
             last_render_stats: None,
         }))
     }
@@ -258,7 +261,11 @@ impl RenderHandler {
         let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
 
         let swapchain = SwapchainBuilder::new(&ctx, window.inner.clone()).build()?;
-        let vertex_buffer = VertexBuffer::new(ctx.clone(), &swapchain, 100 * 1024)?;
+        let vertex_buffer = VertexBuffer::new(
+            ctx.clone(),
+            &swapchain,
+            INITIAL_VERTEX_BUFFER_SIZE_MB * 1024 * 1024 / size_of::<SpriteVertex>(),
+        )?;
         let shader = Arc::new(VertFragShader::new(
             ctx.clone(),
             &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-vert.spv")[..]),
@@ -380,11 +387,15 @@ impl RenderHandler {
         self.update_sync.wait_update_done();
     }
 
-    pub(crate) fn render_update(&mut self, egui_state: &mut egui_winit::State) -> Result<()> {
+    pub(crate) fn render_update(
+        &mut self,
+        frame: usize,
+        egui_state: &mut egui_winit::State,
+    ) -> Result<()> {
         unsafe {
             self.perf_stats.start();
             self.perf_stats.update_vertices.start();
-            let (viewport, vertex_count, gui_commands, clear_col) = {
+            let (update, viewport, vertex_count, gui_commands, clear_col) = {
                 let mut rx = self.render_data_channel.lock().unwrap();
                 rx.last_render_stats.clone_from(&self.last_perf_stats);
                 let mut viewport = self.viewport.lock();
@@ -395,9 +406,18 @@ impl RenderHandler {
                 let vertex_count = self.update_vertex_buffer(&rx.next_frame(), &viewport)?;
                 let gui_commands = rx.gui_commands.drain(..).collect_vec();
                 self.gui.is_gui_enabled = rx.is_gui_enabled;
-                (viewport.clone(), vertex_count, gui_commands, rx.clear_col)
+                (
+                    rx.last_frame_counter,
+                    viewport.clone(),
+                    vertex_count,
+                    gui_commands,
+                    rx.clear_col,
+                )
             };
             self.perf_stats.update_vertices.stop();
+
+            let span = info_span!("render_update", frame, update);
+            let _enter = span.enter();
 
             self.perf_stats.update_gui.start();
             let do_render_gui = self.gui.pre_render_update(egui_state, gui_commands)?;
@@ -797,12 +817,11 @@ impl GuiRenderHandler {
             }
             swapchain.cmd_begin_rendering(command_buffer, None);
             let viewport = self.viewport.lock();
-            let mut vert_bytes = (viewport.physical_width() / viewport.combined_scale_factor()
-                * 2.0)
+            let mut vert_bytes = (viewport.physical_width() / viewport.winit_scale_factor())
                 .to_le_bytes()
                 .to_vec();
             vert_bytes.extend(
-                (viewport.physical_height() / viewport.combined_scale_factor() * 2.0)
+                (viewport.physical_height() / viewport.winit_scale_factor())
                     .to_le_bytes()
                     .to_vec(),
             );

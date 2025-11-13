@@ -9,6 +9,7 @@ use crate::{
 use asefile::AsepriteFile;
 use ash::vk;
 use image::{ImageReader, metadata::Cicp};
+use std::time::Instant;
 use std::{
     collections::BTreeSet,
     collections::{BTreeMap, HashMap},
@@ -108,6 +109,9 @@ struct TextureHandlerInner {
     material_handler: MaterialHandler,
     texture_manager: TextureManager,
     frames_in_flight: Option<usize>,
+
+    cleaned_up_since_last_report: usize,
+    last_reported_cleanup: Option<Instant>,
 }
 
 impl TextureHandlerInner {
@@ -120,6 +124,8 @@ impl TextureHandlerInner {
             material_handler: MaterialHandler::new(),
             texture_manager: TextureManager::new(ctx)?,
             frames_in_flight: None,
+            cleaned_up_since_last_report: 0,
+            last_reported_cleanup: None,
         })
     }
 
@@ -183,8 +189,18 @@ impl TextureHandlerInner {
                 },
             );
         }
-        if !to_remove.is_empty() {
-            info_every_millis!(100, "cleaned up {} unused texture(s)", to_remove.len());
+        self.cleaned_up_since_last_report += to_remove.len();
+        if self.cleaned_up_since_last_report > 0
+            && self
+                .last_reported_cleanup
+                .is_none_or(|i| i.elapsed() >= Duration::from_secs_f32(TEXTURE_STATS_INTERVAL_S))
+        {
+            info!(
+                "cleaned up {} unused texture(s)",
+                self.cleaned_up_since_last_report
+            );
+            self.cleaned_up_since_last_report = 0;
+            self.last_reported_cleanup = Some(Instant::now());
         }
     }
 
@@ -207,6 +223,9 @@ pub(crate) struct MaterialHandler {
     materials: BTreeMap<MaterialId, Material>,
     materials_inverse: HashMap<Material, MaterialId>,
     has_pending_materials: bool,
+
+    cleaned_up_since_last_report: usize,
+    last_reported_cleanup: Option<Instant>,
 }
 
 impl MaterialHandler {
@@ -224,6 +243,8 @@ impl MaterialHandler {
             materials,
             materials_inverse,
             has_pending_materials: false,
+            cleaned_up_since_last_report: 0,
+            last_reported_cleanup: None,
         }
     }
     fn create_material_from_texture(&mut self, texture: &Texture, area: &Rect) -> MaterialId {
@@ -269,8 +290,18 @@ impl MaterialHandler {
             .collect()
     }
     fn clean_up_materials(&mut self, unused_ids: Vec<MaterialId>) -> Result<()> {
-        if !unused_ids.is_empty() {
-            info_every_millis!(100, "cleaned up {} unused material(s)", unused_ids.len());
+        self.cleaned_up_since_last_report += unused_ids.len();
+        if self.cleaned_up_since_last_report > 0
+            && self
+                .last_reported_cleanup
+                .is_none_or(|i| i.elapsed() >= Duration::from_secs_f32(TEXTURE_STATS_INTERVAL_S))
+        {
+            info!(
+                "cleaned up {} unused material(s)",
+                self.cleaned_up_since_last_report
+            );
+            self.cleaned_up_since_last_report = 0;
+            self.last_reported_cleanup = Some(Instant::now());
         }
         for id in unused_ids {
             self.materials_inverse
@@ -329,7 +360,8 @@ impl TextureHandler {
     }
 
     fn lock_inner(&self, by: &'static str) -> Result<MutexGuard<'_, TextureHandlerInner>> {
-        self.inner.spin_lock_for(Duration::from_secs(1), by)
+        self.inner
+            .spin_lock_for(Duration::from_millis(MUTEX_DEADLINE_MS), by)
     }
 
     pub fn get_blank_texture(&self) -> Result<Arc<TvInternalTexture>> {
