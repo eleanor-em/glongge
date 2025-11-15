@@ -1099,8 +1099,8 @@ where
 #[allow(unused)]
 #[derive(Clone)]
 pub(crate) struct RenderPerfStats {
-    pub(crate) update_vertices: TimeIt,
     pub(crate) acquire: TimeIt,
+    pub(crate) update_vertices: TimeIt,
     pub(crate) update_gui: TimeIt,
     pub(crate) record_command_buffer: TimeIt,
     pub(crate) submit: TimeIt,
@@ -1124,8 +1124,8 @@ pub(crate) struct RenderPerfStats {
 impl RenderPerfStats {
     pub(crate) fn new(window: &GgWindow) -> Self {
         Self {
-            update_vertices: TimeIt::new("update_vertices"),
             acquire: TimeIt::new("acquire"),
+            update_vertices: TimeIt::new("update_vertices"),
             update_gui: TimeIt::new("update_gui"),
             record_command_buffer: TimeIt::new("record_command_buffer"),
             submit: TimeIt::new("submit"),
@@ -1192,8 +1192,8 @@ impl RenderPerfStats {
                 warn!("frames on time: {on_time_rate:.1}%");
             }
             self.last_perf_stats = Some(Box::new(Self {
-                update_vertices: self.update_vertices.report_take(),
                 acquire: self.acquire.report_take(),
+                update_vertices: self.update_vertices.report_take(),
                 update_gui: self.update_gui.report_take(),
                 record_command_buffer: self.record_command_buffer.report_take(),
                 submit: self.submit.report_take(),
@@ -1222,8 +1222,8 @@ impl RenderPerfStats {
     pub(crate) fn as_tuples_ms(&self) -> Vec<(String, f32, f32, f32)> {
         let mut default = vec![
             self.total.as_tuple_ms(),
-            self.update_vertices.as_tuple_ms(),
             self.acquire.as_tuple_ms(),
+            self.update_vertices.as_tuple_ms(),
             self.update_gui.as_tuple_ms(),
             self.record_command_buffer.as_tuple_ms(),
             self.submit.as_tuple_ms(),

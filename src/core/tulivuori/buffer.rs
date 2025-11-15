@@ -7,7 +7,7 @@ use ash::{util::Align, vk};
 use std::{
     marker::PhantomData,
     sync::Arc,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 use vk_mem::Alloc;
 pub(crate) struct GenericDeviceBuffer<T: Copy> {
@@ -183,8 +183,6 @@ impl<T: Copy> Drop for GenericBuffer<T> {
 
 struct SwapchainGenericBuffer<T: Copy> {
     inner: GenericBuffer<T>,
-    current_frame_index: Arc<AtomicUsize>,
-    frames_in_flight: usize,
 }
 
 impl<T: Copy> SwapchainGenericBuffer<T> {
@@ -196,23 +194,17 @@ impl<T: Copy> SwapchainGenericBuffer<T> {
     ) -> Result<Self> {
         Ok(Self {
             inner: GenericBuffer::new(ctx, swapchain.frames_in_flight(), length, usage)?,
-            current_frame_index: swapchain.current_frame_index.clone(),
-            frames_in_flight: swapchain.frames_in_flight(),
         })
     }
 
-    pub fn write(&self, data: &[T]) -> Result<()> {
-        let current_frame_index = self.current_frame_index.load(Ordering::Relaxed);
-        let safe_frame = (current_frame_index + self.frames_in_flight - 1) % self.frames_in_flight;
-        check_ne!(safe_frame, current_frame_index);
+    pub fn write(&self, swapchain: &Swapchain, data: &[T]) -> Result<()> {
         self.inner
-            .write(data, safe_frame)
+            .write(data, swapchain.current_frame_index())
             .context("caused by: SwapchainGenericBuffer::write()")
     }
 
-    pub fn current_buffer(&self) -> vk::Buffer {
-        self.inner
-            .buffer(self.current_frame_index.load(Ordering::Relaxed))
+    pub fn current_buffer(&self, swapchain: &Swapchain) -> vk::Buffer {
+        self.inner.buffer(swapchain.current_frame_index())
     }
 
     pub fn len(&self) -> usize {
@@ -240,18 +232,18 @@ impl<T: Copy> VertexBuffer<T> {
         })
     }
 
-    pub fn write(&self, data: &[T]) -> Result<()> {
+    pub fn write(&self, swapchain: &Swapchain, data: &[T]) -> Result<()> {
         self.inner
-            .write(data)
+            .write(swapchain, data)
             .context("caused by: VertexBuffer::write()")
     }
 
-    pub fn bind(&self, command_buffer: vk::CommandBuffer) {
+    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) {
         unsafe {
             self.inner.inner.ctx.device().cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
-                &[self.inner.current_buffer()],
+                &[self.inner.current_buffer(swapchain)],
                 &[0],
             );
         }
@@ -278,17 +270,17 @@ impl IndexBuffer32 {
         })
     }
 
-    pub fn write(&self, data: &[u32]) -> Result<()> {
+    pub fn write(&self, swapchain: &Swapchain, data: &[u32]) -> Result<()> {
         self.inner
-            .write(data)
+            .write(swapchain, data)
             .context("caused by: IndexBuffer32::write()")
     }
 
-    pub fn bind(&self, command_buffer: vk::CommandBuffer) {
+    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) {
         unsafe {
             self.inner.inner.ctx.device().cmd_bind_index_buffer(
                 command_buffer,
-                self.inner.current_buffer(),
+                self.inner.current_buffer(swapchain),
                 0,
                 vk::IndexType::UINT32,
             );

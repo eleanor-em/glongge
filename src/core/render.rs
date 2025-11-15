@@ -394,6 +394,12 @@ impl RenderHandler {
     ) -> Result<()> {
         unsafe {
             self.perf_stats.start();
+
+            self.perf_stats.acquire.start();
+            let acquire = self.swapchain.acquire_next_image(&[])?;
+            let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
+            self.perf_stats.acquire.stop();
+
             self.perf_stats.update_vertices.start();
             let (update, viewport, vertex_count, gui_commands, clear_col) = {
                 let mut rx = self.render_data_channel.lock().unwrap();
@@ -403,7 +409,8 @@ impl RenderHandler {
                     viewport.set_extra_scale_factor(extra_scale_factor);
                 }
                 viewport.set_physical_top_left(rx.viewport.physical_top_left());
-                let vertex_count = self.update_vertex_buffer(&rx.next_frame(), &viewport)?;
+                let vertex_count =
+                    self.update_vertex_buffer(&self.swapchain, &rx.next_frame(), &viewport)?;
                 let gui_commands = rx.gui_commands.drain(..).collect_vec();
                 self.gui.is_gui_enabled = rx.is_gui_enabled;
                 (
@@ -420,13 +427,10 @@ impl RenderHandler {
             let _enter = span.enter();
 
             self.perf_stats.update_gui.start();
-            let do_render_gui = self.gui.pre_render_update(egui_state, gui_commands)?;
+            let do_render_gui =
+                self.gui
+                    .pre_render_update(&self.swapchain, egui_state, gui_commands)?;
             self.perf_stats.update_gui.stop();
-
-            self.perf_stats.acquire.start();
-            let acquire = self.swapchain.acquire_next_image(&[])?;
-            let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
-            self.perf_stats.acquire.stop();
 
             self.perf_stats.record_command_buffer.start();
             self.ctx.device().begin_command_buffer(
@@ -449,7 +453,8 @@ impl RenderHandler {
             );
             self.pipeline
                 .bind(draw_command_buffer, &viewport, &bytes, &[]);
-            self.vertex_buffer.bind(draw_command_buffer);
+            self.vertex_buffer
+                .bind(&self.swapchain, draw_command_buffer);
             self.ctx
                 .device()
                 .cmd_draw(draw_command_buffer, vertex_count, 1, 0, 0);
@@ -476,6 +481,7 @@ impl RenderHandler {
 
     fn update_vertex_buffer(
         &self,
+        swapchain: &Swapchain,
         render_frame: &RenderFrame,
         viewport: &GgViewport,
     ) -> Result<u32> {
@@ -521,7 +527,7 @@ impl RenderHandler {
                 }
             }
         }
-        self.vertex_buffer.write(&vertices)?;
+        self.vertex_buffer.write(swapchain, &vertices)?;
         Ok(vertices.len() as u32)
     }
 
@@ -616,6 +622,7 @@ impl GuiRenderHandler {
 
     fn pre_render_update(
         &mut self,
+        swapchain: &Swapchain,
         egui_state: &mut egui_winit::State,
         mut gui_commands: Vec<Box<GuiClosure>>,
     ) -> Result<bool> {
@@ -687,6 +694,7 @@ impl GuiRenderHandler {
             self.next_meshes = next_meshes;
         }
         self.gui_vertex_buffer.write(
+            swapchain,
             &self
                 .next_meshes
                 .iter()
@@ -694,6 +702,7 @@ impl GuiRenderHandler {
                 .collect_vec(),
         )?;
         self.gui_index_buffer.write(
+            swapchain,
             &self
                 .next_meshes
                 .iter()
@@ -831,8 +840,8 @@ impl GuiRenderHandler {
             self.gui_pipeline
                 .bind(command_buffer, &viewport, &vert_bytes, &frag_bytes);
             self.gui_shader.bind(command_buffer);
-            self.gui_index_buffer.bind(command_buffer);
-            self.gui_vertex_buffer.bind(command_buffer);
+            self.gui_index_buffer.bind(swapchain, command_buffer);
+            self.gui_vertex_buffer.bind(swapchain, command_buffer);
             let mut index = 0;
             let mut vertex = 0;
             for mesh in &self.next_meshes {
