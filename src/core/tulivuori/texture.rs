@@ -739,7 +739,6 @@ impl TextureManager {
     pub(crate) fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.ctx.device().device_wait_idle().unwrap();
             self.material_device_buffer.vk_free();
             self.material_staging_buffer.vk_free();
             for texture in self.textures.values() {

@@ -293,7 +293,6 @@ impl SwapchainImages {
     pub fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.ctx.device().device_wait_idle().unwrap();
             for &image_view in &self.present_image_views {
                 self.ctx.device().destroy_image_view(image_view, None);
             }
@@ -572,7 +571,6 @@ impl Swapchain {
     pub fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.ctx.device().device_wait_idle().unwrap();
             for &command_pool in &self.present_command_pools {
                 self.ctx.device().destroy_command_pool(command_pool, None);
             }
