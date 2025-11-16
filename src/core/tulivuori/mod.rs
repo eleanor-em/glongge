@@ -1,4 +1,4 @@
-use crate::util::gg_sync;
+use crate::util::gg_err;
 use crate::util::gg_sync::GgMutex;
 use crate::{
     core::prelude::*,
@@ -8,7 +8,7 @@ use crate::{
     info_every_seconds,
     resource::ResourceHandler,
     util::gg_time::TimeIt,
-    util::{SceneHandlerBuilder, UniqueShared, gg_float},
+    util::{SceneHandlerBuilder, gg_float},
     warn_every_seconds,
 };
 use anyhow::{Context, Result};
@@ -23,18 +23,17 @@ use egui_winit::{
     winit::window::{Window, WindowAttributes, WindowId},
     winit::{dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop},
 };
-use std::sync::MutexGuard;
-use std::time::Duration;
+use parking_lot::{Mutex, MutexGuard};
 use std::{
     borrow::Cow,
     ffi,
     ffi::CString,
     mem::offset_of,
     str::FromStr,
+    sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
     sync::mpsc,
     sync::mpsc::{Receiver, Sender},
-    sync::{Arc, Mutex},
     time::Instant,
     time::SystemTime,
 };
@@ -113,7 +112,7 @@ pub struct TvWindowContext {
     physical_device_properties: vk::PhysicalDeviceProperties,
     queue_family_index: u32,
     device: Device,
-    present_queue: Arc<Mutex<vk::Queue>>,
+    present_queue: GgMutex<vk::Queue>,
 
     allocator: GgMutex<Option<Arc<vk_mem::Allocator>>>,
 
@@ -135,12 +134,17 @@ impl TvWindowContext {
     pub fn physical_device_properties(&self) -> &vk::PhysicalDeviceProperties {
         &self.physical_device_properties
     }
-    pub fn present_queue(&self) -> Result<MutexGuard<'_, vk::Queue>> {
+    pub fn present_queue(&self, by: &'static str) -> Result<MutexGuard<'_, vk::Queue>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        gg_sync::spin_lock_for(&self.present_queue, Duration::from_millis(100))
+        self.present_queue.try_lock_short(by)
     }
-    pub fn allocator(&self, by: &'static str) -> Arc<vk_mem::Allocator> {
-        self.allocator.lock(by).as_ref().cloned().unwrap()
+    pub fn allocator(&self, by: &'static str) -> Result<Arc<vk_mem::Allocator>> {
+        Ok(self
+            .allocator
+            .try_lock_short(by)?
+            .as_ref()
+            .cloned()
+            .unwrap())
     }
 
     pub(crate) fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
@@ -153,7 +157,8 @@ impl TvWindowContext {
         unsafe {
             self.device.device_wait_idle().unwrap();
             self.allocator
-                .lock("TvWindowContext::vk_free")
+                .try_lock_short("TvWindowContext::vk_free()")
+                .unwrap()
                 .take()
                 .unwrap();
             self.device.destroy_device(None);
@@ -174,7 +179,13 @@ impl Drop for TvWindowContext {
         if !self.did_vk_free.load(Ordering::Relaxed) {
             error!("leaked resource: TvWindowContext");
             // vk_mem uses RAII for freeing resources, which could crash in this case.
-            std::mem::forget(self.allocator.lock("TvWindowContext::drop").take().unwrap());
+            std::mem::forget(
+                self.allocator
+                    .try_lock_short("TvWindowContext::drop()")
+                    .unwrap()
+                    .take()
+                    .unwrap(),
+            );
         }
     }
 }
@@ -357,7 +368,7 @@ impl TvWindowContextBuilder {
                 physical_device_properties,
                 queue_family_index,
                 device,
-                present_queue: Arc::new(Mutex::new(present_queue)),
+                present_queue: GgMutex::new(present_queue),
                 allocator: GgMutex::new(Some(Arc::new(allocator))),
                 did_vk_free: AtomicBool::new(false),
             }))
@@ -767,14 +778,14 @@ impl GgWindow {
 }
 
 #[derive(Clone)]
-pub(crate) struct GgViewport {
+pub(crate) struct TvViewport {
     window: GgWindow,
     inner: vk::Viewport,
     winit_scale_factor: f32,
     extra_scale_factor: f32,
 }
 
-impl GgViewport {
+impl TvViewport {
     pub(crate) fn new(window: &GgWindow) -> Self {
         Self {
             window: window.clone(),
@@ -852,7 +863,7 @@ struct WindowEventHandlerInner {
     window: GgWindow,
     egui_state: egui_winit::State,
     winit_scale_factor_for_logging: f32,
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     render_stats: RenderPerfStats,
     last_render_stats: Option<RenderPerfStats>,
     is_first_window_event: bool,
@@ -911,7 +922,7 @@ impl WindowEventHandlerInner {
 
 struct WindowEventHandlerCreateInfo<F>
 where
-    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+    F: FnOnce(SceneHandlerBuilder) -> Result<SceneHandler> + Send + 'static,
 {
     window_size: Vec2i,
     scene_handler_builder_callback: Option<F>,
@@ -921,10 +932,10 @@ where
 
 pub(crate) struct WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+    F: FnOnce(SceneHandlerBuilder) -> Result<SceneHandler> + Send + 'static,
 {
     create_info: WindowEventHandlerCreateInfo<F>,
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
 
     gui_ctx: Option<GuiContext>,
 
@@ -938,7 +949,8 @@ where
 
 impl<SceneHandlerBuilderCallback> WindowEventHandler<SceneHandlerBuilderCallback>
 where
-    SceneHandlerBuilderCallback: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+    SceneHandlerBuilderCallback:
+        FnOnce(SceneHandlerBuilder) -> Result<SceneHandler> + Send + 'static,
 {
     pub(crate) fn create_and_run(
         window_size: Vec2i,
@@ -997,7 +1009,7 @@ where
         let scale_factor_rx = self.scale_factor_rx.take().unwrap();
         let recreate_swapchain_rx = self.recreate_swapchain_rx.take().unwrap();
         let resource_handler = ResourceHandler::new(&ctx)?;
-        let viewport = UniqueShared::new(GgViewport::new(&window));
+        let viewport = GgMutex::new(TvViewport::new(&window));
         let render_handler = RenderHandler::new(
             ctx.clone(),
             self.gui_ctx.clone().unwrap(),
@@ -1006,14 +1018,15 @@ where
             resource_handler,
             input_handler.clone(),
         )?
-        .with_extra_scale_factor(self.create_info.extra_scale_factor)
-        .with_clear_col(self.create_info.clear_col);
+        .with_extra_scale_factor(self.create_info.extra_scale_factor)?
+        .with_clear_col(self.create_info.clear_col)?;
         let scene_handler_builder =
             SceneHandlerBuilder::new(input_handler.clone(), render_handler.as_lite());
         std::thread::spawn(move || {
-            let mut scene_handler = scene_handler_builder_callback(scene_handler_builder);
+            let mut scene_handler = scene_handler_builder_callback(scene_handler_builder)
+                .expect("Failed to create SceneHandler");
             loop {
-                scene_handler.run_update();
+                gg_err::panic_or_log_err(scene_handler.run_update());
             }
         });
         let winit_scale_factor_for_logging = window.winit_scale_factor();
@@ -1043,7 +1056,7 @@ where
 
 impl<F> ApplicationHandler for WindowEventHandler<F>
 where
-    F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static,
+    F: FnOnce(SceneHandlerBuilder) -> Result<SceneHandler> + Send + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(scene_handler_builder_callback) =
@@ -1066,10 +1079,12 @@ where
         match event {
             WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
                 PhysicalKey::Code(keycode) => {
-                    self.input_handler
-                        .lock()
-                        .unwrap()
-                        .queue_key_event(keycode, event.state);
+                    if let Some(mut input_handler) = gg_err::log_and_ok(
+                        self.input_handler
+                            .try_lock_short("WindowEventHandler::window_event()"),
+                    ) {
+                        input_handler.queue_key_event(keycode, event.state);
+                    }
                 }
                 PhysicalKey::Unidentified(keycode) => {
                     info!("PhysicalKey::Unidentified({keycode:?}), ignoring");

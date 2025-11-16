@@ -44,20 +44,20 @@ fn main() -> Result<()> {
             .collect_vec();
             resource_handler.wait_all().unwrap();
             let mut scene_handler = scene_handler.build();
-            scene_handler.create_scene(TriangleScene);
-            scene_handler.create_scene(RectangleScene);
-            scene_handler.create_scene(ConcaveScene);
-            scene_handler.create_scene(SplineScene);
-            scene_handler.create_scene(MarioOverworldScene);
-            scene_handler.create_scene(MarioUndergroundScene);
+            scene_handler.create_scene(TriangleScene)?;
+            scene_handler.create_scene(RectangleScene)?;
+            scene_handler.create_scene(ConcaveScene)?;
+            scene_handler.create_scene(SplineScene)?;
+            scene_handler.create_scene(MarioOverworldScene)?;
+            scene_handler.create_scene(MarioUndergroundScene)?;
             // let name = TriangleScene.name();
             // let name = RectangleScene.name();
             // let name = ConcaveScene.name();
             // let name = SplineScene.name();
             let name = MarioOverworldScene.name();
             // let name = MarioUndergroundScene.name();
-            scene_handler.set_initial_scene(name, 0);
-            scene_handler
+            scene_handler.set_initial_scene(name, 0)?;
+            Ok(scene_handler)
         })
 }
 

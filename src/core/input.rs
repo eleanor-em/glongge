@@ -1,12 +1,10 @@
 use egui::PointerButton;
 use egui_winit::winit::event::ElementState;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::BTreeMap;
 
 use crate::core::prelude::*;
-use crate::core::tulivuori::GgViewport;
+use crate::core::tulivuori::TvViewport;
+use crate::util::gg_sync::GgMutex;
 pub use egui_winit::winit::keyboard::KeyCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +43,7 @@ pub struct InputHandler {
     middle_mouse: MouseButtonState,
     queued_events: Vec<InputEvent>,
     mouse_pos: Option<Vec2>,
-    viewport: Option<GgViewport>,
+    viewport: Option<TvViewport>,
     mod_shift: bool,
     mod_alt: bool,
     mod_ctrl: bool,
@@ -53,8 +51,8 @@ pub struct InputHandler {
 }
 
 impl InputHandler {
-    pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(InputHandler {
+    pub fn new() -> GgMutex<Self> {
+        GgMutex::new(InputHandler {
             data: BTreeMap::new(),
             primary_mouse: MouseButtonState::default(),
             secondary_mouse: MouseButtonState::default(),
@@ -66,7 +64,7 @@ impl InputHandler {
             mod_alt: false,
             mod_ctrl: false,
             mod_super: false,
-        }))
+        })
     }
 
     pub fn pressed(&self, key: KeyCode) -> bool {
@@ -206,7 +204,7 @@ impl InputHandler {
         });
     }
     #[allow(unused)]
-    pub(crate) fn set_viewport(&mut self, viewport: GgViewport) {
+    pub(crate) fn set_viewport(&mut self, viewport: TvViewport) {
         self.viewport = Some(viewport);
     }
     pub fn screen_mouse_pos(&self) -> Option<Vec2> {

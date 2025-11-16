@@ -9,6 +9,7 @@ use crate::{
 use asefile::AsepriteFile;
 use ash::vk;
 use image::{ImageReader, metadata::Cicp};
+use parking_lot::MutexGuard;
 use std::time::Instant;
 use std::{
     collections::BTreeSet,
@@ -16,8 +17,8 @@ use std::{
     fmt::{Display, Formatter},
     io::Read,
     path::Path,
+    sync::Arc,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-    sync::{Arc, MutexGuard},
     time::Duration,
 };
 
@@ -360,8 +361,7 @@ impl TextureHandler {
     }
 
     fn lock_inner(&self, by: &'static str) -> Result<MutexGuard<'_, TextureHandlerInner>> {
-        self.inner
-            .spin_lock_for(Duration::from_millis(MUTEX_DEADLINE_MS), by)
+        self.inner.try_lock_short(by)
     }
 
     pub fn get_blank_texture(&self) -> Result<Arc<TvInternalTexture>> {
@@ -625,7 +625,7 @@ impl TextureHandler {
         Ok(Some(rv))
     }
 
-    pub fn upload_all_pending(&self) -> Result<()> {
+    pub(crate) fn upload_all_pending(&self, by: &'static str) -> Result<()> {
         let mut inner = self.lock_inner("upload_all_pending")?;
         if inner.material_handler.has_pending_materials {
             let materials = inner.material_handler.materials().clone();
@@ -633,7 +633,7 @@ impl TextureHandler {
             inner.material_handler.has_pending_materials = false;
         }
         inner.texture_manager.wait_complete_upload()?;
-        inner.texture_manager.upload_all_pending()?;
+        inner.texture_manager.upload_all_pending(by)?;
         Ok(())
     }
     pub fn upload_all_pending_with(&self, command_buffer: vk::CommandBuffer) -> Result<()> {
@@ -696,6 +696,10 @@ impl TextureHandler {
     }
 
     pub fn vk_free(&self) {
-        self.inner.lock("vk_free").vk_free();
+        self.inner
+            .try_lock("TextureHandler::vk_free()")
+            .expect("TextureHandler::vk_free()")
+            .expect("deadlock should be impossible (no other references should exist)")
+            .vk_free();
     }
 }

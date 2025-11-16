@@ -515,7 +515,7 @@ impl Swapchain {
     pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
-            let queue = self.ctx.present_queue()?;
+            let queue = self.ctx.present_queue("submit_and_present_queue")?;
             self.ctx.device().queue_submit2(
                 *queue,
                 &[vk::SubmitInfo2::default()

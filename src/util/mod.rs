@@ -1,3 +1,4 @@
+use crate::util::gg_sync::GgMutex;
 use crate::{
     core::input::InputHandler,
     core::prelude::*,
@@ -12,11 +13,11 @@ use std::fmt::Write;
 use std::{
     collections::BTreeSet,
     fmt,
-    fmt::{Debug, Display, Formatter},
+    fmt::Debug,
     hash::Hash,
     ops::Deref,
     sync::mpsc::{Receiver, Sender},
-    sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
+    sync::{OnceLock, mpsc},
     vec::IntoIter,
 };
 use tracing::{field::Field, metadata::LevelFilter};
@@ -56,7 +57,7 @@ pub(crate) struct GlobalStats {
     pub(crate) warned_unsupported_codepoints: BTreeSet<u32>,
 }
 
-pub(crate) static GLOBAL_STATS: OnceLock<UniqueShared<GlobalStats>> = OnceLock::new();
+pub(crate) static GLOBAL_STATS: OnceLock<GgMutex<GlobalStats>> = OnceLock::new();
 
 #[allow(dead_code)]
 pub mod gg_time {
@@ -325,14 +326,19 @@ pub mod gg_err {
         }
     }
 
-    pub fn log_err_then<T>(result: Result<Option<T>>) -> Option<T> {
-        match result {
-            Ok(o) => o,
-            Err(e) => {
-                log_error(&e);
-                None
-            }
+    pub fn panic_or_log_err<T>(result: Result<T>) {
+        if let Err(e) = result {
+            log_error(&e);
+            #[cfg(debug_assertions)]
+            panic!("crashing after unhandled error in debug mode");
         }
+    }
+
+    pub fn log_err_then<T>(result: Result<Option<T>>) -> Option<T> {
+        result.unwrap_or_else(|e| {
+            log_error(&e);
+            None
+        })
     }
     pub fn log_err_then_invert<T>(val: Option<Result<T>>) -> Option<T> {
         val.and_then(|result| match result {
@@ -362,6 +368,10 @@ pub mod gg_err {
                 None
             }
         }
+    }
+
+    pub fn encode_to_vec_and_ok<E: bincode::Encode>(val: E) -> Result<Vec<u8>> {
+        Ok(bincode::encode_to_vec(&val, bincode::config::standard())?)
     }
 }
 
@@ -486,14 +496,12 @@ pub mod gg_range {
 }
 
 pub mod gg_sync {
-    use crate::core::config::MUTEX_THROTTLE_NS;
-    use anyhow::{Context, Result, bail};
-    use std::{
-        sync::{Arc, Mutex, MutexGuard, TryLockError},
-        time::{Duration, Instant},
-    };
+    use crate::core::config::MUTEX_DEADLINE_MS;
+    use anyhow::{Context, Result};
+    use parking_lot::{Mutex, MutexGuard};
+    use std::{sync::Arc, time::Duration};
 
-    pub struct GgMutex<T> {
+    pub struct GgMutex<T: ?Sized> {
         inner: Arc<Mutex<T>>,
         last_acquire: Arc<Mutex<Option<&'static str>>>,
     }
@@ -507,6 +515,12 @@ pub mod gg_sync {
         }
     }
 
+    impl<T: Default> Default for GgMutex<T> {
+        fn default() -> Self {
+            Self::new(T::default())
+        }
+    }
+
     impl<T> GgMutex<T> {
         pub fn new(x: T) -> Self {
             Self {
@@ -515,48 +529,31 @@ pub mod gg_sync {
             }
         }
 
-        pub fn lock(&self, by: &'static str) -> MutexGuard<'_, T> {
-            self.last_acquire.lock().unwrap().replace(by);
-            self.inner.lock().unwrap()
+        pub fn try_lock(&self, by: &'static str) -> Result<Option<MutexGuard<'_, T>>> {
+            self.last_acquire
+                .try_lock_for(Duration::from_millis(MUTEX_DEADLINE_MS))
+                .context("tried: {by}, last acquired by <UNKNOWN>")?
+                .replace(by);
+            Ok(self.inner.try_lock())
         }
 
-        pub fn spin_lock_for(
+        pub fn try_lock_short(&self, by: &'static str) -> Result<MutexGuard<'_, T>> {
+            self.try_lock_for(Duration::from_millis(MUTEX_DEADLINE_MS), by)
+        }
+        pub fn try_lock_for(
             &self,
             duration: Duration,
             by: &'static str,
         ) -> Result<MutexGuard<'_, T>> {
-            let lock = spin_lock_for(&self.inner, duration).with_context(|| {
+            let lock = self.inner.try_lock_for(duration).with_context(|| {
                 format!(
                     "tried: {by}, last acquired by: {:?}",
-                    spin_lock_for(
-                        &self.last_acquire,
-                        Duration::from_nanos(10 * MUTEX_THROTTLE_NS)
-                    )
+                    self.last_acquire
+                        .try_lock_for(Duration::from_millis(MUTEX_DEADLINE_MS))
                 )
             })?;
-            self.last_acquire.lock().unwrap().replace(by);
+            self.last_acquire.lock().replace(by);
             Ok(lock)
-        }
-    }
-
-    pub fn spin_lock_for<T>(
-        mutex: &Arc<Mutex<T>>,
-        duration: Duration,
-    ) -> Result<MutexGuard<'_, T>> {
-        let start = Instant::now();
-        loop {
-            match mutex.try_lock() {
-                Ok(guard) => return Ok(guard),
-                Err(TryLockError::WouldBlock) => {
-                    if start.elapsed() > duration {
-                        bail!("spin_lock_for(): took too long (>{duration:?})");
-                    }
-                    std::thread::sleep(Duration::from_nanos(MUTEX_THROTTLE_NS));
-                }
-                Err(TryLockError::Poisoned(e)) => {
-                    bail!("spin_lock_for(): mutex poisoned: {e:?}");
-                }
-            }
         }
     }
 }
@@ -747,75 +744,6 @@ impl<T> Deref for NonemptyVecRefMut<'_, T> {
     }
 }
 
-pub struct UniqueShared<T: ?Sized> {
-    inner: Arc<Mutex<T>>,
-}
-
-unsafe impl<T: ?Sized + Send> Send for UniqueShared<T> {}
-unsafe impl<T: ?Sized + Send> Sync for UniqueShared<T> {}
-
-// #[derive(Clone)] does not respect ?Sized.
-impl<T: ?Sized> Clone for UniqueShared<T> {
-    fn clone(&self) -> Self {
-        UniqueShared {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<T> UniqueShared<T> {
-    pub fn new(value: T) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(value)),
-        }
-    }
-}
-impl<T: Clone> UniqueShared<T> {
-    pub fn new_from_ref(value: &T) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(value.clone())),
-        }
-    }
-}
-
-impl<T: ?Sized> UniqueShared<T> {
-    pub fn lock(&self) -> MutexGuard<'_, T> {
-        self.inner
-            .try_lock()
-            .expect("attempted to acquire UniqueShared but it was already in use")
-    }
-}
-
-impl<T: Clone> UniqueShared<T> {
-    pub fn clone_inner(&self) -> T {
-        self.lock().clone()
-    }
-}
-
-impl<T> UniqueShared<Option<T>> {
-    pub fn take_inner(&self) -> Option<T> {
-        self.lock().take()
-    }
-}
-
-impl<T: Debug> Debug for UniqueShared<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueShared[{:?}]", self.lock())
-    }
-}
-
-impl<T: Display> Display for UniqueShared<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueShared({})", self.lock())
-    }
-}
-
-impl<T: Default> Default for UniqueShared<T> {
-    fn default() -> Self {
-        Self::new(T::default())
-    }
-}
-
 fn setup_log() -> Result<()> {
     // XXX: hacky crap mostly written by ChatGPT.
     struct AllowValuesOnly;
@@ -929,7 +857,9 @@ impl GgContextBuilder {
         self
     }
 
-    pub fn build_and_run_window<F: FnOnce(SceneHandlerBuilder) -> SceneHandler + Send + 'static>(
+    pub fn build_and_run_window<
+        F: FnOnce(SceneHandlerBuilder) -> Result<SceneHandler> + Send + 'static,
+    >(
         self,
         create_and_start_scene_handler: F,
     ) -> Result<()> {
@@ -944,13 +874,13 @@ impl GgContextBuilder {
 }
 
 pub struct SceneHandlerBuilder {
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     render_handler: RenderHandlerLite,
 }
 
 impl SceneHandlerBuilder {
     pub(crate) fn new(
-        input_handler: Arc<Mutex<InputHandler>>,
+        input_handler: GgMutex<InputHandler>,
         render_handler: RenderHandlerLite,
     ) -> Self {
         Self {

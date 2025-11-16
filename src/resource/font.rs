@@ -12,8 +12,9 @@ use crate::core::update::{ObjectContext, RenderContext};
 use crate::resource::rich_text::{FormatInstruction, FormattedChars};
 use crate::util::gg_float::{FloatKey, GgFloat};
 use crate::util::gg_iter::GgFloatIter;
+use crate::util::gg_sync::GgMutex;
 use crate::util::gg_vec::GgVec;
-use crate::util::{GLOBAL_STATS, UniqueShared, gg_float};
+use crate::util::{GLOBAL_STATS, gg_float};
 use crate::{core::prelude::*, resource::sprite::Sprite};
 use ab_glyph::{
     Font as AbGlyphFontTrait, FontVec, Glyph, OutlinedGlyph, PxScale, PxScaleFont, ScaleFont,
@@ -21,7 +22,7 @@ use ab_glyph::{
 use ash::vk;
 use glongge_derive::partially_derive_scene_object;
 
-pub static LOADED_FONTS: OnceLock<UniqueShared<BTreeMap<String, BTreeMap<FloatKey, Font>>>> =
+pub static LOADED_FONTS: OnceLock<GgMutex<BTreeMap<String, BTreeMap<FloatKey, Font>>>> =
     OnceLock::new();
 
 /// Create [`Font`]s with these macros.
@@ -29,8 +30,10 @@ pub static LOADED_FONTS: OnceLock<UniqueShared<BTreeMap<String, BTreeMap<FloatKe
 macro_rules! font_from_file {
     ($path:expr, $size:expr) => {{
         match $crate::resource::font::LOADED_FONTS
-            .get_or_init($crate::util::UniqueShared::default)
-            .lock()
+            .get_or_init($crate::util::gg_sync::GgMutex::default)
+            .try_lock("font_from_file!()")
+            .expect("font_from_file!()")
+            .expect("LOADED_FONTS should not be used anywhere else")
             .entry($path.to_string())
             .or_default()
             .entry($crate::util::gg_float::FloatKey($size))
@@ -83,8 +86,7 @@ impl Error for FontRenderError {}
 
 pub struct Font {
     inner: PxScaleFont<FontVec>,
-    // Use UniqueShared for interior mutability.
-    cached_layout: UniqueShared<Option<(String, FontLayout)>>,
+    cached_layout: GgMutex<Option<(String, FontLayout)>>,
     max_glyph_width: f32,
 }
 
@@ -93,7 +95,7 @@ impl Font {
     fn new(inner: PxScaleFont<FontVec>) -> Self {
         let mut rv = Self {
             inner,
-            cached_layout: UniqueShared::default(),
+            cached_layout: GgMutex::default(),
             max_glyph_width: 0.0,
         };
 
@@ -153,7 +155,11 @@ impl Font {
     pub fn layout(&self, text: impl AsRef<str>, settings: FontRenderSettings) -> FontLayout {
         settings.validate();
         let text = text.as_ref();
-        if let Some((cached_text, cached_layout)) = self.cached_layout.lock().as_ref()
+        if let Some((cached_text, cached_layout)) = self
+            .cached_layout
+            .try_lock_short("Font::layout()")
+            .expect("deadlock should be impossible")
+            .as_ref()
             && cached_text == text
             && cached_layout.settings.is_same_layout(&settings)
         {
@@ -161,7 +167,8 @@ impl Font {
         } else {
             let layout = self.layout_no_cache(text, settings);
             self.cached_layout
-                .lock()
+                .try_lock_short("Font::layout()")
+                .expect("deadlock should be impossible")
                 .replace((text.to_string(), layout.clone()));
             layout
         }
@@ -342,8 +349,9 @@ impl Font {
                 }
                 if is_unsupported_codepoint(c as u32)
                     && GLOBAL_STATS
-                        .get_or_init(UniqueShared::default)
-                        .lock()
+                        .get_or_init(GgMutex::default)
+                        .try_lock_short("Font::lines_to_layout()")
+                        .unwrap()
                         .warned_unsupported_codepoints
                         .insert(c as u32)
                 {
@@ -382,7 +390,11 @@ impl Font {
     }
 
     pub fn last_layout(&self) -> Option<FontLayout> {
-        self.cached_layout.lock().as_ref().map(|(_, l)| l.clone())
+        self.cached_layout
+            .try_lock_short("Font::last_layout()")
+            .unwrap()
+            .as_ref()
+            .map(|(_, l)| l.clone())
     }
 }
 
@@ -397,7 +409,7 @@ impl Clone for Font {
         let scale = self.inner.scale();
         Self {
             inner: font.into_scaled(scale),
-            cached_layout: UniqueShared::default(),
+            cached_layout: GgMutex::default(),
             max_glyph_width: self.max_glyph_width,
         }
     }

@@ -4,7 +4,8 @@ use crate::core::TreeObjectOfType;
 use crate::core::render::{RenderHandlerLite, UpdateSync};
 use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
-use crate::util::{GLOBAL_STATS, InspectMut, UniqueShared, gg_float};
+use crate::util::gg_sync::GgMutex;
+use crate::util::{GLOBAL_STATS, InspectMut, gg_float};
 use crate::{
     core::render::StoredRenderItem,
     core::scene::GuiClosure,
@@ -17,7 +18,7 @@ use crate::{
         prelude::*,
         render::{RenderDataChannel, RenderItem, ShaderExecWithVertexData, VertexMap},
         scene::{SceneDestination, SceneHandlerInstruction, SceneInstruction, SceneName},
-        tulivuori::GgViewport,
+        tulivuori::TvViewport,
     },
     gui::debug_gui::DebugGui,
     resource::sprite::GgInternalSprite,
@@ -39,7 +40,7 @@ use std::{
     cell::{Ref, RefMut},
     collections::{BTreeMap, BTreeSet},
     sync::{
-        Arc, Mutex, mpsc,
+        mpsc,
         mpsc::{Receiver, Sender},
     },
     time::{Duration, Instant},
@@ -373,7 +374,7 @@ impl ObjectHandler {
         shader_execs
     }
 
-    pub(crate) fn cleanup_references(&mut self) {
+    pub(crate) fn cleanup_references(&mut self) -> Result<()> {
         // Remove ObjectId's with no remaining actual references.
         // May require multiple repetitions for nested children.
         loop {
@@ -432,19 +433,20 @@ impl ObjectHandler {
         self.last_reported_leaked_ids = reports;
         if leaked_bytes > 0 {
             GLOBAL_STATS
-                .get_or_init(UniqueShared::default)
-                .lock()
+                .get_or_init(GgMutex::default)
+                .try_lock_short("ObjectHandler::cleanup_references()")?
                 .total_leaked_memory_bytes += leaked_bytes;
             error!(
                 "leaked memory: {:.2} KiB ({:.2} KiB total)",
                 leaked_bytes as f64 / 1024.0,
                 GLOBAL_STATS
-                    .get_or_init(UniqueShared::default)
-                    .lock()
+                    .get_or_init(GgMutex::default)
+                    .try_lock_short("ObjectHandler::cleanup_references()")?
                     .total_leaked_memory_bytes as f64
                     / 1024.0
             );
         }
+        Ok(())
     }
 
     pub(crate) fn get_first_object_id_for_gui(&self) -> Option<ObjectId> {
@@ -479,13 +481,13 @@ impl ObjectHandler {
 }
 
 pub(crate) struct UpdateHandler {
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     object_handler: ObjectHandler,
 
     vertex_map: VertexMap,
-    viewport: GgViewport,
+    viewport: TvViewport,
     resource_handler: ResourceHandler,
-    render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    render_data_channel: GgMutex<RenderDataChannel>,
     update_sync: UpdateSync,
     clear_col: Colour,
 
@@ -493,7 +495,7 @@ pub(crate) struct UpdateHandler {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_instruction_rx: Receiver<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: UniqueShared<Vec<u8>>,
+    scene_data: GgMutex<Vec<u8>>,
 
     gui_ctx: GuiContext,
     debug_gui: DebugGui,
@@ -514,24 +516,25 @@ pub(crate) struct UpdateHandler {
 impl UpdateHandler {
     pub(crate) fn new(
         objects: Vec<SceneObjectWrapper>,
-        input_handler: Arc<Mutex<InputHandler>>,
+        input_handler: GgMutex<InputHandler>,
         render_handler: &RenderHandlerLite,
         scene_name: SceneName,
-        scene_data: UniqueShared<Vec<u8>>,
+        scene_data: GgMutex<Vec<u8>>,
     ) -> Result<Self> {
         let (scene_instruction_tx, scene_instruction_rx) = mpsc::channel();
         let render_data_channel = render_handler.render_data_channel.clone();
         let update_sync = render_handler.update_sync.clone();
-        let clear_col = render_data_channel.lock().unwrap().get_clear_col();
+        let clear_col = render_data_channel
+            .try_lock_short("UpdateHandler::new()")?
+            .get_clear_col();
+        let viewport = render_data_channel
+            .try_lock_short("UpdateHandler::new()")?
+            .current_viewport();
         let mut rv = Self {
             input_handler,
             object_handler: ObjectHandler::new(render_handler.resource_handler.clone()),
             vertex_map: VertexMap::new(),
-            viewport: render_data_channel
-                .clone()
-                .lock()
-                .unwrap()
-                .current_viewport(),
+            viewport,
             resource_handler: render_handler.resource_handler.clone(),
             render_data_channel,
             update_sync,
@@ -555,7 +558,10 @@ impl UpdateHandler {
             fixed_update_ns: 0,
         };
 
-        let input_handler = rv.input_handler.lock().unwrap().clone();
+        let input_handler = rv
+            .input_handler
+            .try_lock_short("UpdateHandler::new")?
+            .clone();
         let mut pending_move_objects = BTreeMap::new();
         rv.complete_update_with_added_objects(
             &input_handler,
@@ -570,11 +576,11 @@ impl UpdateHandler {
             &mut pending_move_objects,
         );
         rv.complete_update_with_moved_objects(pending_move_objects);
-        rv.complete_update_with_render_infos();
+        rv.complete_update_with_render_infos()?;
         Ok(rv)
     }
 
-    pub(crate) fn run_update(&mut self) -> Option<Result<SceneHandlerInstruction>> {
+    pub(crate) fn run_update(&mut self) -> Result<Option<SceneHandlerInstruction>> {
         let fixed_update_only = !self.update_sync.try_render_done();
         let expected_delta =
             Duration::from_micros((self.viewport.refresh_time() * 1000.0).round() as u64);
@@ -584,10 +590,10 @@ impl UpdateHandler {
             .as_nanos();
         if (!SYNC_UPDATE_TO_RENDER || fixed_update_only) && elapsed_ns < UPDATE_THROTTLE_NS {
             // Throttle spinning a little bit.
-            return None;
+            return Ok(None);
         }
         if !self.is_running {
-            return None;
+            return Ok(None);
         }
 
         // Do an update now.
@@ -635,9 +641,13 @@ impl UpdateHandler {
         }
 
         // Perform the update.
-        let input_handler = self.input_handler.lock().unwrap().clone();
-        let object_tracker = self.perform_update(fixed_update_only, &input_handler, fixed_updates);
-        self.complete_update(fixed_update_only, &input_handler, object_tracker);
+        let input_handler = self
+            .input_handler
+            .try_lock_short("UpdateHandler::run_update()")?
+            .clone();
+        let object_tracker =
+            self.perform_update(fixed_update_only, &input_handler, fixed_updates)?;
+        self.complete_update(fixed_update_only, &input_handler, object_tracker)?;
 
         // Update performance statistics.
         self.perf_stats.total_stats.stop();
@@ -649,10 +659,10 @@ impl UpdateHandler {
 
         match self.scene_instruction_rx.try_iter().next() {
             Some(SceneInstruction::Stop) => {
-                return Some(Ok(SceneHandlerInstruction::Exit));
+                return Ok(Some(SceneHandlerInstruction::Exit));
             }
             Some(SceneInstruction::Goto(instruction)) => {
-                return Some(Ok(SceneHandlerInstruction::Goto(instruction)));
+                return Ok(Some(SceneHandlerInstruction::Goto(instruction)));
             }
             Some(SceneInstruction::Pause) => {
                 self.is_running = false;
@@ -662,7 +672,7 @@ impl UpdateHandler {
             }
             None => {}
         }
-        None
+        Ok(None)
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -683,7 +693,7 @@ impl UpdateHandler {
         fixed_update_only: bool,
         input_handler: &InputHandler,
         original_fixed_updates: u128,
-    ) -> ObjectTracker {
+    ) -> Result<ObjectTracker> {
         let mut object_tracker = ObjectTracker::new();
         if fixed_update_only {
             self.call_on_fixed_update(original_fixed_updates, &mut object_tracker);
@@ -702,9 +712,9 @@ impl UpdateHandler {
                 ffc = self.fixed_frame_counter
             );
             let _enter = update_span.enter();
-            self.object_handler.cleanup_references();
+            self.object_handler.cleanup_references()?;
         }
-        object_tracker
+        Ok(object_tracker)
     }
 
     fn iter_with_other_map<F>(
@@ -1025,10 +1035,10 @@ impl UpdateHandler {
         fixed_update_only: bool,
         input_handler: &InputHandler,
         object_tracker: ObjectTracker,
-    ) {
+    ) -> Result<()> {
         if object_tracker.is_empty() && fixed_update_only {
             // Performance: nothing to do.
-            return;
+            return Ok(());
         }
         let update_span = span!(
             tracing::Level::INFO,
@@ -1053,11 +1063,14 @@ impl UpdateHandler {
         if !fixed_update_only {
             self.debug_gui
                 .complete_update(input_handler, &mut self.viewport);
-            self.complete_update_with_render_infos();
-            self.input_handler.lock().unwrap().complete_update();
+            self.complete_update_with_render_infos()?;
+            self.input_handler
+                .try_lock_short("UpdateHandler::complete_update()")?
+                .complete_update();
         }
 
         self.perf_stats.complete_update.stop();
+        Ok(())
     }
     fn complete_update_with_removed_objects(&mut self, pending_remove_objects: BTreeSet<ObjectId>) {
         self.object_handler
@@ -1285,7 +1298,7 @@ impl UpdateHandler {
             );
         }
     }
-    fn complete_update_with_render_infos(&mut self) {
+    fn complete_update_with_render_infos(&mut self) -> Result<()> {
         let shader_execs = self
             .object_handler
             .create_shader_execs(&mut self.vertex_map);
@@ -1300,7 +1313,9 @@ impl UpdateHandler {
         } else {
             None
         };
-        let mut render_data_channel = self.render_data_channel.lock().unwrap();
+        let mut render_data_channel = self
+            .render_data_channel
+            .try_lock_short("UpdateHandler::complete_update_with_render_infos()")?;
         self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
         render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
         render_data_channel.is_gui_enabled = self.debug_gui.is_enabled();
@@ -1314,6 +1329,7 @@ impl UpdateHandler {
         render_data_channel.last_frame_counter = self.frame_counter;
         self.viewport = render_data_channel.current_viewport();
         self.update_sync.mark_update_done();
+        Ok(())
     }
 }
 
@@ -1897,7 +1913,7 @@ pub struct SceneData<T>
 where
     T: Default + bincode::Decode<()> + bincode::Encode,
 {
-    raw: UniqueShared<Vec<u8>>,
+    raw: GgMutex<Vec<u8>>,
     deserialized: T,
     modified: bool,
 }
@@ -1906,9 +1922,9 @@ impl<T> SceneData<T>
 where
     T: Default + bincode::Decode<()> + bincode::Encode,
 {
-    fn new(raw: UniqueShared<Vec<u8>>) -> Result<Self> {
+    fn new(raw: GgMutex<Vec<u8>>) -> Result<Self> {
         let deserialized = {
-            let raw = raw.lock();
+            let raw = raw.try_lock_short("SceneData::new()")?;
             if raw.is_empty() {
                 T::default()
             } else {
@@ -1940,10 +1956,12 @@ where
     T: Default + bincode::Decode<()> + bincode::Encode,
 {
     fn drop(&mut self) {
-        if self.modified {
-            *self.raw.lock() =
-                bincode::encode_to_vec(&self.deserialized, bincode::config::standard())
-                    .expect("failed to serialize scene data");
+        if self.modified
+            && let Some(mut raw) = gg_err::log_and_ok(self.raw.try_lock_short("SceneData::drop()"))
+            && let Some(encoded) =
+                gg_err::log_and_ok(gg_err::encode_to_vec_and_ok(&self.deserialized))
+        {
+            *raw = encoded;
         }
     }
 }
@@ -1952,7 +1970,7 @@ where
 pub struct SceneContext<'a> {
     scene_instruction_tx: Sender<SceneInstruction>,
     scene_name: SceneName,
-    scene_data: UniqueShared<Vec<u8>>,
+    scene_data: GgMutex<Vec<u8>>,
     coroutines: &'a mut BTreeMap<CoroutineId, Coroutine>,
     pending_removed_coroutines: BTreeSet<CoroutineId>,
 }
@@ -2937,7 +2955,7 @@ impl ObjectContext<'_> {
 /// ctx.viewport_mut().clear_col().set_rgba(1.0, 0.0, 0.0, 1.0);
 /// ```
 pub struct ViewportContext<'a> {
-    viewport: &'a mut GgViewport,
+    viewport: &'a mut TvViewport,
     clear_col: &'a mut Colour,
 }
 
@@ -3138,7 +3156,11 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn wait_upload_textures(&mut self) {
-        if let Err(e) = self.resource_handler.texture.upload_all_pending() {
+        if let Err(e) = self
+            .resource_handler
+            .texture
+            .upload_all_pending("RenderContext::wait_upload_textures()")
+        {
             panic_or_error!("failed to upload textures: {e:?}");
         }
     }

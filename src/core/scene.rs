@@ -8,52 +8,55 @@ use crate::core::{
     update::{UpdateContext, UpdateHandler, collision::CollisionResponse},
 };
 use crate::gui::GuiUi;
-use crate::util::UniqueShared;
+use crate::util::gg_sync::GgMutex;
 use egui::text::LayoutJob;
 use egui::{Color32, TextFormat};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::{
-    any::Any,
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{any::Any, collections::BTreeMap};
 
 struct InternalScene {
-    scene: Arc<Mutex<dyn Scene + Send>>,
+    scene: GgMutex<Box<dyn Scene + Send>>,
     name: SceneName,
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     render_handler: RenderHandlerLite,
     update_handler: Option<UpdateHandler>,
 }
 
 impl InternalScene {
     fn new(
-        scene: Arc<Mutex<dyn Scene + Send>>,
-        input_handler: Arc<Mutex<InputHandler>>,
+        scene: GgMutex<Box<dyn Scene + Send>>,
+        input_handler: GgMutex<InputHandler>,
         render_handler: RenderHandlerLite,
-    ) -> Self {
+    ) -> Result<Self> {
         let name = scene
-            .try_lock()
-            .expect("scene locked in InternalScene::new(), could not get scene name")
+            .try_lock("InternalScene::new()")?
+            .context("scene locked in InternalScene::new(), could not get scene name")?
             .name();
-        Self {
+        Ok(Self {
             scene,
             name,
             input_handler,
             render_handler,
             update_handler: None,
-        }
+        })
     }
 
-    fn init(&mut self, data: UniqueShared<Vec<u8>>, entrance_id: usize) {
+    fn init(&mut self, data: GgMutex<Vec<u8>>, entrance_id: usize) -> Result<()> {
         let initial_objects = {
-            let mut scene = self.scene.try_lock().unwrap_or_else(|_| {
-                panic!("scene locked in InternalScene::run(): {:?}", self.name)
-            });
+            let mut scene = self
+                .scene
+                .try_lock("InternalScene::init()")?
+                .with_context(|| {
+                    format!("scene locked in InternalScene::run(): {:?}", self.name)
+                })?;
             scene
-                .load(&data.lock())
-                .unwrap_or_else(|_| panic!("could not load data for {:?}", self.name));
+                .load(
+                    &data
+                        .try_lock("InternalScene::init()")?
+                        .context("expect scene data to be unused")?,
+                )
+                .with_context(|| format!("could not load data for {:?}", self.name))?;
             scene.create_objects(entrance_id)
         };
         check_false!(
@@ -68,18 +71,17 @@ impl InternalScene {
                 self.name,
                 data,
             )
-            .context("failed to create scene: {this_name:?}")
-            .unwrap(),
+            .context("failed to create scene: {this_name:?}")?,
         );
+        Ok(())
     }
 
-    fn run_update(&mut self) -> Option<SceneHandlerInstruction> {
-        let instruction = self.update_handler.as_mut().unwrap().run_update()?;
-        Some(
-            instruction
-                .with_context(|| format!("scene exited with error: {:?}", self.name))
-                .unwrap(),
-        )
+    fn run_update(&mut self) -> Result<Option<SceneHandlerInstruction>> {
+        self.update_handler
+            .as_mut()
+            .unwrap()
+            .run_update()
+            .with_context(|| format!("scene exited with error: {:?}", self.name))
     }
 }
 
@@ -260,17 +262,17 @@ pub(crate) enum SceneHandlerInstruction {
 ///     })
 /// ```
 pub struct SceneHandler {
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     render_handler: RenderHandlerLite,
     scenes: BTreeMap<SceneName, Rc<RefCell<InternalScene>>>,
-    scene_data: BTreeMap<SceneName, UniqueShared<Vec<u8>>>,
+    scene_data: BTreeMap<SceneName, GgMutex<Vec<u8>>>,
     current_scene: Option<Rc<RefCell<InternalScene>>>,
 }
 
 // #[allow(private_bounds)]
 impl SceneHandler {
     pub(crate) fn new(
-        input_handler: Arc<Mutex<InputHandler>>,
+        input_handler: GgMutex<InputHandler>,
         render_handler: RenderHandlerLite,
     ) -> Self {
         Self {
@@ -282,53 +284,60 @@ impl SceneHandler {
         }
     }
     /// Creates and registers a new scene. See [`SceneHandler`] example.
-    pub fn create_scene<S: Scene + 'static>(&mut self, scene: S) {
+    pub fn create_scene<S: Scene + Send + 'static>(&mut self, scene: S) -> Result<()> {
         check_false!(self.scenes.contains_key(&scene.name()));
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
-            .insert(scene.name(), UniqueShared::new(scene.initial_data()));
+            .insert(scene.name(), GgMutex::new(scene.initial_data()));
         self.scenes.insert(
             scene.name(),
             Rc::new(RefCell::new(InternalScene::new(
-                Arc::new(Mutex::new(scene)),
+                GgMutex::new(Box::new(scene)),
                 self.input_handler.clone(),
                 self.render_handler.clone(),
-            ))),
+            )?)),
         );
+        Ok(())
     }
 
-    pub fn set_initial_scene(&mut self, name: SceneName, entrance_id: usize) {
+    pub fn set_initial_scene(&mut self, name: SceneName, entrance_id: usize) -> Result<()> {
         check_is_none!(self.current_scene);
-        self.current_scene = Some(self.init_scene(name, entrance_id));
+        self.current_scene = Some(self.init_scene(name, entrance_id)?);
+        Ok(())
     }
 
-    pub fn run_update(&mut self) {
+    pub fn run_update(&mut self) -> Result<()> {
         let instruction = self
             .current_scene
             .as_ref()
             .unwrap()
             .borrow_mut()
-            .run_update();
+            .run_update()?;
         match instruction {
             Some(SceneHandlerInstruction::Exit) => std::process::exit(0),
             Some(SceneHandlerInstruction::Goto(SceneDestination {
                 name: next_name,
                 entrance_id: next_entrance_id,
             })) => {
-                self.current_scene = Some(self.init_scene(next_name, next_entrance_id));
+                self.current_scene = Some(self.init_scene(next_name, next_entrance_id)?);
             }
             None => {}
         }
+        Ok(())
     }
-    fn init_scene(&mut self, name: SceneName, entrance_id: usize) -> Rc<RefCell<InternalScene>> {
+    fn init_scene(
+        &mut self,
+        name: SceneName,
+        entrance_id: usize,
+    ) -> Result<Rc<RefCell<InternalScene>>> {
         let (Some(scene), Some(scene_data)) =
             (self.scenes.get_mut(&name), self.scene_data.get(&name))
         else {
             panic!("could not start scene {name:?}: scene missing?");
         };
         info!("starting scene: {name:?} [entrance {entrance_id}]");
-        scene.borrow_mut().init(scene_data.clone(), entrance_id);
-        scene.clone()
+        scene.borrow_mut().init(scene_data.clone(), entrance_id)?;
+        Ok(scene.clone())
     }
 }
 

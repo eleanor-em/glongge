@@ -1,6 +1,6 @@
 use crate::core::tulivuori::shader::ShaderInfo;
 use crate::{
-    check_eq, check_false, core::tulivuori::GgViewport, core::tulivuori::TvWindowContext,
+    check_eq, check_false, core::tulivuori::TvViewport, core::tulivuori::TvWindowContext,
     core::tulivuori::swapchain::Swapchain,
 };
 use anyhow::Result;
@@ -26,7 +26,7 @@ impl Pipeline {
         swapchain: &Swapchain,
         shader: &Arc<dyn ShaderInfo>,
         pipeline_layout: vk::PipelineLayout,
-        viewport: &GgViewport,
+        viewport: &TvViewport,
     ) -> Result<Self> {
         match unsafe {
             check_eq!(
@@ -99,7 +99,7 @@ impl Pipeline {
     pub fn bind(
         &self,
         command_buffer: vk::CommandBuffer,
-        viewport: &GgViewport,
+        viewport: &TvViewport,
         vert_push_constants: &[u8],
         frag_push_constants: &[u8],
     ) {

@@ -1,7 +1,7 @@
 use crate::core::input::InputHandler;
 use crate::core::prelude::*;
 use crate::core::scene::{GuiClosure, GuiCommand};
-use crate::core::tulivuori::{GgViewport, GgWindow, RenderPerfStats};
+use crate::core::tulivuori::{GgWindow, RenderPerfStats, TvViewport};
 use crate::core::update::collision::Collision;
 use crate::core::update::{ObjectHandler, UpdatePerfStats};
 use crate::core::{ObjectId, TreeSceneObject};
@@ -1152,7 +1152,7 @@ pub(crate) struct DebugGui {
     object_view: GuiObjectView,
     console_log: GuiConsoleLog,
     pub(crate) scene_control: GuiSceneControl,
-    last_viewport: GgViewport,
+    last_viewport: TvViewport,
     frame: Frame,
 
     wireframe_mouseovers: Vec<ObjectId>,
@@ -1167,7 +1167,7 @@ impl DebugGui {
             object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
             scene_control: GuiSceneControl::new(),
-            last_viewport: GgViewport::new(window),
+            last_viewport: TvViewport::new(window),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
                 .inner_margin(egui::Margin::same(6)),
@@ -1317,7 +1317,7 @@ impl DebugGui {
             .on_move_object(object_handler, object_id, last_parent_id, new_parent_id)
     }
     /// Handles viewport moving with the arrow keys.
-    pub fn complete_update(&mut self, input_handler: &InputHandler, viewport: &mut GgViewport) {
+    pub fn complete_update(&mut self, input_handler: &InputHandler, viewport: &mut TvViewport) {
         let mut viewport_moved = false;
         if self.enabled && input_handler.mod_super() {
             let mut direction = Vec2::zero();

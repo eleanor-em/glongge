@@ -55,7 +55,7 @@ impl TvInternalTexture {
         ready_flag: Arc<AtomicBool>,
     ) -> Result<Arc<Self>> {
         unsafe {
-            let allocator = ctx.allocator("TvInternalTexture::new");
+            let allocator = ctx.allocator("TvInternalTexture::new")?;
             let (image_buffer, mut image_buffer_alloc) = allocator.create_buffer(
                 &vk::BufferCreateInfo::default()
                     .size(size_of_val(image_data) as u64)
@@ -136,7 +136,7 @@ impl TvInternalTexture {
     pub fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            let allocator = self.ctx.allocator("TvInternalTexture::vk_free");
+            let allocator = self.ctx.allocator("TvInternalTexture::vk_free").unwrap();
             allocator.destroy_buffer(self.image_buffer, &mut self.image_buffer_alloc.clone());
             self.ctx
                 .device()
@@ -362,7 +362,7 @@ impl TextureManager {
                 )?
                 .expect("TextureManager::new(): failed to create blank texture"),
             );
-            rv.upload_all_pending()?;
+            rv.upload_all_pending("TextureManager::new()")?;
 
             rv.descriptor_image_infos = vec![
                 vk::DescriptorImageInfo {
@@ -519,7 +519,7 @@ impl TextureManager {
     fn is_anything_pending(&self) -> bool {
         !self.pending_textures.is_empty() || self.materials_changed
     }
-    pub fn upload_all_pending(&mut self) -> Result<()> {
+    pub fn upload_all_pending(&mut self, by: &'static str) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         if !self.is_anything_pending() {
             return Ok(());
@@ -538,7 +538,7 @@ impl TextureManager {
             self.upload_materials(self.command_buffer);
             self.upload_textures(self.command_buffer);
             self.ctx.device().end_command_buffer(self.command_buffer)?;
-            let queue = self.ctx.present_queue()?;
+            let queue = self.ctx.present_queue(by)?;
             self.ctx.device().queue_submit2(
                 *queue,
                 &[vk::SubmitInfo2::default().command_buffer_infos(&[

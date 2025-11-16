@@ -30,7 +30,7 @@ impl<T: Copy> GenericDeviceBuffer<T> {
             let mut buffer_alloc_vec = Vec::new();
             let mut buffer_vec = Vec::new();
             for _ in 0..copy_count {
-                let (buffer, alloc) = ctx.allocator("GenericDeviceBuffer::new").create_buffer(
+                let (buffer, alloc) = ctx.allocator("GenericDeviceBuffer::new")?.create_buffer(
                     &vk::BufferCreateInfo::default()
                         .size((length * size_of::<T>()) as u64)
                         .usage(usage)
@@ -41,7 +41,7 @@ impl<T: Copy> GenericDeviceBuffer<T> {
                     },
                 )?;
                 buffer_vec.push(buffer);
-                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc));
+                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc)?);
             }
 
             Ok(Self {
@@ -70,6 +70,7 @@ impl<T: Copy> GenericDeviceBuffer<T> {
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx
                     .allocator("GenericDeviceBuffer::vk_free")
+                    .unwrap()
                     .destroy_buffer(buffer, alloc.as_mut());
             }
         }
@@ -97,7 +98,7 @@ impl<T: Copy> GenericBuffer<T> {
             let mut buffer_alloc_vec = Vec::new();
             let mut buffer_vec = Vec::new();
             for _ in 0..copy_count {
-                let (buffer, alloc) = ctx.allocator("GenericBuffer::new").create_buffer(
+                let (buffer, alloc) = ctx.allocator("GenericBuffer::new")?.create_buffer(
                     &vk::BufferCreateInfo::default()
                         .size((length * size_of::<T>()) as u64)
                         .usage(usage)
@@ -109,7 +110,7 @@ impl<T: Copy> GenericBuffer<T> {
                     },
                 )?;
                 buffer_vec.push(buffer);
-                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc));
+                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc)?);
             }
 
             Ok(Self {
@@ -141,7 +142,7 @@ impl<T: Copy> GenericBuffer<T> {
                     data.len()
                 );
             }
-            let allocator = self.ctx.allocator("GenericBuffer::write");
+            let allocator = self.ctx.allocator("GenericBuffer::write")?;
             let ptr = allocator.map_memory(alloc.as_mut())?;
             Align::new(ptr.cast(), align_of::<T>() as u64, alloc.size()).copy_from_slice(data);
             allocator.unmap_memory(alloc.as_mut());
@@ -167,6 +168,7 @@ impl<T: Copy> GenericBuffer<T> {
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx
                     .allocator("GenericBuffer::vk_free")
+                    .unwrap()
                     .destroy_buffer(buffer, alloc.as_mut());
             }
         }

@@ -6,12 +6,13 @@ use crate::core::tulivuori::swapchain::{Swapchain, SwapchainBuilder};
 use crate::core::tulivuori::texture::TvInternalTexture;
 use crate::core::tulivuori::{GgWindow, RenderPerfStats};
 use crate::core::tulivuori::{TvWindowContext, tv};
-use crate::core::{ObjectId, prelude::*, tulivuori::GgViewport};
+use crate::core::{ObjectId, prelude::*, tulivuori::TvViewport};
 use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
 use crate::resource::texture::{MaterialId, TextureHandler};
 use crate::shader::{ShaderId, SpriteVertex, vertex};
-use crate::util::{UniqueShared, gg_err};
+use crate::util::gg_err;
+use crate::util::gg_sync::GgMutex;
 use ash::vk;
 use egui::epaint;
 use num_traits::ToPrimitive;
@@ -19,13 +20,7 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::mem::offset_of;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{
-    cmp,
-    collections::BTreeMap,
-    default::Default,
-    ops::Range,
-    sync::{Arc, Mutex},
-};
+use std::{cmp, collections::BTreeMap, default::Default, ops::Range, sync::Arc};
 use tracing::info_span;
 
 #[derive(Clone, Debug)]
@@ -61,7 +56,7 @@ pub(crate) struct RenderDataChannel {
     pub(crate) shader_execs: Vec<ShaderExecWithVertexData>,
     pub(crate) gui_commands: Vec<Box<GuiClosure>>,
     pub(crate) is_gui_enabled: bool,
-    viewport: GgViewport,
+    viewport: TvViewport,
     should_resize: bool,
     clear_col: Colour,
 
@@ -69,8 +64,8 @@ pub(crate) struct RenderDataChannel {
     pub(crate) last_render_stats: Option<RenderPerfStats>,
 }
 impl RenderDataChannel {
-    fn new(viewport: GgViewport) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
+    fn new(viewport: TvViewport) -> GgMutex<Self> {
+        GgMutex::new(Self {
             vertices: Vec::new(),
             shader_execs: Vec::new(),
             gui_commands: Vec::new(),
@@ -80,7 +75,7 @@ impl RenderDataChannel {
             clear_col: Colour::black(),
             last_frame_counter: 0,
             last_render_stats: None,
-        }))
+        })
     }
 
     pub(crate) fn next_frame(&self) -> RenderFrame<'_> {
@@ -91,7 +86,7 @@ impl RenderDataChannel {
         }
     }
 
-    pub(crate) fn current_viewport(&self) -> GgViewport {
+    pub(crate) fn current_viewport(&self) -> TvViewport {
         self.viewport.clone()
     }
 
@@ -224,7 +219,7 @@ impl UpdateSync {
 
 #[derive(Clone)]
 pub(crate) struct RenderHandlerLite {
-    pub(crate) render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    pub(crate) render_data_channel: GgMutex<RenderDataChannel>,
     pub(crate) update_sync: UpdateSync,
     pub(crate) resource_handler: ResourceHandler,
     pub(crate) gui_ctx: GuiContext,
@@ -234,9 +229,9 @@ pub(crate) struct RenderHandlerLite {
 pub(crate) struct RenderHandler {
     ctx: Arc<TvWindowContext>,
     pub(crate) window: GgWindow,
-    viewport: UniqueShared<GgViewport>,
+    viewport: GgMutex<TvViewport>,
     pub(crate) resource_handler: ResourceHandler,
-    render_data_channel: Arc<Mutex<RenderDataChannel>>,
+    render_data_channel: GgMutex<RenderDataChannel>,
     update_sync: UpdateSync,
 
     swapchain: Swapchain,
@@ -250,15 +245,20 @@ pub(crate) struct RenderHandler {
 }
 
 impl RenderHandler {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn new(
         ctx: Arc<TvWindowContext>,
         gui_ctx: GuiContext,
         window: GgWindow,
-        viewport: UniqueShared<GgViewport>,
+        viewport: GgMutex<TvViewport>,
         resource_handler: ResourceHandler,
-        input_handler: Arc<Mutex<InputHandler>>,
+        input_handler: GgMutex<InputHandler>,
     ) -> Result<Self> {
-        let render_data_channel = RenderDataChannel::new(viewport.clone_inner());
+        let viewport_owned = viewport
+            .try_lock("RenderHandler::new()")?
+            .context("expect viewport unlocked")?
+            .clone();
+        let render_data_channel = RenderDataChannel::new(viewport_owned.clone());
 
         let swapchain = SwapchainBuilder::new(&ctx, window.inner.clone()).build()?;
         let vertex_buffer = VertexBuffer::new(
@@ -331,7 +331,7 @@ impl RenderHandler {
             &swapchain,
             &(shader.clone() as Arc<dyn ShaderInfo>),
             resource_handler.texture.pipeline_layout(),
-            &viewport.lock(),
+            &viewport_owned,
         )?;
 
         let gui = GuiRenderHandler::new(
@@ -361,26 +361,24 @@ impl RenderHandler {
             last_perf_stats: None,
         })
     }
-    #[must_use]
-    pub(crate) fn with_extra_scale_factor(self, extra_scale_factor: f32) -> Self {
+    pub(crate) fn with_extra_scale_factor(self, extra_scale_factor: f32) -> Result<Self> {
         self.viewport
-            .lock()
+            .try_lock_short("RenderHandler::with_extra_scale_factor()")?
             .set_extra_scale_factor(extra_scale_factor);
         {
-            let mut rc = self.render_data_channel.lock().unwrap();
+            let mut rc = self
+                .render_data_channel
+                .try_lock_short("RenderHandler::with_extra_scale_factor()")?;
             rc.set_extra_scale_factor(extra_scale_factor);
             let _ = rc.should_resize_with_scale_factor();
         }
-        self
+        Ok(self)
     }
-
-    #[must_use]
-    pub(crate) fn with_clear_col(self, clear_col: Colour) -> Self {
+    pub(crate) fn with_clear_col(self, clear_col: Colour) -> Result<Self> {
         self.render_data_channel
-            .lock()
-            .unwrap()
+            .try_lock_short("RenderHandler::with_clear_col()")?
             .set_clear_col(clear_col);
-        self
+        Ok(self)
     }
 
     pub(crate) fn wait_update_done(&self) {
@@ -402,9 +400,13 @@ impl RenderHandler {
 
             self.perf_stats.update_vertices.start();
             let (update, viewport, vertex_count, gui_commands, clear_col) = {
-                let mut rx = self.render_data_channel.lock().unwrap();
+                let mut rx = self
+                    .render_data_channel
+                    .try_lock_short("RenderHandler::render_update()")?;
                 rx.last_render_stats.clone_from(&self.last_perf_stats);
-                let mut viewport = self.viewport.lock();
+                let mut viewport = self
+                    .viewport
+                    .try_lock_short("RenderHandler::render_update()")?;
                 if let Some(extra_scale_factor) = rx.should_resize_with_scale_factor() {
                     viewport.set_extra_scale_factor(extra_scale_factor);
                 }
@@ -483,7 +485,7 @@ impl RenderHandler {
         &self,
         swapchain: &Swapchain,
         render_frame: &RenderFrame,
-        viewport: &GgViewport,
+        viewport: &TvViewport,
     ) -> Result<u32> {
         let shader_render_frame = render_frame.for_shader(ShaderId::default());
         let render_infos = shader_render_frame
@@ -565,11 +567,11 @@ struct GuiRenderHandler {
     ctx: Arc<TvWindowContext>,
     texture_handler: Arc<TextureHandler>,
     is_gui_enabled: bool,
-    viewport: UniqueShared<GgViewport>,
+    viewport: GgMutex<TvViewport>,
     window: GgWindow,
 
     gui_ctx: GuiContext,
-    input_handler: Arc<Mutex<InputHandler>>,
+    input_handler: GgMutex<InputHandler>,
     gui_vertex_buffer: VertexBuffer<epaint::Vertex>,
     gui_index_buffer: IndexBuffer32,
     gui_shader: Arc<GuiVertFragShader>,
@@ -585,10 +587,10 @@ impl GuiRenderHandler {
     fn new(
         ctx: Arc<TvWindowContext>,
         swapchain: &Swapchain,
-        viewport: UniqueShared<GgViewport>,
+        viewport: GgMutex<TvViewport>,
         window: GgWindow,
         gui_ctx: GuiContext,
-        input_handler: Arc<Mutex<InputHandler>>,
+        input_handler: GgMutex<InputHandler>,
         texture_handler: Arc<TextureHandler>,
     ) -> Result<Self> {
         let gui_vertex_buffer = VertexBuffer::new(ctx.clone(), swapchain, 100 * 1024)?;
@@ -599,7 +601,9 @@ impl GuiRenderHandler {
             swapchain,
             &(gui_shader.clone() as Arc<dyn ShaderInfo>),
             gui_shader.pipeline_layout(),
-            &viewport.lock(),
+            &*viewport
+                .try_lock("GuiRenderHandler::new()")?
+                .context("expect viewport to be unused")?,
         )?;
         Ok(Self {
             ctx,
@@ -628,8 +632,14 @@ impl GuiRenderHandler {
     ) -> Result<bool> {
         let egui_input = egui_state.take_egui_input(&self.window.inner);
         {
-            let mut input = self.input_handler.lock().unwrap();
-            input.set_viewport(self.viewport.clone_inner());
+            let mut input = self
+                .input_handler
+                .try_lock_short("GuiRenderHandler::pre_render_update()")?;
+            input.set_viewport(
+                self.viewport
+                    .try_lock_short("GuiRenderHandler::pre_render_update()")?
+                    .clone(),
+            );
             input.update_mouse(&self.gui_ctx.inner);
         }
         if !self.gui_ctx.is_ever_enabled() {
@@ -825,7 +835,9 @@ impl GuiRenderHandler {
                 self.gui_shader.update_font_texture(font_texture, swapchain);
             }
             swapchain.cmd_begin_rendering(command_buffer, None);
-            let viewport = self.viewport.lock();
+            let viewport = self
+                .viewport
+                .try_lock_short("GuiRenderHandler::do_render()")?;
             let mut vert_bytes = (viewport.physical_width() / viewport.winit_scale_factor())
                 .to_le_bytes()
                 .to_vec();

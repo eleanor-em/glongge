@@ -1,4 +1,5 @@
 use crate::core::tulivuori::TvWindowContext;
+use anyhow::Result;
 use ash::vk;
 use std::cell::UnsafeCell;
 use std::sync::Arc;
@@ -13,18 +14,18 @@ pub struct TvAllocation {
 }
 
 impl TvAllocation {
-    pub fn new(ctx: &Arc<TvWindowContext>, alloc: vk_mem::Allocation) -> Self {
+    pub fn new(ctx: &Arc<TvWindowContext>, alloc: vk_mem::Allocation) -> Result<Self> {
         let info = ctx
-            .allocator("TvAllocation::new")
+            .allocator("TvAllocation::new")?
             .get_allocation_info(&alloc);
-        Self {
+        Ok(Self {
             alloc: UnsafeCell::new(alloc),
             memory_type: info.memory_type,
             device_memory: info.device_memory,
             offset: info.offset,
             size: info.size,
             user_data: info.user_data,
-        }
+        })
     }
 
     pub fn memory_type(&self) -> u32 {
