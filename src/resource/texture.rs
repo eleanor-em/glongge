@@ -674,12 +674,6 @@ impl TextureHandler {
         self.pipeline_layout
     }
 
-    pub fn is_texture_ready(&self, texture: TextureId) -> Result<bool> {
-        Ok(self
-            .lock_inner("is_texture_ready")?
-            .texture_manager
-            .is_texture_ready(texture))
-    }
     pub fn material_to_texture(&self, id: MaterialId) -> Result<Option<TextureId>> {
         Ok(self
             .lock_inner("material_to_texture")?
@@ -688,11 +682,15 @@ impl TextureHandler {
             .get(&id)
             .map(|material| material.texture_id))
     }
-    pub fn is_material_ready(&self, id: MaterialId) -> Result<bool> {
-        let Some(texture_id) = self.material_to_texture(id)? else {
-            return Ok(false);
-        };
-        self.is_texture_ready(texture_id)
+    pub fn get_ready_materials(&self) -> Result<BTreeSet<MaterialId>> {
+        let inner = self.lock_inner("TextureHandler::get_ready_materials()")?;
+        let mut rv = BTreeSet::new();
+        for (&id, material) in &inner.material_handler.materials {
+            if inner.texture_manager.is_texture_ready(material.texture_id) {
+                rv.insert(id);
+            }
+        }
+        Ok(rv)
     }
 
     pub fn vk_free(&self) {

@@ -493,15 +493,12 @@ impl RenderHandler {
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
         let mut vertices = Vec::new();
+        let ready_materials = self.resource_handler.texture.get_ready_materials()?;
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 let vertex = render_frame.vertices[vertex_index as usize];
                 for ri in &render_info.inner {
-                    if self
-                        .resource_handler
-                        .texture
-                        .is_material_ready(ri.material_id)?
-                    {
+                    if ready_materials.contains(&ri.material_id) {
                         vertices.push(SpriteVertex {
                             position: vertex.inner.into(),
                             material_id: ri.material_id,

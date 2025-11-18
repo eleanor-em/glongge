@@ -27,8 +27,8 @@ ash = { version = "0.38.0", default-features = false, features = ["linked", "deb
 ash-window = "0.13.0"
 vk-mem = "0.5.0"
 # windowing
-egui = "0.33.0"
-egui-winit = { version = "0.33.0", default-features = false, features = ["clipboard", "wayland", "x11"] }
+egui = "0.33.2"
+egui-winit = { version = "0.33.2", default-features = false, features = ["clipboard", "wayland", "x11"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] } # match egui-winit
 # media
 ab_glyph = {version = "0.2.32", default-features = false }

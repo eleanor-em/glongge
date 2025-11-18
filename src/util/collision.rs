@@ -913,10 +913,10 @@ impl Collider for ConvexCollider {
     }
 }
 
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct CompoundCollider {
     inner: Vec<ConvexCollider>,
     override_normals: Vec<Vec2>,
+    unique_normals_cached: GgMutex<Vec<Vec2>>,
 }
 
 impl CompoundCollider {
@@ -924,6 +924,7 @@ impl CompoundCollider {
         Self {
             inner,
             override_normals: Vec::new(),
+            unique_normals_cached: GgMutex::new(Vec::new()),
         }
     }
 
@@ -1254,11 +1255,24 @@ impl CompoundCollider {
     }
     pub fn extend(&mut self, mut other: CompoundCollider) {
         self.inner.append(&mut other.inner);
+        self.unique_normals_cached
+            .try_lock("CompoundCollider::extend()")
+            .expect("CompoundCollider::extend()")
+            .expect("should never be contested")
+            .clear();
     }
 
     fn get_unique_normals(&self) -> Vec<Vec2> {
         if !self.override_normals.is_empty() {
             return self.override_normals.clone();
+        }
+        let mut unique_normals_cached = self
+            .unique_normals_cached
+            .try_lock("CompoundCollider::get_unique_normals()")
+            .expect("CompoundCollider::get_unique_normals()")
+            .expect("should never be contested");
+        if !unique_normals_cached.is_empty() {
+            return unique_normals_cached.clone();
         }
 
         let mut normals = BTreeMap::<Vec2, BTreeMap<UnorderedPair<Vec2>, i32>>::new();
@@ -1283,11 +1297,12 @@ impl CompoundCollider {
                 *normals.entry(normal).or_default().entry(edge).or_default() += 1;
             }
         }
-        normals
+        *unique_normals_cached = normals
             .iter()
             .filter(|(_, edges)| edges.values().all(|i| *i > 0))
             .map(|(normal, _)| *normal)
-            .collect()
+            .collect();
+        unique_normals_cached.clone()
     }
 
     fn inner_colliders(&self) -> Vec<ConvexCollider> {
@@ -1359,6 +1374,27 @@ impl CompoundCollider {
     }
 }
 
+impl Clone for CompoundCollider {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            override_normals: self.override_normals.clone(),
+            unique_normals_cached: GgMutex::new(
+                self.unique_normals_cached
+                    .try_lock("CompoundCollider::clone()")
+                    .expect("CompoundCollider::clone()")
+                    .expect("should never be contested")
+                    .clone(),
+            ),
+        }
+    }
+}
+impl Debug for CompoundCollider {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompoundCollider({:?})", self.inner)
+    }
+}
+
 impl Collider for CompoundCollider {
     fn as_any(&self) -> &dyn Any {
         self
@@ -1415,6 +1451,7 @@ impl Collider for CompoundCollider {
         Self {
             inner: new_inner,
             override_normals: self.override_normals.clone(),
+            unique_normals_cached: GgMutex::new(Vec::new()),
         }
     }
 
@@ -1436,6 +1473,7 @@ impl Collider for CompoundCollider {
         Self {
             inner: new_inner,
             override_normals: self.override_normals.clone(),
+            unique_normals_cached: GgMutex::new(Vec::new()),
         }
     }
 
@@ -1883,4 +1921,5 @@ use crate::core::render::VertexDepth;
 use crate::core::update::RenderContext;
 use crate::gui::EditCell;
 use crate::util::canvas::Canvas;
+use crate::util::gg_sync::GgMutex;
 pub use GgInternalCollisionShape as CollisionShape;
