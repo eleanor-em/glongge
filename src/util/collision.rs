@@ -190,9 +190,7 @@ mod polygon {
         hull
     }
     pub fn adjust_for_containment(self_proj: &Range<f32>, other_proj: &Range<f32>) -> f32 {
-        if gg_range::contains_f32(self_proj, other_proj)
-            || gg_range::contains_f32(other_proj, self_proj)
-        {
+        if gg_range::overlaps_f32(self_proj, other_proj) {
             let starts = (self_proj.start - other_proj.start).abs();
             let ends = (self_proj.end - other_proj.end).abs();
             f32::min(starts, ends)

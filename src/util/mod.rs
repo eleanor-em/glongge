@@ -469,29 +469,27 @@ pub mod gg_range {
     use crate::core::config::EPSILON;
     use std::ops::Range;
 
-    pub fn contains_f32(r1: &Range<f32>, r2: &Range<f32>) -> bool {
-        r1.start <= r2.start && r1.end >= r2.end
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    pub fn overlaps_f32(r1: &Range<f32>, r2: &Range<f32>) -> bool {
+        ((r1.start <= r2.start) & (r1.end >= r2.end))
+            | ((r2.start <= r1.start) & (r2.end >= r1.end))
     }
 
-    pub fn overlap_f32(r1: &Range<f32>, r2: &Range<f32>) -> Option<Range<f32>> {
-        if r1.start > r2.start {
-            return overlap_f32(r2, r1);
-        }
-        if r1.end < r2.start {
-            return None;
-        }
-
-        let start = r2.start;
-        let end = f32::min(r1.end, r2.end);
-        if (start - end).abs() < EPSILON {
-            None
-        } else {
-            Some(start..end)
-        }
-    }
-
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     pub fn overlap_len_f32(r1: &Range<f32>, r2: &Range<f32>) -> Option<f32> {
-        overlap_f32(r1, r2).map(|r| r.end - r.start)
+        let start = if r1.start > r2.start {
+            r1.start
+        } else {
+            r2.start
+        };
+        let end = if r1.end < r2.end { r1.end } else { r2.end };
+        if end - start > EPSILON {
+            Some(end - start)
+        } else {
+            None
+        }
     }
 }
 
