@@ -73,42 +73,53 @@ impl<'a> SwapchainBuilder<'a> {
 
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> Result<Swapchain> {
-        let surface_format =
-            self.ctx.get_physical_device_surface_formats()?
-                .into_iter()
-                .find(self.filter_surface_format)
-                .context("get_physical_device_surface_formats(): could not find surface format matching filter")?;
-        let surface_capabilities = self.ctx.get_physical_device_surface_capabilities()?;
-        let desired_image_count = self.desired_image_count(surface_capabilities);
-        let desired_frames_in_flight = self.desired_frames_in_flight(surface_capabilities)?;
-        let surface_resolution = match surface_capabilities.current_extent.width {
-            u32::MAX => vk::Extent2D::default()
-                .width(self.window.inner_size().width)
-                .height(self.window.inner_size().height),
-            _ => surface_capabilities.current_extent,
-        };
+        unsafe {
+            let surface_format = self.ctx
+                        .surface_loader
+                        .get_physical_device_surface_formats(self.ctx.physical_device, self.ctx.surface)?
+                    .into_iter()
+                    .find(self.filter_surface_format)
+                    .context("get_physical_device_surface_formats(): could not find surface format matching filter")?;
+            let surface_capabilities = self
+                .ctx
+                .surface_loader
+                .get_physical_device_surface_capabilities(
+                    self.ctx.physical_device,
+                    self.ctx.surface,
+                )?;
+            let desired_image_count = self.desired_image_count(surface_capabilities);
+            let desired_frames_in_flight = self.desired_frames_in_flight(surface_capabilities)?;
+            let surface_resolution = match surface_capabilities.current_extent.width {
+                u32::MAX => vk::Extent2D::default()
+                    .width(self.window.inner_size().width)
+                    .height(self.window.inner_size().height),
+                _ => surface_capabilities.current_extent,
+            };
 
-        let pre_transform = if surface_capabilities
-            .supported_transforms
-            .contains(vk::SurfaceTransformFlagsKHR::IDENTITY)
-        {
-            vk::SurfaceTransformFlagsKHR::IDENTITY
-        } else {
-            surface_capabilities.current_transform
-        };
-        let present_mode = {
-            self.ctx
-                .get_physical_device_surface_present_modes()?
+            let pre_transform = if surface_capabilities
+                .supported_transforms
+                .contains(vk::SurfaceTransformFlagsKHR::IDENTITY)
+            {
+                vk::SurfaceTransformFlagsKHR::IDENTITY
+            } else {
+                surface_capabilities.current_transform
+            };
+            let present_mode = self
+                .ctx
+                .surface_loader
+                .get_physical_device_surface_present_modes(
+                    self.ctx.physical_device,
+                    self.ctx.surface,
+                )?
                 .into_iter()
                 .min_by_key(tv::present_mode_key)
-                .context("get_physical_device_surface_present_modes() returned empty?")?
-        };
-        info!("using present mode: {present_mode:?}");
+                .context("get_physical_device_surface_present_modes() returned empty?")?;
+            info!("using present mode: {present_mode:?}");
 
-        let swapchain_loader = self.ctx.create_swapchain_device();
-        let swapchain_khr = unsafe {
-            swapchain_loader.create_swapchain(
+            let swapchain_loader = self.ctx.create_swapchain_device();
+            let swapchain_khr = swapchain_loader.create_swapchain(
                 &self.swapchain_create_info.unwrap_or(
+                    // TODO: study settings here.
                     vk::SwapchainCreateInfoKHR::default()
                         .surface(self.ctx.surface())
                         .min_image_count(desired_image_count)
@@ -124,17 +135,15 @@ impl<'a> SwapchainBuilder<'a> {
                         .image_array_layers(1),
                 ),
                 None,
-            )?
-        };
+            )?;
 
-        let images =
-            SwapchainImages::new(&self.ctx, swapchain_khr, &swapchain_loader, surface_format)?;
+            let images =
+                SwapchainImages::new(&self.ctx, swapchain_khr, &swapchain_loader, surface_format)?;
 
-        let mut present_semaphores = Vec::new();
-        let mut submit_semaphores = Vec::new();
-        let mut acquire_fences = Vec::new();
-        let mut present_fences = Vec::new();
-        unsafe {
+            let mut present_semaphores = Vec::new();
+            let mut submit_semaphores = Vec::new();
+            let mut acquire_fences = Vec::new();
+            let mut present_fences = Vec::new();
             for _ in 0..desired_image_count {
                 present_semaphores.push(
                     self.ctx
@@ -166,11 +175,9 @@ impl<'a> SwapchainBuilder<'a> {
                         .create_fence(&present_fence_create_info, None)?,
                 );
             }
-        }
 
-        let mut present_command_pools = Vec::new();
-        let mut present_command_buffers = Vec::new();
-        unsafe {
+            let mut present_command_pools = Vec::new();
+            let mut present_command_buffers = Vec::new();
             for _ in 0..desired_frames_in_flight {
                 let command_pool = self.ctx.device().create_command_pool(
                     &vk::CommandPoolCreateInfo::default()
@@ -188,31 +195,31 @@ impl<'a> SwapchainBuilder<'a> {
                     )?,
                 );
             }
+
+            let frame_index = FrameIndex::new(desired_frames_in_flight);
+            let image_index = PresentIndex::new();
+            let last_frame_index = AtomicUsize::new(frame_index.current);
+
+            Ok(Swapchain {
+                ctx: self.ctx,
+                khr: swapchain_khr,
+                loader: swapchain_loader,
+                surface_format,
+                surface_resolution,
+                images,
+                frames_in_flight: desired_frames_in_flight,
+                present_semaphores,
+                submit_semaphores,
+                acquire_fences,
+                present_fences,
+                present_command_pools,
+                present_command_buffers,
+                frame_index,
+                image_index,
+                current_frame_index: Arc::new(last_frame_index),
+                did_vk_free: AtomicBool::new(false),
+            })
         }
-
-        let frame_index = FrameIndex::new(desired_frames_in_flight);
-        let image_index = PresentIndex::new();
-        let last_frame_index = AtomicUsize::new(frame_index.current);
-
-        Ok(Swapchain {
-            ctx: self.ctx,
-            khr: swapchain_khr,
-            loader: swapchain_loader,
-            surface_format,
-            surface_resolution,
-            images,
-            frames_in_flight: desired_frames_in_flight,
-            present_semaphores,
-            submit_semaphores,
-            acquire_fences,
-            present_fences,
-            present_command_pools,
-            present_command_buffers,
-            frame_index,
-            image_index,
-            current_frame_index: Arc::new(last_frame_index),
-            did_vk_free: AtomicBool::new(false),
-        })
     }
 }
 

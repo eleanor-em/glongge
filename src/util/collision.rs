@@ -1113,7 +1113,7 @@ impl CompoundCollider {
         Ok((w, h, vertices))
     }
 
-    // TODO
+    // TODO: clean up?
     #[allow(clippy::too_many_lines)]
     fn extract_pixel_outline(
         data: &[Vec<Colour>],

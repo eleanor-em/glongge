@@ -567,7 +567,7 @@ impl GuiRenderHandler {
     ) -> Result<Self> {
         let gui_vertex_buffer = VertexBuffer::new(ctx.clone(), swapchain, 100 * 1024)?;
         let gui_index_buffer = IndexBuffer32::new(ctx.clone(), swapchain, 100 * 1024)?;
-        let gui_shader = Arc::new(GuiVertFragShader::new(ctx.clone())?);
+        let gui_shader = Arc::new(GuiVertFragShader::new(ctx.clone(), &texture_handler)?);
         let gui_pipeline = Pipeline::new(
             ctx.clone(),
             swapchain,
@@ -642,10 +642,7 @@ impl GuiRenderHandler {
         {
             if let Some(last_font_texture) = self.font_texture.take() {
                 self.texture_handler
-                    .free_internal_texture(last_font_texture.id())?;
-            } else {
-                self.gui_shader
-                    .init_font_texture(self.next_font_textures.front().unwrap());
+                    .free_internal_texture(&last_font_texture)?;
             }
             self.font_texture = self.next_font_textures.pop_front();
         }
@@ -656,14 +653,18 @@ impl GuiRenderHandler {
             .into_iter()
             .filter_map(|mesh| match mesh.primitive {
                 epaint::Primitive::Mesh(m) => Some(m),
-                epaint::Primitive::Callback(_) => unimplemented!(),
+                epaint::Primitive::Callback(cb) => {
+                    error!("epaint::Primitive::Callback() not implemented: {cb:?}");
+                    None
+                }
             })
             .collect_vec();
-        if self.next_font_textures.is_empty() && !next_meshes.is_empty() {
+        if next_meshes.is_empty() && self.is_gui_enabled {
+            // No updates to meshes since the last call to pre_render_update().
+            self.next_meshes = self.last_meshes.clone();
+        } else {
             self.last_meshes = self.next_meshes.drain(..).collect_vec();
             self.next_meshes = next_meshes;
-        } else {
-            self.next_meshes = self.last_meshes.clone();
         }
         self.gui_vertex_buffer.write(
             &self
@@ -679,12 +680,7 @@ impl GuiRenderHandler {
                 .flat_map(|m| m.indices.clone())
                 .collect_vec(),
         )?;
-        if self.font_texture.is_some() {
-            Ok(true)
-        } else {
-            info!("GUI: font texture not ready yet, do not render");
-            Ok(false)
-        }
+        Ok(true)
     }
 
     fn update_font_texture(
@@ -796,8 +792,9 @@ impl GuiRenderHandler {
         swapchain: &Swapchain,
     ) -> Result<()> {
         unsafe {
-            self.gui_shader
-                .update_font_texture(self.font_texture.as_ref().unwrap(), swapchain);
+            if let Some(font_texture) = self.font_texture.as_ref() {
+                self.gui_shader.update_font_texture(font_texture, swapchain);
+            }
             swapchain.cmd_begin_rendering(command_buffer, None);
             let viewport = self.viewport.lock();
             let mut vert_bytes = (viewport.physical_width() / viewport.combined_scale_factor()
@@ -850,16 +847,10 @@ impl GuiRenderHandler {
         self.gui_index_buffer.vk_free();
         self.gui_vertex_buffer.vk_free();
         if let Some(font_texture) = self.font_texture.as_ref() {
-            gg_err::log_err_and_ignore(
-                self.texture_handler
-                    .free_internal_texture(font_texture.id()),
-            );
+            gg_err::log_err_and_ignore(self.texture_handler.free_internal_texture(font_texture));
         }
         for font_texture in &self.next_font_textures {
-            gg_err::log_err_and_ignore(
-                self.texture_handler
-                    .free_internal_texture(font_texture.id()),
-            );
+            gg_err::log_err_and_ignore(self.texture_handler.free_internal_texture(font_texture));
         }
     }
 }

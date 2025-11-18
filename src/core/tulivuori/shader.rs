@@ -1,7 +1,8 @@
-use crate::core::config::FONT_SAMPLE_RATIO;
-use crate::core::tulivuori::swapchain::Swapchain;
-use crate::core::tulivuori::texture::TvInternalTexture;
-use crate::{check_false, core::tulivuori::TvWindowContext};
+use crate::resource::texture::TextureHandler;
+use crate::{
+    check_false, core::tulivuori::TvWindowContext, core::tulivuori::swapchain::Swapchain,
+    core::tulivuori::texture::TvInternalTexture,
+};
 use anyhow::{Context, Result};
 use ash::{util::read_spv, vk};
 use egui::epaint;
@@ -128,23 +129,24 @@ pub struct GuiVertFragShader {
 
 impl GuiVertFragShader {
     #[allow(clippy::too_many_lines)]
-    pub fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
+    pub fn new(ctx: Arc<TvWindowContext>, texture_handler: &Arc<TextureHandler>) -> Result<Self> {
         unsafe {
             let sampler = ctx.device().create_sampler(
-                &vk::SamplerCreateInfo {
-                    mag_filter: vk::Filter::LINEAR,
-                    min_filter: vk::Filter::LINEAR,
-                    min_lod: 0.0,
-                    max_lod: FONT_SAMPLE_RATIO.log2() + 1.0,
-                    mipmap_mode: vk::SamplerMipmapMode::LINEAR,
-                    address_mode_u: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    address_mode_v: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    address_mode_w: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    max_anisotropy: 1.0,
-                    border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-                    compare_op: vk::CompareOp::NEVER,
-                    ..Default::default()
-                },
+                &vk::SamplerCreateInfo::default()
+                    // Pixel-perfect filtering is not desirable for the GUI.
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::MIRRORED_REPEAT)
+                    .address_mode_v(vk::SamplerAddressMode::MIRRORED_REPEAT)
+                    .anisotropy_enable(true)
+                    .max_anisotropy(
+                        ctx.physical_device_properties()
+                            .limits
+                            .max_sampler_anisotropy,
+                    )
+                    .min_lod(0.0)
+                    .max_lod(vk::LOD_CLAMP_NONE),
                 None,
             )?;
 
@@ -168,21 +170,16 @@ impl GuiVertFragShader {
                 &vk::DescriptorSetLayoutCreateInfo::default()
                     .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
                     .bindings(&[
-                        vk::DescriptorSetLayoutBinding {
-                            binding: 0,
-                            descriptor_type: vk::DescriptorType::SAMPLER,
-                            descriptor_count: 1,
-                            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                            p_immutable_samplers: &raw const sampler,
-                            ..Default::default()
-                        },
-                        vk::DescriptorSetLayoutBinding {
-                            binding: 1,
-                            descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
-                            descriptor_count: 2,
-                            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                            ..Default::default()
-                        },
+                        vk::DescriptorSetLayoutBinding::default()
+                            .binding(0)
+                            .descriptor_type(vk::DescriptorType::SAMPLER)
+                            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                            .immutable_samplers(&[sampler]),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .binding(1)
+                            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                            .descriptor_count(2)
+                            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
                     ])
                     .push_next(
                         &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
@@ -246,7 +243,7 @@ impl GuiVertFragShader {
                 ],
             )?;
 
-            Ok(Self {
+            let rv = Self {
                 inner,
                 sampler,
                 descriptor_pool,
@@ -254,7 +251,11 @@ impl GuiVertFragShader {
                 descriptor_set,
                 pipeline_layout,
                 did_vk_free: AtomicBool::new(false),
-            })
+            };
+            let blank = texture_handler.get_blank_texture()?;
+            rv.update_font_texture_inner(&blank, 0);
+            rv.update_font_texture_inner(&blank, 1);
+            Ok(rv)
         }
     }
 
@@ -279,10 +280,6 @@ impl GuiVertFragShader {
                 &[],
             );
         }
-    }
-    pub fn init_font_texture(&self, font_texture: &Arc<TvInternalTexture>) {
-        self.update_font_texture_inner(font_texture, 0);
-        self.update_font_texture_inner(font_texture, 1);
     }
     pub fn update_font_texture(
         &self,

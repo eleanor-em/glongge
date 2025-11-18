@@ -11,7 +11,7 @@ pub const UPDATE_THROTTLE_NS: u128 = 100_000;
 pub const MUTEX_THROTTLE_NS: u64 = 500;
 pub const USE_DEBUG_GUI: bool = true;
 pub const EPSILON: f32 = 1e-5;
-pub const DISABLE_SOUND: bool = false;
+pub const DISABLE_SOUND: bool = true;
 
 pub const USE_VSYNC: bool = true;
 pub const SYNC_UPDATE_TO_RENDER: bool = false;

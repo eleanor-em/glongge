@@ -2754,7 +2754,6 @@ impl ObjectContext<'_> {
             .pending_move
             .insert(target_id, new_parent_id)
         {
-            // TODO: verbose!
             info!(
                 "ObjectContext::reparent_inner(): inserted ({:?}, {:?}) but already had {:?}",
                 target_id, new_parent_id, existing_new_parent_id

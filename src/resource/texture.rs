@@ -287,7 +287,6 @@ impl MaterialHandler {
     }
 }
 
-#[derive(Clone)]
 pub struct TextureHandler {
     // TODO: better lock design (avoid constant locking and unlocking).
     inner: GgMutex<TextureHandlerInner>,
@@ -295,13 +294,13 @@ pub struct TextureHandler {
 }
 
 impl TextureHandler {
-    pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<Self> {
+    pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<Arc<Self>> {
         let inner = TextureHandlerInner::new(ctx)?;
         let pipeline_layout = inner.texture_manager.pipeline_layout();
-        Ok(Self {
+        Ok(Arc::new(Self {
             inner: GgMutex::new(inner),
             pipeline_layout,
-        })
+        }))
     }
 
     pub(crate) fn create_internal_texture(
@@ -322,15 +321,23 @@ impl TextureHandler {
                 .create_texture_unbound(extent, format, image_data, ready_signal)
         }
     }
-    pub(crate) fn free_internal_texture(&self, id: TextureId) -> Result<()> {
+    pub(crate) fn free_internal_texture(&self, texture: &Arc<TvInternalTexture>) -> Result<()> {
         self.lock_inner("free_internal_texture")?
             .texture_manager
-            .free_internal_texture(id);
+            .free_internal_texture(texture.id());
         Ok(())
     }
 
     fn lock_inner(&self, by: &'static str) -> Result<MutexGuard<'_, TextureHandlerInner>> {
         self.inner.spin_lock_for(Duration::from_secs(1), by)
+    }
+
+    pub fn get_blank_texture(&self) -> Result<Arc<TvInternalTexture>> {
+        Ok(self
+            .lock_inner("get_blank_texture")?
+            .texture_manager
+            .get_blank_texture()
+            .clone())
     }
 
     fn load_file_inner(filename: &str) -> Result<RawTexture> {

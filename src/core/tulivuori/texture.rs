@@ -73,18 +73,17 @@ impl TvInternalTexture {
             allocator.unmap_memory(&mut image_buffer_alloc);
 
             let (tex_image, tex_alloc) = allocator.create_image(
-                &vk::ImageCreateInfo {
-                    image_type: vk::ImageType::TYPE_2D,
-                    format,
-                    extent: image_extent.into(),
-                    mip_levels: 1,
-                    array_layers: 1,
-                    samples: vk::SampleCountFlags::TYPE_1,
-                    tiling: vk::ImageTiling::OPTIMAL,
-                    usage: vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-                    sharing_mode: vk::SharingMode::EXCLUSIVE,
-                    ..Default::default()
-                },
+                // TODO: study settings here.
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .format(format)
+                    .extent(image_extent.into())
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
                 &vk_mem::AllocationCreateInfo {
                     usage: vk_mem::MemoryUsage::AutoPreferDevice,
                     ..Default::default()
@@ -168,7 +167,7 @@ struct RawMaterial {
     dummy3: u32,
 }
 
-pub(crate) struct TextureManager {
+pub struct TextureManager {
     ctx: Arc<TvWindowContext>,
     sampler: vk::Sampler,
     descriptor_pool: vk::DescriptorPool,
@@ -183,6 +182,7 @@ pub(crate) struct TextureManager {
     is_upload_fence_in_use: bool,
 
     next_texture_id: u32,
+    blank_texture: Option<Arc<TvInternalTexture>>,
     pending_textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
     uploading_textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
     textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
@@ -198,23 +198,24 @@ pub(crate) struct TextureManager {
 
 impl TextureManager {
     #[allow(clippy::too_many_lines)]
-    pub fn new(ctx: Arc<TvWindowContext>) -> Result<TextureManager> {
+    pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<TextureManager> {
         unsafe {
             let sampler = ctx.device().create_sampler(
-                &vk::SamplerCreateInfo {
-                    mag_filter: vk::Filter::NEAREST,
-                    min_filter: vk::Filter::LINEAR,
-                    min_lod: 0.0,
-                    max_lod: FONT_SAMPLE_RATIO.log2() + 1.0,
-                    mipmap_mode: vk::SamplerMipmapMode::LINEAR,
-                    address_mode_u: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    address_mode_v: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    address_mode_w: vk::SamplerAddressMode::MIRRORED_REPEAT,
-                    max_anisotropy: 1.0,
-                    border_color: vk::BorderColor::FLOAT_OPAQUE_WHITE,
-                    compare_op: vk::CompareOp::NEVER,
-                    ..Default::default()
-                },
+                // TODO: really should use a separate sampler for fonts.
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::NEAREST)
+                    .min_filter(vk::Filter::LINEAR) // for fonts
+                    .min_lod(0.0)
+                    .max_lod(FONT_SAMPLE_RATIO.log2() + 1.0)
+                    .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                    .max_anisotropy(
+                        ctx.physical_device_properties()
+                            .limits
+                            .max_sampler_anisotropy,
+                    )
+                    .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE),
                 None,
             )?;
 
@@ -242,28 +243,21 @@ impl TextureManager {
                 &vk::DescriptorSetLayoutCreateInfo::default()
                     .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
                     .bindings(&[
-                        vk::DescriptorSetLayoutBinding {
-                            binding: 0,
-                            descriptor_type: vk::DescriptorType::STORAGE_BUFFER,
-                            descriptor_count: 1,
-                            stage_flags: vk::ShaderStageFlags::VERTEX,
-                            ..Default::default()
-                        },
-                        vk::DescriptorSetLayoutBinding {
-                            binding: 1,
-                            descriptor_type: vk::DescriptorType::SAMPLER,
-                            descriptor_count: 1,
-                            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                            p_immutable_samplers: &raw const sampler,
-                            ..Default::default()
-                        },
-                        vk::DescriptorSetLayoutBinding {
-                            binding: 2,
-                            descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
-                            descriptor_count: MAX_TEXTURE_COUNT as u32,
-                            stage_flags: vk::ShaderStageFlags::FRAGMENT,
-                            ..Default::default()
-                        },
+                        vk::DescriptorSetLayoutBinding::default()
+                            .binding(0)
+                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                            .descriptor_count(1)
+                            .stage_flags(vk::ShaderStageFlags::VERTEX),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .binding(1)
+                            .descriptor_type(vk::DescriptorType::SAMPLER)
+                            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                            .immutable_samplers(&[sampler]),
+                        vk::DescriptorSetLayoutBinding::default()
+                            .binding(2)
+                            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                            .descriptor_count(MAX_TEXTURE_COUNT as u32)
+                            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
                     ])
                     .push_next(
                         &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
@@ -333,6 +327,7 @@ impl TextureManager {
                 upload_fence,
                 is_upload_fence_in_use: false,
                 next_texture_id: 0,
+                blank_texture: None,
                 pending_textures: BTreeMap::new(),
                 uploading_textures: BTreeMap::new(),
                 textures: BTreeMap::new(),
@@ -345,8 +340,8 @@ impl TextureManager {
             };
 
             // Set up blank initial textures.
-            let blank = rv
-                .create_texture(
+            rv.blank_texture = Some(
+                rv.create_texture(
                     vk::Extent2D {
                         width: 1,
                         height: 1,
@@ -355,13 +350,14 @@ impl TextureManager {
                     &[255; 4],
                     Arc::new(AtomicBool::new(true)),
                 )?
-                .unwrap();
+                .expect("TextureManager::new(): failed to create blank texture"),
+            );
             rv.upload_all_pending()?;
 
             rv.descriptor_image_infos = vec![
                 vk::DescriptorImageInfo {
                     image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    image_view: blank.tex_image_view,
+                    image_view: rv.blank_texture.as_ref().unwrap().tex_image_view,
                     sampler,
                 };
                 MAX_TEXTURE_COUNT
@@ -461,6 +457,11 @@ impl TextureManager {
         self.pending_textures.insert(id, tex.clone());
         Ok(Some(tex))
     }
+    pub fn get_blank_texture(&self) -> &Arc<TvInternalTexture> {
+        self.blank_texture
+            .as_ref()
+            .expect("TextureManager::get_blank_texture(): blank texture missing")
+    }
 
     pub fn wait_complete_upload(&mut self) -> Result<bool> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
@@ -505,7 +506,7 @@ impl TextureManager {
         }
     }
 
-    pub fn is_anything_pending(&self) -> bool {
+    fn is_anything_pending(&self) -> bool {
         !self.pending_textures.is_empty() || self.materials_changed
     }
     pub fn upload_all_pending(&mut self) -> Result<()> {
@@ -548,6 +549,38 @@ impl TextureManager {
         }
     }
 
+    pub(crate) fn stage_materials(
+        &mut self,
+        materials: BTreeMap<MaterialId, Material>,
+    ) -> Result<()> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        let mut data = vec![RawMaterial::default(); MAX_MATERIAL_COUNT];
+        info_every_millis!(100, "staging {} material(s)", materials.len());
+        for (id, mat) in materials {
+            let entry = &mut data[id as usize];
+            entry.uv_top_left = mat
+                .area
+                .top_left()
+                .component_wise_div(mat.texture_extent)
+                .into();
+            entry.uv_bottom_right = mat
+                .area
+                .bottom_right()
+                .component_wise_div(mat.texture_extent)
+                .into();
+            entry.texture_id = mat.texture_id;
+        }
+        // TODO: write only part of the buffer?
+        self.material_staging_buffer
+            .write(&data, self.next_material_buffer_index)?;
+        self.advance_material_buffer_index();
+
+        Ok(())
+    }
+    fn advance_material_buffer_index(&mut self) {
+        self.materials_changed = true;
+        self.next_material_buffer_index = 1 - self.next_material_buffer_index;
+    }
     fn upload_materials(&mut self, command_buffer: vk::CommandBuffer) {
         unsafe {
             if self.materials_changed {
@@ -641,44 +674,14 @@ impl TextureManager {
         }
     }
 
-    pub fn pipeline_layout(&self) -> vk::PipelineLayout {
+    pub(crate) fn pipeline_layout(&self) -> vk::PipelineLayout {
         self.pipeline_layout
-    }
-
-    pub fn stage_materials(&mut self, materials: BTreeMap<MaterialId, Material>) -> Result<()> {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        let mut data = vec![RawMaterial::default(); MAX_MATERIAL_COUNT];
-        info_every_millis!(100, "staging {} material(s)", materials.len());
-        for (id, mat) in materials {
-            let entry = &mut data[id as usize];
-            entry.uv_top_left = mat
-                .area
-                .top_left()
-                .component_wise_div(mat.texture_extent)
-                .into();
-            entry.uv_bottom_right = mat
-                .area
-                .bottom_right()
-                .component_wise_div(mat.texture_extent)
-                .into();
-            entry.texture_id = mat.texture_id;
-        }
-        // TODO: write only part of the buffer?
-        self.material_staging_buffer
-            .write(&data, self.next_material_buffer_index)?;
-        self.advance_material_buffer_index();
-
-        Ok(())
-    }
-    fn advance_material_buffer_index(&mut self) {
-        self.materials_changed = true;
-        self.next_material_buffer_index = 1 - self.next_material_buffer_index;
     }
 
     pub fn is_texture_ready(&self, texture: TextureId) -> bool {
         self.textures.contains_key(&texture)
     }
-    pub fn is_texture_id_unused(&self, texture: TextureId) -> bool {
+    pub(crate) fn is_texture_id_unused(&self, texture: TextureId) -> bool {
         self.unused_texture_ids.contains(&texture)
     }
     pub(crate) fn get_internal_texture(
@@ -705,7 +708,7 @@ impl TextureManager {
         Some(rv)
     }
 
-    pub fn vk_free(&self) {
+    pub(crate) fn vk_free(&self) {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             self.ctx.device().device_wait_idle().unwrap();

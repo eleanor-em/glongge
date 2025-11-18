@@ -120,7 +120,6 @@ struct SoundHandlerInner {
     loaded_files: BTreeMap<String, SoundBufferResource>,
 }
 
-#[derive(Clone)]
 pub struct SoundHandler {
     _engine: SoundEngine,
     ctx: SoundContext,
@@ -129,20 +128,20 @@ pub struct SoundHandler {
 }
 
 impl SoundHandler {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Arc<Self>> {
         let engine = SoundEngine::new()
             // SoundEngine::new() returns Box<dyn Error> which is not Send, so expect() here.
             .map_err(|err| anyhow!("fyrox-sound error: SoundEngine::new(): {err:?}"))?;
         let ctx = SoundContext::new();
         engine.state().add_context(ctx.clone());
-        Ok(Self {
+        Ok(Arc::new(Self {
             _engine: engine,
             ctx,
             inner: Arc::new(Mutex::new(SoundHandlerInner {
                 loaded_files: BTreeMap::new(),
             })),
             join_handles: Arc::new(Mutex::new(Vec::new())),
-        })
+        }))
     }
 
     fn load_file_inner(

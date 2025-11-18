@@ -352,7 +352,6 @@ impl Font {
                 }
                 caret.x += dx;
                 // TODO: dubious; should really increment at the end, but this breaks stuff.
-                //  See above TODO.
                 glyph_ix += 1;
                 let mut glyph = self.inner.scaled_glyph(c);
                 glyph.position = caret.into();
