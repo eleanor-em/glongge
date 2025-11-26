@@ -205,8 +205,8 @@ impl TextureHandlerInner {
         }
     }
 
-    fn vk_free(&mut self) {
-        self.texture_manager.vk_free();
+    fn vk_free(&mut self) -> Result<()> {
+        self.texture_manager.vk_free()
     }
 }
 
@@ -693,11 +693,10 @@ impl TextureHandler {
         Ok(rv)
     }
 
-    pub fn vk_free(&self) {
+    pub fn vk_free(&self) -> Result<()> {
         self.inner
-            .try_lock("TextureHandler::vk_free()")
-            .expect("TextureHandler::vk_free()")
-            .expect("deadlock should be impossible (no other references should exist)")
-            .vk_free();
+            .try_lock("TextureHandler::vk_free()")?
+            .expect("contention should be impossible (no other references should exist)")
+            .vk_free()
     }
 }

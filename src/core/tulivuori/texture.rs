@@ -8,7 +8,7 @@ use crate::{
     core::tulivuori::{TvWindowContext, tv},
     resource::texture::{Material, MaterialId},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ash::{util::Align, vk};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
@@ -736,11 +736,15 @@ impl TextureManager {
         Some(rv)
     }
 
-    pub(crate) fn vk_free(&self) {
+    pub(crate) fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.material_device_buffer.vk_free();
-            self.material_staging_buffer.vk_free();
+            self.material_device_buffer
+                .vk_free()
+                .context("caused by: TextureManager::vk_free()")?;
+            self.material_staging_buffer
+                .vk_free()
+                .context("caused by: TextureManager::vk_free()")?;
             for texture in self.textures.values() {
                 texture.vk_free();
             }
@@ -759,6 +763,7 @@ impl TextureManager {
                 .destroy_descriptor_pool(self.descriptor_pool, None);
             self.ctx.device().destroy_sampler(self.sampler, None);
         }
+        Ok(())
     }
 }
 

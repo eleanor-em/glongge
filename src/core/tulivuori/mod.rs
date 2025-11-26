@@ -144,7 +144,7 @@ impl TvWindowContext {
             .try_lock_short(by)?
             .as_ref()
             .cloned()
-            .unwrap())
+            .expect("TvWindowContext: allocator missing"))
     }
 
     pub(crate) fn create_swapchain_device(&self) -> ash::khr::swapchain::Device {
@@ -152,15 +152,16 @@ impl TvWindowContext {
         ash::khr::swapchain::Device::new(&self.instance, &self.device)
     }
 
-    pub fn vk_free(&self) {
+    pub fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
-            self.device.device_wait_idle().unwrap();
+            self.device
+                .device_wait_idle()
+                .context("TvWindowContext::vk_free()")?;
             self.allocator
-                .try_lock_short("TvWindowContext::vk_free()")
-                .unwrap()
+                .try_lock_short("TvWindowContext::vk_free()")?
                 .take()
-                .unwrap();
+                .expect("TvWindowContext: allocator missing");
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
             if let Some(debug_handler) = self.debug_handler.as_ref() {
@@ -168,6 +169,7 @@ impl TvWindowContext {
             }
             self.instance.destroy_instance(None);
         }
+        Ok(())
     }
     pub fn did_vk_free(&self) -> bool {
         self.did_vk_free.load(Ordering::Relaxed)
@@ -179,13 +181,15 @@ impl Drop for TvWindowContext {
         if !self.did_vk_free.load(Ordering::Relaxed) {
             error!("leaked resource: TvWindowContext");
             // vk_mem uses RAII for freeing resources, which could crash in this case.
-            std::mem::forget(
-                self.allocator
-                    .try_lock_short("TvWindowContext::drop()")
-                    .unwrap()
-                    .take()
-                    .unwrap(),
-            );
+            if let Some(mut allocator) =
+                gg_err::log_and_ok(self.allocator.try_lock_short("TvWindowContext::drop()"))
+            {
+                if let Some(allocator) = allocator.take() {
+                    std::mem::forget(allocator);
+                } else {
+                    error!("TvWindowContext::drop(): missing allocator");
+                }
+            }
         }
     }
 }
@@ -209,7 +213,7 @@ impl Default for TvWindowContextBuilder {
 impl TvWindowContextBuilder {
     pub fn new() -> TvWindowContextBuilder {
         TvWindowContextBuilder {
-            app_name: CString::from_str("tulivuori").unwrap(),
+            app_name: CString::from_str("tulivuori").unwrap_or_else(|_| unreachable!()),
             instance_extension_names: Vec::new(),
             logical_device_extension_names: Vec::new(),
             flag_add_validation_layers: false,
@@ -875,11 +879,14 @@ struct WindowEventHandlerInner {
     render_count: usize,
 }
 impl WindowEventHandlerInner {
-    fn handle_window_events(&mut self) {
+    fn handle_window_events(&mut self) -> Result<()> {
         while let Ok(event) = self.window_event_rx.try_recv() {
             let _response = self.egui_state.on_window_event(&self.window.inner, &event);
             if event == WindowEvent::CloseRequested {
-                self.render_handler.take().unwrap().vk_free();
+                self.render_handler
+                    .take()
+                    .context("handle_window_events(): missing render_handler")?
+                    .vk_free()?;
                 std::process::exit(0);
             }
         }
@@ -887,7 +894,6 @@ impl WindowEventHandlerInner {
             // Since scale_factor is given by winit, we expect an exact comparison to work.
             #[allow(clippy::float_cmp)]
             if self.winit_scale_factor_for_logging != new_scale_factor {
-                // TODO: verbose_every_seconds!
                 info_every_seconds!(
                     1,
                     "WindowEvent::ScaleFactorChanged: {} -> {}: recreating swapchain",
@@ -905,18 +911,19 @@ impl WindowEventHandlerInner {
             );
             // self.recreate_swapchain().unwrap();
         }
+        Ok(())
     }
 
-    fn render_update(&mut self) {
-        self.render_handler.as_ref().unwrap().wait_update_done();
-        self.handle_window_events();
-
-        self.render_handler
+    fn render_update(&mut self) -> Result<()> {
+        self.handle_window_events()?;
+        let render_handler = self
+            .render_handler
             .as_mut()
-            .unwrap()
-            .render_update(self.render_count, &mut self.egui_state)
-            .unwrap();
+            .context("render_update() missing render_handler")?;
+        render_handler.wait_update_done();
+        render_handler.render_update(self.render_count, &mut self.egui_state)?;
         self.render_count += 1;
+        Ok(())
     }
 }
 
@@ -990,7 +997,10 @@ where
     ) -> Result<()> {
         let window = GgWindow::new(event_loop, self.create_info.window_size)?;
         let ctx = TvWindowContextBuilder::new()
-            .with_app_name(CString::from_str("ash-noodling").unwrap())
+            .with_app_name(
+                CString::from_str("ash-noodling")
+                    .context("WindowEventHandler::create_inner(): failed to set app_name")?,
+            )
             .with_flag_debug_tools()
             .with_flag_validation_layers()
             .with_flag_verbose_logging()
@@ -1047,7 +1057,7 @@ where
                 render_count: 0,
             };
             loop {
-                inner.render_update();
+                inner.render_update().expect("render_update() failed");
             }
         });
         Ok(())
@@ -1094,7 +1104,6 @@ where
                 self.scale_factor_tx.send(scale_factor as f32).unwrap();
             }
             WindowEvent::Resized(physical_size) => {
-                // TODO: verbose_every_seconds!
                 info_every_seconds!(
                     1,
                     "WindowEvent::Resized: {:?}: recreating swapchain",

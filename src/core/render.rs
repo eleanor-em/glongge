@@ -11,7 +11,6 @@ use crate::gui::GuiContext;
 use crate::resource::ResourceHandler;
 use crate::resource::texture::{MaterialId, TextureHandler};
 use crate::shader::{ShaderId, SpriteVertex, vertex};
-use crate::util::gg_err;
 use crate::util::gg_sync::GgMutex;
 use ash::vk;
 use egui::epaint;
@@ -129,7 +128,6 @@ pub struct RenderFrame<'a> {
 
 impl RenderFrame<'_> {
     fn for_shader(&self, _id: ShaderId) -> ShaderRenderFrame<'_> {
-        // TODO: we could probably borrow shader_execs somehow.
         let shader_execs = self
             .shader_execs
             .clone()
@@ -540,14 +538,26 @@ impl RenderHandler {
         }
     }
 
-    pub fn vk_free(&self) {
-        self.gui.vk_free();
-        self.pipeline.vk_free();
+    pub fn vk_free(&self) -> Result<()> {
+        self.gui
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
+        self.pipeline
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
         self.shader.vk_free();
-        self.vertex_buffer.vk_free();
-        self.resource_handler.texture.vk_free();
+        self.vertex_buffer
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
+        self.resource_handler
+            .texture
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
         self.swapchain.vk_free();
-        self.ctx.vk_free();
+        self.ctx
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
+        Ok(())
     }
 }
 
@@ -803,7 +813,9 @@ impl GuiRenderHandler {
                         false,
                         Arc::new(AtomicBool::new(false)),
                     )?
-                    .context("GuiRenderHandler::update_font_texture(): failed to create texture")?,
+                    .context(
+                        "GuiRenderHandler::update_font_texture(): no more textures available",
+                    )?,
             );
         } else {
             check_is_none!(image_pos);
@@ -816,7 +828,7 @@ impl GuiRenderHandler {
                         false,
                         Arc::new(AtomicBool::new(false)),
                     )?
-                    .unwrap(),
+                    .context("GuiRenderHandler::update_font_texture(): first font texture: no more textures available")?,
             );
         }
         Ok(())
@@ -878,17 +890,24 @@ impl GuiRenderHandler {
         }
     }
 
-    fn vk_free(&self) {
-        self.gui_pipeline.vk_free();
+    fn vk_free(&self) -> Result<()> {
+        self.gui_pipeline
+            .vk_free()
+            .context("caused by: GuiRenderHandler::vk_free()")?;
         self.gui_shader.vk_free();
-        self.gui_index_buffer.vk_free();
-        self.gui_vertex_buffer.vk_free();
+        self.gui_index_buffer
+            .vk_free()
+            .context("caused by: GuiRenderHandler::vk_free()")?;
+        self.gui_vertex_buffer
+            .vk_free()
+            .context("caused by: RenderHandler::vk_free()")?;
         if let Some(font_texture) = self.font_texture.as_ref() {
-            gg_err::log_err_and_ignore(self.texture_handler.free_internal_texture(font_texture));
+            self.texture_handler.free_internal_texture(font_texture)?;
         }
         for font_texture in &self.next_font_textures {
-            gg_err::log_err_and_ignore(self.texture_handler.free_internal_texture(font_texture));
+            self.texture_handler.free_internal_texture(font_texture)?;
         }
+        Ok(())
     }
 }
 

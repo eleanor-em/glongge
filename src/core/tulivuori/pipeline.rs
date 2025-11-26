@@ -3,7 +3,7 @@ use crate::{
     check_eq, check_false, core::tulivuori::TvViewport, core::tulivuori::TvWindowContext,
     core::tulivuori::swapchain::Swapchain,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ash::vk;
 use std::{
     sync::Arc,
@@ -146,13 +146,18 @@ impl Pipeline {
         }
     }
 
-    pub fn vk_free(&self) {
+    pub fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
+            self.ctx
+                .device()
+                .device_wait_idle()
+                .context("caused by: Pipeline::vk_free()")?;
             for pipeline in &self.graphics_pipelines {
                 self.ctx.device().destroy_pipeline(*pipeline, None);
             }
         }
+        Ok(())
     }
 }
 

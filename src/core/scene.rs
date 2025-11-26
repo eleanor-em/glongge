@@ -79,7 +79,7 @@ impl InternalScene {
     fn run_update(&mut self) -> Result<Option<SceneHandlerInstruction>> {
         self.update_handler
             .as_mut()
-            .unwrap()
+            .with_context(|| format!("InternalScene({:?}): not initialised", self.name))?
             .run_update()
             .with_context(|| format!("scene exited with error: {:?}", self.name))
     }
@@ -310,11 +310,14 @@ impl SceneHandler {
         let instruction = self
             .current_scene
             .as_ref()
-            .unwrap()
+            .context("SceneHandler::run_update() missing scene")?
             .borrow_mut()
             .run_update()?;
         match instruction {
-            Some(SceneHandlerInstruction::Exit) => std::process::exit(0),
+            Some(SceneHandlerInstruction::Exit) => {
+                // TODO: graceful exit, send instruction to WindowEventHandlerInner?
+                std::process::exit(0)
+            }
             Some(SceneHandlerInstruction::Goto(SceneDestination {
                 name: next_name,
                 entrance_id: next_entrance_id,

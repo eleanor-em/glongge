@@ -64,15 +64,15 @@ impl<T: Copy> GenericDeviceBuffer<T> {
         self.buffer_alloc_vec[0].size()
     }
 
-    pub fn vk_free(&self) {
+    pub fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx
-                    .allocator("GenericDeviceBuffer::vk_free")
-                    .unwrap()
+                    .allocator("GenericDeviceBuffer::vk_free()")?
                     .destroy_buffer(buffer, alloc.as_mut());
             }
+            Ok(())
         }
     }
 }
@@ -162,16 +162,16 @@ impl<T: Copy> GenericBuffer<T> {
         self.buffer_alloc_vec[0].size()
     }
 
-    pub fn vk_free(&self) {
+    pub fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx
-                    .allocator("GenericBuffer::vk_free")
-                    .unwrap()
+                    .allocator("GenericBuffer::vk_free")?
                     .destroy_buffer(buffer, alloc.as_mut());
             }
         }
+        Ok(())
     }
 }
 
@@ -213,8 +213,10 @@ impl<T: Copy> SwapchainGenericBuffer<T> {
         self.inner.len()
     }
 
-    pub fn vk_free(&self) {
-        self.inner.vk_free();
+    pub fn vk_free(&self) -> Result<()> {
+        self.inner
+            .vk_free()
+            .context("caused by: SwapchainGenericBuffer::vk_free()")
     }
 }
 
@@ -251,8 +253,10 @@ impl<T: Copy> VertexBuffer<T> {
         }
     }
 
-    pub fn vk_free(&self) {
-        self.inner.vk_free();
+    pub fn vk_free(&self) -> Result<()> {
+        self.inner
+            .vk_free()
+            .context("caused by: VertexBuffer::vk_free()")
     }
 }
 
@@ -296,7 +300,9 @@ impl IndexBuffer32 {
         self.inner.len() == 0
     }
 
-    pub fn vk_free(&self) {
-        self.inner.vk_free();
+    pub fn vk_free(&self) -> Result<()> {
+        self.inner
+            .vk_free()
+            .context("caused by: IndexBuffer32::vk_free()")
     }
 }
