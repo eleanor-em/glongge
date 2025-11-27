@@ -1,3 +1,4 @@
+use crate::util::gg_sync::GgMutex;
 use crate::{
     check_false, check_le,
     core::tulivuori::{TvWindowContext, tv},
@@ -7,9 +8,10 @@ use anyhow::{Context, Result, bail};
 use ash::{khr::swapchain, vk};
 use egui_winit::winit::window::Window;
 use itertools::Itertools;
+use parking_lot::MutexGuard;
 use std::{
     sync::Arc,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 use tracing::{error, info};
 
@@ -74,21 +76,30 @@ impl<'a> SwapchainBuilder<'a> {
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> Result<Swapchain> {
         unsafe {
-            let surface_format = self.ctx
-                        .surface_loader
-                        .get_physical_device_surface_formats(self.ctx.physical_device, self.ctx.surface)?
-                    .into_iter()
-                    .find(self.filter_surface_format)
-                    .context("get_physical_device_surface_formats(): could not find surface format matching filter")?;
+            let surface_format = self
+                .ctx
+                .surface_loader
+                .get_physical_device_surface_formats(self.ctx.physical_device, self.ctx.surface)
+                .context("SwapchainBuilder::build(): vkGetPhysicalDeviceSurfaceFormats() failed")?
+                .into_iter()
+                .find(self.filter_surface_format)
+                .context(
+                    "SwapchainBuilder::build(): could not find surface format matching filter",
+                )?;
             let surface_capabilities = self
                 .ctx
                 .surface_loader
                 .get_physical_device_surface_capabilities(
                     self.ctx.physical_device,
                     self.ctx.surface,
+                )
+                .context(
+                    "SwapchainBuilder::build(): vkGetPhysicalDeviceSurfaceCapabilities() failed",
                 )?;
             let desired_image_count = self.desired_image_count(surface_capabilities);
-            let desired_frames_in_flight = self.desired_frames_in_flight(surface_capabilities)?;
+            let desired_frames_in_flight = self
+                .desired_frames_in_flight(surface_capabilities)
+                .context("SwapchainBuilder::build()")?;
             let surface_resolution = match surface_capabilities.current_extent.width {
                 u32::MAX => vk::Extent2D::default()
                     .width(self.window.inner_size().width)
@@ -110,35 +121,38 @@ impl<'a> SwapchainBuilder<'a> {
                 .get_physical_device_surface_present_modes(
                     self.ctx.physical_device,
                     self.ctx.surface,
-                )?
+                ).context("SwapchainBuilder::build(): vkGetPhysicalDeviceSurfacePresentModes() failed")?
                 .into_iter()
                 .min_by_key(tv::present_mode_key)
-                .context("get_physical_device_surface_present_modes() returned empty?")?;
+                .context("SwapchainBuilder::build(): vkGetPhysicalDeviceSurfacePresentModes() returned empty?")?;
             info!("using present mode: {present_mode:?}");
 
             let swapchain_loader = self.ctx.create_swapchain_device();
-            let swapchain_khr = swapchain_loader.create_swapchain(
-                &self.swapchain_create_info.unwrap_or(
-                    // TODO: study settings here.
-                    vk::SwapchainCreateInfoKHR::default()
-                        .surface(self.ctx.surface())
-                        .min_image_count(desired_image_count)
-                        .image_color_space(surface_format.color_space)
-                        .image_format(surface_format.format)
-                        .image_extent(surface_resolution)
-                        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-                        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-                        .pre_transform(pre_transform)
-                        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                        .present_mode(present_mode)
-                        .clipped(true)
-                        .image_array_layers(1),
-                ),
-                None,
-            )?;
+            let swapchain_khr = swapchain_loader
+                .create_swapchain(
+                    &self.swapchain_create_info.unwrap_or(
+                        // TODO: study settings here.
+                        vk::SwapchainCreateInfoKHR::default()
+                            .surface(self.ctx.surface())
+                            .min_image_count(desired_image_count)
+                            .image_color_space(surface_format.color_space)
+                            .image_format(surface_format.format)
+                            .image_extent(surface_resolution)
+                            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+                            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+                            .pre_transform(pre_transform)
+                            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                            .present_mode(present_mode)
+                            .clipped(true)
+                            .image_array_layers(1),
+                    ),
+                    None,
+                )
+                .context("SwapchainBuilder::build(): vkCreateSwapchain() failed")?;
 
             let images =
-                SwapchainImages::new(&self.ctx, swapchain_khr, &swapchain_loader, surface_format)?;
+                SwapchainImages::new(&self.ctx, swapchain_khr, &swapchain_loader, surface_format)
+                    .context("SwapchainBuilder::build()")?;
 
             let mut present_semaphores = Vec::new();
             let mut submit_semaphores = Vec::new();
@@ -148,57 +162,70 @@ impl<'a> SwapchainBuilder<'a> {
                 present_semaphores.push(
                     self.ctx
                         .device()
-                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?,
+                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                        .context("SwapchainBuilder::build(): vkCreateSemaphore() failed")?,
                 );
                 submit_semaphores.push(
                     self.ctx
                         .device()
-                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?,
+                        .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                        .context("SwapchainBuilder::build(): vkCreateSemaphore() failed")?,
                 );
             }
-            for i in 0..desired_frames_in_flight {
+            let first_present_semaphore = self
+                .ctx
+                .device()
+                .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                .context("SwapchainBuilder::build(): vkCreateSemaphore() failed")?;
+            for _ in 0..desired_frames_in_flight {
                 acquire_fences.insert(
                     0,
                     self.ctx
                         .device()
-                        .create_fence(&vk::FenceCreateInfo::default(), None)?,
+                        .create_fence(&vk::FenceCreateInfo::default(), None)
+                        .context("SwapchainBuilder::build(): vkCreateFence() failed")?,
                 );
-                let present_fence_create_info = if i == 0 {
-                    vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED)
-                } else {
-                    vk::FenceCreateInfo::default()
-                };
                 present_fences.insert(
                     0,
                     self.ctx
                         .device()
-                        .create_fence(&present_fence_create_info, None)?,
+                        .create_fence(
+                            &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
+                            None,
+                        )
+                        .context("SwapchainBuilder::build(): vkCreateFence() failed")?,
                 );
             }
 
             let mut present_command_pools = Vec::new();
             let mut present_command_buffers = Vec::new();
             for _ in 0..desired_frames_in_flight {
-                let command_pool = self.ctx.device().create_command_pool(
-                    &vk::CommandPoolCreateInfo::default()
-                        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
-                        .queue_family_index(self.ctx.queue_family_index()),
-                    None,
-                )?;
+                let command_pool = self
+                    .ctx
+                    .device()
+                    .create_command_pool(
+                        &vk::CommandPoolCreateInfo::default()
+                            .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+                            .queue_family_index(self.ctx.queue_family_index()),
+                        None,
+                    )
+                    .context("SwapchainBuilder::build(): vkCreateCommandPool() failed")?;
                 present_command_pools.push(command_pool);
                 present_command_buffers.extend(
-                    self.ctx.device().allocate_command_buffers(
-                        &vk::CommandBufferAllocateInfo::default()
-                            .command_buffer_count(1)
-                            .command_pool(command_pool)
-                            .level(vk::CommandBufferLevel::PRIMARY),
-                    )?,
+                    self.ctx
+                        .device()
+                        .allocate_command_buffers(
+                            &vk::CommandBufferAllocateInfo::default()
+                                .command_buffer_count(1)
+                                .command_pool(command_pool)
+                                .level(vk::CommandBufferLevel::PRIMARY),
+                        )
+                        .context("SwapchainBuilder::build(): vkAllocateCommandBuffers() failed")?,
                 );
             }
 
-            let frame_index = FrameIndex::new(desired_frames_in_flight);
-            let image_index = PresentIndex::new();
-            let last_frame_index = AtomicUsize::new(frame_index.current);
+            let frame_index = GgMutex::new(FrameIndex::new());
+            let image_index = PresentImageIndex::new();
 
             Ok(Swapchain {
                 ctx: self.ctx,
@@ -209,6 +236,7 @@ impl<'a> SwapchainBuilder<'a> {
                 images,
                 frames_in_flight: desired_frames_in_flight,
                 present_semaphores,
+                first_present_semaphore,
                 submit_semaphores,
                 acquire_fences,
                 present_fences,
@@ -216,7 +244,6 @@ impl<'a> SwapchainBuilder<'a> {
                 present_command_buffers,
                 frame_index,
                 image_index,
-                current_frame_index: Arc::new(last_frame_index),
                 did_vk_free: AtomicBool::new(false),
             })
         }
@@ -224,28 +251,28 @@ impl<'a> SwapchainBuilder<'a> {
 }
 
 struct FrameIndex {
-    last: usize,
-    current: usize,
+    last: Option<usize>,
+    current: Option<usize>,
 }
 
 impl FrameIndex {
-    fn new(frames_in_flight: usize) -> Self {
+    fn new() -> Self {
         Self {
-            last: 0,
-            current: frames_in_flight - 1,
+            last: None,
+            current: None,
         }
     }
 }
-struct PresentIndex {
-    last: usize,
-    current: usize,
+struct PresentImageIndex {
+    last: Option<usize>,
+    current: Option<usize>,
 }
 
-impl PresentIndex {
+impl PresentImageIndex {
     fn new() -> Self {
         Self {
-            last: 0,
-            current: 0,
+            last: None,
+            current: None,
         }
     }
 }
@@ -265,20 +292,23 @@ impl SwapchainImages {
         surface_format: vk::SurfaceFormatKHR,
     ) -> Result<Self> {
         unsafe {
-            let present_images = swapchain_loader.get_swapchain_images(swapchain_khr)?;
+            let present_images = swapchain_loader
+                .get_swapchain_images(swapchain_khr)
+                .context("SwapchainImages::new(): vkGetSwapchainImages() failed")?;
             let present_image_views = present_images
                 .iter()
                 .map(|&image| {
-                    let image_view = ctx.device().create_image_view(
-                        &vk::ImageViewCreateInfo::default()
-                            .view_type(vk::ImageViewType::TYPE_2D)
-                            .format(surface_format.format)
-                            .components(tv::default_component_mapping())
-                            .subresource_range(tv::default_image_subresource_range())
-                            .image(image),
-                        None,
-                    )?;
-                    Ok(image_view)
+                    ctx.device()
+                        .create_image_view(
+                            &vk::ImageViewCreateInfo::default()
+                                .view_type(vk::ImageViewType::TYPE_2D)
+                                .format(surface_format.format)
+                                .components(tv::default_component_mapping())
+                                .subresource_range(tv::default_image_subresource_range())
+                                .image(image),
+                            None,
+                        )
+                        .context("SwapchainImages::new(): vkCreateImageView() failed")
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(Self {
@@ -341,6 +371,7 @@ pub struct Swapchain {
 
     frames_in_flight: usize,
     present_semaphores: Vec<vk::Semaphore>,
+    first_present_semaphore: vk::Semaphore,
     submit_semaphores: Vec<vk::Semaphore>,
     acquire_fences: Vec<vk::Fence>,
     present_fences: Vec<vk::Fence>,
@@ -348,9 +379,8 @@ pub struct Swapchain {
     present_command_pools: Vec<vk::CommandPool>,
     present_command_buffers: Vec<vk::CommandBuffer>,
 
-    frame_index: FrameIndex,
-    image_index: PresentIndex,
-    pub(crate) current_frame_index: Arc<AtomicUsize>,
+    frame_index: GgMutex<FrameIndex>,
+    image_index: PresentImageIndex,
 
     did_vk_free: AtomicBool,
 }
@@ -364,9 +394,19 @@ impl Swapchain {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         self.frames_in_flight
     }
-    pub fn current_frame_index(&self) -> usize {
+    fn frame_index(&self) -> Result<MutexGuard<'_, FrameIndex>> {
+        self.frame_index
+            .try_lock("Swapchain::frame_index()")?
+            .context("should only be accessed by render thread")
+    }
+    pub fn current_frame_index(&self) -> Result<usize> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        self.current_frame_index.load(Ordering::Relaxed)
+        self.frame_index()
+            .context("Swapchain::current_frame_index()")?
+            .current
+            .context(
+                "Swapchain::current_frame_index(): no image acquired; there is no current frame",
+            )
     }
     pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
@@ -378,8 +418,9 @@ impl Swapchain {
         extra_fences: &[vk::Fence],
     ) -> Result<SwapchainAcquireInfo> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        self.acquire_next_image_timeout(extra_fences, u64::MAX, u64::MAX)?
-            .context("timeout even though we waited forever")
+        self.acquire_next_image_timeout(extra_fences, u64::MAX, u64::MAX)
+            .context("Swapchain::acquire_next_image()")?
+            .context("Swapchain::acquire_next_image(): VK_TIMEOUT even though we waited forever (spec violation?)")
     }
     pub fn acquire_next_image_timeout(
         &mut self,
@@ -388,43 +429,54 @@ impl Swapchain {
         acquire_timeout: u64,
     ) -> Result<Option<SwapchainAcquireInfo>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        {
-            // Update {frame,present}_index.
-            self.frame_index.last = self.frame_index.current;
-            self.frame_index.current = (self.frame_index.last + 1) % self.frames_in_flight;
-            self.current_frame_index
-                .store(self.frame_index.current, Ordering::Relaxed);
 
-            self.image_index.last = self.image_index.current;
-        }
+        // Update {frame,present}_index.
+        let acquired_frame_index = {
+            let mut frame_index = self
+                .frame_index()
+                .context("Swapchain::acquire_next_image_timeout()")?;
+            frame_index.last = frame_index.current;
+            let current_frame_index = if let Some(current_frame_index) = frame_index.current {
+                (current_frame_index + 1) % self.frames_in_flight
+            } else {
+                0
+            };
+            frame_index.current = Some(current_frame_index);
+            current_frame_index
+        };
+        self.image_index.last = self.image_index.current;
 
         match unsafe {
-            let mut fences = vec![self.last_present_fence()];
+            let mut fences = vec![
+                self.current_present_fence()
+                    .context("Swapchain::acquire_next_image_timeout()")?,
+            ];
             fences.extend_from_slice(extra_fences);
             self.ctx
                 .device()
-                .wait_for_fences(&fences, true, wait_timeout)?;
-            self.ctx.device().reset_fences(&fences)?;
-            let rv = self.loader.acquire_next_image(
-                self.khr,
-                acquire_timeout,
-                self.present_semaphore(),
-                self.last_acquire_fence(),
-            )?;
+                .wait_for_fences(&fences, true, wait_timeout)
+                .context("Swapchain::acquire_next_image_timeout(): vkWaitForFences() failed")?;
             self.ctx
                 .device()
-                .wait_for_fences(&[self.last_acquire_fence()], true, wait_timeout)?;
-            self.ctx
-                .device()
-                .reset_fences(&[self.last_acquire_fence()])?;
+                .reset_fences(&fences)
+                .context("Swapchain::acquire_next_image_timeout(): vkResetFences() failed")?;
+            let rv = self
+                .loader
+                .acquire_next_image(
+                    self.khr,
+                    acquire_timeout,
+                    self.present_semaphore(),
+                    vk::Fence::null(),
+                )
+                .context("Swapchain::acquire_next_image_timeout(): vkAcquireNextImage() failed")?;
             Ok(rv)
         } {
             Ok((next_image_index, is_suboptimal)) => {
-                let next_image_index = next_image_index as usize;
-                self.image_index.current = next_image_index;
+                let acquired_image_index = next_image_index as usize;
+                self.image_index.current = Some(acquired_image_index);
                 Ok(Some(SwapchainAcquireInfo {
-                    acquired_image_index: next_image_index,
-                    acquired_frame_index: self.current_frame_index.load(Ordering::Relaxed),
+                    acquired_image_index,
+                    acquired_frame_index,
                     frames_in_flight: self.frames_in_flight,
                     is_suboptimal,
                 }))
@@ -434,9 +486,58 @@ impl Swapchain {
         }
     }
 
+    pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
+        check_false!(self.did_vk_free.load(Ordering::Relaxed));
+        unsafe {
+            let queue = self.ctx.present_queue("submit_and_present_queue")?;
+            self.ctx
+                .device()
+                .queue_submit2(
+                    *queue,
+                    &[vk::SubmitInfo2::default()
+                        .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
+                            .semaphore(self.present_semaphore())
+                            .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)])
+                        .signal_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
+                            .semaphore(self.submit_semaphore().context(
+                                "Swapchain::submit_and_present_queue(): vkQueueSubmit2()",
+                            )?)
+                            .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)])
+                        .command_buffer_infos(
+                            &command_buffers
+                                .iter()
+                                .map(|&cb| {
+                                    vk::CommandBufferSubmitInfo::default().command_buffer(cb)
+                                })
+                                .collect_vec(),
+                        )],
+                    self.current_present_fence()
+                        .context("Swapchain::submit_and_present_queue(): vkQueueSubmit2()")?,
+                )
+                .context("Swapchain::submit_and_present_queue(): vkQueueSubmit2() failed")?;
+            self.loader
+                .queue_present(
+                    *queue,
+                    &vk::PresentInfoKHR::default()
+                        .wait_semaphores(&[self
+                            .submit_semaphore()
+                            .context("Swapchain::submit_and_present_queue(): vkQueuePresent()")?])
+                        .swapchains(&[self.khr])
+                        .image_indices(&[self
+                            .current_image_index()
+                            .context("Swapchain::submit_and_present_queue(): vkQueuePresent()")?
+                            as u32]),
+                )
+                .context("Swapchain::submit_and_present_queue(): vkQueuePresent() failed")?;
+        }
+        Ok(())
+    }
+
     pub fn acquire_present_command_buffer(&self) -> Result<vk::CommandBuffer> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        let current_frame_index = self.current_frame_index.load(Ordering::Relaxed);
+        let current_frame_index = self
+            .current_frame_index()
+            .context("Swapchain::acquire_present_command_buffer")?;
         unsafe {
             self.ctx.device().reset_command_pool(
                 self.present_command_pools[current_frame_index],
@@ -450,7 +551,7 @@ impl Swapchain {
         &self,
         command_buffer: vk::CommandBuffer,
         clear_col: Option<Colour>,
-    ) {
+    ) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
             self.ctx.device().cmd_pipeline_barrier2(
@@ -466,7 +567,11 @@ impl Swapchain {
                             vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
                                 | vk::AccessFlags2::COLOR_ATTACHMENT_READ,
                         )
-                        .image(self.current_present_image())
+                        .image(
+                            self.current_present_image().context(
+                                "Swapchain::cmd_begin_rendering(): vkCmdPipelineBarrier2()",
+                            )?,
+                        )
                         .subresource_range(tv::default_image_subresource_range()),
                 ]),
             );
@@ -486,13 +591,18 @@ impl Swapchain {
                             },
                         })
                         .store_op(vk::AttachmentStoreOp::STORE)
-                        .image_view(self.current_present_image_view())])
+                        .image_view(
+                            self.current_present_image_view().context(
+                                "Swapchain::cmd_begin_rendering(): vkCmdBeginRendering()",
+                            )?,
+                        )])
                     .render_area(self.surface_resolution().into())
                     .layer_count(1),
             );
+            Ok(())
         }
     }
-    pub fn cmd_end_rendering(&self, command_buffer: vk::CommandBuffer) {
+    pub fn cmd_end_rendering(&self, command_buffer: vk::CommandBuffer) -> Result<()> {
         unsafe {
             self.ctx.device().cmd_end_rendering(command_buffer);
             self.ctx.device().cmd_pipeline_barrier2(
@@ -505,67 +615,51 @@ impl Swapchain {
                         .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
                         .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
                         .dst_access_mask(vk::AccessFlags2::NONE)
-                        .image(self.current_present_image())
+                        .image(
+                            self.current_present_image().context(
+                                "Swapchain::cmd_end_rendering(): vkCmdPipelineBarrier2()",
+                            )?,
+                        )
                         .subresource_range(tv::default_image_subresource_range()),
                 ]),
             );
+            Ok(())
         }
-    }
-
-    pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
-        check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        unsafe {
-            let queue = self.ctx.present_queue("submit_and_present_queue")?;
-            self.ctx.device().queue_submit2(
-                *queue,
-                &[vk::SubmitInfo2::default()
-                    .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(self.present_semaphore())
-                        .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)])
-                    .signal_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(self.submit_semaphore())
-                        .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)])
-                    .command_buffer_infos(
-                        &command_buffers
-                            .iter()
-                            .map(|&cb| vk::CommandBufferSubmitInfo::default().command_buffer(cb))
-                            .collect_vec(),
-                    )],
-                self.current_present_fence(),
-            )?;
-            self.loader.queue_present(
-                *queue,
-                &vk::PresentInfoKHR::default()
-                    .wait_semaphores(&[self.submit_semaphore()])
-                    .swapchains(&[self.khr])
-                    .image_indices(&[self.image_index.current as u32]),
-            )?;
-        }
-        Ok(())
     }
 
     fn present_semaphore(&self) -> vk::Semaphore {
         // The present semaphore must be chosen before we know the next image index,
         // so we have to use `.last`.
-        self.present_semaphores[self.image_index.last]
+        if let Some(last_image_index) = self.image_index.last {
+            self.present_semaphores[last_image_index]
+        } else {
+            self.first_present_semaphore
+        }
     }
-    fn submit_semaphore(&self) -> vk::Semaphore {
-        self.submit_semaphores[self.image_index.current]
+    fn current_image_index(&self) -> Result<usize> {
+        self.image_index
+            .current
+            .context("no current image index, call acquire_next_image{,_timeout}() first")
     }
-    fn last_acquire_fence(&self) -> vk::Fence {
-        self.acquire_fences[self.frame_index.last]
+    fn submit_semaphore(&self) -> Result<vk::Semaphore> {
+        Ok(self.submit_semaphores[self
+            .current_image_index()
+            .context("Swapchain::submit_semaphore()")?])
     }
-    fn last_present_fence(&self) -> vk::Fence {
-        self.present_fences[self.frame_index.last]
+    fn current_present_fence(&self) -> Result<vk::Fence> {
+        Ok(self.present_fences[self
+            .current_frame_index()
+            .context("Swapchain::current_present_fence()")?])
     }
-    fn current_present_fence(&self) -> vk::Fence {
-        self.present_fences[self.frame_index.current]
+    fn current_present_image(&self) -> Result<vk::Image> {
+        Ok(self.images.present_images[self
+            .current_image_index()
+            .context("Swapchain::current_present_image()")?])
     }
-    fn current_present_image(&self) -> vk::Image {
-        self.images.present_images[self.image_index.current]
-    }
-    fn current_present_image_view(&self) -> vk::ImageView {
-        self.images.present_image_views[self.image_index.current]
+    fn current_present_image_view(&self) -> Result<vk::ImageView> {
+        Ok(self.images.present_image_views[self
+            .current_image_index()
+            .context("Swapchain::current_present_image_view()")?])
     }
 
     pub fn vk_free(&self) {
@@ -580,6 +674,9 @@ impl Swapchain {
             for &semaphore in &self.submit_semaphores {
                 self.ctx.device().destroy_semaphore(semaphore, None);
             }
+            self.ctx
+                .device()
+                .destroy_semaphore(self.first_present_semaphore, None);
             for &fence in &self.acquire_fences {
                 self.ctx.device().destroy_fence(fence, None);
             }

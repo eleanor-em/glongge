@@ -56,49 +56,58 @@ impl TvInternalTexture {
     ) -> Result<Arc<Self>> {
         unsafe {
             let allocator = ctx.allocator("TvInternalTexture::new")?;
-            let (image_buffer, mut image_buffer_alloc) = allocator.create_buffer(
-                &vk::BufferCreateInfo::default()
-                    .size(size_of_val(image_data) as u64)
-                    .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                &vk_mem::AllocationCreateInfo {
-                    flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
-                    usage: vk_mem::MemoryUsage::Auto,
-                    ..Default::default()
-                },
-            )?;
+            let (image_buffer, mut image_buffer_alloc) = allocator
+                .create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .size(size_of_val(image_data) as u64)
+                        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    &vk_mem::AllocationCreateInfo {
+                        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
+                        usage: vk_mem::MemoryUsage::Auto,
+                        ..Default::default()
+                    },
+                )
+                .context("TvInternalTexture::new(): vmaCreateBuffer() failed")?;
             let image_alloc_size = allocator.get_allocation_info(&image_buffer_alloc).size;
-            let image_ptr = allocator.map_memory(&mut image_buffer_alloc)?;
+            let image_ptr = allocator
+                .map_memory(&mut image_buffer_alloc)
+                .context("TvInternalTexture::new(): vmaMapMemory() failed")?;
             Align::new(image_ptr.cast(), align_of::<u8>() as u64, image_alloc_size)
                 .copy_from_slice(image_data);
             allocator.unmap_memory(&mut image_buffer_alloc);
 
-            let (tex_image, tex_alloc) = allocator.create_image(
-                // TODO: study settings here.
-                &vk::ImageCreateInfo::default()
-                    .image_type(vk::ImageType::TYPE_2D)
-                    .format(format)
-                    .extent(image_extent.into())
-                    .mip_levels(1)
-                    .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .tiling(vk::ImageTiling::OPTIMAL)
-                    .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                &vk_mem::AllocationCreateInfo {
-                    usage: vk_mem::MemoryUsage::AutoPreferDevice,
-                    ..Default::default()
-                },
-            )?;
-            let tex_image_view = ctx.device().create_image_view(
-                &vk::ImageViewCreateInfo::default()
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(format)
-                    .components(tv::default_component_mapping())
-                    .subresource_range(tv::default_image_subresource_range())
-                    .image(tex_image),
-                None,
-            )?;
+            let (tex_image, tex_alloc) = allocator
+                .create_image(
+                    // TODO: study settings here.
+                    &vk::ImageCreateInfo::default()
+                        .image_type(vk::ImageType::TYPE_2D)
+                        .format(format)
+                        .extent(image_extent.into())
+                        .mip_levels(1)
+                        .array_layers(1)
+                        .samples(vk::SampleCountFlags::TYPE_1)
+                        .tiling(vk::ImageTiling::OPTIMAL)
+                        .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    &vk_mem::AllocationCreateInfo {
+                        usage: vk_mem::MemoryUsage::AutoPreferDevice,
+                        ..Default::default()
+                    },
+                )
+                .context("TvInternalTexture::new(): vmaCreateImage() failed")?;
+            let tex_image_view = ctx
+                .device()
+                .create_image_view(
+                    &vk::ImageViewCreateInfo::default()
+                        .view_type(vk::ImageViewType::TYPE_2D)
+                        .format(format)
+                        .components(tv::default_component_mapping())
+                        .subresource_range(tv::default_image_subresource_range())
+                        .image(tex_image),
+                    None,
+                )
+                .context("TvInternalTexture::new(): vkCreateImageView() failed")?;
 
             Ok(Arc::new(Self {
                 ctx,
@@ -206,119 +215,146 @@ impl TextureManager {
     #[allow(clippy::too_many_lines)]
     pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<TextureManager> {
         unsafe {
-            let sampler = ctx.device().create_sampler(
-                // TODO: really should use a separate sampler for fonts.
-                &vk::SamplerCreateInfo::default()
-                    .mag_filter(vk::Filter::NEAREST)
-                    .min_filter(vk::Filter::LINEAR) // for fonts
-                    .min_lod(0.0)
-                    .max_lod(FONT_SAMPLE_RATIO.log2() + 1.0)
-                    .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-                    .max_anisotropy(
-                        ctx.physical_device_properties()
-                            .limits
-                            .max_sampler_anisotropy,
-                    )
-                    .border_color(vk::BorderColor::FLOAT_TRANSPARENT_BLACK),
-                None,
-            )?;
+            let sampler = ctx
+                .device()
+                .create_sampler(
+                    // TODO: really should use a separate sampler for fonts.
+                    &vk::SamplerCreateInfo::default()
+                        .mag_filter(vk::Filter::NEAREST)
+                        .min_filter(vk::Filter::LINEAR) // for fonts
+                        .min_lod(0.0)
+                        .max_lod(FONT_SAMPLE_RATIO.log2() + 1.0)
+                        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
+                        .max_anisotropy(
+                            ctx.physical_device_properties()
+                                .limits
+                                .max_sampler_anisotropy,
+                        )
+                        .border_color(vk::BorderColor::FLOAT_TRANSPARENT_BLACK),
+                    None,
+                )
+                .context("TextureManager::new(): vkCreateSampler() failed")?;
 
-            let descriptor_pool = ctx.device().create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: vk::DescriptorType::STORAGE_BUFFER,
-                            descriptor_count: MAX_MATERIAL_COUNT as u32,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: vk::DescriptorType::SAMPLER,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: vk::DescriptorType::SAMPLED_IMAGE,
-                            descriptor_count: MAX_TEXTURE_COUNT as u32,
-                        },
-                    ])
-                    .max_sets(1),
-                None,
-            )?;
-            let desc_set_layout = ctx.device().create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-                    .bindings(&[
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(0)
-                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                            .descriptor_count(1)
-                            .stage_flags(vk::ShaderStageFlags::VERTEX),
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(1)
-                            .descriptor_type(vk::DescriptorType::SAMPLER)
-                            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                            .immutable_samplers(&[sampler]),
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(2)
-                            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                            .descriptor_count(MAX_TEXTURE_COUNT as u32)
-                            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                    ])
-                    .push_next(
-                        &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                            .binding_flags(&[
-                                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-                                vk::DescriptorBindingFlags::empty(),
-                                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-                            ]),
-                    ),
-                None,
-            )?;
-            let descriptor_set = ctx.device().allocate_descriptor_sets(
-                &vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&[desc_set_layout]),
-            )?[0];
+            let descriptor_pool = ctx
+                .device()
+                .create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+                        .pool_sizes(&[
+                            vk::DescriptorPoolSize {
+                                ty: vk::DescriptorType::STORAGE_BUFFER,
+                                descriptor_count: MAX_MATERIAL_COUNT as u32,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: vk::DescriptorType::SAMPLER,
+                                descriptor_count: 1,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: vk::DescriptorType::SAMPLED_IMAGE,
+                                descriptor_count: MAX_TEXTURE_COUNT as u32,
+                            },
+                        ])
+                        .max_sets(1),
+                    None,
+                )
+                .context("TextureManager::new(): vkCreateDescriptorPool() failed")?;
+            let desc_set_layout = ctx
+                .device()
+                .create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+                        .bindings(&[
+                            vk::DescriptorSetLayoutBinding::default()
+                                .binding(0)
+                                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                                .descriptor_count(1)
+                                .stage_flags(vk::ShaderStageFlags::VERTEX),
+                            vk::DescriptorSetLayoutBinding::default()
+                                .binding(1)
+                                .descriptor_type(vk::DescriptorType::SAMPLER)
+                                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                                .immutable_samplers(&[sampler]),
+                            vk::DescriptorSetLayoutBinding::default()
+                                .binding(2)
+                                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                                .descriptor_count(MAX_TEXTURE_COUNT as u32)
+                                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                        ])
+                        .push_next(
+                            &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
+                                .binding_flags(&[
+                                    vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+                                    vk::DescriptorBindingFlags::empty(),
+                                    vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+                                ]),
+                        ),
+                    None,
+                )
+                .context("TextureManager::new(): vkCreateDescriptorSetLayout() failed")?;
+            let descriptor_set = ctx
+                .device()
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(descriptor_pool)
+                        .set_layouts(&[desc_set_layout]),
+                )
+                .context("TextureManager::new(): vkAllocateDescriptorSets() failed")?[0];
 
-            let pipeline_layout = ctx.device().create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(&[desc_set_layout])
-                    .push_constant_ranges(&[vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX)
-                        .offset(0)
-                        .size(8)]),
-                None,
-            )?;
+            let pipeline_layout = ctx
+                .device()
+                .create_pipeline_layout(
+                    &vk::PipelineLayoutCreateInfo::default()
+                        .set_layouts(&[desc_set_layout])
+                        .push_constant_ranges(&[vk::PushConstantRange::default()
+                            .stage_flags(vk::ShaderStageFlags::VERTEX)
+                            .offset(0)
+                            .size(8)]),
+                    None,
+                )
+                .context("TextureManager::new(): vkCreatePipelineLayout() failed")?;
 
-            let command_pool = ctx.device().create_command_pool(
-                &vk::CommandPoolCreateInfo::default()
-                    .flags(vk::CommandPoolCreateFlags::TRANSIENT)
-                    .queue_family_index(ctx.queue_family_index()),
-                None,
-            )?;
-            let command_buffer = ctx.device().allocate_command_buffers(
-                &vk::CommandBufferAllocateInfo::default()
-                    .command_buffer_count(1)
-                    .command_pool(command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY),
-            )?[0];
+            let command_pool = ctx
+                .device()
+                .create_command_pool(
+                    &vk::CommandPoolCreateInfo::default()
+                        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+                        .queue_family_index(ctx.queue_family_index()),
+                    None,
+                )
+                .context("TextureManager::new(): vkCreateCommandPool() failed")?;
+            let command_buffer = ctx
+                .device()
+                .allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::default()
+                        .command_buffer_count(1)
+                        .command_pool(command_pool)
+                        .level(vk::CommandBufferLevel::PRIMARY),
+                )
+                .context("TextureManager::new(): vkAllocateCommandBuffers() failed")?
+                .first()
+                .copied()
+                .context("TextureManager::new(): vkAllocateCommandBuffers() returned empty?")?;
             let upload_fence = ctx
                 .device()
-                .create_fence(&vk::FenceCreateInfo::default(), None)?;
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+                .context("TextureManager::new(): vkCreateFence() failed")?;
 
             let material_buffer = GenericDeviceBuffer::new(
                 ctx.clone(),
                 1,
                 MAX_MATERIAL_COUNT,
                 vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
-            )?;
+            )
+            .context("TextureManager::new()")?;
             let material_staging_buffer = GenericBuffer::new(
                 ctx.clone(),
                 2,
                 MAX_MATERIAL_COUNT,
                 vk::BufferUsageFlags::TRANSFER_SRC,
-            )?;
+            )
+            .context("TextureManager::new()")?;
 
             let mut rv = Self {
                 ctx,
@@ -360,7 +396,7 @@ impl TextureManager {
                     &[255; 4],
                     Arc::new(AtomicBool::new(true)),
                 )?
-                .expect("TextureManager::new(): failed to create blank texture"),
+                .context("TextureManager::new(): failed to create blank texture")?,
             );
             rv.upload_all_pending("TextureManager::new()")?;
 
@@ -440,7 +476,8 @@ impl TextureManager {
             image_data,
             false,
             ready_flag,
-        )?;
+        )
+        .context("TextureManager::create_texture_unbound()")?;
         self.pending_textures.insert(id, tex.clone());
         Ok(Some(tex))
     }
@@ -463,7 +500,8 @@ impl TextureManager {
             image_data,
             true,
             ready_flag,
-        )?;
+        )
+        .context("TextureManager::create_texture()")?;
         self.pending_textures.insert(id, tex.clone());
         Ok(Some(tex))
     }
@@ -479,8 +517,12 @@ impl TextureManager {
             unsafe {
                 self.ctx
                     .device()
-                    .wait_for_fences(&[self.upload_fence], true, 1_000_000_000)?;
-                self.ctx.device().reset_fences(&[self.upload_fence])?;
+                    .wait_for_fences(&[self.upload_fence], true, 1_000_000_000)
+                    .context("TextureManager::wait_complete_upload(): vkWaitForFences() failed")?;
+                self.ctx
+                    .device()
+                    .reset_fences(&[self.upload_fence])
+                    .context("TextureManager::wait_complete_upload(): vkResetFences() failed")?;
                 self.is_upload_fence_in_use = false;
             }
         }
@@ -525,27 +567,40 @@ impl TextureManager {
             return Ok(());
         }
 
-        self.wait_complete_upload()?;
+        self.wait_complete_upload()
+            .context("TextureManager::upload_all_pending()")?;
         unsafe {
-            self.ctx.device().reset_command_pool(
-                self.command_pool,
-                vk::CommandPoolResetFlags::RELEASE_RESOURCES,
-            )?;
-            self.ctx.device().begin_command_buffer(
-                self.command_buffer,
-                &tv::default_command_buffer_begin_info(),
-            )?;
+            self.ctx
+                .device()
+                .reset_command_pool(
+                    self.command_pool,
+                    vk::CommandPoolResetFlags::RELEASE_RESOURCES,
+                )
+                .context("TextureManager::upload_all_pending(): vkResetCommandPool() failed")?;
+            self.ctx
+                .device()
+                .begin_command_buffer(
+                    self.command_buffer,
+                    &tv::default_command_buffer_begin_info(),
+                )
+                .context("TextureManager::upload_all_pending(): vkBeginCommandBuffer() failed")?;
             self.upload_materials(self.command_buffer);
             self.upload_textures(self.command_buffer);
-            self.ctx.device().end_command_buffer(self.command_buffer)?;
+            self.ctx
+                .device()
+                .end_command_buffer(self.command_buffer)
+                .context("TextureManager::upload_all_pending(): vkEndCommandBuffer() failed")?;
             let queue = self.ctx.present_queue(by)?;
-            self.ctx.device().queue_submit2(
-                *queue,
-                &[vk::SubmitInfo2::default().command_buffer_infos(&[
-                    vk::CommandBufferSubmitInfo::default().command_buffer(self.command_buffer),
-                ])],
-                self.upload_fence,
-            )?;
+            self.ctx
+                .device()
+                .queue_submit2(
+                    *queue,
+                    &[vk::SubmitInfo2::default()
+                        .command_buffer_infos(&[vk::CommandBufferSubmitInfo::default()
+                            .command_buffer(self.command_buffer)])],
+                    self.upload_fence,
+                )
+                .context("TextureManager::upload_all_pending(): vkQueueSubmit2() failed")?;
             self.is_upload_fence_in_use = true;
 
             Ok(())
@@ -591,7 +646,8 @@ impl TextureManager {
         }
         // TODO: write only part of the buffer?
         self.material_staging_buffer
-            .write(&data, self.next_material_buffer_index)?;
+            .write(&data, self.next_material_buffer_index)
+            .context("TextureManager::stage_materials()")?;
         self.advance_material_buffer_index();
 
         Ok(())
@@ -728,7 +784,10 @@ impl TextureManager {
         texture_id: TextureId,
     ) -> Option<Arc<TvInternalTexture>> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
-        let rv = self.textures.remove(&texture_id)?;
+        let Some(rv) = self.textures.remove(&texture_id) else {
+            error!("free_internal_texture(): removed nonexistent internal texture: {texture_id:?}");
+            return None;
+        };
         // Overwrite with blank texture.
         self.descriptor_image_infos[texture_id.as_usize()] = self.descriptor_image_infos[0];
         self.unused_texture_ids.insert(texture_id);
@@ -741,10 +800,10 @@ impl TextureManager {
         unsafe {
             self.material_device_buffer
                 .vk_free()
-                .context("caused by: TextureManager::vk_free()")?;
+                .context("TextureManager::vk_free()")?;
             self.material_staging_buffer
                 .vk_free()
-                .context("caused by: TextureManager::vk_free()")?;
+                .context("TextureManager::vk_free()")?;
             for texture in self.textures.values() {
                 texture.vk_free();
             }

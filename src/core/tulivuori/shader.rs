@@ -38,19 +38,19 @@ impl VertFragShader {
         vertex_input_binding_descriptions: Vec<vk::VertexInputBindingDescription>,
         vertex_input_attribute_descriptions: Vec<vk::VertexInputAttributeDescription>,
     ) -> Result<Self> {
-        let vertex_code =
-            read_spv(vertex_spv_file).context("Failed to read vertex shader spv file")?;
+        let vertex_code = read_spv(vertex_spv_file)
+            .context("VertFragShader::new(): failed to read vertex shader spv file")?;
         let vertex_shader_info = vk::ShaderModuleCreateInfo::default().code(&vertex_code);
 
-        let frag_code =
-            read_spv(frag_spv_file).context("Failed to read fragment shader spv file")?;
+        let frag_code = read_spv(frag_spv_file)
+            .context("VertFragShader::new(): failed to read fragment shader spv file")?;
         let frag_shader_info = vk::ShaderModuleCreateInfo::default().code(&frag_code);
 
         let vert = unsafe { ctx.device().create_shader_module(&vertex_shader_info, None) }
-            .context("Vertex shader module error")?;
+            .context("VertFragShader::new(): vertex shader module error")?;
 
         let frag = unsafe { ctx.device().create_shader_module(&frag_shader_info, None) }
-            .context("Fragment shader module error")?;
+            .context("VertFragShader::new(): fragment shader module error")?;
 
         let shader_entry_name = c"main";
         let shader_stage_create_infos = [
@@ -130,86 +130,101 @@ impl GuiVertFragShader {
     #[allow(clippy::too_many_lines)]
     pub fn new(ctx: Arc<TvWindowContext>, texture_handler: &Arc<TextureHandler>) -> Result<Self> {
         unsafe {
-            let sampler = ctx.device().create_sampler(
-                &vk::SamplerCreateInfo::default()
-                    // Pixel-perfect filtering is not desirable for the GUI.
-                    .mag_filter(vk::Filter::LINEAR)
-                    .min_filter(vk::Filter::LINEAR)
-                    .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                    .address_mode_u(vk::SamplerAddressMode::MIRRORED_REPEAT)
-                    .address_mode_v(vk::SamplerAddressMode::MIRRORED_REPEAT)
-                    .anisotropy_enable(true)
-                    .max_anisotropy(
-                        ctx.physical_device_properties()
-                            .limits
-                            .max_sampler_anisotropy,
-                    )
-                    .min_lod(0.0)
-                    .max_lod(vk::LOD_CLAMP_NONE),
-                None,
-            )?;
+            let sampler = ctx
+                .device()
+                .create_sampler(
+                    &vk::SamplerCreateInfo::default()
+                        // Pixel-perfect filtering is not desirable for the GUI.
+                        .mag_filter(vk::Filter::LINEAR)
+                        .min_filter(vk::Filter::LINEAR)
+                        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                        .address_mode_u(vk::SamplerAddressMode::MIRRORED_REPEAT)
+                        .address_mode_v(vk::SamplerAddressMode::MIRRORED_REPEAT)
+                        .anisotropy_enable(true)
+                        .max_anisotropy(
+                            ctx.physical_device_properties()
+                                .limits
+                                .max_sampler_anisotropy,
+                        )
+                        .min_lod(0.0)
+                        .max_lod(vk::LOD_CLAMP_NONE),
+                    None,
+                )
+                .context("GuiVertFragShader::new()")?;
 
-            let descriptor_pool = ctx.device().create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: vk::DescriptorType::SAMPLER,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: vk::DescriptorType::SAMPLED_IMAGE,
-                            descriptor_count: 2,
-                        },
-                    ])
-                    .max_sets(1),
-                None,
-            )?;
-            let desc_set_layout = ctx.device().create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-                    .bindings(&[
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(0)
-                            .descriptor_type(vk::DescriptorType::SAMPLER)
-                            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                            .immutable_samplers(&[sampler]),
-                        vk::DescriptorSetLayoutBinding::default()
-                            .binding(1)
-                            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                            .descriptor_count(2)
-                            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-                    ])
-                    .push_next(
-                        &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                            .binding_flags(&[
-                                vk::DescriptorBindingFlags::empty(),
-                                vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-                            ]),
-                    ),
-                None,
-            )?;
-            let descriptor_set = ctx.device().allocate_descriptor_sets(
-                &vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&[desc_set_layout]),
-            )?[0];
+            let descriptor_pool = ctx
+                .device()
+                .create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
+                        .pool_sizes(&[
+                            vk::DescriptorPoolSize {
+                                ty: vk::DescriptorType::SAMPLER,
+                                descriptor_count: 1,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: vk::DescriptorType::SAMPLED_IMAGE,
+                                descriptor_count: 2,
+                            },
+                        ])
+                        .max_sets(1),
+                    None,
+                )
+                .context("GuiVertFragShader::new()")?;
+            let desc_set_layout = ctx
+                .device()
+                .create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+                        .bindings(&[
+                            vk::DescriptorSetLayoutBinding::default()
+                                .binding(0)
+                                .descriptor_type(vk::DescriptorType::SAMPLER)
+                                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                                .immutable_samplers(&[sampler]),
+                            vk::DescriptorSetLayoutBinding::default()
+                                .binding(1)
+                                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                                .descriptor_count(2)
+                                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+                        ])
+                        .push_next(
+                            &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
+                                .binding_flags(&[
+                                    vk::DescriptorBindingFlags::empty(),
+                                    vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+                                ]),
+                        ),
+                    None,
+                )
+                .context("GuiVertFragShader::new()")?;
+            let descriptor_set = ctx
+                .device()
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(descriptor_pool)
+                        .set_layouts(&[desc_set_layout]),
+                )
+                .context("GuiVertFragShader::new()")?[0];
 
-            let pipeline_layout = ctx.device().create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(&[desc_set_layout])
-                    .push_constant_ranges(&[
-                        vk::PushConstantRange::default()
-                            .stage_flags(vk::ShaderStageFlags::VERTEX)
-                            .offset(0)
-                            .size(8),
-                        vk::PushConstantRange::default()
-                            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                            .offset(8)
-                            .size(4),
-                    ]),
-                None,
-            )?;
+            let pipeline_layout = ctx
+                .device()
+                .create_pipeline_layout(
+                    &vk::PipelineLayoutCreateInfo::default()
+                        .set_layouts(&[desc_set_layout])
+                        .push_constant_ranges(&[
+                            vk::PushConstantRange::default()
+                                .stage_flags(vk::ShaderStageFlags::VERTEX)
+                                .offset(0)
+                                .size(8),
+                            vk::PushConstantRange::default()
+                                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+                                .offset(8)
+                                .size(4),
+                        ]),
+                    None,
+                )
+                .context("GuiVertFragShader::new()")?;
 
             let inner = VertFragShader::new(
                 ctx,
@@ -240,7 +255,8 @@ impl GuiVertFragShader {
                         offset: offset_of!(epaint::Vertex, color) as u32,
                     },
                 ],
-            )?;
+            )
+            .context("GuiVertFragShader::new()")?;
 
             let rv = Self {
                 inner,
@@ -251,7 +267,9 @@ impl GuiVertFragShader {
                 pipeline_layout,
                 did_vk_free: AtomicBool::new(false),
             };
-            let blank = texture_handler.get_blank_texture()?;
+            let blank = texture_handler
+                .get_blank_texture()
+                .context("GuiVertFragShader::new()")?;
             rv.update_font_texture_inner(&blank, 0);
             rv.update_font_texture_inner(&blank, 1);
             Ok(rv)
@@ -284,8 +302,14 @@ impl GuiVertFragShader {
         &self,
         font_texture: &Arc<TvInternalTexture>,
         swapchain: &Swapchain,
-    ) {
-        self.update_font_texture_inner(font_texture, swapchain.current_frame_index());
+    ) -> Result<()> {
+        self.update_font_texture_inner(
+            font_texture,
+            swapchain
+                .current_frame_index()
+                .context("GuiVertFragShader::update_font_texture()")?,
+        );
+        Ok(())
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {

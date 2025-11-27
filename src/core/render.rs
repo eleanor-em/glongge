@@ -254,7 +254,7 @@ impl RenderHandler {
     ) -> Result<Self> {
         let viewport_owned = viewport
             .try_lock("RenderHandler::new()")?
-            .context("expect viewport unlocked")?
+            .context("RenderHandler::new(): expect viewport unlocked")?
             .clone();
         let render_data_channel = RenderDataChannel::new(viewport_owned.clone());
 
@@ -263,74 +263,79 @@ impl RenderHandler {
             ctx.clone(),
             &swapchain,
             INITIAL_VERTEX_BUFFER_SIZE_MB * 1024 * 1024 / size_of::<SpriteVertex>(),
-        )?;
-        let shader = Arc::new(VertFragShader::new(
-            ctx.clone(),
-            &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-vert.spv")[..]),
-            &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-frag.spv")[..]),
-            vec![vk::VertexInputBindingDescription {
-                binding: 0,
-                stride: size_of::<SpriteVertex>() as u32,
-                input_rate: vk::VertexInputRate::VERTEX,
-            }],
-            vec![
-                vk::VertexInputAttributeDescription {
-                    location: 0,
+        )
+        .context("RenderHandler::new()")?;
+        let shader = Arc::new(
+            VertFragShader::new(
+                ctx.clone(),
+                &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-vert.spv")[..]),
+                &mut Cursor::new(&include_bytes!("../shader/glsl/sprite-frag.spv")[..]),
+                vec![vk::VertexInputBindingDescription {
                     binding: 0,
-                    format: vk::Format::R32G32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, position) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 1,
-                    binding: 0,
-                    format: vk::Format::R32G32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, translation) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 2,
-                    binding: 0,
-                    format: vk::Format::R32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, rotation) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 3,
-                    binding: 0,
-                    format: vk::Format::R32G32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, scale) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 4,
-                    binding: 0,
-                    format: vk::Format::R32_UINT,
-                    offset: offset_of!(SpriteVertex, material_id) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 5,
-                    binding: 0,
-                    format: vk::Format::R32G32B32A32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, blend_col) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 6,
-                    binding: 0,
-                    format: vk::Format::R32G32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, clip_min) as u32,
-                },
-                vk::VertexInputAttributeDescription {
-                    location: 7,
-                    binding: 0,
-                    format: vk::Format::R32G32_SFLOAT,
-                    offset: offset_of!(SpriteVertex, clip_max) as u32,
-                },
-            ],
-        )?);
+                    stride: size_of::<SpriteVertex>() as u32,
+                    input_rate: vk::VertexInputRate::VERTEX,
+                }],
+                vec![
+                    vk::VertexInputAttributeDescription {
+                        location: 0,
+                        binding: 0,
+                        format: vk::Format::R32G32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, position) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 1,
+                        binding: 0,
+                        format: vk::Format::R32G32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, translation) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 2,
+                        binding: 0,
+                        format: vk::Format::R32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, rotation) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 3,
+                        binding: 0,
+                        format: vk::Format::R32G32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, scale) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 4,
+                        binding: 0,
+                        format: vk::Format::R32_UINT,
+                        offset: offset_of!(SpriteVertex, material_id) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 5,
+                        binding: 0,
+                        format: vk::Format::R32G32B32A32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, blend_col) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 6,
+                        binding: 0,
+                        format: vk::Format::R32G32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, clip_min) as u32,
+                    },
+                    vk::VertexInputAttributeDescription {
+                        location: 7,
+                        binding: 0,
+                        format: vk::Format::R32G32_SFLOAT,
+                        offset: offset_of!(SpriteVertex, clip_max) as u32,
+                    },
+                ],
+            )
+            .context("RenderHandler::new()")?,
+        );
         let pipeline = Pipeline::new(
             ctx.clone(),
             &swapchain,
             &(shader.clone() as Arc<dyn ShaderInfo>),
             resource_handler.texture.pipeline_layout(),
             &viewport_owned,
-        )?;
+        )
+        .context("RenderHandler::new()")?;
 
         let gui = GuiRenderHandler::new(
             ctx.clone(),
@@ -340,7 +345,8 @@ impl RenderHandler {
             gui_ctx,
             input_handler,
             resource_handler.texture.clone(),
-        )?;
+        )
+        .context("RenderHandler::new()")?;
         let perf_stats = RenderPerfStats::new(&window);
 
         Ok(Self {
@@ -383,6 +389,7 @@ impl RenderHandler {
         self.update_sync.wait_update_done();
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn render_update(
         &mut self,
         frame: usize,
@@ -392,8 +399,14 @@ impl RenderHandler {
             self.perf_stats.start();
 
             self.perf_stats.acquire.start();
-            let acquire = self.swapchain.acquire_next_image(&[])?;
-            let draw_command_buffer = self.swapchain.acquire_present_command_buffer()?;
+            let acquire = self
+                .swapchain
+                .acquire_next_image(&[])
+                .context("RenderHandler::render_update()")?;
+            let draw_command_buffer = self
+                .swapchain
+                .acquire_present_command_buffer()
+                .context("RenderHandler::render_update()")?;
             self.perf_stats.acquire.stop();
 
             self.perf_stats.update_vertices.start();
@@ -409,8 +422,9 @@ impl RenderHandler {
                     viewport.set_extra_scale_factor(extra_scale_factor);
                 }
                 viewport.set_physical_top_left(rx.viewport.physical_top_left());
-                let vertex_count =
-                    self.update_vertex_buffer(&self.swapchain, &rx.next_frame(), &viewport)?;
+                let vertex_count = self
+                    .update_vertex_buffer(&self.swapchain, &rx.next_frame(), &viewport)
+                    .context("RenderHandler::render_update()")?;
                 let gui_commands = rx.gui_commands.drain(..).collect_vec();
                 self.gui.is_gui_enabled = rx.is_gui_enabled;
                 (
@@ -439,10 +453,15 @@ impl RenderHandler {
             )?;
             self.resource_handler
                 .texture
-                .upload_all_pending_with(draw_command_buffer)?;
+                .upload_all_pending_with(draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
             self.swapchain
-                .cmd_begin_rendering(draw_command_buffer, Some(clear_col));
-            self.resource_handler.texture.bind(draw_command_buffer)?;
+                .cmd_begin_rendering(draw_command_buffer, Some(clear_col))
+                .context("RenderHandler::render_update()")?;
+            self.resource_handler
+                .texture
+                .bind(draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
             let mut bytes = (viewport.physical_width() / viewport.combined_scale_factor())
                 .to_le_bytes()
                 .to_vec();
@@ -454,24 +473,36 @@ impl RenderHandler {
             self.pipeline
                 .bind(draw_command_buffer, &viewport, &bytes, &[]);
             self.vertex_buffer
-                .bind(&self.swapchain, draw_command_buffer);
+                .bind(&self.swapchain, draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
             self.ctx
                 .device()
                 .cmd_draw(draw_command_buffer, vertex_count, 1, 0, 0);
-            self.swapchain.cmd_end_rendering(draw_command_buffer);
+            self.swapchain
+                .cmd_end_rendering(draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
 
             if do_render_gui {
-                self.gui.do_render(draw_command_buffer, &self.swapchain)?;
+                self.gui
+                    .do_render(draw_command_buffer, &self.swapchain)
+                    .context("RenderHandler::render_update()")?;
             }
 
-            self.ctx.device().end_command_buffer(draw_command_buffer)?;
+            self.ctx
+                .device()
+                .end_command_buffer(draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
             self.perf_stats.record_command_buffer.stop();
             self.perf_stats.submit.start();
             self.swapchain
-                .submit_and_present_queue(&[draw_command_buffer])?;
+                .submit_and_present_queue(&[draw_command_buffer])
+                .context("RenderHandler::render_update()")?;
             self.perf_stats.submit.stop();
             self.perf_stats.end_render.start();
-            self.resource_handler.texture.on_render_done(&acquire)?;
+            self.resource_handler
+                .texture
+                .on_render_done(&acquire)
+                .context("RenderHandler::render_update()")?;
             self.update_sync.mark_render_done();
             self.perf_stats.end_render.stop();
             self.last_perf_stats = self.perf_stats.end();
@@ -491,7 +522,11 @@ impl RenderHandler {
             .iter()
             .sorted_unstable_by_key(|item| item.depth);
         let mut vertices = Vec::new();
-        let ready_materials = self.resource_handler.texture.get_ready_materials()?;
+        let ready_materials = self
+            .resource_handler
+            .texture
+            .get_ready_materials()
+            .context("RenderHandler::update_vertex_buffer()")?;
         for render_info in render_infos {
             for vertex_index in render_info.vertex_indices.clone() {
                 let vertex = render_frame.vertices[vertex_index as usize];
@@ -524,7 +559,9 @@ impl RenderHandler {
                 }
             }
         }
-        self.vertex_buffer.write(swapchain, &vertices)?;
+        self.vertex_buffer
+            .write(swapchain, &vertices)
+            .context("RenderHandler::update_vertex_buffer()")?;
         Ok(vertices.len() as u32)
     }
 
@@ -539,24 +576,20 @@ impl RenderHandler {
     }
 
     pub fn vk_free(&self) -> Result<()> {
-        self.gui
-            .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+        self.gui.vk_free().context("RenderHandler::vk_free()")?;
         self.pipeline
             .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+            .context("RenderHandler::vk_free()")?;
         self.shader.vk_free();
         self.vertex_buffer
             .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+            .context("RenderHandler::vk_free()")?;
         self.resource_handler
             .texture
             .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+            .context("RenderHandler::vk_free()")?;
         self.swapchain.vk_free();
-        self.ctx
-            .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+        self.ctx.vk_free().context("RenderHandler::vk_free()")?;
         Ok(())
     }
 }
@@ -671,13 +704,14 @@ impl GuiRenderHandler {
                 bytes_per_pixel,
                 size_of::<egui::Color32>()
                     .to_i32()
-                    .context("size_of::<egui::Color32>() wrapped around")?
+                    .context("GuiRenderHandler::pre_render_update(): size_of::<egui::Color32>() wrapped around")?
             );
             #[allow(irrefutable_let_patterns)]
             let egui::ImageData::Color(color_image) = delta.image else {
                 unreachable!()
             };
-            self.update_font_texture(delta.pos, &color_image, bytes_per_pixel)?;
+            self.update_font_texture(delta.pos, &color_image, bytes_per_pixel)
+                .context("GuiRenderHandler::pre_render_update()")?;
         }
         while self
             .next_font_textures
@@ -686,7 +720,8 @@ impl GuiRenderHandler {
         {
             if let Some(last_font_texture) = self.font_texture.take() {
                 self.texture_handler
-                    .free_internal_texture(&last_font_texture)?;
+                    .free_internal_texture(&last_font_texture)
+                    .context("GuiRenderHandler::pre_render_update()")?;
             }
             self.font_texture = self.next_font_textures.pop_front();
         }
@@ -710,22 +745,26 @@ impl GuiRenderHandler {
             self.last_meshes = self.next_meshes.drain(..).collect_vec();
             self.next_meshes = next_meshes;
         }
-        self.gui_vertex_buffer.write(
-            swapchain,
-            &self
-                .next_meshes
-                .iter()
-                .flat_map(|m| m.vertices.clone())
-                .collect_vec(),
-        )?;
-        self.gui_index_buffer.write(
-            swapchain,
-            &self
-                .next_meshes
-                .iter()
-                .flat_map(|m| m.indices.clone())
-                .collect_vec(),
-        )?;
+        self.gui_vertex_buffer
+            .write(
+                swapchain,
+                &self
+                    .next_meshes
+                    .iter()
+                    .flat_map(|m| m.vertices.clone())
+                    .collect_vec(),
+            )
+            .context("GuiRenderHandler::pre_render_update()")?;
+        self.gui_index_buffer
+            .write(
+                swapchain,
+                &self
+                    .next_meshes
+                    .iter()
+                    .flat_map(|m| m.indices.clone())
+                    .collect_vec(),
+            )
+            .context("GuiRenderHandler::pre_render_update()")?;
         Ok(true)
     }
 
@@ -745,10 +784,9 @@ impl GuiRenderHandler {
             height: color_image.height() as u32,
         };
         let color_image_width_in_bytes = bytes_per_pixel
-            * color_image
-                .width()
-                .to_i32()
-                .context("color_image.width() wrapped around")?;
+            * color_image.width().to_i32().context(
+                "GuiRenderHandler::update_font_texture(): color_image.width() wrapped around",
+            )?;
         if let Some(old_font_texture) = self
             .next_font_textures
             .back()
@@ -770,7 +808,7 @@ impl GuiRenderHandler {
                     color_image_data
                         .len()
                         .to_u32()
-                        .context("color_image_data.len() wrapped around")?
+                        .context("GuiRenderHandler::update_font_texture(): color_image_data.len() wrapped around")?
                         / (bytes_per_pixel
                             .to_u32()
                             .context("bytes_per_pixel is negative")?
@@ -779,18 +817,17 @@ impl GuiRenderHandler {
                 );
                 let mut new_data = old_font_texture.data().to_vec();
                 let origin = Vec2i {
-                    x: image_pos[0]
-                        .to_i32()
-                        .context("image_pos[0] wrapped around")?
-                        * bytes_per_pixel,
-                    y: image_pos[1]
-                        .to_i32()
-                        .context("image_pos[0] wrapped around")?,
+                    x: image_pos[0].to_i32().context(
+                        "GuiRenderHandler::update_font_texture(): image_pos[0] wrapped around",
+                    )? * bytes_per_pixel,
+                    y: image_pos[1].to_i32().context(
+                        "GuiRenderHandler::update_font_texture(): image_pos[0] wrapped around",
+                    )?,
                 };
                 for (i, &byte) in color_image_data.iter().enumerate() {
                     let i = i
                         .to_i32()
-                        .context("color_image_data count wrapped around")?;
+                        .context("GuiRenderHandler::update_font_texture(): color_image_data count wrapped around")?;
                     let x = i % color_image_width_in_bytes;
                     let y = i / color_image_width_in_bytes;
                     let write_pos = origin + Vec2i { x, y };
@@ -841,9 +878,11 @@ impl GuiRenderHandler {
     ) -> Result<()> {
         unsafe {
             if let Some(font_texture) = self.font_texture.as_ref() {
-                self.gui_shader.update_font_texture(font_texture, swapchain);
+                self.gui_shader
+                    .update_font_texture(font_texture, swapchain)
+                    .context("GuiRenderHandler::do_render()")?;
             }
-            swapchain.cmd_begin_rendering(command_buffer, None);
+            swapchain.cmd_begin_rendering(command_buffer, None)?;
             let viewport = self
                 .viewport
                 .try_lock_short("GuiRenderHandler::do_render()")?;
@@ -855,14 +894,20 @@ impl GuiRenderHandler {
                     .to_le_bytes()
                     .to_vec(),
             );
-            let frag_bytes = (swapchain.current_frame_index() as u32)
+            let frag_bytes = (swapchain
+                .current_frame_index()
+                .context("GuiRenderHandler::do_render()")? as u32)
                 .to_le_bytes()
                 .to_vec();
             self.gui_pipeline
                 .bind(command_buffer, &viewport, &vert_bytes, &frag_bytes);
             self.gui_shader.bind(command_buffer);
-            self.gui_index_buffer.bind(swapchain, command_buffer);
-            self.gui_vertex_buffer.bind(swapchain, command_buffer);
+            self.gui_index_buffer
+                .bind(swapchain, command_buffer)
+                .context("GuiRenderHandler::do_render()")?;
+            self.gui_vertex_buffer
+                .bind(swapchain, command_buffer)
+                .context("GuiRenderHandler::do_render()")?;
             let mut index = 0;
             let mut vertex = 0;
             for mesh in &self.next_meshes {
@@ -878,14 +923,16 @@ impl GuiRenderHandler {
                     .indices
                     .len()
                     .to_u32()
-                    .context("index count wrapped around")?;
+                    .context("GuiRenderHandler::do_render(): index count wrapped around")?;
                 vertex += mesh
                     .vertices
                     .len()
                     .to_i32()
-                    .context("vertex count wrapped around")?;
+                    .context("GuiRenderHandler::do_render(): vertex count wrapped around")?;
             }
-            swapchain.cmd_end_rendering(command_buffer);
+            swapchain
+                .cmd_end_rendering(command_buffer)
+                .context("GuiRenderHandler::do_render()")?;
             Ok(())
         }
     }
@@ -893,19 +940,23 @@ impl GuiRenderHandler {
     fn vk_free(&self) -> Result<()> {
         self.gui_pipeline
             .vk_free()
-            .context("caused by: GuiRenderHandler::vk_free()")?;
+            .context("GuiRenderHandler::vk_free()")?;
         self.gui_shader.vk_free();
         self.gui_index_buffer
             .vk_free()
-            .context("caused by: GuiRenderHandler::vk_free()")?;
+            .context("GuiRenderHandler::vk_free()")?;
         self.gui_vertex_buffer
             .vk_free()
-            .context("caused by: RenderHandler::vk_free()")?;
+            .context("GuiRenderHandler::vk_free()")?;
         if let Some(font_texture) = self.font_texture.as_ref() {
-            self.texture_handler.free_internal_texture(font_texture)?;
+            self.texture_handler
+                .free_internal_texture(font_texture)
+                .context("GuiRenderHandler::vk_free()")?;
         }
         for font_texture in &self.next_font_textures {
-            self.texture_handler.free_internal_texture(font_texture)?;
+            self.texture_handler
+                .free_internal_texture(font_texture)
+                .context("GuiRenderHandler::vk_free()")?;
         }
         Ok(())
     }

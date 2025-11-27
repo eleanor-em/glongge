@@ -152,7 +152,7 @@ impl Pipeline {
             self.ctx
                 .device()
                 .device_wait_idle()
-                .context("caused by: Pipeline::vk_free()")?;
+                .context("Pipeline::vk_free()")?;
             for pipeline in &self.graphics_pipelines {
                 self.ctx.device().destroy_pipeline(*pipeline, None);
             }

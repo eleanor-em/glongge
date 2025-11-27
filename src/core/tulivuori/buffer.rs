@@ -30,18 +30,22 @@ impl<T: Copy> GenericDeviceBuffer<T> {
             let mut buffer_alloc_vec = Vec::new();
             let mut buffer_vec = Vec::new();
             for _ in 0..copy_count {
-                let (buffer, alloc) = ctx.allocator("GenericDeviceBuffer::new")?.create_buffer(
-                    &vk::BufferCreateInfo::default()
-                        .size((length * size_of::<T>()) as u64)
-                        .usage(usage)
-                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                    &vk_mem::AllocationCreateInfo {
-                        usage: vk_mem::MemoryUsage::AutoPreferDevice,
-                        ..Default::default()
-                    },
-                )?;
+                let (buffer, alloc) = ctx
+                    .allocator("GenericDeviceBuffer::new()")?
+                    .create_buffer(
+                        &vk::BufferCreateInfo::default()
+                            .size((length * size_of::<T>()) as u64)
+                            .usage(usage)
+                            .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                        &vk_mem::AllocationCreateInfo {
+                            usage: vk_mem::MemoryUsage::AutoPreferDevice,
+                            ..Default::default()
+                        },
+                    )
+                    .context("GenericDeviceBuffer::new()")?;
                 buffer_vec.push(buffer);
-                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc)?);
+                buffer_alloc_vec
+                    .push(TvAllocation::new(&ctx, alloc).context("GenericDeviceBuffer::new()")?);
             }
 
             Ok(Self {
@@ -98,19 +102,23 @@ impl<T: Copy> GenericBuffer<T> {
             let mut buffer_alloc_vec = Vec::new();
             let mut buffer_vec = Vec::new();
             for _ in 0..copy_count {
-                let (buffer, alloc) = ctx.allocator("GenericBuffer::new")?.create_buffer(
-                    &vk::BufferCreateInfo::default()
-                        .size((length * size_of::<T>()) as u64)
-                        .usage(usage)
-                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                    &vk_mem::AllocationCreateInfo {
-                        flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
-                        usage: vk_mem::MemoryUsage::AutoPreferHost,
-                        ..Default::default()
-                    },
-                )?;
+                let (buffer, alloc) = ctx
+                    .allocator("GenericBuffer::new()")?
+                    .create_buffer(
+                        &vk::BufferCreateInfo::default()
+                            .size((length * size_of::<T>()) as u64)
+                            .usage(usage)
+                            .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                        &vk_mem::AllocationCreateInfo {
+                            flags: vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
+                            usage: vk_mem::MemoryUsage::AutoPreferHost,
+                            ..Default::default()
+                        },
+                    )
+                    .context("GenericBuffer::new()")?;
                 buffer_vec.push(buffer);
-                buffer_alloc_vec.push(TvAllocation::new(&ctx, alloc)?);
+                buffer_alloc_vec
+                    .push(TvAllocation::new(&ctx, alloc).context("GenericBuffer::new()")?);
             }
 
             Ok(Self {
@@ -142,8 +150,10 @@ impl<T: Copy> GenericBuffer<T> {
                     data.len()
                 );
             }
-            let allocator = self.ctx.allocator("GenericBuffer::write")?;
-            let ptr = allocator.map_memory(alloc.as_mut())?;
+            let allocator = self.ctx.allocator("GenericBuffer::write()")?;
+            let ptr = allocator
+                .map_memory(alloc.as_mut())
+                .context("GenericBuffer::write()")?;
             Align::new(ptr.cast(), align_of::<T>() as u64, alloc.size()).copy_from_slice(data);
             allocator.unmap_memory(alloc.as_mut());
         }
@@ -167,7 +177,7 @@ impl<T: Copy> GenericBuffer<T> {
         unsafe {
             for (&buffer, alloc) in self.buffer_vec.iter().zip(&self.buffer_alloc_vec) {
                 self.ctx
-                    .allocator("GenericBuffer::vk_free")?
+                    .allocator("GenericBuffer::vk_free()")?
                     .destroy_buffer(buffer, alloc.as_mut());
             }
         }
@@ -195,18 +205,28 @@ impl<T: Copy> SwapchainGenericBuffer<T> {
         usage: vk::BufferUsageFlags,
     ) -> Result<Self> {
         Ok(Self {
-            inner: GenericBuffer::new(ctx, swapchain.frames_in_flight(), length, usage)?,
+            inner: GenericBuffer::new(ctx, swapchain.frames_in_flight(), length, usage)
+                .context("SwapchainGenericBuffer::new()")?,
         })
     }
 
     pub fn write(&self, swapchain: &Swapchain, data: &[T]) -> Result<()> {
         self.inner
-            .write(data, swapchain.current_frame_index())
-            .context("caused by: SwapchainGenericBuffer::write()")
+            .write(
+                data,
+                swapchain
+                    .current_frame_index()
+                    .context("SwapchainGenericBuffer::write()")?,
+            )
+            .context("SwapchainGenericBuffer::write()")
     }
 
-    pub fn current_buffer(&self, swapchain: &Swapchain) -> vk::Buffer {
-        self.inner.buffer(swapchain.current_frame_index())
+    pub fn current_buffer(&self, swapchain: &Swapchain) -> Result<vk::Buffer> {
+        Ok(self.inner.buffer(
+            swapchain
+                .current_frame_index()
+                .context("SwapchainGenericBuffer::current_buffer()")?,
+        ))
     }
 
     pub fn len(&self) -> usize {
@@ -216,7 +236,7 @@ impl<T: Copy> SwapchainGenericBuffer<T> {
     pub fn vk_free(&self) -> Result<()> {
         self.inner
             .vk_free()
-            .context("caused by: SwapchainGenericBuffer::vk_free()")
+            .context("SwapchainGenericBuffer::vk_free()")
     }
 }
 
@@ -232,31 +252,34 @@ impl<T: Copy> VertexBuffer<T> {
                 swapchain,
                 length,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
-            )?,
+            )
+            .context("VertexBuffer::new()")?,
         })
     }
 
     pub fn write(&self, swapchain: &Swapchain, data: &[T]) -> Result<()> {
         self.inner
             .write(swapchain, data)
-            .context("caused by: VertexBuffer::write()")
+            .context("VertexBuffer::write()")
     }
 
-    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) {
+    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) -> Result<()> {
         unsafe {
             self.inner.inner.ctx.device().cmd_bind_vertex_buffers(
                 command_buffer,
                 0,
-                &[self.inner.current_buffer(swapchain)],
+                &[self
+                    .inner
+                    .current_buffer(swapchain)
+                    .context("VertexBuffer::bind()")?],
                 &[0],
             );
+            Ok(())
         }
     }
 
     pub fn vk_free(&self) -> Result<()> {
-        self.inner
-            .vk_free()
-            .context("caused by: VertexBuffer::vk_free()")
+        self.inner.vk_free().context("VertexBuffer::vk_free()")
     }
 }
 
@@ -272,24 +295,28 @@ impl IndexBuffer32 {
                 swapchain,
                 length,
                 vk::BufferUsageFlags::INDEX_BUFFER,
-            )?,
+            )
+            .context("IndexBuffer32::new()")?,
         })
     }
 
     pub fn write(&self, swapchain: &Swapchain, data: &[u32]) -> Result<()> {
         self.inner
             .write(swapchain, data)
-            .context("caused by: IndexBuffer32::write()")
+            .context("IndexBuffer32::write()")
     }
 
-    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) {
+    pub fn bind(&self, swapchain: &Swapchain, command_buffer: vk::CommandBuffer) -> Result<()> {
         unsafe {
             self.inner.inner.ctx.device().cmd_bind_index_buffer(
                 command_buffer,
-                self.inner.current_buffer(swapchain),
+                self.inner
+                    .current_buffer(swapchain)
+                    .context("IndexBuffer32::bind()")?,
                 0,
                 vk::IndexType::UINT32,
             );
+            Ok(())
         }
     }
 
@@ -301,8 +328,6 @@ impl IndexBuffer32 {
     }
 
     pub fn vk_free(&self) -> Result<()> {
-        self.inner
-            .vk_free()
-            .context("caused by: IndexBuffer32::vk_free()")
+        self.inner.vk_free().context("IndexBuffer32::vk_free()")
     }
 }
