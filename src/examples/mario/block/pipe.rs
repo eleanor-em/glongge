@@ -28,8 +28,8 @@ impl Pipe {
     pub fn orientation(&self) -> Vec2 {
         self.orientation
     }
-    pub fn destination(&self) -> Option<SceneDestination> {
-        self.destination
+    pub fn destination(&self) -> Option<&SceneDestination> {
+        self.destination.as_ref()
     }
 }
 

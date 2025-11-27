@@ -56,7 +56,7 @@ fn main() -> Result<()> {
             // let name = SplineScene.name();
             let name = MarioOverworldScene.name();
             // let name = MarioUndergroundScene.name();
-            scene_handler.set_initial_scene(name, 0)?;
+            scene_handler.set_initial_scene(&name, 0)?;
             Ok(scene_handler)
         })
 }

@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -762,22 +761,16 @@ impl GlyphReader {
         })
     }
 
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn width(&self) -> u32 {
         self.all_px_bounds.extent().x as u32
     }
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn height(&self) -> u32 {
         self.all_px_bounds.extent().y as u32
     }
 }
 
 impl Read for GlyphReader {
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
+    #[allow(clippy::cast_possible_wrap)]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let glyphs = self
             .inner
@@ -786,20 +779,20 @@ impl Read for GlyphReader {
         let mut format_instructions = self
             .format_instructions
             .take()
-            .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?;
+            .ok_or(std::io::Error::from(ErrorKind::UnexpectedEof))?
+            .into_iter()
+            .peekable();
+
         let mut colour = Colour::black();
-
-        // Zero out the buffer first.
-        for val in buf.iter_mut() {
-            *val = 0;
-        }
-
+        let width = self.width();
+        let height = self.height();
+        buf.fill(0);
         for (i, glyph) in glyphs.into_iter().enumerate() {
             // Handle formatting.
-            if let Some(&format_ix) = format_instructions.keys().next() {
-                check_le!(i, format_ix);
-                if i == format_ix {
-                    match format_instructions.pop_first() {
+            if let Some((format_ix, _)) = format_instructions.peek() {
+                check_le!(i, *format_ix);
+                if i == *format_ix {
+                    match format_instructions.next() {
                         None => unreachable!(),
                         Some((_, FormatInstruction::SetColourTo(new_colour))) => {
                             colour = new_colour;
@@ -812,18 +805,13 @@ impl Read for GlyphReader {
             let img_left = bounds.min.x as u32 - self.all_px_bounds.left() as u32;
             let img_top = bounds.min.y as u32 - self.all_px_bounds.top() as u32;
             glyph.draw(|x, y, v| {
-                // Below calls should never really fail.
-                let Some(x) = (img_left + x).to_i32() else {
-                    error!("glyph x out of range: {}", img_left + x);
-                    return;
-                };
-                let Some(y) = (img_top + y).to_i32() else {
-                    error!("glyph y out of range: {}", img_top + y);
-                    return;
-                };
-                let px = Vec2i { x, y }.as_index(self.width(), self.height()) * 4;
-                buf[px..px + 3].copy_from_slice(&colour.as_bytes()[..3]);
-                buf[px + 3] = buf[px + 3].saturating_add((v * colour.a * 255.0) as u8);
+                let x = (img_left + x) as i32;
+                let y = (img_top + y) as i32;
+                let px = Vec2i { x, y }.as_index(width, height) * 4;
+                buf[px] = (colour.r * 255.0) as u8;
+                buf[px + 1] = (colour.g * 255.0) as u8;
+                buf[px + 2] = (colour.b * 255.0) as u8;
+                buf[px + 3] = (v * colour.a * 255.0) as u8;
             });
         }
         Ok(buf.len())

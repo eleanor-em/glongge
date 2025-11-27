@@ -373,7 +373,7 @@ impl Player {
                         ctx,
                         Vec2::down(),
                         ctx.object().transform_of(pipe).centre,
-                        instruction,
+                        instruction.clone(),
                     );
                 }
             }
@@ -396,7 +396,7 @@ impl Player {
                     ctx,
                     Vec2::right(),
                     ctx.object().transform_of(pipe).centre,
-                    instruction,
+                    instruction.clone(),
                 );
             }
         }
@@ -439,7 +439,7 @@ impl Player {
                         CoroutineResponse::Wait(Duration::from_millis(600))
                     }
                     CoroutineState::Waiting => {
-                        ctx.scene_mut().goto(pipe_instruction);
+                        ctx.scene_mut().goto(pipe_instruction.clone());
                         CoroutineResponse::Complete
                     }
                 }
@@ -471,7 +471,7 @@ impl Player {
                     }
                 }
                 CoroutineState::Waiting => {
-                    if ctx.scene().name() == MarioOverworldScene.name() {
+                    if *ctx.scene().name() == MarioOverworldScene.name() {
                         ctx.scene_mut().data::<AliveEnemyMap>().reset();
                     }
                     ctx.scene_mut().goto(MarioOverworldScene.at_entrance(0));
@@ -572,7 +572,7 @@ impl SceneObject for Player {
         Ok(None)
     }
     fn on_ready(&mut self, ctx: &mut UpdateContext) {
-        if ctx.scene_mut().name() == MarioOverworldScene.name() {
+        if *ctx.scene_mut().name() == MarioOverworldScene.name() {
             *ctx.viewport_mut().clear_col() = Colour::from_bytes(92, 148, 252, 255);
             self.music = self.overworld_music.clone();
         } else {

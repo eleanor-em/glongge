@@ -107,12 +107,15 @@ impl Scene for MarioOverworldScene {
         SceneName::new("mario-overworld")
     }
 
-    fn initial_data(&self) -> Vec<u8> {
-        bincode::encode_to_vec(&AliveEnemyMap::default(), bincode::config::standard()).unwrap()
+    fn initial_data(&self) -> Result<Vec<u8>> {
+        Ok(bincode::encode_to_vec(
+            &AliveEnemyMap::default(),
+            bincode::config::standard(),
+        )?)
     }
 
     #[allow(clippy::too_many_lines)]
-    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut ts = TilesetBuilder::new("res/world_sheet.png", 16).named("Doughnut");
         let block = ts.create_tile_collision([0, 33], &vec![BLOCK_COLLISION_TAG]);
         let crumble = ts.create_tile_collision([0, 50], &vec![BLOCK_COLLISION_TAG]);
@@ -812,7 +815,7 @@ impl Scene for MarioUndergroundScene {
         SceneName::new("mario-underground")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         scene_object_vec![
             Canvas::default(),
             Player::new(

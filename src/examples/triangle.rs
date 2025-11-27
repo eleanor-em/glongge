@@ -17,7 +17,7 @@ impl Scene for TriangleScene {
         SceneName::new("triangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 1;
         let mut rng = rand::rng();
         let xs: Vec<f32> = Uniform::new(0.0, 200.0)

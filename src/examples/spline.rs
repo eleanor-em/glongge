@@ -16,7 +16,7 @@ impl Scene for SplineScene {
         SceneName::new("spline")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         let mut spline = InteractiveSpline::default();
         {
             let mut rng = rand::rng();

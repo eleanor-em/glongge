@@ -117,8 +117,6 @@ impl CollisionHandler {
                         UnorderedPair::new_distinct(emitter, *listener)
                     });
                 self.possible_collisions.extend(new_possible_collisions);
-            } else {
-                error!("CollisionHandler: `object_ids_by_listening` missing tag: {tag}");
             }
         }
         for (tag, listeners) in new_object_ids_by_listening_tag {
@@ -130,8 +128,6 @@ impl CollisionHandler {
                         UnorderedPair::new_distinct(*emitter, listener)
                     });
                 self.possible_collisions.extend(new_possible_collisions);
-            } else {
-                error!("CollisionHandler: `object_ids_by_tag` missing tag: {tag}");
             }
         }
     }
@@ -245,9 +241,7 @@ impl CollisionHandler {
     pub(crate) fn get_object_ids_by_emitting_tag(
         &self,
         tag: &'static str,
-    ) -> Result<&BTreeSet<ObjectId>> {
-        self.object_ids_by_emitting_tag.get(tag).with_context(|| {
-            format!("CollisionHandler: `object_ids_by_emitting_tag` missing tag: {tag}")
-        })
+    ) -> Option<&BTreeSet<ObjectId>> {
+        self.object_ids_by_emitting_tag.get(tag)
     }
 }

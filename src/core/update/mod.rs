@@ -1520,7 +1520,7 @@ impl<'a> UpdateContext<'a> {
             input: input_handler,
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),
-                scene_name: caller.scene_name,
+                scene_name: caller.scene_name.clone(),
                 scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
@@ -1829,7 +1829,7 @@ impl<'a> FixedUpdateContext<'a> {
         Ok(Self {
             scene: SceneContext {
                 scene_instruction_tx: caller.scene_instruction_tx.clone(),
-                scene_name: caller.scene_name,
+                scene_name: caller.scene_name.clone(),
                 scene_data: caller.scene_data.clone(),
                 coroutines: caller.coroutines.entry(this_id).or_default(),
                 pending_removed_coroutines: BTreeSet::new(),
@@ -1988,8 +1988,8 @@ impl SceneContext<'_> {
             .send(SceneInstruction::Goto(instruction))
             .unwrap();
     }
-    pub fn name(&self) -> SceneName {
-        self.scene_name
+    pub fn name(&self) -> &SceneName {
+        &self.scene_name
     }
     pub fn data<T>(&mut self) -> SceneData<T>
     where
@@ -1997,6 +1997,15 @@ impl SceneContext<'_> {
     {
         SceneData::new(self.scene_data.clone())
             .expect("failed to ser/de scene_data, do the types match?")
+    }
+    pub fn read_data<T>(&self) -> T
+    where
+        T: Clone + Default + bincode::Decode<()> + bincode::Encode,
+    {
+        SceneData::<T>::new(self.scene_data.clone())
+            .expect("failed to ser/de scene_data, do the types match?")
+            .read()
+            .clone()
     }
 
     /// Starts a new coroutine (background task) for this object.
@@ -2250,6 +2259,27 @@ impl ObjectContext<'_> {
                 .with_context(|| format!("ObjectContext::children_of_inner(): missing object_id in children: {object_id:?}"))
         }
     }
+    pub fn children_of_into<T: SceneObject>(
+        &self,
+        obj: &TreeSceneObject,
+    ) -> Vec<TreeObjectOfType<T>> {
+        self.children_of_into_inner::<T>(obj.object_id)
+    }
+    fn children_of_into_inner<T: SceneObject>(
+        &self,
+        object_id: ObjectId,
+    ) -> Vec<TreeObjectOfType<T>> {
+        let Some(children) = gg_err::log_and_ok(
+            self.children_of_inner(object_id)
+                .context("ObjectContext::children_of()"),
+        ) else {
+            return Vec::new();
+        };
+        children
+            .iter()
+            .filter_map(TreeObjectOfType::<T>::of)
+            .collect()
+    }
 
     /// Returns the [`ObjectId`] of this object's parent in the scene hierarchy, or [`None`] if
     /// this is a root object.
@@ -2396,6 +2426,16 @@ impl ObjectContext<'_> {
     }
     pub fn first_sibling_into<T: SceneObject>(&self) -> Option<TreeObjectOfType<T>> {
         self.first_child_of_into::<T>(self.parent_id().unwrap_or(ObjectId::root()))
+    }
+    pub fn siblings_into<T: SceneObject>(&self) -> Vec<TreeObjectOfType<T>> {
+        self.children_of_into_inner::<T>(self.parent_id().unwrap_or(ObjectId::root()))
+            .into_iter()
+            .filter(|c| {
+                c.inner
+                    .as_ref()
+                    .is_none_or(|c| c.object_id != self.this_id())
+            })
+            .collect()
     }
 
     fn others_inner(&self) -> impl Iterator<Item = &TreeSceneObject> {
@@ -2815,20 +2855,17 @@ impl ObjectContext<'_> {
     ) -> Option<NonemptyVec<Collision>> {
         let mut rv = Vec::new();
         for tag in listening_tags {
-            match self
+            if let Some(colliding_ids) = self
                 .object_handler
                 .collision_handler
                 .get_object_ids_by_emitting_tag(tag)
             {
-                Ok(colliding_ids) => {
-                    rv.extend(colliding_ids.iter().filter_map(|other_id| {
-                        gg_err::log_err_then(
-                            self.test_collision_inner(collider, *other_id)
-                                .context("ObjectContext::test_collision_using()"),
-                        )
-                    }));
-                }
-                Err(e) => error!("{}", e.root_cause()),
+                rv.extend(colliding_ids.iter().filter_map(|other_id| {
+                    gg_err::log_err_then(
+                        self.test_collision_inner(collider, *other_id)
+                            .context("ObjectContext::test_collision_using()"),
+                    )
+                }));
             }
         }
         NonemptyVec::try_from_vec(rv)

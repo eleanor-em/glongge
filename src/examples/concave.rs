@@ -14,7 +14,7 @@ impl Scene for ConcaveScene {
         SceneName::new("concave")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         vec![
             Canvas::new().into_wrapper(),
             ConvexHull::default().into_wrapper(),

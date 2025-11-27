@@ -221,6 +221,17 @@ impl Vec2 {
         rv.y = gg_float::force_positive_zero(rv.y);
         rv
     }
+    #[must_use]
+    pub fn normed_4(&self) -> Vec2 {
+        let normed = self.normed();
+        if normed.x.abs() > normed.y.abs() {
+            normed.project_x().normed()
+        } else if normed.y.abs() > normed.x.abs() {
+            normed.project_y().normed()
+        } else {
+            Vec2::zero()
+        }
+    }
 
     /// Returns the magnitude of the vector's largest component.
     ///

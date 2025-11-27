@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::{any::Any, collections::BTreeMap};
 
 struct InternalScene {
-    scene: GgMutex<Box<dyn Scene + Send>>,
+    scene: GgMutex<Box<dyn Scene>>,
     name: SceneName,
     input_handler: GgMutex<InputHandler>,
     render_handler: RenderHandlerLite,
@@ -25,7 +25,7 @@ struct InternalScene {
 
 impl InternalScene {
     fn new(
-        scene: GgMutex<Box<dyn Scene + Send>>,
+        scene: GgMutex<Box<dyn Scene>>,
         input_handler: GgMutex<InputHandler>,
         render_handler: RenderHandlerLite,
     ) -> Result<Self> {
@@ -50,12 +50,11 @@ impl InternalScene {
                 .with_context(|| {
                     format!("scene locked in InternalScene::run(): {:?}", self.name)
                 })?;
+            let mut data = data
+                .try_lock("InternalScene::init()")?
+                .context("expect scene data to be unused")?;
             scene
-                .load(
-                    &data
-                        .try_lock("InternalScene::init()")?
-                        .context("expect scene data to be unused")?,
-                )
+                .load(&mut data)
                 .with_context(|| format!("could not load data for {:?}", self.name))?;
             scene.create_objects(entrance_id)
         };
@@ -68,7 +67,7 @@ impl InternalScene {
                 initial_objects,
                 self.input_handler.clone(),
                 &self.render_handler,
-                self.name,
+                self.name.clone(),
                 data,
             )
             .context("failed to create scene: {this_name:?}")?,
@@ -86,13 +85,12 @@ impl InternalScene {
 }
 
 /// A key to uniquely identify a scene in scene management collections and for scene navigation.
-/// Simple wrapper around `&'static str`.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct SceneName(&'static str);
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, bincode::Decode, bincode::Encode)]
+pub struct SceneName(String);
 
 impl SceneName {
-    pub fn new(text: &'static str) -> Self {
-        Self(text)
+    pub fn new(text: impl AsRef<str>) -> Self {
+        Self(text.as_ref().to_string())
     }
 }
 
@@ -100,10 +98,10 @@ impl SceneName {
 /// `entrance_id` allows objects to change their behaviour based on how the scene was entered.
 /// For example, in a Mario-style game, different `entrance_id`s could represent different pipes
 /// or doors that lead into the scene, each positioning the player at a different location.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, bincode::Decode, bincode::Encode)]
 pub struct SceneDestination {
-    name: SceneName,
-    entrance_id: usize,
+    pub name: SceneName,
+    pub entrance_id: usize,
 }
 
 impl SceneDestination {
@@ -138,7 +136,7 @@ impl SceneDestination {
 ///         SceneName::new("level_1")
 ///     }
 ///
-///     fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
+///     fn create_objects(&mut self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
 ///         // Create initial objects for the level
 ///         scene_object_vec![
 ///             Box::new(Player::new(self.player_start)),
@@ -147,7 +145,7 @@ impl SceneDestination {
 ///     }
 /// }
 /// ```
-pub trait Scene: Send {
+pub trait Scene {
     fn name(&self) -> SceneName;
 
     /// Loads scene-specific data from a byte array.
@@ -170,7 +168,7 @@ pub trait Scene: Send {
     ///     self.player_start = scene_data.player_start;
     ///     Ok(())
     /// }
-    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    /// fn create_objects(&mut self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
     ///     // Create initial objects for the level
     ///     scene_object_vec![
     ///         Box::new(Player::new(self.player_start)),
@@ -179,7 +177,7 @@ pub trait Scene: Send {
     /// }
     /// ```
     #[allow(unused_variables)]
-    fn load(&mut self, data: &[u8]) -> Result<()> {
+    fn load(&mut self, data: &mut Vec<u8>) -> Result<()> {
         Ok(())
     }
     /// Create the initial objects for the scene.
@@ -187,7 +185,7 @@ pub trait Scene: Send {
     /// # Examples
     ///
     /// ```ignore
-    /// fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    /// fn create_objects(&mut self, entrance_id: usize) -> Vec<SceneObjectWrapper> {
     ///     // Create initial objects for the level
     ///     scene_object_vec![
     ///         Box::new(Player::new(self.player_start)),
@@ -195,11 +193,11 @@ pub trait Scene: Send {
     ///     ]
     /// }
     /// ```
-    fn create_objects(&self, entrance_id: usize) -> Vec<SceneObjectWrapper>;
+    fn create_objects(&mut self, entrance_id: usize) -> Vec<SceneObjectWrapper>;
 
     #[allow(unused_variables)]
-    fn initial_data(&self) -> Vec<u8> {
-        Vec::new()
+    fn initial_data(&self) -> Result<Vec<u8>> {
+        Ok(Vec::new())
     }
 
     /// Returns a `SceneDestination` for a specific entrance point in this scene.
@@ -284,11 +282,11 @@ impl SceneHandler {
         }
     }
     /// Creates and registers a new scene. See [`SceneHandler`] example.
-    pub fn create_scene<S: Scene + Send + 'static>(&mut self, scene: S) -> Result<()> {
+    pub fn create_scene<S: Scene + 'static>(&mut self, scene: S) -> Result<()> {
         check_false!(self.scenes.contains_key(&scene.name()));
         check_false!(self.scene_data.contains_key(&scene.name()));
         self.scene_data
-            .insert(scene.name(), GgMutex::new(scene.initial_data()));
+            .insert(scene.name(), GgMutex::new(scene.initial_data()?));
         self.scenes.insert(
             scene.name(),
             Rc::new(RefCell::new(InternalScene::new(
@@ -300,7 +298,7 @@ impl SceneHandler {
         Ok(())
     }
 
-    pub fn set_initial_scene(&mut self, name: SceneName, entrance_id: usize) -> Result<()> {
+    pub fn set_initial_scene(&mut self, name: &SceneName, entrance_id: usize) -> Result<()> {
         check_is_none!(self.current_scene);
         self.current_scene = Some(self.init_scene(name, entrance_id)?);
         Ok(())
@@ -322,7 +320,7 @@ impl SceneHandler {
                 name: next_name,
                 entrance_id: next_entrance_id,
             })) => {
-                self.current_scene = Some(self.init_scene(next_name, next_entrance_id)?);
+                self.current_scene = Some(self.init_scene(&next_name, next_entrance_id)?);
             }
             None => {}
         }
@@ -330,11 +328,11 @@ impl SceneHandler {
     }
     fn init_scene(
         &mut self,
-        name: SceneName,
+        name: &SceneName,
         entrance_id: usize,
     ) -> Result<Rc<RefCell<InternalScene>>> {
         let (Some(scene), Some(scene_data)) =
-            (self.scenes.get_mut(&name), self.scene_data.get(&name))
+            (self.scenes.get_mut(name), self.scene_data.get(name))
         else {
             panic!("could not start scene {name:?}: scene missing?");
         };

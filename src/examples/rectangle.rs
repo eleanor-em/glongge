@@ -20,7 +20,7 @@ impl Scene for RectangleScene {
         SceneName::new("rectangle")
     }
 
-    fn create_objects(&self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
+    fn create_objects(&mut self, _entrance_id: usize) -> Vec<SceneObjectWrapper> {
         const N: usize = 10;
         let mut objects = Uniform::new(50.0, 350.0)
             .unwrap()
