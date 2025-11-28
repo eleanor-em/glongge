@@ -718,11 +718,6 @@ impl GuiRenderHandler {
             .front()
             .is_some_and(|t| t.is_ready())
         {
-            if let Some(last_font_texture) = self.font_texture.take() {
-                self.texture_handler
-                    .free_internal_texture(&last_font_texture)
-                    .context("GuiRenderHandler::pre_render_update()")?;
-            }
             self.font_texture = self.next_font_textures.pop_front();
         }
         let next_meshes = self
