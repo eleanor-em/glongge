@@ -156,7 +156,6 @@ impl<'a> SwapchainBuilder<'a> {
 
             let mut present_semaphores = Vec::new();
             let mut submit_semaphores = Vec::new();
-            let mut acquire_fences = Vec::new();
             let mut present_fences = Vec::new();
             for _ in 0..desired_image_count {
                 present_semaphores.push(
@@ -178,13 +177,6 @@ impl<'a> SwapchainBuilder<'a> {
                 .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
                 .context("SwapchainBuilder::build(): vkCreateSemaphore() failed")?;
             for _ in 0..desired_frames_in_flight {
-                acquire_fences.insert(
-                    0,
-                    self.ctx
-                        .device()
-                        .create_fence(&vk::FenceCreateInfo::default(), None)
-                        .context("SwapchainBuilder::build(): vkCreateFence() failed")?,
-                );
                 present_fences.insert(
                     0,
                     self.ctx
@@ -238,7 +230,6 @@ impl<'a> SwapchainBuilder<'a> {
                 present_semaphores,
                 first_present_semaphore,
                 submit_semaphores,
-                acquire_fences,
                 present_fences,
                 present_command_pools,
                 present_command_buffers,
@@ -373,7 +364,6 @@ pub struct Swapchain {
     present_semaphores: Vec<vk::Semaphore>,
     first_present_semaphore: vk::Semaphore,
     submit_semaphores: Vec<vk::Semaphore>,
-    acquire_fences: Vec<vk::Fence>,
     present_fences: Vec<vk::Fence>,
 
     present_command_pools: Vec<vk::CommandPool>,
@@ -677,9 +667,6 @@ impl Swapchain {
             self.ctx
                 .device()
                 .destroy_semaphore(self.first_present_semaphore, None);
-            for &fence in &self.acquire_fences {
-                self.ctx.device().destroy_fence(fence, None);
-            }
             for &fence in &self.present_fences {
                 self.ctx.device().destroy_fence(fence, None);
             }
