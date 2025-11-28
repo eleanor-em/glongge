@@ -1,4 +1,5 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 translation;
@@ -29,8 +30,8 @@ struct Material {
     uint dummy3;
 };
 
-layout(set = 0, binding = 0) readonly buffer MaterialData {
-    Material data[16384];
+layout(std140, set = 0, binding = 0) readonly buffer MaterialData {
+    Material data[];
 } materials;
 
 void main() {
@@ -61,7 +62,7 @@ void main() {
         vec4(round(translation), 0, 1));
     gl_Position = projection * translation_mat * rotation_mat * scale_mat * vec4(position, 0, 1);
 
-    Material material = materials.data[material_id];
+    Material material = materials.data[nonuniformEXT(material_id)];
     vec2 uvs[] = {
         material.uv_top_left,
         vec2(material.uv_bottom_right.x, material.uv_top_left.y),

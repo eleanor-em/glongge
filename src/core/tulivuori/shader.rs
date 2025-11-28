@@ -1,7 +1,6 @@
 use crate::resource::texture::TextureHandler;
 use crate::{
-    check_false, core::tulivuori::TvWindowContext, core::tulivuori::swapchain::Swapchain,
-    core::tulivuori::texture::TvInternalTexture,
+    check_false, core::tulivuori::TvWindowContext, core::tulivuori::texture::TvInternalTexture,
 };
 use anyhow::{Context, Result};
 use ash::{util::read_spv, vk};
@@ -164,7 +163,7 @@ impl GuiVertFragShader {
                             },
                             vk::DescriptorPoolSize {
                                 ty: vk::DescriptorType::SAMPLED_IMAGE,
-                                descriptor_count: 2,
+                                descriptor_count: 1,
                             },
                         ])
                         .max_sets(1),
@@ -185,7 +184,7 @@ impl GuiVertFragShader {
                             vk::DescriptorSetLayoutBinding::default()
                                 .binding(1)
                                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                                .descriptor_count(2)
+                                .descriptor_count(1)
                                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
                         ])
                         .push_next(
@@ -212,16 +211,9 @@ impl GuiVertFragShader {
                 .create_pipeline_layout(
                     &vk::PipelineLayoutCreateInfo::default()
                         .set_layouts(&[desc_set_layout])
-                        .push_constant_ranges(&[
-                            vk::PushConstantRange::default()
-                                .stage_flags(vk::ShaderStageFlags::VERTEX)
-                                .offset(0)
-                                .size(8),
-                            vk::PushConstantRange::default()
-                                .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-                                .offset(8)
-                                .size(4),
-                        ]),
+                        .push_constant_ranges(&[vk::PushConstantRange::default()
+                            .stage_flags(vk::ShaderStageFlags::VERTEX)
+                            .size(8)]),
                     None,
                 )
                 .context("GuiVertFragShader::new()")?;
@@ -270,8 +262,7 @@ impl GuiVertFragShader {
             let blank = texture_handler
                 .get_blank_texture()
                 .context("GuiVertFragShader::new()")?;
-            rv.update_font_texture_inner(&blank, 0);
-            rv.update_font_texture_inner(&blank, 1);
+            rv.update_font_texture(&blank);
             Ok(rv)
         }
     }
@@ -280,13 +271,12 @@ impl GuiVertFragShader {
         self.pipeline_layout
     }
 
-    fn update_font_texture_inner(&self, font_texture: &Arc<TvInternalTexture>, index: usize) {
+    pub fn update_font_texture(&self, font_texture: &Arc<TvInternalTexture>) {
         unsafe {
             self.inner.ctx.device().update_descriptor_sets(
                 &[vk::WriteDescriptorSet::default()
                     .dst_set(self.descriptor_set)
                     .dst_binding(1)
-                    .dst_array_element(index as u32)
                     .descriptor_count(1)
                     .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                     .image_info(&[vk::DescriptorImageInfo {
@@ -297,19 +287,6 @@ impl GuiVertFragShader {
                 &[],
             );
         }
-    }
-    pub fn update_font_texture(
-        &self,
-        font_texture: &Arc<TvInternalTexture>,
-        swapchain: &Swapchain,
-    ) -> Result<()> {
-        self.update_font_texture_inner(
-            font_texture,
-            swapchain
-                .current_frame_index()
-                .context("GuiVertFragShader::update_font_texture()")?,
-        );
-        Ok(())
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {

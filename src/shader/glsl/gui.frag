@@ -1,11 +1,7 @@
 #version 460
 
-layout(push_constant) uniform FragPC {
-    layout (offset = 8) uint frame_index;
-};
-
 layout(set = 0, binding = 0) uniform sampler s;
-layout(set = 0, binding = 1) uniform texture2D font_texture[2];
+layout(set = 0, binding = 1) uniform texture2D font_texture;
 
 layout(location = 0) in vec4 v_color;
 layout(location = 1) in vec2 v_uv;
@@ -26,7 +22,7 @@ vec4 srgba_gamma_from_linear(vec4 rgba) {
 
 void main() {
 //    vec4 texture_in_gamma = srgba_gamma_from_linear(texture(sampler2D(font_texture, s), v_uv));
-    vec4 texture_in_gamma = texture(sampler2D(font_texture[frame_index], s), v_uv);
+    vec4 texture_in_gamma = texture(sampler2D(font_texture, s), v_uv);
     vec4 frag_color_gamma = v_color * texture_in_gamma;
     f_col = frag_color_gamma;
 }

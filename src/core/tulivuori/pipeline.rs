@@ -101,7 +101,6 @@ impl Pipeline {
         command_buffer: vk::CommandBuffer,
         viewport: &TvViewport,
         vert_push_constants: &[u8],
-        frag_push_constants: &[u8],
     ) {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         unsafe {
@@ -132,15 +131,6 @@ impl Pipeline {
                     vk::ShaderStageFlags::VERTEX,
                     0,
                     vert_push_constants,
-                );
-            }
-            if !frag_push_constants.is_empty() {
-                self.ctx.device().cmd_push_constants(
-                    command_buffer,
-                    self.pipeline_layout,
-                    vk::ShaderStageFlags::FRAGMENT,
-                    8,
-                    frag_push_constants,
                 );
             }
         }

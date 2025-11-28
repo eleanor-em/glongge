@@ -1,4 +1,4 @@
-use crate::core::tulivuori::tv_mem::TvAllocation;
+use crate::core::tulivuori::tv_mem::{BufferWithAlloc, TvAllocation};
 use crate::{
     core::prelude::*, core::tulivuori::TvWindowContext, core::tulivuori::swapchain::Swapchain,
 };
@@ -59,13 +59,12 @@ impl<T: Copy> GenericDeviceBuffer<T> {
         }
     }
 
-    pub fn buffer(&self, copy_index: usize) -> vk::Buffer {
+    pub fn buffer(&'_ self, copy_index: usize) -> BufferWithAlloc<'_> {
         check_lt!(copy_index, self.copy_count);
-        self.buffer_vec[copy_index]
-    }
-
-    pub fn size(&self) -> vk::DeviceSize {
-        self.buffer_alloc_vec[0].size()
+        BufferWithAlloc {
+            buffer: self.buffer_vec[copy_index],
+            alloc: &self.buffer_alloc_vec[copy_index],
+        }
     }
 
     pub fn vk_free(&self) -> Result<()> {
@@ -140,7 +139,6 @@ impl<T: Copy> GenericBuffer<T> {
                 self.copy_count
             );
         }
-        check_lt!(copy_index, self.copy_count);
         unsafe {
             let alloc = &self.buffer_alloc_vec[copy_index];
             let alloc_count = alloc.size() as usize / size_of::<T>();
@@ -160,16 +158,16 @@ impl<T: Copy> GenericBuffer<T> {
         Ok(())
     }
 
-    pub fn buffer(&self, copy_index: usize) -> vk::Buffer {
+    pub fn buffer(&'_ self, copy_index: usize) -> BufferWithAlloc<'_> {
         check_lt!(copy_index, self.copy_count);
-        self.buffer_vec[copy_index]
+        BufferWithAlloc {
+            buffer: self.buffer_vec[copy_index],
+            alloc: &self.buffer_alloc_vec[copy_index],
+        }
     }
 
     pub fn len(&self) -> usize {
         self.length
-    }
-    pub fn size(&self) -> vk::DeviceSize {
-        self.buffer_alloc_vec[0].size()
     }
 
     pub fn vk_free(&self) -> Result<()> {
@@ -222,11 +220,14 @@ impl<T: Copy> SwapchainGenericBuffer<T> {
     }
 
     pub fn current_buffer(&self, swapchain: &Swapchain) -> Result<vk::Buffer> {
-        Ok(self.inner.buffer(
-            swapchain
-                .current_frame_index()
-                .context("SwapchainGenericBuffer::current_buffer()")?,
-        ))
+        Ok(self
+            .inner
+            .buffer(
+                swapchain
+                    .current_frame_index()
+                    .context("SwapchainGenericBuffer::current_buffer()")?,
+            )
+            .buffer)
     }
 
     pub fn len(&self) -> usize {

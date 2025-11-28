@@ -50,3 +50,8 @@ impl TvAllocation {
         unsafe { &mut *self.alloc.get() }
     }
 }
+
+pub struct BufferWithAlloc<'a> {
+    pub buffer: vk::Buffer,
+    pub alloc: &'a TvAllocation,
+}

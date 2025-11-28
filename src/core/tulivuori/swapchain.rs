@@ -330,16 +330,12 @@ impl Drop for SwapchainImages {
 }
 
 pub struct SwapchainAcquireInfo {
-    acquired_image_index: usize,
     acquired_frame_index: usize,
     frames_in_flight: usize,
     is_suboptimal: bool,
 }
 
 impl SwapchainAcquireInfo {
-    pub fn acquired_image_index(&self) -> usize {
-        self.acquired_image_index
-    }
     pub fn acquired_frame_index(&self) -> usize {
         self.acquired_frame_index
     }
@@ -461,11 +457,9 @@ impl Swapchain {
                 .context("Swapchain::acquire_next_image_timeout(): vkAcquireNextImage() failed")?;
             Ok(rv)
         } {
-            Ok((next_image_index, is_suboptimal)) => {
-                let acquired_image_index = next_image_index as usize;
-                self.image_index.current = Some(acquired_image_index);
+            Ok((acquired_image_index, is_suboptimal)) => {
+                self.image_index.current = Some(acquired_image_index as usize);
                 Ok(Some(SwapchainAcquireInfo {
-                    acquired_image_index,
                     acquired_frame_index,
                     frames_in_flight: self.frames_in_flight,
                     is_suboptimal,

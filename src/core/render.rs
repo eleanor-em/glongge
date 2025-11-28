@@ -469,14 +469,10 @@ impl RenderHandler {
             )?;
             self.resource_handler
                 .texture
-                .upload_all_pending_with(draw_command_buffer)
+                .upload_all_pending_with(draw_command_buffer, &acquire)
                 .context("RenderHandler::render_update()")?;
             self.swapchain
                 .cmd_begin_rendering(draw_command_buffer, Some(clear_col))
-                .context("RenderHandler::render_update()")?;
-            self.resource_handler
-                .texture
-                .bind(draw_command_buffer)
                 .context("RenderHandler::render_update()")?;
             let mut bytes = (viewport.physical_width() / viewport.combined_scale_factor())
                 .to_le_bytes()
@@ -486,10 +482,13 @@ impl RenderHandler {
                     .to_le_bytes()
                     .to_vec(),
             );
-            self.pipeline
-                .bind(draw_command_buffer, &viewport, &bytes, &[]);
+            self.pipeline.bind(draw_command_buffer, &viewport, &bytes);
             self.vertex_buffer
                 .bind(&self.swapchain, draw_command_buffer)
+                .context("RenderHandler::render_update()")?;
+            self.resource_handler
+                .texture
+                .bind(draw_command_buffer)
                 .context("RenderHandler::render_update()")?;
             self.ctx
                 .device()
@@ -889,11 +888,11 @@ impl GuiRenderHandler {
     ) -> Result<()> {
         unsafe {
             if let Some(font_texture) = self.font_texture.as_ref() {
-                self.gui_shader
-                    .update_font_texture(font_texture, swapchain)
-                    .context("GuiRenderHandler::do_render()")?;
+                self.gui_shader.update_font_texture(font_texture);
             }
-            swapchain.cmd_begin_rendering(command_buffer, None)?;
+            swapchain
+                .cmd_begin_rendering(command_buffer, None)
+                .context("GuiRenderHandler::do_render()")?;
             let viewport = self
                 .viewport
                 .try_lock_short("GuiRenderHandler::do_render()")?;
@@ -905,13 +904,8 @@ impl GuiRenderHandler {
                     .to_le_bytes()
                     .to_vec(),
             );
-            let frag_bytes = (swapchain
-                .current_frame_index()
-                .context("GuiRenderHandler::do_render()")? as u32)
-                .to_le_bytes()
-                .to_vec();
             self.gui_pipeline
-                .bind(command_buffer, &viewport, &vert_bytes, &frag_bytes);
+                .bind(command_buffer, &viewport, &vert_bytes);
             self.gui_shader.bind(command_buffer);
             self.gui_index_buffer
                 .bind(swapchain, command_buffer)

@@ -629,24 +629,30 @@ impl TextureHandler {
         let mut inner = self.lock_inner("upload_all_pending")?;
         if inner.material_handler.has_pending_materials {
             let materials = inner.material_handler.materials().clone();
-            inner.texture_manager.stage_materials(materials)?;
+            inner.texture_manager.stage_materials(materials, None)?;
             inner.material_handler.has_pending_materials = false;
         }
         inner.texture_manager.wait_complete_upload()?;
         inner.texture_manager.upload_all_pending(by)?;
         Ok(())
     }
-    pub fn upload_all_pending_with(&self, command_buffer: vk::CommandBuffer) -> Result<()> {
+    pub fn upload_all_pending_with(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        swapchain_acquire_info: &SwapchainAcquireInfo,
+    ) -> Result<()> {
         let mut inner = self.lock_inner("upload_all_pending_with")?;
         if inner.material_handler.has_pending_materials {
             let materials = inner.material_handler.materials().clone();
-            inner.texture_manager.stage_materials(materials)?;
+            inner
+                .texture_manager
+                .stage_materials(materials, Some(swapchain_acquire_info))?;
             inner.material_handler.has_pending_materials = false;
         }
         inner.texture_manager.wait_complete_upload()?;
         inner
             .texture_manager
-            .upload_all_pending_with(command_buffer);
+            .upload_all_pending_with(command_buffer, swapchain_acquire_info);
         Ok(())
     }
 
