@@ -53,7 +53,7 @@ pub struct ShaderExecWithVertexData {
 pub(crate) struct RenderDataChannel {
     pub(crate) vertices: Vec<VertexWithCol>,
     pub(crate) shader_execs: Vec<ShaderExecWithVertexData>,
-    pub(crate) gui_commands: Vec<Box<GuiClosure>>,
+    pub(crate) gui_command: Option<Box<GuiClosure>>,
     pub(crate) is_gui_enabled: bool,
     viewport: TvViewport,
     should_resize: bool,
@@ -67,7 +67,7 @@ impl RenderDataChannel {
         GgMutex::new(Self {
             vertices: Vec::new(),
             shader_execs: Vec::new(),
-            gui_commands: Vec::new(),
+            gui_command: None,
             is_gui_enabled: false,
             viewport,
             should_resize: false,
@@ -385,8 +385,25 @@ impl RenderHandler {
         Ok(self)
     }
 
-    pub(crate) fn wait_update_done(&self) {
+    pub(crate) fn wait_update_done(&self) -> Result<()> {
         self.update_sync.wait_update_done();
+        if USE_DEBUG_GUI && self.gui.is_gui_enabled {
+            // For the GUI responses to keyboard and mouse to work correctly, build() and
+            // render_update() must be one-to-one. So, wait for gui_command to be Some.
+            loop {
+                let rx = self
+                    .render_data_channel
+                    .try_lock_short("RenderHandler::render_update()")?;
+                if !rx.is_gui_enabled {
+                    break;
+                }
+                if rx.gui_command.is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_lines)]
@@ -410,7 +427,7 @@ impl RenderHandler {
             self.perf_stats.acquire.stop();
 
             self.perf_stats.update_vertices.start();
-            let (update, viewport, vertex_count, gui_commands, clear_col) = {
+            let (update, viewport, vertex_count, gui_command, clear_col) = {
                 let mut rx = self
                     .render_data_channel
                     .try_lock_short("RenderHandler::render_update()")?;
@@ -425,13 +442,12 @@ impl RenderHandler {
                 let vertex_count = self
                     .update_vertex_buffer(&self.swapchain, &rx.next_frame(), &viewport)
                     .context("RenderHandler::render_update()")?;
-                let gui_commands = rx.gui_commands.drain(..).collect_vec();
                 self.gui.is_gui_enabled = rx.is_gui_enabled;
                 (
                     rx.last_frame_counter,
                     viewport.clone(),
                     vertex_count,
-                    gui_commands,
+                    rx.gui_command.take(),
                     rx.clear_col,
                 )
             };
@@ -443,7 +459,7 @@ impl RenderHandler {
             self.perf_stats.update_gui.start();
             let do_render_gui =
                 self.gui
-                    .pre_render_update(&self.swapchain, egui_state, gui_commands)?;
+                    .pre_render_update(&self.swapchain, egui_state, gui_command)?;
             self.perf_stats.update_gui.stop();
 
             self.perf_stats.record_command_buffer.start();
@@ -668,7 +684,7 @@ impl GuiRenderHandler {
         &mut self,
         swapchain: &Swapchain,
         egui_state: &mut egui_winit::State,
-        mut gui_commands: Vec<Box<GuiClosure>>,
+        mut gui_command: Option<Box<GuiClosure>>,
     ) -> Result<bool> {
         let egui_input = egui_state.take_egui_input(&self.window.inner);
         {
@@ -686,7 +702,7 @@ impl GuiRenderHandler {
             return Ok(false);
         }
         let full_output = self.gui_ctx.inner.run(egui_input, move |ctx| {
-            for cmd in gui_commands.drain(..) {
+            if let Some(cmd) = gui_command.take() {
                 cmd(ctx);
             }
         });

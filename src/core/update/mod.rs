@@ -818,29 +818,31 @@ impl UpdateHandler {
             }
         }
         // We have to do this even if !self.debug_gui.enabled() so that the in/out animations work.
-        let selected_object = self.debug_gui.selected_object();
-        let gui_cmds = self
-            .object_handler
-            .objects
-            .clone()
-            .into_iter()
-            .filter_map(|(id, obj)| {
-                gg_err::log_and_ok(
-                    UpdateContext::new(self, input_handler, id, object_tracker)
-                        .context("UpdateHandler::call_on_gui(): on_gui"),
-                )
-                .and_then(|ctx| {
-                    obj.inner_mut()
-                        .as_gui_object()
-                        .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
+        if self.gui_cmd.is_none() {
+            let selected_object = self.debug_gui.selected_object();
+            let gui_cmds = self
+                .object_handler
+                .objects
+                .clone()
+                .into_iter()
+                .filter_map(|(id, obj)| {
+                    gg_err::log_and_ok(
+                        UpdateContext::new(self, input_handler, id, object_tracker)
+                            .context("UpdateHandler::call_on_gui(): on_gui"),
+                    )
+                    .and_then(|ctx| {
+                        obj.inner_mut()
+                            .as_gui_object()
+                            .map(|gui_obj| (id, gui_obj.on_gui(&ctx, selected_object == Some(id))))
+                    })
                 })
-            })
-            .collect();
-        self.gui_cmd = Some(self.debug_gui.build(
-            input_handler,
-            &mut self.object_handler,
-            gui_cmds,
-        ));
+                .collect();
+            self.gui_cmd = Some(self.debug_gui.build(
+                input_handler,
+                &mut self.object_handler,
+                gui_cmds,
+            ));
+        }
         self.object_handler.update_all_transforms();
         self.perf_stats.on_gui.stop();
     }
@@ -1317,7 +1319,7 @@ impl UpdateHandler {
             .render_data_channel
             .try_lock_short("UpdateHandler::complete_update_with_render_infos()")?;
         self.last_render_perf_stats = render_data_channel.last_render_stats.clone();
-        render_data_channel.gui_commands = self.gui_cmd.take().into_iter().collect_vec();
+        render_data_channel.gui_command = self.gui_cmd.take();
         render_data_channel.is_gui_enabled = self.debug_gui.is_enabled();
         if let Some(vertices) = maybe_vertices {
             render_data_channel.vertices = vertices;

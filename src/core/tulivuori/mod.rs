@@ -920,7 +920,7 @@ impl WindowEventHandlerInner {
             .render_handler
             .as_mut()
             .context("render_update() missing render_handler")?;
-        render_handler.wait_update_done();
+        render_handler.wait_update_done()?;
         render_handler.render_update(self.render_count, &mut self.egui_state)?;
         self.render_count += 1;
         Ok(())
