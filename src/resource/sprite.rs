@@ -36,6 +36,7 @@ pub struct GgInternalSprite {
     frame_time_ms: Vec<u32>,
 
     paused: bool,
+    should_pause_at_end: bool,
     state: SpriteState,
     last_state: SpriteState,
 
@@ -65,6 +66,7 @@ impl GgInternalSprite {
             frame_time_ms,
             render_item,
             paused: false,
+            should_pause_at_end: false,
             elapsed_us: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
@@ -85,6 +87,7 @@ impl GgInternalSprite {
             render_item: RenderItem::default(),
             frame_time_ms: Vec::new(),
             paused: false,
+            should_pause_at_end: false,
             elapsed_us: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
@@ -124,6 +127,7 @@ impl GgInternalSprite {
             render_item,
             frame_time_ms,
             paused: false,
+            should_pause_at_end: false,
             elapsed_us: 0,
             state: SpriteState::Show,
             last_state: SpriteState::Show,
@@ -157,6 +161,9 @@ impl GgInternalSprite {
     }
     pub fn set_name(&mut self, name: impl AsRef<str>) {
         self.name = name.as_ref().to_string();
+    }
+    pub fn set_should_pause_at_end(&mut self) {
+        self.should_pause_at_end = true;
     }
 
     pub fn max_extent(&self) -> Vec2 {
@@ -248,6 +255,12 @@ impl SceneObject for GgInternalSprite {
             return;
         }
         self.elapsed_us += ctx.delta().as_micros();
+    }
+
+    fn on_update_end(&mut self, _ctx: &mut UpdateContext) {
+        if self.frame() == self.frame_time_ms.len() - 1 && self.should_pause_at_end {
+            self.paused = true;
+        }
     }
 
     fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
@@ -540,6 +553,9 @@ impl Sprite {
     pub fn set_clip(&self, clip: Rect) {
         self.inner_unwrap().set_clip(clip);
     }
+    pub fn set_should_pause_at_end(&mut self) {
+        self.inner_unwrap().should_pause_at_end = true;
+    }
 
     pub fn translate(&self, by: Vec2) {
         self.inner.as_ref().unwrap().transform_mut().centre += by;
@@ -575,6 +591,9 @@ impl Sprite {
 
     pub fn frame(&self) -> usize {
         self.inner_unwrap().frame()
+    }
+    pub fn is_last_frame(&self) -> bool {
+        self.frame() == self.inner_unwrap().frame_time_ms.len() - 1
     }
 }
 
