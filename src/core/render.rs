@@ -532,6 +532,8 @@ impl RenderHandler {
         viewport: &TvViewport,
     ) -> Result<u32> {
         let shader_render_frame = render_frame.for_shader(ShaderId::default());
+        // Use unstable sort to make it more likely to cause a visible problem when there are
+        // incorrect depths.
         let render_infos = shader_render_frame
             .render_infos
             .iter()

@@ -574,6 +574,7 @@ impl UpdateHandler {
                 })
                 .collect(),
             &mut pending_move_objects,
+            None,
         );
         rv.complete_update_with_moved_objects(pending_move_objects);
         rv.complete_update_with_render_infos()?;
@@ -1059,6 +1060,7 @@ impl UpdateHandler {
             input_handler,
             pending_add_objects,
             &mut pending_move_objects,
+            None,
         );
         self.complete_update_with_moved_objects(pending_move_objects);
 
@@ -1102,6 +1104,7 @@ impl UpdateHandler {
         input_handler: &InputHandler,
         mut pending_add_objects: Vec<TreeSceneObject>,
         pending_move_objects: &mut BTreeMap<ObjectId, ObjectId>,
+        recursion_depth: Option<usize>,
     ) {
         // Multiple iterations, because on_load() may add more objects.
         // See e.g. GgInternalContainer.
@@ -1164,14 +1167,19 @@ impl UpdateHandler {
 
         if !pending_add.is_empty() {
             // This should work, but isn't well-tested and could in theory lead to stack overflows.
-            warn!(
-                "fc={}: recursive call to complete_update_with_added_objects(); should not add objects in on_ready()",
-                self.frame_counter
-            );
+            let recursion_depth = recursion_depth.unwrap_or(0) + 1;
+            if recursion_depth > 1 {
+                warn!(
+                    "fc={}: recursive call to complete_update_with_added_objects(); depth = {recursion_depth}",
+                    self.frame_counter
+                );
+            }
+            check_lt!(recursion_depth, 1000);
             self.complete_update_with_added_objects(
                 input_handler,
                 pending_add,
                 pending_move_objects,
+                Some(recursion_depth),
             );
         }
     }

@@ -833,6 +833,9 @@ pub struct Label {
     depth: VertexDepth,
     blend_col: Colour,
 
+    is_hidden: bool,
+    extra_scale: Vec2,
+
     nickname: Option<String>,
 }
 
@@ -849,6 +852,8 @@ impl Label {
             last_render_settings: None,
             depth: VertexDepth::default(),
             blend_col: Colour::white(),
+            is_hidden: false,
+            extra_scale: Vec2::one(),
             nickname: None,
         }
     }
@@ -872,6 +877,12 @@ impl Label {
     }
     pub fn render_settings(&mut self) -> &mut FontRenderSettings {
         &mut self.render_settings
+    }
+    pub fn hide(&mut self) {
+        self.is_hidden = true;
+    }
+    pub fn show(&mut self) {
+        self.is_hidden = false;
     }
 
     pub fn overflowed(&self) -> bool {
@@ -915,11 +926,16 @@ impl Label {
             self.text_to_set = Some(text);
         }
     }
+
+    pub fn scale(&mut self, by: Vec2) {
+        self.extra_scale = self.extra_scale.component_wise(by);
+    }
 }
 
 #[partially_derive_scene_object]
 impl SceneObject for Label {
     fn on_load(&mut self, ctx: &mut LoadContext) -> Result<Option<RenderItem>> {
+        // XXX: set scale here so that translations stay accurate.
         ctx.object().transform_mut().scale = Vec2::one() / self.font.sample_ratio();
         Ok(None)
     }
@@ -950,18 +966,24 @@ impl SceneObject for Label {
         {
             self.render_text(ctx, text);
         }
-        if let Some(sprite) = self.sprite.as_mut()
-            && let Some(settings) = self.last_render_settings.as_ref()
-        {
-            let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths());
-            if clip.top_left().is_nan() {
-                warn!("NaN clipping boundary? {clip:?}");
+        if let Some(sprite) = self.sprite.as_mut() {
+            if let Some(settings) = self.last_render_settings.as_ref() {
+                let clip = Rect::new(ctx.absolute_transform().centre, settings.half_widths());
+                if clip.top_left().is_nan() {
+                    warn!("NaN clipping boundary? {clip:?}");
+                }
+                if clip.bottom_right().is_nan() {
+                    warn!("NaN clipping boundary? {clip:?}");
+                }
+                sprite.set_clip(clip);
             }
-            if clip.bottom_right().is_nan() {
-                warn!("NaN clipping boundary? {clip:?}");
+            if self.is_hidden {
+                sprite.hide();
+            } else {
+                sprite.show();
             }
-            sprite.set_clip(clip);
         }
+        ctx.object().transform_mut().scale = self.extra_scale / self.font.sample_ratio();
     }
 
     fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
