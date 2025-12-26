@@ -987,15 +987,15 @@ pub enum VertexDepth {
 }
 
 impl VertexDepth {
-    pub fn min_value() -> Self {
+    pub const fn min_value() -> Self {
         Self::Back(0)
     }
-    pub fn max_value() -> Self {
+    pub const fn max_value() -> Self {
         Self::Front(u16::MAX)
     }
 
     #[must_use]
-    pub fn next_smaller(self) -> Self {
+    pub const fn next_smaller(self) -> Self {
         match self {
             VertexDepth::Back(depth) => VertexDepth::Back(depth.saturating_sub(1)),
             VertexDepth::Middle => VertexDepth::Back(u16::MAX),
@@ -1004,7 +1004,7 @@ impl VertexDepth {
         }
     }
     #[must_use]
-    pub fn next_larger(self) -> Self {
+    pub const fn next_larger(self) -> Self {
         match self {
             VertexDepth::Back(u16::MAX) => VertexDepth::Middle,
             VertexDepth::Back(depth) => VertexDepth::Back(depth.saturating_add(1)),
