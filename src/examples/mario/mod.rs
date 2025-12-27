@@ -109,7 +109,7 @@ impl Scene for MarioOverworldScene {
 
     fn initial_data(&self) -> Result<Vec<u8>> {
         Ok(bincode::encode_to_vec(
-            &AliveEnemyMap::default(),
+            AliveEnemyMap::default(),
             bincode::config::standard(),
         )?)
     }

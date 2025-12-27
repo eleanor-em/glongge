@@ -212,7 +212,12 @@ pub struct TextureManager {
 }
 
 impl TextureManager {
-    #[allow(clippy::too_many_lines)]
+    // TODO: fix this properly
+    #[allow(
+        clippy::too_many_lines,
+        clippy::large_stack_arrays,
+        clippy::unreadable_literal
+    )]
     pub(crate) fn new(ctx: Arc<TvWindowContext>) -> Result<TextureManager> {
         check_eq!(
             size_of_val(&[RawMaterial::default(); MAX_MATERIAL_COUNT]),
@@ -648,7 +653,7 @@ impl TextureManager {
         self.material_staging_buffer
             .write(
                 &data,
-                swapchain_acquire_info.map_or(2, |s| s.acquired_frame_index()),
+                swapchain_acquire_info.map_or(2, SwapchainAcquireInfo::acquired_frame_index),
             )
             .context("TextureManager::stage_materials()")?;
         self.materials_changed = true;
@@ -662,9 +667,9 @@ impl TextureManager {
     ) {
         unsafe {
             if self.materials_changed {
-                let staging_buffer = self
-                    .material_staging_buffer
-                    .buffer(swapchain_acquire_info.map_or(2, |s| s.acquired_frame_index()));
+                let staging_buffer = self.material_staging_buffer.buffer(
+                    swapchain_acquire_info.map_or(2, SwapchainAcquireInfo::acquired_frame_index),
+                );
                 let device_buffer = self.material_device_buffer.buffer(0);
                 check_eq!(staging_buffer.alloc.size(), device_buffer.alloc.size());
                 self.ctx.device().cmd_copy_buffer2(

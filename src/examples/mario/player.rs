@@ -18,8 +18,9 @@ use glongge_derive::partially_derive_scene_object;
 use num_traits::Zero;
 use std::time::Duration;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 enum PlayerState {
+    #[default]
     Idle,
     Walking,
     Running,
@@ -31,23 +32,12 @@ enum PlayerState {
     RidingFlagpole,
 }
 
-impl Default for PlayerState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
 enum SpeedRegime {
+    #[default]
     Slow,
     Medium,
     Fast,
-}
-
-impl Default for SpeedRegime {
-    fn default() -> Self {
-        Self::Slow
-    }
 }
 
 #[derive(Default)]
