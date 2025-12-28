@@ -2179,3 +2179,107 @@ pub fn smooth(t: f32) -> f32 {
 pub fn sigmoid(t: f32, k: f32) -> f32 {
     1.0 / (1.0 + (-(t - 0.5) / k).exp())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_traits::Float;
+
+    #[test]
+    fn vec2_scalar_multiplication() {
+        let a = Vec2 { x: 1.0, y: 1.0 };
+        assert_eq!(a * 2.0, Vec2 { x: 2.0, y: 2.0 });
+        assert_eq!(2.0 * a, Vec2 { x: 2.0, y: 2.0 });
+    }
+
+    #[test]
+    fn vec2_subtraction() {
+        let a = Vec2 { x: 1.0, y: 1.0 };
+        assert!(f32::abs((a * 2.0 - a).x - 1.0) < f32::epsilon());
+        assert!(f32::abs((a * 2.0 - a).y - 1.0) < f32::epsilon());
+    }
+
+    #[test]
+    fn mat3x3_rotation_composition() {
+        let composed = Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5);
+        assert!(composed.almost_eq(Mat3x3::one()));
+    }
+
+    #[test]
+    fn vec2_rotation_cardinal_directions() {
+        assert!(
+            Vec2::right()
+                .rotated(45_f32.to_radians())
+                .almost_eq(Vec2 { x: 1.0, y: 1.0 }.normed())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(90_f32.to_radians())
+                .almost_eq(Vec2::down())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(135_f32.to_radians())
+                .almost_eq(Vec2 { x: -1.0, y: 1.0 }.normed())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(180_f32.to_radians())
+                .almost_eq(Vec2::left())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(225_f32.to_radians())
+                .almost_eq(Vec2 { x: -1.0, y: -1.0 }.normed())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(270_f32.to_radians())
+                .almost_eq(Vec2::up())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(315_f32.to_radians())
+                .almost_eq(Vec2 { x: 1.0, y: -1.0 }.normed())
+        );
+        assert!(
+            Vec2::right()
+                .rotated(360_f32.to_radians())
+                .almost_eq(Vec2::right())
+        );
+    }
+
+    #[test]
+    fn vec2_rotation_equivalence() {
+        for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
+            assert!(
+                vec.rotated(45_f32.to_radians())
+                    .almost_eq(vec.rotated((-315_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(90_f32.to_radians())
+                    .almost_eq(vec.rotated((-270_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(135_f32.to_radians())
+                    .almost_eq(vec.rotated((-225_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(180_f32.to_radians())
+                    .almost_eq(vec.rotated((-180_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(225_f32.to_radians())
+                    .almost_eq(vec.rotated((-135_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(270_f32.to_radians())
+                    .almost_eq(vec.rotated((-90_f32).to_radians()))
+            );
+            assert!(
+                vec.rotated(315_f32.to_radians())
+                    .almost_eq(vec.rotated((-45_f32).to_radians()))
+            );
+        }
+    }
+}
