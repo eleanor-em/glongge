@@ -16,6 +16,9 @@ pub const DISABLE_SOUND: bool = true;
 
 pub const USE_VSYNC: bool = true;
 pub const SYNC_UPDATE_TO_RENDER: bool = false;
+// XXX: Ideally this would be determined by swapchain initialization, but ResourceHandler
+// (which creates TextureManager) is created before the swapchain.
+pub const FRAMES_IN_FLIGHT: usize = 2;
 
 pub const FONT_SAMPLE_RATIO: f32 = 4.0;
 
