@@ -9,8 +9,8 @@ layout(location = 4) in vec2 f_clip_max;
 
 layout(location = 0) out vec4 f_col;
 
-layout(set = 0, binding = 1) uniform sampler s;
-layout(set = 0, binding = 2) uniform texture2D tex[1023];
+layout(set = 0, binding = 0) uniform sampler s;
+layout(set = 0, binding = 1) uniform texture2D tex[1023];
 
 void main() {
     if (gl_FragCoord.x < f_clip_min.x || gl_FragCoord.y < f_clip_min.y

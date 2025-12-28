@@ -67,6 +67,19 @@ impl<T: Copy> GenericDeviceBuffer<T> {
         }
     }
 
+    pub(crate) fn copy_count(&self) -> usize {
+        self.copy_count
+    }
+
+    pub fn device_address(&self, copy_index: usize) -> vk::DeviceAddress {
+        check_lt!(copy_index, self.copy_count);
+        unsafe {
+            self.ctx.device().get_buffer_device_address(
+                &vk::BufferDeviceAddressInfo::default().buffer(self.buffer_vec[copy_index]),
+            )
+        }
+    }
+
     pub fn vk_free(&self) -> Result<()> {
         check_false!(self.did_vk_free.swap(true, Ordering::Relaxed));
         unsafe {

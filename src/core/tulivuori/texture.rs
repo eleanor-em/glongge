@@ -253,10 +253,6 @@ impl TextureManager {
                         .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND)
                         .pool_sizes(&[
                             vk::DescriptorPoolSize {
-                                ty: vk::DescriptorType::STORAGE_BUFFER,
-                                descriptor_count: 1,
-                            },
-                            vk::DescriptorPoolSize {
                                 ty: vk::DescriptorType::SAMPLER,
                                 descriptor_count: 1,
                             },
@@ -277,16 +273,11 @@ impl TextureManager {
                         .bindings(&[
                             vk::DescriptorSetLayoutBinding::default()
                                 .binding(0)
-                                .descriptor_count(1)
-                                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                                .stage_flags(vk::ShaderStageFlags::VERTEX),
-                            vk::DescriptorSetLayoutBinding::default()
-                                .binding(1)
                                 .descriptor_type(vk::DescriptorType::SAMPLER)
                                 .immutable_samplers(&[sampler])
                                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
                             vk::DescriptorSetLayoutBinding::default()
-                                .binding(2)
+                                .binding(1)
                                 .descriptor_count(MAX_TEXTURE_COUNT as u32)
                                 .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
                                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
@@ -294,7 +285,6 @@ impl TextureManager {
                         .push_next(
                             &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
                                 .binding_flags(&[
-                                    vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
                                     vk::DescriptorBindingFlags::empty(),
                                     vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
                                 ]),
@@ -318,7 +308,7 @@ impl TextureManager {
                         .set_layouts(&[desc_set_layout])
                         .push_constant_ranges(&[vk::PushConstantRange::default()
                             .stage_flags(vk::ShaderStageFlags::VERTEX)
-                            .size(8)]),
+                            .size(16)]),
                     None,
                 )
                 .context("TextureManager::new(): vkCreatePipelineLayout() failed")?;
@@ -353,7 +343,9 @@ impl TextureManager {
                 ctx.clone(),
                 1,
                 MAX_MATERIAL_COUNT,
-                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+                vk::BufferUsageFlags::STORAGE_BUFFER
+                    | vk::BufferUsageFlags::TRANSFER_DST
+                    | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             )
             .context("TextureManager::new()")?;
             let material_staging_buffer = GenericBuffer::new(
@@ -433,6 +425,12 @@ impl TextureManager {
                 &[],
             );
         }
+    }
+
+    pub fn materials_buffer_address(&self) -> vk::DeviceAddress {
+        // The materials device buffer has only one copy, so the address is always the same.
+        check_eq!(self.material_device_buffer.copy_count(), 1);
+        self.material_device_buffer.device_address(0)
     }
 
     fn get_next_texture_id(&mut self) -> Option<TextureId> {
@@ -532,24 +530,13 @@ impl TextureManager {
             self.uploading_textures.clear();
 
             unsafe {
-                let material_device_buffer = self.material_device_buffer.buffer(0);
                 self.ctx.device().update_descriptor_sets(
-                    &[
-                        vk::WriteDescriptorSet::default()
-                            .dst_set(self.descriptor_set)
-                            .dst_binding(0)
-                            .descriptor_count(1)
-                            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                            .buffer_info(&[vk::DescriptorBufferInfo::default()
-                                .buffer(material_device_buffer.buffer)
-                                .range(vk::WHOLE_SIZE)]),
-                        vk::WriteDescriptorSet::default()
-                            .dst_set(self.descriptor_set)
-                            .dst_binding(2)
-                            .descriptor_count(MAX_TEXTURE_COUNT as u32)
-                            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                            .image_info(&self.descriptor_image_infos),
-                    ],
+                    &[vk::WriteDescriptorSet::default()
+                        .dst_set(self.descriptor_set)
+                        .dst_binding(1)
+                        .descriptor_count(MAX_TEXTURE_COUNT as u32)
+                        .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                        .image_info(&self.descriptor_image_infos)],
                     &[],
                 );
             }

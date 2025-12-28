@@ -482,6 +482,13 @@ impl RenderHandler {
                     .to_le_bytes()
                     .to_vec(),
             );
+            bytes.extend(
+                self.resource_handler
+                    .texture
+                    .materials_buffer_address()
+                    .context("RenderHandler::render_update()")?
+                    .to_le_bytes(),
+            );
             self.pipeline.bind(draw_command_buffer, &viewport, &bytes);
             self.vertex_buffer
                 .bind(&self.swapchain, draw_command_buffer)

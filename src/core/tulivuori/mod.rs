@@ -306,12 +306,14 @@ impl TvWindowContextBuilder {
             perf_stats.lap("create surface");
 
             // TODO: find a way to make these into builder struct members.
-            let features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true); // non-essential
+            let features = vk::PhysicalDeviceFeatures::default()
+                .sampler_anisotropy(true) // non-essential
+                .shader_int64(true);
             let features_v12 = vk::PhysicalDeviceVulkan12Features::default()
                 .descriptor_binding_sampled_image_update_after_bind(true)
-                .descriptor_binding_storage_buffer_update_after_bind(true)
                 .descriptor_indexing(true)
-                .shader_sampled_image_array_non_uniform_indexing(true);
+                .shader_sampled_image_array_non_uniform_indexing(true)
+                .buffer_device_address(true);
             let features_v13 = vk::PhysicalDeviceVulkan13Features::default()
                 .dynamic_rendering(true)
                 .synchronization2(true);
@@ -353,11 +355,10 @@ impl TvWindowContextBuilder {
             let present_queue = device.get_device_queue(queue_family_index, 0);
             perf_stats.lap("create logical device");
 
-            let allocator = vk_mem::Allocator::new(vk_mem::AllocatorCreateInfo::new(
-                &instance,
-                &device,
-                physical_device,
-            ))?;
+            let mut allocator_create_info =
+                vk_mem::AllocatorCreateInfo::new(&instance, &device, physical_device);
+            allocator_create_info.flags = vk_mem::AllocatorCreateFlags::BUFFER_DEVICE_ADDRESS;
+            let allocator = vk_mem::Allocator::new(allocator_create_info)?;
             perf_stats.lap("create allocator");
             perf_stats.report(0);
 

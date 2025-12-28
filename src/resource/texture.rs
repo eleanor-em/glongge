@@ -372,6 +372,13 @@ impl TextureHandler {
             .clone())
     }
 
+    pub fn materials_buffer_address(&self) -> Result<vk::DeviceAddress> {
+        Ok(self
+            .lock_inner("TextureHandler::materials_buffer_address()")?
+            .texture_manager
+            .materials_buffer_address())
+    }
+
     fn load_file_inner(filename: &str) -> Result<RawTexture> {
         let path = Path::new(filename);
         let ext = path

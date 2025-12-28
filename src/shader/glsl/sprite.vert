@@ -1,5 +1,7 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 translation;
@@ -19,6 +21,7 @@ layout(location = 4) out vec2 f_clip_max;
 layout(push_constant) uniform WindowData {
     float window_width;
     float window_height;
+    uint64_t materials_address;
 };
 
 struct Material {
@@ -30,9 +33,9 @@ struct Material {
     uint dummy3;
 };
 
-layout(std140, set = 0, binding = 0) readonly buffer MaterialData {
+layout(buffer_reference, std140) readonly buffer MaterialData {
     Material data[];
-} materials;
+};
 
 void main() {
     // map ([0, window_width], [0, window_height]) to ([-1, 1], [-1, 1])
@@ -62,6 +65,7 @@ void main() {
         vec4(round(translation), 0, 1));
     gl_Position = projection * translation_mat * rotation_mat * scale_mat * vec4(position, 0, 1);
 
+    MaterialData materials = MaterialData(materials_address);
     Material material = materials.data[nonuniformEXT(material_id)];
     vec2 uvs[] = {
         material.uv_top_left,
