@@ -1,4 +1,5 @@
 use crate::core::config::TEXTURE_STATS_INTERVAL_S;
+use crate::core::prelude::*;
 use crate::core::tulivuori::swapchain::SwapchainAcquireInfo;
 use crate::{
     check, check_eq, check_false,
@@ -624,14 +625,13 @@ impl TextureManager {
         }
         for (id, mat) in materials {
             let entry = &mut data[id as usize];
-            entry.uv_top_left = mat
-                .area
-                .top_left()
+            // Inset by a tiny amount to avoid precision issues at texel boundaries
+            // that can cause sampling adjacent texels.
+            let epsilon = Vec2::splat(1.0 / 256.0);
+            entry.uv_top_left = (mat.area.top_left() + epsilon)
                 .component_wise_div(mat.texture_extent)
                 .into();
-            entry.uv_bottom_right = mat
-                .area
-                .bottom_right()
+            entry.uv_bottom_right = (mat.area.bottom_right() - epsilon)
                 .component_wise_div(mat.texture_extent)
                 .into();
             entry.texture_id = mat.texture_id;
