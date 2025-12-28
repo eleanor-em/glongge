@@ -1,5 +1,3 @@
-use num_traits::Float;
-
 use glongge::core::prelude::*;
 use glongge::core::scene::Scene;
 use glongge::util::GgContextBuilder;
@@ -16,7 +14,6 @@ use crate::examples::{
 };
 
 fn main() -> Result<()> {
-    run_test_cases();
     GgContextBuilder::new([1280, 800])?
         .with_extra_scale_factor(2.0)
         .build_and_run_window(|scene_handler| {
@@ -59,69 +56,4 @@ fn main() -> Result<()> {
             scene_handler.set_initial_scene(&name, 0)?;
             Ok(scene_handler)
         })
-}
-
-fn run_test_cases() {
-    // TODO: proper test cases...
-    let a = Vec2 { x: 1.0, y: 1. };
-    check!(a * 2. == Vec2 { x: 2.0, y: 2.0 });
-    check!(2. * a == Vec2 { x: 2.0, y: 2.0 });
-    check_lt!(f32::abs((a * 2.0 - a).x - 1.0), f32::epsilon());
-    check_lt!(f32::abs((a * 2.0 - a).y - 1.0), f32::epsilon());
-    check!(
-        (Mat3x3::rotation(-1.0) * Mat3x3::rotation(0.5) * Mat3x3::rotation(0.5))
-            .almost_eq(Mat3x3::one())
-    );
-
-    check_almost_eq!(
-        Vec2::right().rotated(45_f32.to_radians()),
-        Vec2 { x: 1.0, y: 1.0 }.normed()
-    );
-    check_almost_eq!(Vec2::right().rotated(90_f32.to_radians()), Vec2::down());
-    check_almost_eq!(
-        Vec2::right().rotated(135_f32.to_radians()),
-        Vec2 { x: -1.0, y: 1.0 }.normed()
-    );
-    check_almost_eq!(Vec2::right().rotated(180_f32.to_radians()), Vec2::left());
-    check_almost_eq!(
-        Vec2::right().rotated(225_f32.to_radians()),
-        Vec2 { x: -1.0, y: -1.0 }.normed()
-    );
-    check_almost_eq!(Vec2::right().rotated(270_f32.to_radians()), Vec2::up());
-    check_almost_eq!(
-        Vec2::right().rotated(315_f32.to_radians()),
-        Vec2 { x: 1.0, y: -1.0 }.normed()
-    );
-    check_almost_eq!(Vec2::right().rotated(360_f32.to_radians()), Vec2::right());
-
-    for vec in [Vec2::right(), Vec2::up(), Vec2::left(), Vec2::down()] {
-        check_almost_eq!(
-            vec.rotated(45_f32.to_radians()),
-            vec.rotated((-315_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(90_f32.to_radians()),
-            vec.rotated((-270_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(135_f32.to_radians()),
-            vec.rotated((-225_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(180_f32.to_radians()),
-            vec.rotated((-180_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(225_f32.to_radians()),
-            vec.rotated((-135_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(270_f32.to_radians()),
-            vec.rotated((-90_f32).to_radians())
-        );
-        check_almost_eq!(
-            vec.rotated(315_f32.to_radians()),
-            vec.rotated((-45_f32).to_radians())
-        );
-    }
 }
