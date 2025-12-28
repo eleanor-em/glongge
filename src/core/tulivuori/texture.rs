@@ -1,4 +1,5 @@
 use crate::core::config::TEXTURE_STATS_INTERVAL_S;
+use crate::core::prelude::*;
 use crate::core::tulivuori::swapchain::SwapchainAcquireInfo;
 use crate::{
     check, check_eq, check_false,
@@ -641,16 +642,36 @@ impl TextureManager {
         }
         for (id, mat) in materials {
             let entry = &mut data[id as usize];
-            entry.uv_top_left = mat
-                .area
-                .top_left()
-                .component_wise_div(mat.texture_extent)
-                .into();
-            entry.uv_bottom_right = mat
+            let uv_top_left = mat.area.top_left().component_wise_div(mat.texture_extent);
+            let uv_bottom_right = mat
                 .area
                 .bottom_right()
-                .component_wise_div(mat.texture_extent)
-                .into();
+                .component_wise_div(mat.texture_extent);
+            // Inset by a tiny amount to avoid precision issues at texel boundaries
+            // that can cause sampling adjacent texels.
+            let epsilon = Vec2::splat(1.0 / (mat.texture_extent.longest_component() * 10.0));
+            // Only check when not displaying the whole texture.
+            if !(uv_top_left == Vec2::zero() && uv_bottom_right == Vec2::one()) {
+                let tol = 1e-4;
+                if ((uv_bottom_right.x - uv_top_left.x) * epsilon.x).abs() > tol {
+                    error!(
+                        "Material {} is too sensitive: UVs are {uv_top_left:?} and {uv_bottom_right:?}, difference is {} vs. {tol}",
+                        id,
+                        (uv_bottom_right.x - uv_top_left.x) * epsilon.x
+                    );
+                }
+                if ((uv_bottom_right.y - uv_top_left.y) * epsilon.y).abs() > tol {
+                    error!(
+                        "Material {} is too sensitive: UVs are {uv_top_left:?} and {uv_bottom_right:?}, difference is {} vs. {tol}",
+                        id,
+                        (uv_bottom_right.y - uv_top_left.y) * epsilon.y
+                    );
+                }
+                check_lt!(((uv_bottom_right.x - uv_top_left.x) * epsilon.x).abs(), tol);
+                check_lt!(((uv_bottom_right.y - uv_top_left.y) * epsilon.y).abs(), tol);
+            }
+            entry.uv_top_left = (uv_top_left + epsilon).into();
+            entry.uv_bottom_right = (uv_bottom_right - epsilon).into();
             entry.texture_id = mat.texture_id;
         }
         // TODO: write only part of the buffer?
