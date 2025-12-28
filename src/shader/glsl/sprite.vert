@@ -13,7 +13,7 @@ layout(location = 6) in vec2 clip_min;
 layout(location = 7) in vec2 clip_max;
 
 layout(location = 0) out vec2 f_uv;
-layout(location = 1) out uint f_texture_id;
+layout(location = 1) flat out uint f_texture_id;
 layout(location = 2) out vec4 f_blend_col;
 layout(location = 3) out vec2 f_clip_min;
 layout(location = 4) out vec2 f_clip_max;
