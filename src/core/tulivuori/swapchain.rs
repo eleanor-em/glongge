@@ -1,8 +1,11 @@
+use crate::core::config::USE_VSYNC;
 use crate::util::gg_sync::GgMutex;
 use crate::{
     check_false, check_le,
     core::tulivuori::{TvWindowContext, tv},
+    info_every_seconds,
     util::colour::Colour,
+    warn_every_seconds,
 };
 use anyhow::{Context, Result, bail};
 use ash::{khr::swapchain, vk};
@@ -235,6 +238,8 @@ impl<'a> SwapchainBuilder<'a> {
                 present_command_buffers,
                 frame_index,
                 image_index,
+                wait_on_fence_count: 0,
+                nonzero_wait_on_fence_count: 0,
                 did_vk_free: AtomicBool::new(false),
             })
         }
@@ -368,6 +373,9 @@ pub struct Swapchain {
     frame_index: GgMutex<FrameIndex>,
     image_index: PresentImageIndex,
 
+    wait_on_fence_count: usize,
+    nonzero_wait_on_fence_count: usize,
+
     did_vk_free: AtomicBool,
 }
 
@@ -433,10 +441,11 @@ impl Swapchain {
         self.image_index.last = self.image_index.current;
 
         match unsafe {
-            let mut fences = vec![
-                self.current_present_fence()
-                    .context("Swapchain::acquire_next_image_timeout()")?,
-            ];
+            let present_fence = self
+                .current_present_fence()
+                .context("Swapchain::acquire_next_image_timeout()")?;
+            self.collect_fence_stats(present_fence)?;
+            let mut fences = vec![present_fence];
             fences.extend_from_slice(extra_fences);
             self.ctx
                 .device()
@@ -468,6 +477,41 @@ impl Swapchain {
             Err(vk::Result::TIMEOUT) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn collect_fence_stats(&mut self, fence: vk::Fence) -> Result<()> {
+        unsafe {
+            if !self
+                .ctx
+                .device()
+                .get_fence_status(fence)
+                .context("Swapchain::collect_fence_stats(): vkWaitForFences() failed")?
+            {
+                self.nonzero_wait_on_fence_count += 1;
+            }
+        }
+        self.wait_on_fence_count += 1;
+        let ratio =
+            self.nonzero_wait_on_fence_count as f64 / self.wait_on_fence_count as f64 * 100.0;
+        if USE_VSYNC || (5.0..95.0).contains(&ratio) {
+            // With vsync on, it is quite rare that the CPU waits for the GPU.
+            info_every_seconds!(
+                30,
+                "waited for fence: {}/{} = {:.2}%",
+                self.nonzero_wait_on_fence_count,
+                self.wait_on_fence_count,
+                ratio
+            );
+        } else {
+            warn_every_seconds!(
+                1,
+                "waited for fence: {}/{} = {:.2}%",
+                self.nonzero_wait_on_fence_count,
+                self.wait_on_fence_count,
+                ratio
+            );
+        }
+        Ok(())
     }
 
     pub fn submit_and_present_queue(&self, command_buffers: &[vk::CommandBuffer]) -> Result<()> {
