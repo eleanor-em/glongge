@@ -67,10 +67,6 @@ impl<T: Copy> GenericDeviceBuffer<T> {
         }
     }
 
-    pub(crate) fn copy_count(&self) -> usize {
-        self.copy_count
-    }
-
     pub fn device_address(&self, copy_index: usize) -> vk::DeviceAddress {
         check_lt!(copy_index, self.copy_count);
         unsafe {
@@ -166,6 +162,9 @@ impl<T: Copy> GenericBuffer<T> {
                 .map_memory(alloc.as_mut())
                 .context("GenericBuffer::write()")?;
             Align::new(ptr.cast(), align_of::<T>() as u64, alloc.size()).copy_from_slice(data);
+            allocator
+                .flush_allocation(alloc.as_mut(), 0, alloc.size())
+                .context("GenericBuffer::write(): flush failed")?;
             allocator.unmap_memory(alloc.as_mut());
         }
         Ok(())

@@ -3,7 +3,7 @@ use crate::core::prelude::*;
 use crate::core::tulivuori::swapchain::SwapchainAcquireInfo;
 use crate::{
     check, check_eq, check_false,
-    core::config::{FONT_SAMPLE_RATIO, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT},
+    core::config::{FONT_SAMPLE_RATIO, FRAMES_IN_FLIGHT, MAX_MATERIAL_COUNT, MAX_TEXTURE_COUNT},
     core::linalg::AxisAlignedExtent,
     core::tulivuori::buffer::GenericBuffer,
     core::tulivuori::buffer::GenericDeviceBuffer,
@@ -21,6 +21,9 @@ use std::{
 };
 use tracing::{error, info};
 use vk_mem::Alloc;
+
+/// Buffer index used for out-of-band uploads (init, async texture loading outside frame loop).
+const OUT_OF_BAND_FRAME_INDEX: usize = FRAMES_IN_FLIGHT;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default, Hash)]
 pub struct TextureId(u32);
@@ -200,7 +203,8 @@ pub struct TextureManager {
     textures: BTreeMap<TextureId, Arc<TvInternalTexture>>,
     unused_texture_ids: BTreeSet<TextureId>,
 
-    materials_changed: bool,
+    materials_upload_countdown: usize,
+    last_staged_buffer_index: Option<usize>,
     material_device_buffer: GenericDeviceBuffer<RawMaterial>,
     material_staging_buffer: GenericBuffer<RawMaterial>,
 
@@ -340,18 +344,20 @@ impl TextureManager {
                 .create_fence(&vk::FenceCreateInfo::default(), None)
                 .context("TextureManager::new(): vkCreateFence() failed")?;
 
+            // XXX: see comment above FRAMES_IN_FLIGHT in config.rs.
             let material_device_buffer = GenericDeviceBuffer::new(
                 ctx.clone(),
-                1,
+                FRAMES_IN_FLIGHT,
                 MAX_MATERIAL_COUNT,
                 vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::TRANSFER_DST
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             )
             .context("TextureManager::new()")?;
+            // +1 for out-of-band uploads (see OUT_OF_BAND_FRAME_INDEX).
             let material_staging_buffer = GenericBuffer::new(
                 ctx.clone(),
-                3,
+                FRAMES_IN_FLIGHT + 1,
                 MAX_MATERIAL_COUNT,
                 vk::BufferUsageFlags::TRANSFER_SRC,
             )
@@ -375,7 +381,8 @@ impl TextureManager {
                 uploading_textures: BTreeMap::new(),
                 textures: BTreeMap::new(),
                 unused_texture_ids: BTreeSet::new(),
-                materials_changed: false,
+                materials_upload_countdown: 0,
+                last_staged_buffer_index: None,
                 material_device_buffer,
                 material_staging_buffer,
                 last_reported_stage: None,
@@ -407,7 +414,7 @@ impl TextureManager {
                 MAX_TEXTURE_COUNT
             ];
             rv.stage_materials(BTreeMap::new(), None)?;
-            rv.upload_all_pending("TextureManager::new()")?;
+            rv.upload_all_pending_out_of_band("TextureManager::new()")?;
             check!(rv.wait_complete_upload()?);
 
             Ok(rv)
@@ -428,10 +435,8 @@ impl TextureManager {
         }
     }
 
-    pub fn materials_buffer_address(&self) -> vk::DeviceAddress {
-        // The materials device buffer has only one copy, so the address is always the same.
-        check_eq!(self.material_device_buffer.copy_count(), 1);
-        self.material_device_buffer.device_address(0)
+    pub fn materials_buffer_address(&self, frame_index: usize) -> vk::DeviceAddress {
+        self.material_device_buffer.device_address(frame_index)
     }
 
     fn get_next_texture_id(&mut self) -> Option<TextureId> {
@@ -546,16 +551,22 @@ impl TextureManager {
     }
 
     fn is_anything_pending(&self) -> bool {
-        !self.pending_textures.is_empty() || self.materials_changed
+        !self.pending_textures.is_empty() || self.materials_upload_countdown > 0
     }
-    pub fn upload_all_pending(&mut self, by: &'static str) -> Result<()> {
+    /// Synchronously uploads pending textures to the GPU.
+    ///
+    /// Note: materials are NOT copied to the device buffer here. Since this is an out-of-band
+    /// upload (no swapchain frame context), we don't know which device buffer to target.
+    /// Instead, `materials_upload_countdown` is set by `stage_materials()`, and subsequent
+    /// frame renders will copy from the staging buffer to each frame's device buffer.
+    pub fn upload_all_pending_out_of_band(&mut self, by: &'static str) -> Result<()> {
         check_false!(self.did_vk_free.load(Ordering::Relaxed));
         if !self.is_anything_pending() {
             return Ok(());
         }
 
         self.wait_complete_upload()
-            .context("TextureManager::upload_all_pending()")?;
+            .context("TextureManager::upload_all_pending_out_of_band()")?;
         unsafe {
             self.ctx
                 .device()
@@ -563,21 +574,25 @@ impl TextureManager {
                     self.command_pool,
                     vk::CommandPoolResetFlags::RELEASE_RESOURCES,
                 )
-                .context("TextureManager::upload_all_pending(): vkResetCommandPool() failed")?;
+                .context(
+                    "TextureManager::upload_all_pending_out_of_band(): vkResetCommandPool() failed",
+                )?;
             self.ctx
                 .device()
                 .begin_command_buffer(
                     self.command_buffer,
                     &tv::default_command_buffer_begin_info(),
                 )
-                .context("TextureManager::upload_all_pending(): vkBeginCommandBuffer() failed")?;
+                .context("TextureManager::upload_all_pending_out_of_band(): vkBeginCommandBuffer() failed")?;
             self.bind(self.command_buffer);
             self.upload_materials(self.command_buffer, None);
             self.upload_textures(self.command_buffer);
             self.ctx
                 .device()
                 .end_command_buffer(self.command_buffer)
-                .context("TextureManager::upload_all_pending(): vkEndCommandBuffer() failed")?;
+                .context(
+                    "TextureManager::upload_all_pending_out_of_band(): vkEndCommandBuffer() failed",
+                )?;
             let queue = self.ctx.present_queue(by)?;
             self.ctx
                 .device()
@@ -588,7 +603,9 @@ impl TextureManager {
                             .command_buffer(self.command_buffer)])],
                     self.upload_fence,
                 )
-                .context("TextureManager::upload_all_pending(): vkQueueSubmit2() failed")?;
+                .context(
+                    "TextureManager::upload_all_pending_out_of_band(): vkQueueSubmit2() failed",
+                )?;
             self.is_upload_fence_in_use = true;
 
             Ok(())
@@ -637,13 +654,15 @@ impl TextureManager {
             entry.texture_id = mat.texture_id;
         }
         // TODO: write only part of the buffer?
+        let staging_index = swapchain_acquire_info.map_or(
+            OUT_OF_BAND_FRAME_INDEX,
+            SwapchainAcquireInfo::acquired_frame_index,
+        );
         self.material_staging_buffer
-            .write(
-                &data,
-                swapchain_acquire_info.map_or(2, SwapchainAcquireInfo::acquired_frame_index),
-            )
+            .write(&data, staging_index)
             .context("TextureManager::stage_materials()")?;
-        self.materials_changed = true;
+        self.last_staged_buffer_index = Some(staging_index);
+        self.materials_upload_countdown = FRAMES_IN_FLIGHT;
 
         Ok(())
     }
@@ -652,12 +671,25 @@ impl TextureManager {
         command_buffer: vk::CommandBuffer,
         swapchain_acquire_info: Option<&SwapchainAcquireInfo>,
     ) {
+        // For out-of-band uploads, don't copy -- let frame renders handle it via the countdown.
+        let Some(acquire_info) = swapchain_acquire_info else {
+            return;
+        };
         unsafe {
-            if self.materials_changed {
-                let staging_buffer = self.material_staging_buffer.buffer(
-                    swapchain_acquire_info.map_or(2, SwapchainAcquireInfo::acquired_frame_index),
-                );
-                let device_buffer = self.material_device_buffer.buffer(0);
+            if self.materials_upload_countdown > 0 {
+                let Some(last_staged_buffer_index) = self.last_staged_buffer_index else {
+                    error!(
+                        "materials_upload_countdown = {} but no last_staged_buffer_index",
+                        self.materials_upload_countdown
+                    );
+                    return;
+                };
+                let staging_buffer = self
+                    .material_staging_buffer
+                    .buffer(last_staged_buffer_index);
+                let device_buffer = self
+                    .material_device_buffer
+                    .buffer(acquire_info.acquired_frame_index());
                 check_eq!(staging_buffer.alloc.size(), device_buffer.alloc.size());
                 self.ctx.device().cmd_copy_buffer2(
                     command_buffer,
@@ -686,7 +718,7 @@ impl TextureManager {
                             .size(device_buffer.alloc.size()),
                     ]),
                 );
-                self.materials_changed = false;
+                self.materials_upload_countdown -= 1;
             }
         }
     }

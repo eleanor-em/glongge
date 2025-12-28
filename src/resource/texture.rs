@@ -372,11 +372,11 @@ impl TextureHandler {
             .clone())
     }
 
-    pub fn materials_buffer_address(&self) -> Result<vk::DeviceAddress> {
+    pub fn materials_buffer_address(&self, frame_index: usize) -> Result<vk::DeviceAddress> {
         Ok(self
             .lock_inner("TextureHandler::materials_buffer_address()")?
             .texture_manager
-            .materials_buffer_address())
+            .materials_buffer_address(frame_index))
     }
 
     fn load_file_inner(filename: &str) -> Result<RawTexture> {
@@ -632,15 +632,15 @@ impl TextureHandler {
         Ok(Some(rv))
     }
 
-    pub(crate) fn upload_all_pending(&self, by: &'static str) -> Result<()> {
-        let mut inner = self.lock_inner("upload_all_pending")?;
+    pub(crate) fn upload_all_pending_out_of_band(&self, by: &'static str) -> Result<()> {
+        let mut inner = self.lock_inner("upload_all_pending_out_of_band")?;
         if inner.material_handler.has_pending_materials {
             let materials = inner.material_handler.materials().clone();
             inner.texture_manager.stage_materials(materials, None)?;
             inner.material_handler.has_pending_materials = false;
         }
         inner.texture_manager.wait_complete_upload()?;
-        inner.texture_manager.upload_all_pending(by)?;
+        inner.texture_manager.upload_all_pending_out_of_band(by)?;
         Ok(())
     }
     pub fn upload_all_pending_with(

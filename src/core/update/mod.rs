@@ -3206,7 +3206,7 @@ impl<'a> RenderContext<'a> {
         if let Err(e) = self
             .resource_handler
             .texture
-            .upload_all_pending("RenderContext::wait_upload_textures()")
+            .upload_all_pending_out_of_band("RenderContext::wait_upload_textures()")
         {
             panic_or_error!("failed to upload textures: {e:?}");
         }

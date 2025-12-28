@@ -485,7 +485,7 @@ impl RenderHandler {
             bytes.extend(
                 self.resource_handler
                     .texture
-                    .materials_buffer_address()
+                    .materials_buffer_address(acquire.acquired_frame_index())
                     .context("RenderHandler::render_update()")?
                     .to_le_bytes(),
             );

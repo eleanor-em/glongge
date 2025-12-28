@@ -1,4 +1,4 @@
-use crate::core::config::USE_VSYNC;
+use crate::core::config::{FRAMES_IN_FLIGHT, USE_VSYNC};
 use crate::util::gg_sync::GgMutex;
 use crate::{
     check_false, check_le,
@@ -64,8 +64,7 @@ impl<'a> SwapchainBuilder<'a> {
         let rv = if let Some(get_desired_frames_in_flight) = self.get_desired_frames_in_flight {
             get_desired_frames_in_flight(surface_capabilities)
         } else {
-            // Default case
-            2
+            FRAMES_IN_FLIGHT
         };
         let desired_image_count = self.desired_image_count(surface_capabilities);
         if rv > desired_image_count as usize {
