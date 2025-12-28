@@ -1921,3 +1921,393 @@ use crate::gui::EditCell;
 use crate::util::canvas::Canvas;
 use crate::util::gg_sync::GgMutex;
 pub use GgInternalCollisionShape as CollisionShape;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper function to check if two Vec2 are approximately equal
+    fn vec2_approx_eq(a: Vec2, b: Vec2, epsilon: f32) -> bool {
+        (a.x - b.x).abs() < epsilon && (a.y - b.y).abs() < epsilon
+    }
+
+    // ========== BoxCollider Tests ==========
+
+    #[test]
+    fn box_collider_no_collision() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 10.0, y: 0.0 }, Vec2::one());
+        assert!(box1.collides_with_box(&box2).is_none());
+    }
+
+    #[test]
+    fn box_collider_overlapping() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let mtv = box1.collides_with_box(&box2);
+        assert!(mtv.is_some());
+        let mtv = mtv.unwrap();
+        // Should push box1 to the left (negative x direction)
+        assert!(mtv.x < 0.0);
+        assert_eq!(mtv.y, 0.0);
+    }
+
+    #[test]
+    fn box_collider_fully_contained() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2 { x: 5.0, y: 5.0 });
+        let box2 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let mtv = box1.collides_with_box(&box2);
+        assert!(mtv.is_some());
+    }
+
+    #[test]
+    fn box_collider_touching_edges() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 2.0, y: 0.0 }, Vec2::one());
+        // Boxes are exactly touching, should not collide (or have zero overlap)
+        let mtv = box1.collides_with_box(&box2);
+        assert!(mtv.is_none() || mtv.unwrap().len_squared() < 0.0001);
+    }
+
+    #[test]
+    fn box_collider_vertical_overlap() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 0.0, y: 1.0 }, Vec2::one());
+        let mtv = box1.collides_with_box(&box2);
+        assert!(mtv.is_some());
+        let mtv = mtv.unwrap();
+        // Should push along y-axis
+        assert_eq!(mtv.x, 0.0);
+        assert!(mtv.y < 0.0);
+    }
+
+    #[test]
+    fn box_collider_from_top_left() {
+        let box1 = BoxCollider::from_top_left(Vec2::zero(), Vec2 { x: 4.0, y: 4.0 });
+        assert_eq!(box1.extent(), Vec2 { x: 4.0, y: 4.0 });
+        assert_eq!(box1.centre(), Vec2 { x: 2.0, y: 2.0 });
+    }
+
+    #[test]
+    fn box_collider_translation() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = box1.translated(Vec2 { x: 5.0, y: 3.0 });
+        assert_eq!(box2.centre(), Vec2 { x: 5.0, y: 3.0 });
+        assert_eq!(box2.extent(), box1.extent());
+    }
+
+    #[test]
+    fn box_collider_scaling() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = box1.scaled(Vec2 { x: 2.0, y: 3.0 });
+        assert_eq!(box2.extent(), Vec2 { x: 4.0, y: 6.0 });
+        assert_eq!(box2.centre(), box1.centre());
+    }
+
+    // ========== OrientedBoxCollider Tests ==========
+
+    #[test]
+    fn oriented_box_no_rotation_no_collision() {
+        let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = OrientedBoxCollider::from_centre(Vec2 { x: 10.0, y: 0.0 }, Vec2::one());
+        assert!(box1.collides_with_oriented_box(&box2).is_none());
+    }
+
+    #[test]
+    fn oriented_box_no_rotation_collision() {
+        let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let mtv = box1.collides_with_oriented_box(&box2);
+        assert!(mtv.is_some());
+    }
+
+    #[test]
+    fn oriented_box_45_degree_rotation() {
+        let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = box1.rotated(45_f32.to_radians());
+        // Rotated box should have same center
+        assert_eq!(box2.centre(), box1.centre());
+        // The rotation value should be updated
+        assert!((box2.rotation - 45_f32.to_radians()).abs() < 0.01);
+    }
+
+    #[test]
+    fn oriented_box_90_degree_rotation() {
+        let box1 = OrientedBoxCollider::from_centre(
+            Vec2::zero(),
+            Vec2 { x: 2.0, y: 1.0 }
+        );
+        let box2 = box1.rotated(90_f32.to_radians());
+        // The rotation value should be updated
+        assert!((box2.rotation - 90_f32.to_radians()).abs() < 0.01);
+        assert_eq!(box2.centre(), box1.centre());
+    }
+
+    #[test]
+    fn oriented_box_translation() {
+        let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2::one())
+            .rotated(45_f32.to_radians());
+        let translation = Vec2 { x: 5.0, y: 3.0 };
+        let box2 = box1.translated(translation);
+        // Translation is applied in the rotated coordinate space
+        // So the actual centre change is translation.rotated(box1.rotation)
+        let expected_centre = translation.rotated(box1.rotation);
+        assert!(vec2_approx_eq(box2.centre(), expected_centre, 0.1));
+    }
+
+    #[test]
+    fn oriented_box_collides_with_regular_box() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let oriented = OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let mtv = box1.collides_with_oriented_box(&oriented);
+        assert!(mtv.is_some());
+    }
+
+    #[test]
+    fn oriented_box_rotated_collision() {
+        let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2 { x: 2.0, y: 1.0 });
+        let box2 = OrientedBoxCollider::from_centre(Vec2 { x: 2.0, y: 0.0 }, Vec2 { x: 1.0, y: 2.0 })
+            .rotated(45_f32.to_radians());
+        // These should collide due to the rotation
+        let mtv = box1.collides_with_oriented_box(&box2);
+        assert!(mtv.is_some());
+    }
+
+    // ========== ConvexCollider Tests ==========
+
+    #[test]
+    fn convex_triangle_no_collision() {
+        let triangle1 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ]).unwrap();
+        let triangle2 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 10.0, y: 0.0 },
+            Vec2 { x: 12.0, y: 0.0 },
+            Vec2 { x: 11.0, y: 2.0 },
+        ]).unwrap();
+        assert!(triangle1.collides_with_convex(&triangle2).is_none());
+    }
+
+    #[test]
+    fn convex_triangle_collision() {
+        let triangle1 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ]).unwrap();
+        let triangle2 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 3.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 2.0 },
+        ]).unwrap();
+        assert!(triangle1.collides_with_convex(&triangle2).is_some());
+    }
+
+    #[test]
+    fn convex_hull_from_square_vertices() {
+        let square = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: -1.0, y: -1.0 },
+            Vec2 { x: 1.0, y: -1.0 },
+            Vec2 { x: 1.0, y: 1.0 },
+            Vec2 { x: -1.0, y: 1.0 },
+        ]).unwrap();
+        assert_eq!(square.vertices().len(), 4);
+    }
+
+    #[test]
+    fn convex_hull_removes_collinear_points() {
+        // Add extra point on the edge
+        let square = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: -1.0, y: -1.0 },
+            Vec2 { x: 0.0, y: -1.0 },  // Collinear point
+            Vec2 { x: 1.0, y: -1.0 },
+            Vec2 { x: 1.0, y: 1.0 },
+            Vec2 { x: -1.0, y: 1.0 },
+        ]).unwrap();
+        // Should still have 4 vertices (collinear point removed)
+        assert_eq!(square.vertices().len(), 4);
+    }
+
+    #[test]
+    fn convex_collider_translation() {
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ]).unwrap();
+        let translated = triangle.translated(Vec2 { x: 5.0, y: 3.0 });
+        assert!(vec2_approx_eq(
+            translated.centre(),
+            triangle.centre() + Vec2 { x: 5.0, y: 3.0 },
+            0.1
+        ));
+    }
+
+    #[test]
+    fn convex_collider_rotation() {
+        // Create a triangle centered at origin for easier rotation testing
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: -1.0, y: 0.0 },
+            Vec2 { x: 0.0, y: 1.0 },
+        ]).unwrap();
+        let rotated = triangle.rotated(90_f32.to_radians());
+        // Verify the first vertex rotated from (1, 0) to approximately (0, 1)
+        let original_vertex = Vec2 { x: 1.0, y: 0.0 };
+        let expected_rotated = original_vertex.rotated(90_f32.to_radians());
+        // Find the rotated vertex that's closest to our expected position
+        let rotated_vertices = rotated.vertices();
+        let has_expected_vertex = rotated_vertices.iter()
+            .any(|&v| vec2_approx_eq(v, expected_rotated, 0.1));
+        assert!(has_expected_vertex);
+    }
+
+    #[test]
+    fn convex_collider_with_box() {
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ]).unwrap();
+        let box_collider = BoxCollider::from_centre(Vec2 { x: 1.0, y: 0.5 }, Vec2::one());
+        assert!(triangle.collides_with_box(&box_collider).is_some());
+    }
+
+    // ========== MTV (Minimum Translation Vector) Tests ==========
+
+    #[test]
+    fn mtv_direction_horizontal() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 1.5, y: 0.0 }, Vec2::one());
+        let mtv = box1.collides_with_box(&box2).unwrap();
+        // MTV should be primarily horizontal
+        assert!(mtv.x.abs() > mtv.y.abs());
+    }
+
+    #[test]
+    fn mtv_direction_vertical() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 0.0, y: 1.5 }, Vec2::one());
+        let mtv = box1.collides_with_box(&box2).unwrap();
+        // MTV should be primarily vertical
+        assert!(mtv.y.abs() > mtv.x.abs());
+    }
+
+    #[test]
+    fn mtv_pushes_apart() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let mtv = box1.collides_with_box(&box2).unwrap();
+        // Applying MTV to box1 should separate them
+        let separated = box1.translated(mtv);
+        // After translation, they should not collide (or barely touch)
+        let new_mtv = separated.collides_with_box(&box2);
+        assert!(new_mtv.is_none() || new_mtv.unwrap().len_squared() < 0.01);
+    }
+
+    // ========== GenericCollider Tests ==========
+
+    #[test]
+    fn generic_collider_box_to_box() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let generic1 = box1.as_generic();
+        let generic2 = box2.as_generic();
+        assert!(generic1.collides_with(&generic2).is_some());
+    }
+
+    #[test]
+    fn generic_collider_oriented_to_box() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let oriented = OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let generic1 = box1.as_generic();
+        let generic2 = oriented.as_generic();
+        assert!(generic1.collides_with(&generic2).is_some());
+    }
+
+    #[test]
+    fn generic_collider_null_never_collides() {
+        let null = NullCollider;
+        let box_collider = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let generic_null = null.as_generic();
+        let generic_box = box_collider.as_generic();
+        assert!(generic_null.collides_with(&generic_box).is_none());
+        assert!(generic_box.collides_with(&generic_null).is_none());
+    }
+
+    // ========== BoxCollider3d Tests ==========
+
+    #[test]
+    fn box_3d_no_collision_x_axis() {
+        let box2d = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box1 = BoxCollider3d::from_2d(&box2d, -1.0, 1.0);
+        let box2d2 = BoxCollider::from_centre(Vec2 { x: 10.0, y: 0.0 }, Vec2::one());
+        let box2 = BoxCollider3d::from_2d(&box2d2, -1.0, 1.0);
+        assert!(box1.collides_with(&box2).is_none());
+    }
+
+    #[test]
+    fn box_3d_no_collision_z_axis() {
+        let box2d = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box1 = BoxCollider3d::from_2d(&box2d, -1.0, 1.0);
+        let box2 = BoxCollider3d::from_2d(&box2d, 5.0, 7.0);
+        assert!(box1.collides_with(&box2).is_none());
+    }
+
+    #[test]
+    fn box_3d_collision() {
+        let box2d = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box1 = BoxCollider3d::from_2d(&box2d, -1.0, 1.0);
+        let box2d2 = BoxCollider::from_centre(Vec2 { x: 1.0, y: 0.0 }, Vec2::one());
+        let box2 = BoxCollider3d::from_2d(&box2d2, -0.5, 0.5);
+        assert!(box1.collides_with(&box2).is_some());
+    }
+
+    // ========== Edge Cases and Special Scenarios ==========
+
+    #[test]
+    fn identical_boxes_collide() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        let box2 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        assert!(box1.collides_with_box(&box2).is_some());
+    }
+
+    #[test]
+    fn zero_size_box() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::zero());
+        let box2 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
+        // Zero-size box should not collide (or have minimal collision)
+        let mtv = box1.collides_with_box(&box2);
+        assert!(mtv.is_none() || mtv.unwrap().len_squared() < 0.01);
+    }
+
+    #[test]
+    fn negative_extent_converted_to_positive() {
+        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2 { x: -2.0, y: -3.0 });
+        // Negative extents should be converted to positive
+        assert!(box1.extent().x > 0.0);
+        assert!(box1.extent().y > 0.0);
+    }
+
+    #[test]
+    fn polygon_convexity_check() {
+        // Square is convex
+        let square_vertices = vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 1.0 },
+            Vec2 { x: 0.0, y: 1.0 },
+        ];
+        assert!(polygon::is_convex(&square_vertices));
+
+        // Triangle is convex
+        let triangle_vertices = vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 0.5, y: 1.0 },
+        ];
+        assert!(polygon::is_convex(&triangle_vertices));
+    }
+}
