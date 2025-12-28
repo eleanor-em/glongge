@@ -1,30 +1,29 @@
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
+    io::Cursor,
+    sync::{Arc, Mutex, OnceLock},
     thread::JoinHandle,
 };
-
-use rand::{Rng, rng};
-
 use crate::core::prelude::*;
-use fyrox_sound::{
-    buffer::{DataSource, SoundBufferResource, SoundBufferResourceExtension, loader::FsResourceIo},
-    context::SoundContext,
-    engine::SoundEngine,
-    pool::Handle,
-    source::{SoundSource, SoundSourceBuilder, Status},
+use rand::{Rng, rng};
+use rodio::{
+    Decoder, OutputStreamBuilder, Sink, Source, buffer::SamplesBuffer, mixer::Mixer,
 };
 
-#[derive(Clone)]
+// OutputStream is not Send on macOS (CoreAudio limitation), so we leak it.
+// This OnceLock ensures we only create one OutputStream.
+static DID_CREATE_OUTPUT_STREAM: OnceLock<bool> = OnceLock::new();
+
 struct SoundInner {
-    ctx: SoundContext,
-    handle: Handle<SoundSource>,
+    buffer: SamplesBuffer,
+    sink: Sink,
 }
 #[derive(Clone, Default)]
 pub struct Sound {
-    inner: Option<SoundInner>,
+    inner: Option<Arc<SoundInner>>,
     is_looping: bool,
 }
+
 
 impl Sound {
     pub fn play_shifted(&mut self, mag: f32) {
@@ -32,14 +31,11 @@ impl Sound {
             return;
         }
         if let Some(inner) = self.inner.as_ref() {
-            let mut state = inner.ctx.state();
-            let source = state.source_mut(inner.handle);
-            source
-                .stop()
-                .expect("should only be fallible for streaming buffers (see source)");
             let mut rng = rng();
-            source.set_pitch(linalg::eerp(1.0 - mag, 1.0 + mag, rng.random_range(0.0..1.0)).into());
-            source.play();
+            let pitch = linalg::eerp(1.0 - mag, 1.0 + mag, rng.random_range(0.0..1.0));
+
+            inner.sink.stop();
+            inner.sink.append(inner.buffer.clone().speed(pitch));
         } else {
             error!("tried to play non-loaded sound");
         }
@@ -49,13 +45,8 @@ impl Sound {
             return;
         }
         if let Some(inner) = self.inner.as_ref() {
-            let mut state = inner.ctx.state();
-            let source = state.source_mut(inner.handle);
-            source
-                .stop()
-                .expect("should only be fallible for streaming buffers (see source)");
-            source.set_pitch(1.0);
-            source.play();
+            inner.sink.stop();
+            inner.sink.append(inner.buffer.clone());
         } else {
             error!("tried to play non-loaded sound");
         }
@@ -66,14 +57,8 @@ impl Sound {
             return;
         }
         if let Some(inner) = self.inner.as_ref() {
-            let mut state = inner.ctx.state();
-            let source = state.source_mut(inner.handle);
-            source.set_looping(true);
-            source
-                .stop()
-                .expect("should only be fallible for streaming buffers (see source)");
-            source.set_pitch(1.0);
-            source.play();
+            inner.sink.stop();
+            inner.sink.append(inner.buffer.clone().repeat_infinite());
             self.is_looping = true;
         } else {
             error!("tried to play non-loaded sound");
@@ -85,11 +70,7 @@ impl Sound {
             return;
         }
         if let Some(inner) = self.inner.as_ref() {
-            let mut state = inner.ctx.state();
-            let source = state.source_mut(inner.handle);
-            source
-                .stop()
-                .expect("should only be fallible for streaming buffers (see source)");
+            inner.sink.stop();
             self.is_looping = false;
         } else {
             error!("tried to stop non-loaded sound");
@@ -101,9 +82,7 @@ impl Sound {
             return false;
         }
         self.inner.as_ref().is_some_and(|inner| {
-            let mut state = inner.ctx.state();
-            let source = state.source_mut(inner.handle);
-            source.status() == Status::Playing
+            !inner.sink.empty()
         })
     }
 }
@@ -117,26 +96,31 @@ impl Drop for Sound {
 }
 
 struct SoundHandlerInner {
-    loaded_files: BTreeMap<String, SoundBufferResource>,
+    loaded_files: BTreeMap<String, SamplesBuffer>,
 }
 
 pub struct SoundHandler {
-    _engine: SoundEngine,
-    ctx: SoundContext,
+    mixer: Arc<Mixer>,
     inner: Arc<Mutex<SoundHandlerInner>>,
     join_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl SoundHandler {
     pub fn new() -> Result<Arc<Self>> {
-        let engine = SoundEngine::new()
-            // SoundEngine::new() returns Box<dyn Error> which is not Send, so expect() here.
-            .map_err(|err| anyhow!("fyrox-sound error: SoundEngine::new(): {err:?}"))?;
-        let ctx = SoundContext::new();
-        engine.state().add_context(ctx.clone());
+        if DID_CREATE_OUTPUT_STREAM.get().is_some() {
+            bail!("SoundHandler::new() called more than once");
+        }
+        DID_CREATE_OUTPUT_STREAM.get_or_init(|| true);
+
+        let stream = OutputStreamBuilder::open_default_stream().map_err(|e| {
+            anyhow!("rodio error: OutputStreamBuilder::open_default_stream(): {e:?}")
+        })?;
+        let mixer = stream.mixer().clone();
+        // Leak the stream to keep it alive.
+        Box::leak(Box::new(stream));
+
         Ok(Arc::new(Self {
-            _engine: engine,
-            ctx,
+            mixer: Arc::new(mixer),
             inner: Arc::new(Mutex::new(SoundHandlerInner {
                 loaded_files: BTreeMap::new(),
             })),
@@ -146,27 +130,25 @@ impl SoundHandler {
 
     fn load_file_inner(
         inner: &Arc<Mutex<SoundHandlerInner>>,
-        ctx: SoundContext,
+        mixer: &Arc<Mixer>,
         filename: impl AsRef<str>,
     ) -> Result<Sound> {
         let filename = filename.as_ref().to_string();
-        let sound_buffer = {
-            let maybe_buffer = inner.lock().unwrap().loaded_files.get(&filename).cloned();
-            if let Some(buffer) = maybe_buffer {
+        let buffer = {
+            if let Some(buffer) = inner.lock().unwrap().loaded_files.get(&filename).cloned() {
                 buffer
             } else {
-                let buffer = SoundBufferResource::new_generic(
-                    fyrox_sound::futures::executor::block_on(DataSource::from_file(
-                        &filename,
-                        &FsResourceIo,
-                    ))
-                    .map_err(|err| {
-                        anyhow!("fyrox-sound error: DataSource::from_file(): {err:?}")
-                    })?,
-                )
-                .map_err(|err| {
-                    anyhow!("fyrox-sound error: SoundBufferResource::new_generic(): {err:?}",)
-                })?;
+                // Read and decode the file
+                let bytes = std::fs::read(&filename)
+                    .map_err(|e| anyhow!("failed to read sound file {filename}: {e}"))?;
+                let decoder = Decoder::new(Cursor::new(bytes))
+                    .map_err(|e| anyhow!("failed to decode sound file {filename}: {e:?}"))?;
+
+                let channels = decoder.channels();
+                let sample_rate = decoder.sample_rate();
+                let samples: Vec<f32> = decoder.collect();
+
+                let buffer = SamplesBuffer::new(channels, sample_rate, samples.clone());
                 inner
                     .lock()
                     .unwrap()
@@ -176,14 +158,12 @@ impl SoundHandler {
             }
         };
 
-        let source = SoundSourceBuilder::new()
-            .with_buffer(sound_buffer)
-            .with_status(Status::Stopped)
-            // Ensure that no spatial effects will be applied.
-            .with_spatial_blend_factor(0.0)
-            .build()?;
-        let handle = ctx.state().add_source(source);
-        let inner = Some(SoundInner { ctx, handle });
+        let sink = Sink::connect_new(mixer);
+
+        let inner = Some(Arc::new(SoundInner {
+            buffer,
+            sink,
+        }));
         Ok(Sound {
             inner,
             is_looping: false,
@@ -194,10 +174,10 @@ impl SoundHandler {
 impl Loader<Sound> for SoundHandler {
     fn spawn_load_file(&self, filename: impl AsRef<str>) {
         let inner = self.inner.clone();
-        let ctx = self.ctx.clone();
+        let mixer = self.mixer.clone();
         let filename = filename.as_ref().to_string();
         let handle = std::thread::spawn(move || {
-            Self::load_file_inner(&inner, ctx, filename).unwrap();
+            Self::load_file_inner(&inner, &mixer, filename).unwrap();
         });
         self.join_handles
             .try_lock()
@@ -206,7 +186,7 @@ impl Loader<Sound> for SoundHandler {
     }
 
     fn wait_load_file(&self, filename: impl AsRef<str>) -> Result<Sound> {
-        Self::load_file_inner(&self.inner, self.ctx.clone(), filename)
+        Self::load_file_inner(&self.inner, &self.mixer, filename)
     }
 
     fn wait(&self) -> Result<()> {

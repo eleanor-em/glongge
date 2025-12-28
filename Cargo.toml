@@ -33,7 +33,7 @@ winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 # media
 ab_glyph = {version = "0.2.32", default-features = false }
 asefile = { git = "https://github.com/eleanor-em/gg-asefile", default-features = false } # forked from 0.3.8
-fyrox-sound = { git = "https://github.com/eleanor-em/Fyrox-sound-only" } # forked from 0.35.0
+rodio = { version = "0.21", default-features = false, features = ["playback", "vorbis", "wav"] }
 image = { version = "0.25.8", default-features = false, features = ["png"] } # match egui-winit
 [profile.dev]
 opt-level = 1
@@ -41,5 +41,5 @@ opt-level = 1
 [profile.dev.package.asefile]
 opt-level = 3
 
-[profile.dev.package.fyrox-sound]
-opt-level = 3
+# [profile.dev.package.rodio]
+# opt-level = 3
