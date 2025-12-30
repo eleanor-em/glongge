@@ -742,7 +742,7 @@ impl<T> Deref for NonemptyVecRefMut<'_, T> {
     }
 }
 
-fn setup_log() -> Result<()> {
+pub(crate) fn setup_log() -> Result<()> {
     // XXX: hacky crap mostly written by ChatGPT.
     struct AllowValuesOnly;
     impl FormatFields<'_> for AllowValuesOnly {
@@ -821,7 +821,7 @@ fn setup_log() -> Result<()> {
     tracing_subscriber::registry()
         .with(file_layer)
         .with(stdout_layer)
-        .init();
+        .try_init()?;
     Ok(())
 }
 
