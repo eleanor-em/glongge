@@ -2177,9 +2177,11 @@ pub fn sigmoid(t: f32, k: f32) -> f32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp, clippy::many_single_char_names)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
-    use num_traits::Float;
     use std::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, FRAC_PI_6, PI, SQRT_2};
 
     // ==================== Vec2 Basic Operations ====================
@@ -2308,15 +2310,15 @@ mod tests {
     #[test]
     fn vec2_display() {
         let v = Vec2 { x: 1.5, y: 2.5 };
-        assert_eq!(format!("{}", v), "vec(1.5, 2.5)");
+        assert_eq!(format!("{v}"), "vec(1.5, 2.5)");
 
         // Test precision formatting (exercises the precision branch in Display impl)
         let v2 = Vec2 {
             x: 1.23456,
             y: 7.89012,
         };
-        assert_eq!(format!("{:.2}", v2), "vec(1.23, 7.89)");
-        assert_eq!(format!("{:.0}", v2), "vec(1, 8)");
+        assert_eq!(format!("{v2:.2}"), "vec(1.23, 7.89)");
+        assert_eq!(format!("{v2:.0}"), "vec(1, 8)");
     }
 
     // ==================== Vec2 Geometric Operations ====================
@@ -2655,7 +2657,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: investigate non-cardinal cases - expected values may be wrong
+    #[ignore = "TODO: investigate non-cardinal cases - expected values may be wrong"]
     fn vec2_rotated_to() {
         // rotated_to rotates self by the clockwise angle from basis to up
         // When basis = right, angle from right to up is PI/2 clockwise
@@ -2868,7 +2870,6 @@ mod tests {
         assert!(big_set.contains(&special1) || big_set.contains(&special2));
 
         // HashMap correctly retrieves values even with epsilon-close keys
-        use std::collections::HashMap;
         let mut map = HashMap::new();
         let key1 = Vec2 { x: 1.0, y: 2.0 };
         let key2 = Vec2 {
@@ -3363,7 +3364,7 @@ mod tests {
     #[test]
     fn vec2i_display() {
         let v = Vec2i { x: 1, y: 2 };
-        assert_eq!(format!("{}", v), "vec(1, 2)");
+        assert_eq!(format!("{v}"), "vec(1, 2)");
     }
 
     #[test]
@@ -3442,7 +3443,7 @@ mod tests {
     #[test]
     fn edge2i_display() {
         let edge = Edge2i(Vec2i { x: 0, y: 0 }, Vec2i { x: 1, y: 1 });
-        assert_eq!(format!("{}", edge), "Edge[vec(0, 0), vec(1, 1)]");
+        assert_eq!(format!("{edge}"), "Edge[vec(0, 0), vec(1, 1)]");
     }
 
     // ==================== Rect Tests ====================
@@ -3916,8 +3917,8 @@ mod tests {
         assert_eq!(smooth(1.0), 1.0);
         assert_eq!(smooth(0.5), 0.5);
         // Intermediate values: 6t^5 - 15t^4 + 10t^3
-        assert_eq!(smooth(0.25), 0.103515625);
-        assert_eq!(smooth(0.75), 0.896484375);
+        assert_eq!(smooth(0.25), 0.103_515_625);
+        assert_eq!(smooth(0.75), 0.896_484_4);
         // Clamping
         assert_eq!(smooth(-1.0), 0.0);
         assert_eq!(smooth(2.0), 1.0);
@@ -4081,12 +4082,13 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn bincode_serialization() {
         // Test bincode serialization/deserialization for types with bincode derives
         let config = bincode::config::standard();
 
         let v = Vec2 { x: 1.0, y: 2.0 };
-        let encoded = bincode::encode_to_vec(&v, config).unwrap();
+        let encoded = bincode::encode_to_vec(v, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v, decoded);
 
@@ -4094,7 +4096,7 @@ mod tests {
             x: f32::INFINITY,
             y: f32::NEG_INFINITY,
         };
-        let encoded = bincode::encode_to_vec(&v_inf, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_inf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_inf, decoded);
 
@@ -4102,7 +4104,7 @@ mod tests {
             x: f32::NAN,
             y: f32::NAN,
         };
-        let encoded = bincode::encode_to_vec(&v_nan, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_nan, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert!(decoded.x.is_nan() && decoded.y.is_nan());
 
@@ -4110,7 +4112,7 @@ mod tests {
             x: f32::INFINITY,
             y: f32::NAN,
         };
-        let encoded = bincode::encode_to_vec(&v_inf_nan, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_inf_nan, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded.x, f32::INFINITY);
         assert!(decoded.y.is_nan());
@@ -4119,7 +4121,7 @@ mod tests {
             x: -0.0,
             y: f32::INFINITY,
         };
-        let encoded = bincode::encode_to_vec(&v_neg_zero_inf, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_neg_zero_inf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert!(decoded.x.is_sign_negative() && decoded.x == 0.0);
         assert_eq!(decoded.y, f32::INFINITY);
@@ -4130,7 +4132,7 @@ mod tests {
             x: subnormal,
             y: -subnormal,
         };
-        let encoded = bincode::encode_to_vec(&v_subnormal, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_subnormal, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_subnormal, decoded);
 
@@ -4143,7 +4145,7 @@ mod tests {
             x: smallest_subnormal,
             y: largest_subnormal,
         };
-        let encoded = bincode::encode_to_vec(&v_subnormal_range, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_subnormal_range, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_subnormal_range, decoded);
 
@@ -4152,7 +4154,7 @@ mod tests {
             x: f32::MAX,
             y: f32::MIN,
         };
-        let encoded = bincode::encode_to_vec(&v_extremes, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_extremes, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_extremes, decoded);
 
@@ -4160,7 +4162,7 @@ mod tests {
         let neg_nan = f32::from_bits(0xFF80_0001);
         assert!(neg_nan.is_nan());
         let v_neg_nan = Vec2 { x: neg_nan, y: 1.0 };
-        let encoded = bincode::encode_to_vec(&v_neg_nan, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_neg_nan, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded.x.to_bits(), neg_nan.to_bits());
         assert_eq!(decoded.y, 1.0);
@@ -4172,12 +4174,12 @@ mod tests {
             x: nan_with_payload,
             y: 0.0,
         };
-        let encoded = bincode::encode_to_vec(&v_nan_payload, config).unwrap();
+        let encoded = bincode::encode_to_vec(v_nan_payload, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded.x.to_bits(), nan_with_payload.to_bits());
 
         let vi = Vec2i { x: 3, y: 4 };
-        let encoded = bincode::encode_to_vec(&vi, config).unwrap();
+        let encoded = bincode::encode_to_vec(vi, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(vi, decoded);
 
@@ -4186,12 +4188,12 @@ mod tests {
             x: i32::MAX,
             y: i32::MIN,
         };
-        let encoded = bincode::encode_to_vec(&vi_extreme, config).unwrap();
+        let encoded = bincode::encode_to_vec(vi_extreme, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(vi_extreme, decoded);
 
         let edge = Edge2i(Vec2i { x: 0, y: 0 }, Vec2i { x: 1, y: 1 });
-        let encoded = bincode::encode_to_vec(&edge, config).unwrap();
+        let encoded = bincode::encode_to_vec(edge, config).unwrap();
         let (decoded, _): (Edge2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(edge, decoded);
 
@@ -4206,17 +4208,17 @@ mod tests {
                 y: i32::MIN,
             },
         );
-        let encoded = bincode::encode_to_vec(&edge_extreme, config).unwrap();
+        let encoded = bincode::encode_to_vec(edge_extreme, config).unwrap();
         let (decoded, _): (Edge2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(edge_extreme, decoded);
 
         let m = Mat3x3::rotation(FRAC_PI_6);
-        let encoded = bincode::encode_to_vec(&m, config).unwrap();
+        let encoded = bincode::encode_to_vec(m, config).unwrap();
         let (decoded, _): (Mat3x3, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(m, decoded);
 
         let r = Rect::new(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
-        let encoded = bincode::encode_to_vec(&r, config).unwrap();
+        let encoded = bincode::encode_to_vec(r, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(r, decoded);
 
@@ -4231,7 +4233,7 @@ mod tests {
                 y: f32::MIN_POSITIVE,
             },
         );
-        let encoded = bincode::encode_to_vec(&r_special, config).unwrap();
+        let encoded = bincode::encode_to_vec(r_special, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(r_special, decoded);
 
@@ -4240,7 +4242,7 @@ mod tests {
             rotation: FRAC_PI_4,
             scale: Vec2 { x: 2.0, y: 3.0 },
         };
-        let encoded = bincode::encode_to_vec(&t, config).unwrap();
+        let encoded = bincode::encode_to_vec(t, config).unwrap();
         let (decoded, _): (Transform, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(t.centre, decoded.centre);
         assert_eq!(t.rotation, decoded.rotation);
@@ -4248,34 +4250,34 @@ mod tests {
 
         // Test borrow_decode path for all types (exercises BorrowDecode derive)
         let v = Vec2 { x: 1.0, y: 2.0 };
-        let encoded = bincode::encode_to_vec(&v, config).unwrap();
+        let encoded = bincode::encode_to_vec(v, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v, decoded);
 
         let vi = Vec2i { x: 1, y: 2 };
-        let encoded = bincode::encode_to_vec(&vi, config).unwrap();
+        let encoded = bincode::encode_to_vec(vi, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(vi, decoded);
 
         let edge = Edge2i(Vec2i { x: 1, y: 2 }, Vec2i { x: 3, y: 4 });
-        let encoded = bincode::encode_to_vec(&edge, config).unwrap();
+        let encoded = bincode::encode_to_vec(edge, config).unwrap();
         let (decoded, _): (Edge2i, _) =
             bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(edge, decoded);
 
         let m = Mat3x3::rotation(FRAC_PI_6);
-        let encoded = bincode::encode_to_vec(&m, config).unwrap();
+        let encoded = bincode::encode_to_vec(m, config).unwrap();
         let (decoded, _): (Mat3x3, _) =
             bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(m, decoded);
 
         let r = Rect::new(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
-        let encoded = bincode::encode_to_vec(&r, config).unwrap();
+        let encoded = bincode::encode_to_vec(r, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(r, decoded);
 
         let t = Transform::default();
-        let encoded = bincode::encode_to_vec(&t, config).unwrap();
+        let encoded = bincode::encode_to_vec(t, config).unwrap();
         let (decoded, _): (Transform, _) =
             bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(t, decoded);
@@ -4288,32 +4290,32 @@ mod tests {
         let mut buf = [0u8; 128];
 
         let v = Vec2 { x: 1.0, y: 2.0 };
-        let len = bincode::encode_into_slice(&v, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(v, &mut buf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(v, decoded);
 
         let vi = Vec2i { x: 1, y: 2 };
-        let len = bincode::encode_into_slice(&vi, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(vi, &mut buf, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(vi, decoded);
 
         let edge = Edge2i(Vec2i { x: 1, y: 2 }, Vec2i { x: 3, y: 4 });
-        let len = bincode::encode_into_slice(&edge, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(edge, &mut buf, config).unwrap();
         let (decoded, _): (Edge2i, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(edge, decoded);
 
         let m = Mat3x3::rotation(FRAC_PI_6);
-        let len = bincode::encode_into_slice(&m, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(m, &mut buf, config).unwrap();
         let (decoded, _): (Mat3x3, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(m, decoded);
 
         let r = Rect::new(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
-        let len = bincode::encode_into_slice(&r, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(r, &mut buf, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(r, decoded);
 
         let t = Transform::default();
-        let len = bincode::encode_into_slice(&t, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(t, &mut buf, config).unwrap();
         let (decoded, _): (Transform, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(t, decoded);
     }
@@ -4325,37 +4327,37 @@ mod tests {
         let mut buf = [0u8; 128];
 
         let v = Vec2 { x: 1.0, y: 2.0 };
-        let encoded = bincode::encode_to_vec(&v, config).unwrap();
+        let encoded = bincode::encode_to_vec(v, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v, decoded);
         let (decoded, _): (Vec2, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v, decoded);
-        let len = bincode::encode_into_slice(&v, &mut buf, config).unwrap();
+        let len = bincode::encode_into_slice(v, &mut buf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&buf[..len], config).unwrap();
         assert_eq!(v, decoded);
 
         let vi = Vec2i { x: 1, y: 2 };
-        let encoded = bincode::encode_to_vec(&vi, config).unwrap();
+        let encoded = bincode::encode_to_vec(vi, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(vi, decoded);
 
         let edge = Edge2i(Vec2i { x: 1, y: 2 }, Vec2i { x: 3, y: 4 });
-        let encoded = bincode::encode_to_vec(&edge, config).unwrap();
+        let encoded = bincode::encode_to_vec(edge, config).unwrap();
         let (decoded, _): (Edge2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(edge, decoded);
 
         let m = Mat3x3::rotation(FRAC_PI_6);
-        let encoded = bincode::encode_to_vec(&m, config).unwrap();
+        let encoded = bincode::encode_to_vec(m, config).unwrap();
         let (decoded, _): (Mat3x3, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(m, decoded);
 
         let r = Rect::new(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
-        let encoded = bincode::encode_to_vec(&r, config).unwrap();
+        let encoded = bincode::encode_to_vec(r, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(r, decoded);
 
         let t = Transform::default();
-        let encoded = bincode::encode_to_vec(&t, config).unwrap();
+        let encoded = bincode::encode_to_vec(t, config).unwrap();
         let (decoded, _): (Transform, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(t, decoded);
     }
