@@ -2311,7 +2311,10 @@ mod tests {
         assert_eq!(format!("{}", v), "vec(1.5, 2.5)");
 
         // Test precision formatting (exercises the precision branch in Display impl)
-        let v2 = Vec2 { x: 1.23456, y: 7.89012 };
+        let v2 = Vec2 {
+            x: 1.23456,
+            y: 7.89012,
+        };
         assert_eq!(format!("{:.2}", v2), "vec(1.23, 7.89)");
         assert_eq!(format!("{:.0}", v2), "vec(1, 8)");
     }
@@ -2735,30 +2738,36 @@ mod tests {
 
     #[test]
     fn vec2_cmp_by_length() {
-        let short = Vec2 { x: 3.0, y: 4.0 };   // length 5
-        let long = Vec2 { x: 6.0, y: 8.0 };    // length 10
+        let short = Vec2 { x: 3.0, y: 4.0 }; // length 5
+        let long = Vec2 { x: 6.0, y: 8.0 }; // length 10
         assert_eq!(short.cmp_by_length(&long), std::cmp::Ordering::Less);
         assert_eq!(long.cmp_by_length(&short), std::cmp::Ordering::Greater);
         assert_eq!(short.cmp_by_length(&short), std::cmp::Ordering::Equal);
 
         // Difference of epsilon/2
         let a = Vec2 { x: 1.0, y: 0.0 };
-        let b = Vec2 { x: 1.0 + EPSILON / 2.0, y: 0.0 };
+        let b = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 0.0,
+        };
         assert_eq!(a.cmp_by_length(&b), std::cmp::Ordering::Less);
     }
 
     #[test]
     fn vec2_cmp_by_dist() {
         let origin = Vec2 { x: 1.0, y: 1.0 };
-        let near = Vec2 { x: 4.0, y: 5.0 };   // dist 5 from origin
-        let far = Vec2 { x: 7.0, y: 9.0 };    // dist 10 from origin
+        let near = Vec2 { x: 4.0, y: 5.0 }; // dist 5 from origin
+        let far = Vec2 { x: 7.0, y: 9.0 }; // dist 10 from origin
         assert_eq!(near.cmp_by_dist(&far, origin), std::cmp::Ordering::Less);
         assert_eq!(far.cmp_by_dist(&near, origin), std::cmp::Ordering::Greater);
         assert_eq!(near.cmp_by_dist(&near, origin), std::cmp::Ordering::Equal);
 
         // Difference of epsilon/2
         let a = Vec2 { x: 1.0, y: 0.0 };
-        let b = Vec2 { x: 1.0 + EPSILON / 2.0, y: 0.0 };
+        let b = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 0.0,
+        };
         assert_eq!(a.cmp_by_dist(&b, Vec2::zero()), std::cmp::Ordering::Less);
     }
 
@@ -2785,19 +2794,31 @@ mod tests {
 
         // Epsilon/2 differences - should still be equal
         let h = Vec2 { x: 1.0, y: 2.0 };
-        let i = Vec2 { x: 1.0 + EPSILON / 2.0, y: 2.0 };
+        let i = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 2.0,
+        };
         assert_eq!(h, i);
 
         // Epsilon/2 difference in y
-        let j = Vec2 { x: 1.0, y: 2.0 + EPSILON / 2.0 };
+        let j = Vec2 {
+            x: 1.0,
+            y: 2.0 + EPSILON / 2.0,
+        };
         assert_eq!(h, j);
 
         // Epsilon/2 difference in both
-        let k = Vec2 { x: 1.0 + EPSILON / 2.0, y: 2.0 + EPSILON / 2.0 };
+        let k = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 2.0 + EPSILON / 2.0,
+        };
         assert_eq!(h, k);
 
         // Epsilon/2 in x but larger difference in y - should not be equal
-        let l = Vec2 { x: 1.0 + EPSILON / 2.0, y: 3.0 };
+        let l = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 3.0,
+        };
         assert_ne!(h, l);
         assert!(h < l);
     }
@@ -2819,18 +2840,27 @@ mod tests {
         // Vectors within epsilon are still distinct in HashSet.
         // This may seem unintuitive but is intentional - Hash uses exact bit
         // equality while PartialEq uses epsilon comparison.
-        set.insert(Vec2 { x: 1.0 + EPSILON / 2.0, y: 2.0 });
+        set.insert(Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 2.0,
+        });
         assert_eq!(set.len(), 3);
 
         // HashSet near capacity with epsilon-close keys
         let mut big_set: HashSet<Vec2> = HashSet::with_capacity(4);
         let special1 = Vec2 { x: 999.0, y: 999.0 };
-        let special2 = Vec2 { x: 999.0 + EPSILON / 2.0, y: 999.0 };
+        let special2 = Vec2 {
+            x: 999.0 + EPSILON / 2.0,
+            y: 999.0,
+        };
         big_set.insert(special1);
         big_set.insert(special2);
         // Fill set to trigger rehashing
         for i in 0..100 {
-            big_set.insert(Vec2 { x: i as f32, y: i as f32 });
+            big_set.insert(Vec2 {
+                x: i as f32,
+                y: i as f32,
+            });
         }
         // After rehashing, epsilon-close keys may collide (102 -> 101)
         assert!(big_set.len() == 101 || big_set.len() == 102);
@@ -2841,7 +2871,10 @@ mod tests {
         use std::collections::HashMap;
         let mut map = HashMap::new();
         let key1 = Vec2 { x: 1.0, y: 2.0 };
-        let key2 = Vec2 { x: 1.0 + EPSILON / 2.0, y: 2.0 };
+        let key2 = Vec2 {
+            x: 1.0 + EPSILON / 2.0,
+            y: 2.0,
+        };
         map.insert(key1, "first");
         map.insert(key2, "second");
         assert_eq!(map.get(&key1), Some(&"first"));
@@ -2854,12 +2887,21 @@ mod tests {
         // contract that k1 == k2 implies hash(k1) == hash(k2).
         let mut big_map: HashMap<Vec2, i32> = HashMap::with_capacity(4);
         let special_key1 = Vec2 { x: 999.0, y: 999.0 };
-        let special_key2 = Vec2 { x: 999.0 + EPSILON / 2.0, y: 999.0 };
+        let special_key2 = Vec2 {
+            x: 999.0 + EPSILON / 2.0,
+            y: 999.0,
+        };
         big_map.insert(special_key1, -1);
         big_map.insert(special_key2, -2);
         // Fill map to trigger rehashing
         for i in 0..100 {
-            big_map.insert(Vec2 { x: i as f32, y: i as f32 }, i);
+            big_map.insert(
+                Vec2 {
+                    x: i as f32,
+                    y: i as f32,
+                },
+                i,
+            );
         }
         // After rehashing, epsilon-close keys may return wrong values or even
         // overwrite each other (reducing count from 102 to 101)
@@ -2977,7 +3019,10 @@ mod tests {
 
         // 45 degrees (π/4)
         let rot = Mat3x3::rotation(FRAC_PI_4);
-        let expected = Vec2 { x: FRAC_1_SQRT_2, y: FRAC_1_SQRT_2 };
+        let expected = Vec2 {
+            x: FRAC_1_SQRT_2,
+            y: FRAC_1_SQRT_2,
+        };
         assert!((rot * v).almost_eq(expected));
 
         // Non-cardinal starting vector
@@ -3330,32 +3375,39 @@ mod tests {
     #[test]
     fn vec2i_range() {
         // From zero - check exact order (y iterates first, then x)
-        let range: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: 0, y: 0 }, Vec2i { x: 2, y: 2 }).collect();
+        let range: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: 0, y: 0 }, Vec2i { x: 2, y: 2 }).collect();
         assert_eq!(range, vec![(0, 0), (0, 1), (1, 0), (1, 1)]);
 
         // From non-zero - check exact order
-        let range2: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: 3, y: 5 }, Vec2i { x: 5, y: 7 }).collect();
+        let range2: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: 3, y: 5 }, Vec2i { x: 5, y: 7 }).collect();
         assert_eq!(range2, vec![(3, 5), (3, 6), (4, 5), (4, 6)]);
 
         // Empty ranges (negative-signed-area rectangles)
         // end.x < start.x
-        let empty1: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: 5, y: 0 }, Vec2i { x: 3, y: 2 }).collect();
+        let empty1: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: 5, y: 0 }, Vec2i { x: 3, y: 2 }).collect();
         assert_eq!(empty1, vec![]);
 
         // end.y < start.y
-        let empty2: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: 0, y: 5 }, Vec2i { x: 2, y: 3 }).collect();
+        let empty2: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: 0, y: 5 }, Vec2i { x: 2, y: 3 }).collect();
         assert_eq!(empty2, vec![]);
 
         // both negative
-        let empty3: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: 5, y: 5 }, Vec2i { x: 3, y: 3 }).collect();
+        let empty3: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: 5, y: 5 }, Vec2i { x: 3, y: 3 }).collect();
         assert_eq!(empty3, vec![]);
 
         // Negative start point
-        let neg1: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: -2, y: -1 }, Vec2i { x: 0, y: 1 }).collect();
+        let neg1: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: -2, y: -1 }, Vec2i { x: 0, y: 1 }).collect();
         assert_eq!(neg1, vec![(-2, -1), (-2, 0), (-1, -1), (-1, 0)]);
 
         // Negative start, positive end crossing zero
-        let neg2: Vec<(i32, i32)> = Vec2i::range(Vec2i { x: -1, y: -1 }, Vec2i { x: 1, y: 1 }).collect();
+        let neg2: Vec<(i32, i32)> =
+            Vec2i::range(Vec2i { x: -1, y: -1 }, Vec2i { x: 1, y: 1 }).collect();
         assert_eq!(neg2, vec![(-1, -1), (-1, 0), (0, -1), (0, 0)]);
     }
 
@@ -3468,35 +3520,59 @@ mod tests {
         assert!(!rect.contains_point(Vec2 { x: 3.0, y: 0.0 }));
 
         // Boundary cases - left/top edges are inclusive, right/bottom are exclusive
-        assert!(rect.contains_point(Vec2 { x: -2.0, y: 0.0 }));  // left edge
-        assert!(!rect.contains_point(Vec2 { x: 2.0, y: 0.0 }));  // right edge
-        assert!(rect.contains_point(Vec2 { x: 0.0, y: -2.0 }));  // top edge
-        assert!(!rect.contains_point(Vec2 { x: 0.0, y: 2.0 }));  // bottom edge
+        assert!(rect.contains_point(Vec2 { x: -2.0, y: 0.0 })); // left edge
+        assert!(!rect.contains_point(Vec2 { x: 2.0, y: 0.0 })); // right edge
+        assert!(rect.contains_point(Vec2 { x: 0.0, y: -2.0 })); // top edge
+        assert!(!rect.contains_point(Vec2 { x: 0.0, y: 2.0 })); // bottom edge
 
         // Corners
-        assert!(rect.contains_point(Vec2 { x: -2.0, y: -2.0 }));  // top-left (included)
-        assert!(!rect.contains_point(Vec2 { x: 2.0, y: -2.0 }));  // top-right (excluded)
-        assert!(!rect.contains_point(Vec2 { x: -2.0, y: 2.0 }));  // bottom-left (excluded)
-        assert!(!rect.contains_point(Vec2 { x: 2.0, y: 2.0 }));   // bottom-right (excluded)
+        assert!(rect.contains_point(Vec2 { x: -2.0, y: -2.0 })); // top-left (included)
+        assert!(!rect.contains_point(Vec2 { x: 2.0, y: -2.0 })); // top-right (excluded)
+        assert!(!rect.contains_point(Vec2 { x: -2.0, y: 2.0 })); // bottom-left (excluded)
+        assert!(!rect.contains_point(Vec2 { x: 2.0, y: 2.0 })); // bottom-right (excluded)
 
         // Just outside each edge using EPSILON/2
-        assert!(!rect.contains_point(Vec2 { x: -2.0 - EPSILON / 2.0, y: 0.0 }));  // just left of left edge
-        assert!(!rect.contains_point(Vec2 { x: 2.0 + EPSILON / 2.0, y: 0.0 }));   // just right of right edge
-        assert!(!rect.contains_point(Vec2 { x: 0.0, y: -2.0 - EPSILON / 2.0 }));  // just above top edge
-        assert!(!rect.contains_point(Vec2 { x: 0.0, y: 2.0 + EPSILON / 2.0 }));   // just below bottom edge
+        assert!(!rect.contains_point(Vec2 {
+            x: -2.0 - EPSILON / 2.0,
+            y: 0.0
+        })); // just left of left edge
+        assert!(!rect.contains_point(Vec2 {
+            x: 2.0 + EPSILON / 2.0,
+            y: 0.0
+        })); // just right of right edge
+        assert!(!rect.contains_point(Vec2 {
+            x: 0.0,
+            y: -2.0 - EPSILON / 2.0
+        })); // just above top edge
+        assert!(!rect.contains_point(Vec2 {
+            x: 0.0,
+            y: 2.0 + EPSILON / 2.0
+        })); // just below bottom edge
 
         // Just inside each edge using EPSILON/2
-        assert!(rect.contains_point(Vec2 { x: -2.0 + EPSILON / 2.0, y: 0.0 }));   // just inside left edge
-        assert!(rect.contains_point(Vec2 { x: 2.0 - EPSILON / 2.0, y: 0.0 }));    // just inside right edge
-        assert!(rect.contains_point(Vec2 { x: 0.0, y: -2.0 + EPSILON / 2.0 }));   // just inside top edge
-        assert!(rect.contains_point(Vec2 { x: 0.0, y: 2.0 - EPSILON / 2.0 }));    // just inside bottom edge
+        assert!(rect.contains_point(Vec2 {
+            x: -2.0 + EPSILON / 2.0,
+            y: 0.0
+        })); // just inside left edge
+        assert!(rect.contains_point(Vec2 {
+            x: 2.0 - EPSILON / 2.0,
+            y: 0.0
+        })); // just inside right edge
+        assert!(rect.contains_point(Vec2 {
+            x: 0.0,
+            y: -2.0 + EPSILON / 2.0
+        })); // just inside top edge
+        assert!(rect.contains_point(Vec2 {
+            x: 0.0,
+            y: 2.0 - EPSILON / 2.0
+        })); // just inside bottom edge
 
         // Non-zero centre
         let rect2 = Rect::new(Vec2 { x: 5.0, y: 10.0 }, Vec2 { x: 3.0, y: 2.0 });
-        assert!(rect2.contains_point(Vec2 { x: 5.0, y: 10.0 }));   // centre
-        assert!(rect2.contains_point(Vec2 { x: 3.0, y: 9.0 }));    // interior
-        assert!(!rect2.contains_point(Vec2 { x: 1.0, y: 10.0 }));  // outside left
-        assert!(!rect2.contains_point(Vec2 { x: 9.0, y: 10.0 }));  // outside right
+        assert!(rect2.contains_point(Vec2 { x: 5.0, y: 10.0 })); // centre
+        assert!(rect2.contains_point(Vec2 { x: 3.0, y: 9.0 })); // interior
+        assert!(!rect2.contains_point(Vec2 { x: 1.0, y: 10.0 })); // outside left
+        assert!(!rect2.contains_point(Vec2 { x: 9.0, y: 10.0 })); // outside right
     }
 
     // TODO: contains_rect uses inclusive bounds on all edges, but contains_point uses
@@ -3528,15 +3604,27 @@ mod tests {
         // Inner rect edge exactly on outer rect edge (should still be contained)
         let outer3 = Rect::new(Vec2::zero(), Vec2 { x: 4.0, y: 4.0 });
         let inner3 = Rect::new(Vec2 { x: 2.0, y: 0.0 }, Vec2 { x: 2.0, y: 4.0 });
-        assert!(outer3.contains_rect(&inner3));  // inner3 right edge == outer3 right edge
+        assert!(outer3.contains_rect(&inner3)); // inner3 right edge == outer3 right edge
 
         // Inner rect just barely inside (EPSILON/2 inside outer edge)
         let outer4 = Rect::new(Vec2::zero(), Vec2 { x: 4.0, y: 4.0 });
-        let inner4 = Rect::new(Vec2 { x: 2.0 - EPSILON / 2.0, y: 0.0 }, Vec2 { x: 2.0, y: 4.0 });
+        let inner4 = Rect::new(
+            Vec2 {
+                x: 2.0 - EPSILON / 2.0,
+                y: 0.0,
+            },
+            Vec2 { x: 2.0, y: 4.0 },
+        );
         assert!(outer4.contains_rect(&inner4));
 
         // Inner rect just barely outside (EPSILON/2 outside outer edge)
-        let inner5 = Rect::new(Vec2 { x: 2.0 + EPSILON / 2.0, y: 0.0 }, Vec2 { x: 2.0, y: 4.0 });
+        let inner5 = Rect::new(
+            Vec2 {
+                x: 2.0 + EPSILON / 2.0,
+                y: 0.0,
+            },
+            Vec2 { x: 2.0, y: 4.0 },
+        );
         assert!(!outer4.contains_rect(&inner5));
     }
 
@@ -3578,8 +3666,8 @@ mod tests {
         let shifted_positive = Rect::new(Vec2::splat(EPSILON / 2.0), Vec2 { x: 2.0, y: 2.0 });
         // shifted_positive: left=-1.999995, right=2.000005
         let u_pos = base.union(&shifted_positive);
-        assert_eq!(u_pos.left(), -2.0);  // base's left edge (outer)
-        assert!((u_pos.right() - (2.0 + EPSILON / 2.0)).abs() < EPSILON / 10.0);  // shifted's right edge (outer)
+        assert_eq!(u_pos.left(), -2.0); // base's left edge (outer)
+        assert!((u_pos.right() - (2.0 + EPSILON / 2.0)).abs() < EPSILON / 10.0); // shifted's right edge (outer)
 
         // Test 2: centre shifted by -EPSILON/2 - tests left/top edges
         let shifted_negative = Rect::new(Vec2::splat(-EPSILON / 2.0), Vec2 { x: 2.0, y: 2.0 });
@@ -3862,18 +3950,36 @@ mod tests {
     #[test]
     fn vec2_equality_non_finite() {
         // Test equality with non-finite values
-        let inf = Vec2 { x: f32::INFINITY, y: f32::INFINITY };
-        let inf2 = Vec2 { x: f32::INFINITY, y: f32::INFINITY };
+        let inf = Vec2 {
+            x: f32::INFINITY,
+            y: f32::INFINITY,
+        };
+        let inf2 = Vec2 {
+            x: f32::INFINITY,
+            y: f32::INFINITY,
+        };
         assert_eq!(inf, inf2);
 
-        let neg_inf = Vec2 { x: f32::NEG_INFINITY, y: f32::NEG_INFINITY };
-        let neg_inf2 = Vec2 { x: f32::NEG_INFINITY, y: f32::NEG_INFINITY };
+        let neg_inf = Vec2 {
+            x: f32::NEG_INFINITY,
+            y: f32::NEG_INFINITY,
+        };
+        let neg_inf2 = Vec2 {
+            x: f32::NEG_INFINITY,
+            y: f32::NEG_INFINITY,
+        };
         assert_eq!(neg_inf, neg_inf2);
         assert_ne!(inf, neg_inf);
 
         // NaN != NaN
-        let nan = Vec2 { x: f32::NAN, y: f32::NAN };
-        let nan2 = Vec2 { x: f32::NAN, y: f32::NAN };
+        let nan = Vec2 {
+            x: f32::NAN,
+            y: f32::NAN,
+        };
+        let nan2 = Vec2 {
+            x: f32::NAN,
+            y: f32::NAN,
+        };
         assert_ne!(nan, nan2);
     }
 
@@ -3889,24 +3995,42 @@ mod tests {
         assert_eq!(a.cmp(&c), std::cmp::Ordering::Equal);
 
         // Test with NaN values - total_cmp considers NaN greater than all other values
-        let nan_vec = Vec2 { x: f32::NAN, y: 0.0 };
+        let nan_vec = Vec2 {
+            x: f32::NAN,
+            y: 0.0,
+        };
         let normal_vec = Vec2 { x: 1.0, y: 0.0 };
         assert_eq!(nan_vec.cmp(&normal_vec), std::cmp::Ordering::Greater);
         assert_eq!(normal_vec.cmp(&nan_vec), std::cmp::Ordering::Less);
 
         // Test NaN in y when x is within epsilon
-        let nan_y = Vec2 { x: 1.0, y: f32::NAN };
+        let nan_y = Vec2 {
+            x: 1.0,
+            y: f32::NAN,
+        };
         let normal_y = Vec2 { x: 1.0, y: 2.0 };
         assert_eq!(nan_y.cmp(&normal_y), std::cmp::Ordering::Greater);
 
         // Test when both have NaN in x (total_cmp returns Equal for same NaN)
-        let nan_x1 = Vec2 { x: f32::NAN, y: 1.0 };
-        let nan_x2 = Vec2 { x: f32::NAN, y: 2.0 };
+        let nan_x1 = Vec2 {
+            x: f32::NAN,
+            y: 1.0,
+        };
+        let nan_x2 = Vec2 {
+            x: f32::NAN,
+            y: 2.0,
+        };
         assert_eq!(nan_x1.cmp(&nan_x2), std::cmp::Ordering::Less);
 
         // Test when both x and y are NaN
-        let all_nan1 = Vec2 { x: f32::NAN, y: f32::NAN };
-        let all_nan2 = Vec2 { x: f32::NAN, y: f32::NAN };
+        let all_nan1 = Vec2 {
+            x: f32::NAN,
+            y: f32::NAN,
+        };
+        let all_nan2 = Vec2 {
+            x: f32::NAN,
+            y: f32::NAN,
+        };
         assert_eq!(all_nan1.cmp(&all_nan2), std::cmp::Ordering::Equal);
     }
 
@@ -3915,12 +4039,20 @@ mod tests {
         // Initialize tracing to cover the warn! path
         let _ = crate::util::setup_log();
 
-        let nan_vec = Vec2 { x: f32::NAN, y: 0.0 };
+        let nan_vec = Vec2 {
+            x: f32::NAN,
+            y: 0.0,
+        };
         let normal_vec = Vec2 { x: 1.0, y: 0.0 };
         // Verify NaN len_squared produces NaN
         assert!(nan_vec.len_squared().is_nan());
         // Verify partial_cmp fails for NaN
-        assert!(nan_vec.len_squared().partial_cmp(&normal_vec.len_squared()).is_none());
+        assert!(
+            nan_vec
+                .len_squared()
+                .partial_cmp(&normal_vec.len_squared())
+                .is_none()
+        );
         // Should not panic, returns deterministic ordering via total_cmp
         let result = nan_vec.cmp_by_length(&normal_vec);
         // NaN is greater than all other values in total_cmp
@@ -3932,7 +4064,10 @@ mod tests {
         // Initialize tracing to cover the warn! path
         let _ = crate::util::setup_log();
 
-        let nan_vec = Vec2 { x: f32::NAN, y: 0.0 };
+        let nan_vec = Vec2 {
+            x: f32::NAN,
+            y: 0.0,
+        };
         let normal_vec = Vec2 { x: 1.0, y: 0.0 };
         let origin = Vec2::zero();
         // Verify the NaN path is taken
@@ -3955,23 +4090,35 @@ mod tests {
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v, decoded);
 
-        let v_inf = Vec2 { x: f32::INFINITY, y: f32::NEG_INFINITY };
+        let v_inf = Vec2 {
+            x: f32::INFINITY,
+            y: f32::NEG_INFINITY,
+        };
         let encoded = bincode::encode_to_vec(&v_inf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_inf, decoded);
 
-        let v_nan = Vec2 { x: f32::NAN, y: f32::NAN };
+        let v_nan = Vec2 {
+            x: f32::NAN,
+            y: f32::NAN,
+        };
         let encoded = bincode::encode_to_vec(&v_nan, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert!(decoded.x.is_nan() && decoded.y.is_nan());
 
-        let v_inf_nan = Vec2 { x: f32::INFINITY, y: f32::NAN };
+        let v_inf_nan = Vec2 {
+            x: f32::INFINITY,
+            y: f32::NAN,
+        };
         let encoded = bincode::encode_to_vec(&v_inf_nan, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded.x, f32::INFINITY);
         assert!(decoded.y.is_nan());
 
-        let v_neg_zero_inf = Vec2 { x: -0.0, y: f32::INFINITY };
+        let v_neg_zero_inf = Vec2 {
+            x: -0.0,
+            y: f32::INFINITY,
+        };
         let encoded = bincode::encode_to_vec(&v_neg_zero_inf, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert!(decoded.x.is_sign_negative() && decoded.x == 0.0);
@@ -3979,7 +4126,10 @@ mod tests {
 
         let subnormal = f32::MIN_POSITIVE / 2.0;
         assert!(subnormal.is_subnormal());
-        let v_subnormal = Vec2 { x: subnormal, y: -subnormal };
+        let v_subnormal = Vec2 {
+            x: subnormal,
+            y: -subnormal,
+        };
         let encoded = bincode::encode_to_vec(&v_subnormal, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_subnormal, decoded);
@@ -3989,13 +4139,19 @@ mod tests {
         let largest_subnormal = f32::from_bits(0x007F_FFFF);
         assert!(smallest_subnormal.is_subnormal());
         assert!(largest_subnormal.is_subnormal());
-        let v_subnormal_range = Vec2 { x: smallest_subnormal, y: largest_subnormal };
+        let v_subnormal_range = Vec2 {
+            x: smallest_subnormal,
+            y: largest_subnormal,
+        };
         let encoded = bincode::encode_to_vec(&v_subnormal_range, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_subnormal_range, decoded);
 
         // f32::MAX and f32::MIN
-        let v_extremes = Vec2 { x: f32::MAX, y: f32::MIN };
+        let v_extremes = Vec2 {
+            x: f32::MAX,
+            y: f32::MIN,
+        };
         let encoded = bincode::encode_to_vec(&v_extremes, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(v_extremes, decoded);
@@ -4012,7 +4168,10 @@ mod tests {
         // Specific NaN payload preservation
         let nan_with_payload = f32::from_bits(0x7F80_ABCD);
         assert!(nan_with_payload.is_nan());
-        let v_nan_payload = Vec2 { x: nan_with_payload, y: 0.0 };
+        let v_nan_payload = Vec2 {
+            x: nan_with_payload,
+            y: 0.0,
+        };
         let encoded = bincode::encode_to_vec(&v_nan_payload, config).unwrap();
         let (decoded, _): (Vec2, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded.x.to_bits(), nan_with_payload.to_bits());
@@ -4023,7 +4182,10 @@ mod tests {
         assert_eq!(vi, decoded);
 
         // Vec2i with extreme integer values
-        let vi_extreme = Vec2i { x: i32::MAX, y: i32::MIN };
+        let vi_extreme = Vec2i {
+            x: i32::MAX,
+            y: i32::MIN,
+        };
         let encoded = bincode::encode_to_vec(&vi_extreme, config).unwrap();
         let (decoded, _): (Vec2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(vi_extreme, decoded);
@@ -4035,8 +4197,14 @@ mod tests {
 
         // Edge2i with extreme values
         let edge_extreme = Edge2i(
-            Vec2i { x: i32::MIN, y: i32::MAX },
-            Vec2i { x: i32::MAX, y: i32::MIN },
+            Vec2i {
+                x: i32::MIN,
+                y: i32::MAX,
+            },
+            Vec2i {
+                x: i32::MAX,
+                y: i32::MIN,
+            },
         );
         let encoded = bincode::encode_to_vec(&edge_extreme, config).unwrap();
         let (decoded, _): (Edge2i, _) = bincode::decode_from_slice(&encoded, config).unwrap();
@@ -4054,8 +4222,14 @@ mod tests {
 
         // Rect with special float values
         let r_special = Rect::new(
-            Vec2 { x: f32::INFINITY, y: f32::NEG_INFINITY },
-            Vec2 { x: f32::MAX, y: f32::MIN_POSITIVE },
+            Vec2 {
+                x: f32::INFINITY,
+                y: f32::NEG_INFINITY,
+            },
+            Vec2 {
+                x: f32::MAX,
+                y: f32::MIN_POSITIVE,
+            },
         );
         let encoded = bincode::encode_to_vec(&r_special, config).unwrap();
         let (decoded, _): (Rect, _) = bincode::decode_from_slice(&encoded, config).unwrap();
@@ -4085,12 +4259,14 @@ mod tests {
 
         let edge = Edge2i(Vec2i { x: 1, y: 2 }, Vec2i { x: 3, y: 4 });
         let encoded = bincode::encode_to_vec(&edge, config).unwrap();
-        let (decoded, _): (Edge2i, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
+        let (decoded, _): (Edge2i, _) =
+            bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(edge, decoded);
 
         let m = Mat3x3::rotation(FRAC_PI_6);
         let encoded = bincode::encode_to_vec(&m, config).unwrap();
-        let (decoded, _): (Mat3x3, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
+        let (decoded, _): (Mat3x3, _) =
+            bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(m, decoded);
 
         let r = Rect::new(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
@@ -4100,7 +4276,8 @@ mod tests {
 
         let t = Transform::default();
         let encoded = bincode::encode_to_vec(&t, config).unwrap();
-        let (decoded, _): (Transform, _) = bincode::borrow_decode_from_slice(&encoded, config).unwrap();
+        let (decoded, _): (Transform, _) =
+            bincode::borrow_decode_from_slice(&encoded, config).unwrap();
         assert_eq!(t, decoded);
     }
 

@@ -1,13 +1,11 @@
+use crate::core::prelude::*;
+use rand::{Rng, rng};
+use rodio::{Decoder, OutputStreamBuilder, Sink, Source, buffer::SamplesBuffer, mixer::Mixer};
 use std::{
     collections::BTreeMap,
     io::Cursor,
     sync::{Arc, Mutex, OnceLock},
     thread::JoinHandle,
-};
-use crate::core::prelude::*;
-use rand::{Rng, rng};
-use rodio::{
-    Decoder, OutputStreamBuilder, Sink, Source, buffer::SamplesBuffer, mixer::Mixer,
 };
 
 // OutputStream is not Send on macOS (CoreAudio limitation), so we leak it.
@@ -23,7 +21,6 @@ pub struct Sound {
     inner: Option<Arc<SoundInner>>,
     is_looping: bool,
 }
-
 
 impl Sound {
     pub fn play_shifted(&mut self, mag: f32) {
@@ -81,9 +78,7 @@ impl Sound {
         if DISABLE_SOUND {
             return false;
         }
-        self.inner.as_ref().is_some_and(|inner| {
-            !inner.sink.empty()
-        })
+        self.inner.as_ref().is_some_and(|inner| !inner.sink.empty())
     }
 }
 
@@ -160,10 +155,7 @@ impl SoundHandler {
 
         let sink = Sink::connect_new(mixer);
 
-        let inner = Some(Arc::new(SoundInner {
-            buffer,
-            sink,
-        }));
+        let inner = Some(Arc::new(SoundInner { buffer, sink }));
         Ok(Sound {
             inner,
             is_looping: false,
