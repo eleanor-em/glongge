@@ -284,7 +284,7 @@ impl Vec2 {
 
     #[must_use]
     pub fn rotated_to(&self, basis: Vec2) -> Vec2 {
-        self.rotated(basis.angle_radians_clockwise(Vec2::up()))
+        self.rotated(Vec2::up().angle_radians_clockwise(basis))
     }
 
     /// Reflects the vector about a normal vector.
@@ -470,11 +470,20 @@ impl Vec2 {
     pub fn angle_radians(&self, other: Vec2) -> f32 {
         self.normed().dot(other.normed()).acos()
     }
+    /// Calculates the angle in radians between two vectors, as measured clockwise from `self`
+    /// to `to`.
     #[must_use]
-    pub fn angle_radians_clockwise(&self, other: Vec2) -> f32 {
+    pub fn angle_radians_clockwise(&self, to: Vec2) -> f32 {
         let u = self.normed();
-        let v = other.normed();
-        f32::atan2(-u.cross(v), u.dot(v))
+        let v = to.normed();
+        let y = u.cross(v);
+        let x = u.dot(v);
+        let theta = f32::atan2(y, x);
+        if theta >= 0.0 {
+            theta
+        } else {
+            2.0 * std::f32::consts::PI + theta
+        }
     }
 
     /// Projects this vector onto the given axis.
@@ -2606,7 +2615,7 @@ mod tests {
         assert_eq!(right.angle_radians(up), FRAC_PI_2);
 
         let left = Vec2::left();
-        assert_eq!(right.angle_radians(left), PI);
+        assert!((right.angle_radians(left) - PI).abs() < EPSILON);
 
         // All four diagonals
         let q1 = Vec2 { x: 1.0, y: 1.0 };
@@ -2626,78 +2635,75 @@ mod tests {
         assert_eq!(q1.angle_radians(q4), FRAC_PI_2);
     }
 
-    // TODO: verify angle_radians_clockwise results manually - the sign convention
-    // and direction may not match expectations.
     #[test]
     fn vec2_angle_radians_clockwise() {
-        let right = Vec2::right();
-        let up = Vec2::up();
-        let left = Vec2::left();
-        let down = Vec2::down();
+        // Angle from up (standard basis)
+        assert_eq!(Vec2::up().angle_radians_clockwise(Vec2::up()), 0.0);
+        assert_eq!(Vec2::up().angle_radians_clockwise(Vec2::right()), FRAC_PI_2);
+        assert!((Vec2::up().angle_radians_clockwise(Vec2::down()) - PI).abs() < EPSILON);
+        assert_eq!(
+            Vec2::up().angle_radians_clockwise(Vec2::left()),
+            3.0 * FRAC_PI_2
+        );
 
-        // Cardinal directions
-        assert_eq!(right.angle_radians_clockwise(up), FRAC_PI_2);
-        assert_eq!(right.angle_radians_clockwise(down), -FRAC_PI_2);
-        assert_eq!(right.angle_radians_clockwise(left), -PI);
+        // Angle from right
+        assert_eq!(
+            Vec2::right().angle_radians_clockwise(Vec2::up()),
+            3.0 * FRAC_PI_2
+        );
+        assert_eq!(Vec2::right().angle_radians_clockwise(Vec2::right()), 0.0);
+        assert_eq!(
+            Vec2::right().angle_radians_clockwise(Vec2::down()),
+            FRAC_PI_2
+        );
+        assert!((Vec2::right().angle_radians_clockwise(Vec2::left()) - PI).abs() < EPSILON);
 
         // All four diagonals
-        let q1 = Vec2 { x: 1.0, y: 1.0 };
-        let q2 = Vec2 { x: -1.0, y: 1.0 };
-        let q3 = Vec2 { x: -1.0, y: -1.0 };
-        let q4 = Vec2 { x: 1.0, y: -1.0 };
+        let q1 = Vec2 { x: 1.0, y: -1.0 };
+        let q2 = Vec2 { x: 1.0, y: 1.0 };
+        let q3 = Vec2 { x: -1.0, y: 1.0 };
+        let q4 = Vec2 { x: -1.0, y: -1.0 };
 
-        assert_eq!(right.angle_radians_clockwise(q1), -FRAC_PI_4);
-        assert_eq!(right.angle_radians_clockwise(q2), -3.0 * FRAC_PI_4);
-        assert_eq!(right.angle_radians_clockwise(q3), 3.0 * FRAC_PI_4);
-        assert_eq!(right.angle_radians_clockwise(q4), FRAC_PI_4);
+        assert_eq!(q1.angle_radians_clockwise(Vec2::up()), 7.0 * FRAC_PI_4);
+        assert_eq!(q2.angle_radians_clockwise(Vec2::up()), PI + FRAC_PI_4);
+        assert_eq!(q3.angle_radians_clockwise(Vec2::up()), 3.0 * FRAC_PI_4);
+        assert_eq!(q4.angle_radians_clockwise(Vec2::up()), FRAC_PI_4);
 
         // Pairs with no zero components
-        assert_eq!(q1.angle_radians_clockwise(q2), -FRAC_PI_2);
-        assert_eq!(q1.angle_radians_clockwise(q4), FRAC_PI_2);
+        assert_eq!(q2.angle_radians_clockwise(q1), 3.0 * FRAC_PI_2);
+        assert_eq!(q4.angle_radians_clockwise(q1), FRAC_PI_2);
     }
 
     #[test]
-    #[ignore = "TODO: investigate non-cardinal cases - expected values may be wrong"]
     fn vec2_rotated_to() {
-        // rotated_to rotates self by the clockwise angle from basis to up
-        // When basis = right, angle from right to up is PI/2 clockwise
-        let v = Vec2::right();
-        let basis = Vec2::right();
-        let rotated = v.rotated_to(basis);
-        assert_eq!(rotated, Vec2::down());
+        assert_eq!(Vec2::up().rotated_to(Vec2::up()), Vec2::up());
+        assert_eq!(Vec2::right().rotated_to(Vec2::up()), Vec2::right());
+        assert_eq!(Vec2::down().rotated_to(Vec2::up()), Vec2::down());
+        assert_eq!(Vec2::left().rotated_to(Vec2::up()), Vec2::left());
 
-        // When basis = down, angle from down to up is PI
-        let rotated2 = Vec2::right().rotated_to(Vec2::down());
-        assert_eq!(rotated2, Vec2::left());
+        assert_eq!(Vec2::up().rotated_to(Vec2::right()), Vec2::right());
+        assert_eq!(Vec2::right().rotated_to(Vec2::right()), Vec2::down());
+        assert_eq!(Vec2::down().rotated_to(Vec2::right()), Vec2::left());
+        assert_eq!(Vec2::left().rotated_to(Vec2::right()), Vec2::up());
 
-        // When basis = up, angle is 0 (no rotation)
-        let rotated3 = Vec2::right().rotated_to(Vec2::up());
-        assert_eq!(rotated3, Vec2::right());
+        assert_eq!(Vec2::up().rotated_to(Vec2::down()), Vec2::down());
+        assert_eq!(Vec2::right().rotated_to(Vec2::down()), Vec2::left());
+        assert_eq!(Vec2::down().rotated_to(Vec2::down()), Vec2::up());
+        assert_eq!(Vec2::left().rotated_to(Vec2::down()), Vec2::right());
 
-        // When basis = left, angle from left to up is -PI/2
-        let rotated4 = Vec2::right().rotated_to(Vec2::left());
-        assert_eq!(rotated4, Vec2::up());
+        assert_eq!(Vec2::up().rotated_to(Vec2::left()), Vec2::left());
+        assert_eq!(Vec2::right().rotated_to(Vec2::left()), Vec2::up());
+        assert_eq!(Vec2::down().rotated_to(Vec2::left()), Vec2::right());
+        assert_eq!(Vec2::left().rotated_to(Vec2::left()), Vec2::down());
 
         // Diagonal basis - rotate by 45 degrees
-        let q1 = Vec2 { x: 1.0, y: 1.0 };
+        let q1 = Vec2 { x: 1.0, y: -1.0 };
         let rotated5 = Vec2::right().rotated_to(q1);
-        assert!(rotated5.almost_eq(Vec2 { x: 1.0, y: -1.0 }.normed()));
+        assert_eq!(rotated5, Vec2 { x: 1.0, y: 1.0 }.normed());
 
         // Non-cardinal vector rotated with cardinal basis
         let rotated6 = q1.rotated_to(Vec2::right());
-        assert!(rotated6.almost_eq(Vec2 { x: 1.0, y: -1.0 }));
-    }
-
-    // TODO: rotated_to behavior may be incorrect - this test exists only for coverage.
-    // The ignored vec2_rotated_to test above has the expected behavior but fails.
-    #[test]
-    fn vec2_rotated_to_possibly_broken_coverage_only() {
-        // This test only verifies that rotated_to can be called and preserves length.
-        // It does NOT verify the rotation direction is correct.
-        let v = Vec2 { x: 3.0, y: 4.0 };
-        let rotated = v.rotated_to(Vec2::right());
-        // Length should be preserved by any rotation
-        assert!((rotated.len() - v.len()).abs() < EPSILON);
+        assert_eq!(rotated6, Vec2 { x: 1.0, y: 1.0 });
     }
 
     #[test]
