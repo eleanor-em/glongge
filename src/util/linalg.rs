@@ -2671,6 +2671,7 @@ mod tests {
         };
         map.insert(key1, "first");
         map.insert(key2, "second");
+        // TODO: very occasionally fails.
         assert_eq!(map.get(&key1), Some(&"first"));
         assert_eq!(map.get(&key2), Some(&"second"));
         assert_eq!(map.len(), 2);

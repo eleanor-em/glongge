@@ -29,6 +29,7 @@ use tracing_subscriber::{
 pub mod assert;
 pub mod canvas;
 pub mod collision;
+mod collision_defs;
 pub mod colour;
 pub mod linalg;
 mod linalg_def;

@@ -22,10 +22,11 @@ use std::{
     time::Duration,
 };
 
+// Used by util::collision::tests::pixel_perfect_complex_shape
 #[derive(Clone)]
-struct RawTexture {
-    buf: Vec<u8>,
-    extent: vk::Extent2D,
+pub(crate) struct RawTexture {
+    pub(crate) buf: Vec<u8>,
+    pub(crate) extent: vk::Extent2D,
     format: vk::Format,
     duration: Option<Duration>,
 }
@@ -396,7 +397,8 @@ impl TextureHandler {
         }
     }
 
-    fn load_file_inner_png(filename: &str) -> Result<RawTexture> {
+    // Used by util::collision::tests::pixel_perfect_complex_shape
+    pub(crate) fn load_file_inner_png(filename: &str) -> Result<RawTexture> {
         let mut image = ImageReader::open(filename)?.decode()?.into_rgba8();
         image.set_color_space(Cicp::SRGB)?;
         Self::load_reader_rgba_inner(

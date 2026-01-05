@@ -99,7 +99,7 @@ impl SceneObject for PixelPerfect {
         };
         ctx.object_mut().add_child(CollisionShape::from_object(
             self,
-            CompoundCollider::pixel_perfect(&tex_raw)?,
+            CompoundCollider::pixel_perfect(&tex_raw),
         ));
         ctx.object().transform_mut().centre = [400.0, 200.0].into();
         ctx.object().transform_mut().scale = [8.0, 8.0].into();
