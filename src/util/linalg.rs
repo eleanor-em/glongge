@@ -723,16 +723,11 @@ impl From<Vec2> for [f32; 2] {
 
 impl fmt::Display for Vec2 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let precision = f.precision();
-
-        write!(f, "vec(")?;
-        if let Some(p) = precision {
-            write!(f, "{0:.1$}", self.x, p)?;
-            write!(f, ", {0:.1$}", self.y, p)?;
+        if let Some(p) = f.precision() {
+            write!(f, "vec({0:.2$}, {1:.2$})", self.x, self.y, p)
         } else {
-            write!(f, "{}, {}", self.x, self.y)?;
+            write!(f, "vec({}, {})", self.x, self.y)
         }
-        write!(f, ")")
     }
 }
 
@@ -2661,9 +2656,11 @@ mod tests {
             });
         }
         // After rehashing, epsilon-close keys may collide (102 -> 101)
-        assert!(big_set.len() == 101 || big_set.len() == 102);
+        assert!([101, 102].contains(&big_set.len()));
         // contains() may also be confused
-        assert!(big_set.contains(&special1) || big_set.contains(&special2));
+        let has_special1 = big_set.contains(&special1);
+        let has_special2 = big_set.contains(&special2);
+        assert!(has_special1 | has_special2); // bitwise OR to avoid short-circuit
 
         // HashMap correctly retrieves values even with epsilon-close keys
         let mut map = HashMap::new();
@@ -2708,7 +2705,7 @@ mod tests {
         assert!(val1 == Some(&-1) || val1 == Some(&-2));
         assert!(val2 == Some(&-1) || val2 == Some(&-2));
         // Length may be 101 or 102 depending on whether keys collided
-        assert!(big_map.len() == 101 || big_map.len() == 102);
+        assert!([101, 102].contains(&big_map.len()));
     }
 
     #[test]
