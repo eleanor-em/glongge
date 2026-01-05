@@ -31,6 +31,7 @@ pub mod canvas;
 pub mod collision;
 pub mod colour;
 pub mod linalg;
+mod linalg_def;
 pub mod log;
 pub mod spline;
 pub mod tileset;
