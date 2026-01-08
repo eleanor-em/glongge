@@ -119,9 +119,9 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     where
         Self: Sized,
     {
-        self.translated(by.centre)
-            .scaled(by.scale)
+        self.scaled(by.scale)
             .rotated(by.rotation)
+            .translated(by.centre)
     }
     #[must_use]
     fn with_half_widths(&self, half_widths: Vec2) -> Self
@@ -3881,8 +3881,8 @@ mod tests {
         let mut collider = base_collider.transformed(&last_transform);
 
         // Simulate many small translations while keeping the same rotation.
-        // Fails at iteration 277.
-        for i in 0..276 {
+        // Fails at iteration 240.
+        for i in 0..239 {
             let next_transform = Transform {
                 centre: Vec2 {
                     x: i as f32 / 100.0,

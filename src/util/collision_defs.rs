@@ -45,7 +45,7 @@ pub struct OrientedBoxCollider {
 }
 
 pub struct GgInternalCollisionShape {
-    last_transform: Transform,
+    base_collider: GenericCollider,
     collider: GenericCollider,
     emitting_tags: Vec<&'static str>,
     listening_tags: Vec<&'static str>,
@@ -67,9 +67,10 @@ impl GgInternalCollisionShape {
         emitting_tags: &[&'static str],
         listening_tags: &[&'static str],
     ) -> Self {
+        let base_collider = collider.into_generic();
         let mut rv = Self {
-            last_transform: Transform::default(),
-            collider: collider.into_generic(),
+            base_collider: base_collider.clone(),
+            collider: base_collider,
             emitting_tags: emitting_tags.to_vec(),
             listening_tags: listening_tags.to_vec(),
             wireframe: RenderItem::default(),
@@ -191,11 +192,7 @@ impl SceneObject for GgInternalCollisionShape {
 
 impl GgInternalCollisionShape {
     pub(crate) fn update_transform(&mut self, next_transform: Transform) {
-        if self.last_transform != next_transform {
-            self.collider = self.collider.transformed(&self.last_transform.inverse());
-            self.collider = self.collider.transformed(&next_transform);
-            self.last_transform = next_transform;
-        }
+        self.collider = self.base_collider.transformed(&next_transform);
     }
 }
 
