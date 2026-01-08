@@ -1504,10 +1504,34 @@ impl Collider for CompoundCollider {
         }
     }
 
-    fn rotated(&self, _by: f32) -> Self {
-        // TODO: implement
-        error!("CompoundCollider::rotated(): not implemented");
-        self.clone()
+    fn rotated(&self, by: f32) -> Self {
+        let centre = self.centre();
+        let new_inner = self
+            .inner
+            .clone()
+            .into_iter()
+            .map(|mut c| {
+                for v in &mut c.vertices {
+                    *v -= centre;
+                    *v = v.rotated(by);
+                    *v += centre;
+                }
+                c.normals_cached = polygon::normals_of(c.vertices.clone());
+                c.centre_cached = polygon::centre_of(c.vertices.clone());
+                c.extent_cached = polygon::extent_of(c.vertices.clone());
+                c
+            })
+            .collect_vec();
+        let new_override_normals = self
+            .override_normals
+            .iter()
+            .map(|n| n.rotated(by))
+            .collect_vec();
+        Self {
+            inner: new_inner,
+            override_normals: new_override_normals,
+            unique_normals_cached: GgMutex::new(Vec::new()),
+        }
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -3680,14 +3704,80 @@ mod tests {
         // Test CompoundCollider::rotated()
         let triangle = ConvexCollider::convex_hull_of(vec![
             Vec2 { x: 0.0, y: 0.0 },
-            Vec2 { x: 1.0, y: 0.0 },
-            Vec2 { x: 0.5, y: 1.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
         ])
         .unwrap();
-        let compound = CompoundCollider::new(vec![triangle.clone()]);
+        let compound = CompoundCollider::new(vec![triangle]);
+        let original_centre = compound.centre();
         let rotated = compound.rotated(std::f32::consts::PI / 2.0);
-        // Note: rotated() is not implemented, it just clones
+
+        // Centre should be preserved after rotation
+        assert_eq!(rotated.centre(), original_centre);
+        // Inner collider count unchanged
         assert_eq!(rotated.inner.len(), compound.inner.len());
+        // Normals should be rotated
+        assert!(!rotated.inner[0].normals_cached.is_empty());
+    }
+
+    #[test]
+    fn compound_collider_rotated_inner_centre_updated() {
+        // Create two triangles: one on the left, one on the right
+        let left_triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: -2.0, y: -1.0 },
+            Vec2 { x: 0.0, y: -1.0 },
+            Vec2 { x: -1.0, y: 1.0 },
+        ])
+        .unwrap();
+        let right_triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: -1.0 },
+            Vec2 { x: 2.0, y: -1.0 },
+            Vec2 { x: 1.0, y: 1.0 },
+        ])
+        .unwrap();
+        let compound = CompoundCollider::new(vec![left_triangle, right_triangle]);
+
+        // Inner colliders have different centres
+        let left_centre_before = compound.inner[0].centre();
+        let right_centre_before = compound.inner[1].centre();
+        assert!(left_centre_before.x < 0.0);
+        assert!(right_centre_before.x > 0.0);
+
+        // Rotate 90 degrees
+        let rotated = compound.rotated(std::f32::consts::PI / 2.0);
+
+        // Each inner collider's cached centre must match its actual vertices
+        let left_centre_after = rotated.inner[0].centre();
+        let left_expected = polygon::centre_of(rotated.inner[0].vertices.clone());
+        assert_eq!(left_centre_after, left_expected);
+
+        let right_centre_after = rotated.inner[1].centre();
+        let right_expected = polygon::centre_of(rotated.inner[1].vertices.clone());
+        assert_eq!(right_centre_after, right_expected);
+    }
+
+    #[test]
+    fn compound_collider_rotated_inner_extent_updated() {
+        // Create a wide, short triangle - extent will change when rotated 90 degrees
+        let wide_triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 4.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 1.0 },
+        ])
+        .unwrap();
+        let original_extent = wide_triangle.extent();
+        // Should be wider than tall
+        assert!(original_extent.x > original_extent.y);
+
+        let compound = CompoundCollider::new(vec![wide_triangle]);
+
+        // Rotate 90 degrees
+        let rotated = compound.rotated(std::f32::consts::PI / 2.0);
+
+        // Inner collider's cached extent must match its actual vertices
+        let inner_extent_after = rotated.inner[0].extent();
+        let expected_extent = polygon::extent_of(rotated.inner[0].vertices.clone());
+        assert_eq!(inner_extent_after, expected_extent);
     }
 
     #[test]
@@ -4606,19 +4696,28 @@ mod tests {
     }
 
     #[test]
-    fn compound_collider_rotated_not_implemented() {
-        // Initialize tracing to cover the error! path
-        let _ = crate::util::setup_log();
+    fn compound_collider_rotated_with_override_normals() {
+        // Test that override_normals are rotated correctly
         let triangle = ConvexCollider::convex_hull_of(vec![
             Vec2 { x: 0.0, y: 0.0 },
             Vec2 { x: 2.0, y: 0.0 },
             Vec2 { x: 1.0, y: 2.0 },
         ])
         .unwrap();
-        let compound = CompoundCollider::new(vec![triangle]);
-        // rotated() is not implemented, logs an error and returns self.clone()
-        let rotated = compound.rotated(0.5);
+        let compound = CompoundCollider {
+            inner: vec![triangle],
+            override_normals: vec![Vec2::up(), Vec2::right()],
+            unique_normals_cached: GgMutex::default(),
+        };
+        let rotated = compound.rotated(std::f32::consts::PI / 2.0);
+
+        // Centre should be preserved
         assert_eq!(rotated.centre(), compound.centre());
+        // Override normals should be rotated 90 degrees counterclockwise
+        // up (0, -1) -> right (1, 0), right (1, 0) -> down (0, 1)
+        assert_eq!(rotated.override_normals.len(), 2);
+        assert_eq!(rotated.override_normals[0], Vec2::right());
+        assert_eq!(rotated.override_normals[1], Vec2::down());
     }
 
     #[test]
