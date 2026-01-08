@@ -238,6 +238,7 @@ impl TransformCell {
     pub fn update_live(&mut self, transform: Transform) {
         self.centre_x.update_live(transform.centre.x);
         self.centre_y.update_live(transform.centre.y);
+        // Have to store self.rotation in degrees, because it's what the user sees.
         self.rotation.update_live(transform.rotation.to_degrees());
         self.scale_x.update_live(transform.scale.x);
         self.scale_y.update_live(transform.scale.y);
@@ -283,7 +284,8 @@ impl TransformCell {
                 x: self.centre_x.last_value,
                 y: self.centre_y.last_value,
             },
-            rotation: self.rotation.last_value,
+            // Have to store self.rotation in degrees, because it's what the user sees.
+            rotation: self.rotation.last_value.to_radians(),
             scale: Vec2 {
                 x: self.scale_x.last_value,
                 y: self.scale_y.last_value,
