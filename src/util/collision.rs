@@ -255,6 +255,12 @@ mod polygon {
             1 => vertices[0],
             2 => (vertices[0] + vertices[1]) / 2.0,
             _ => {
+                // Translate vertices to be near origin to avoid precision loss
+                // in the shoelace formula when coordinates are large
+                let offset = vertices[0];
+                for v in &mut vertices {
+                    *v -= offset;
+                }
                 vertices.push(vertices[0]);
                 let (area, x, y) = vertices
                     .iter()
@@ -268,7 +274,7 @@ mod polygon {
                 Vec2 {
                     x: x / (6. * (area / 2.0)),
                     y: y / (6. * (area / 2.0)),
-                }
+                } + offset
             }
         }
     }
@@ -3778,6 +3784,209 @@ mod tests {
         let inner_extent_after = rotated.inner[0].extent();
         let expected_extent = polygon::extent_of(rotated.inner[0].vertices.clone());
         assert_eq!(inner_extent_after, expected_extent);
+    }
+
+    #[test]
+    fn compound_collider_transform_inverse_roundtrip() {
+        // Test that applying a transform then its inverse returns to original state
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ])
+        .unwrap();
+        let original = CompoundCollider::new(vec![triangle]);
+        let original_centre = original.centre();
+        let original_vertices = original.inner[0].vertices.clone();
+
+        // Apply a transform with both rotation and translation
+        let transform = Transform {
+            centre: Vec2 { x: 5.0, y: 3.0 },
+            rotation: std::f32::consts::PI / 4.0,
+            scale: Vec2::one(),
+        };
+
+        let transformed = original.transformed(&transform);
+        let restored = transformed.transformed(&transform.inverse());
+
+        // Should return to original state
+        assert_eq!(restored.centre(), original_centre);
+        for (restored_v, original_v) in restored.inner[0]
+            .vertices
+            .iter()
+            .zip(original_vertices.iter())
+        {
+            assert_eq!(*restored_v, *original_v);
+        }
+    }
+
+    #[test]
+    fn compound_collider_update_transform_simulation() {
+        // Simulate what update_transform does: apply inverse of last, then apply next
+        // This tests the scenario: rotate, then translate
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ])
+        .unwrap();
+        let base_collider = CompoundCollider::new(vec![triangle]);
+
+        // First transform: rotation only
+        let transform1 = Transform {
+            centre: Vec2::zero(),
+            rotation: std::f32::consts::PI / 4.0,
+            scale: Vec2::one(),
+        };
+
+        // Apply first transform (simulating initial state)
+        let mut collider = base_collider.transformed(&transform1);
+        let after_rotation_centre = collider.centre();
+
+        // Second transform: same rotation + translation (user translates in GUI)
+        let transform2 = Transform {
+            centre: Vec2 { x: 5.0, y: 0.0 },
+            rotation: std::f32::consts::PI / 4.0,
+            scale: Vec2::one(),
+        };
+
+        // Simulate update_transform: undo last, apply new
+        collider = collider.transformed(&transform1.inverse());
+        collider = collider.transformed(&transform2);
+
+        // The collider should now be translated by (5, 0) from its rotated position
+        // The rotation should be unchanged (still PI/4)
+        let expected_centre = after_rotation_centre + Vec2 { x: 5.0, y: 0.0 };
+        assert_eq!(collider.centre(), expected_centre);
+    }
+
+    #[test]
+    fn compound_collider_update_transform_repeated() {
+        // Simulate repeated update_transform calls with small translations
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ])
+        .unwrap();
+        let base_collider = CompoundCollider::new(vec![triangle]);
+        let original_vertices = base_collider.inner[0].vertices.clone();
+
+        // Start with a rotation
+        let mut last_transform = Transform {
+            centre: Vec2::zero(),
+            rotation: std::f32::consts::PI / 4.0,
+            scale: Vec2::one(),
+        };
+        let mut collider = base_collider.transformed(&last_transform);
+
+        // Simulate many small translations while keeping the same rotation.
+        // Fails at iteration 277.
+        for i in 0..276 {
+            let next_transform = Transform {
+                centre: Vec2 {
+                    x: i as f32 / 100.0,
+                    y: 0.0,
+                },
+                rotation: std::f32::consts::PI / 4.0,
+                scale: Vec2::one(),
+            };
+
+            collider = collider.transformed(&last_transform.inverse());
+            collider = collider.transformed(&next_transform);
+            last_transform = next_transform;
+        }
+
+        // After all transforms, undo completely
+        collider = collider.transformed(&last_transform.inverse());
+
+        // Should be back to base collider vertices
+        for (restored_v, original_v) in collider.inner[0]
+            .vertices
+            .iter()
+            .zip(original_vertices.iter())
+        {
+            assert_eq!(restored_v, original_v);
+        }
+    }
+
+    #[test]
+    fn polygon_centre_of_precision_loss() {
+        // polygon::centre_of previously returned infinity for valid triangles far from origin
+        // because the shoelace formula loses precision with large coordinates.
+        // The area computed from relative vectors is ~2.0, but the shoelace formula
+        // previously computed area from absolute coordinates, which causes precision loss.
+        let vertices = vec![
+            Vec2 {
+                x: 79380.15,
+                y: -45760.39,
+            },
+            Vec2 {
+                x: 7939.567,
+                y: -4574.9766,
+            },
+            Vec2 {
+                x: 7937.4653,
+                y: -4574.263,
+            },
+        ];
+
+        // The actual area computed using relative coordinates
+        let ab = vertices[1] - vertices[0];
+        let ac = vertices[2] - vertices[0];
+        let actual_area = 0.5 * ab.cross(ac).abs();
+        assert!(
+            actual_area > 1.0,
+            "Triangle has significant area: {actual_area}"
+        );
+
+        let centre = polygon::centre_of(vertices.clone());
+
+        assert!(
+            centre.x.is_finite() && centre.y.is_finite(),
+            "centre_of stays finite for valid triangle far from origin"
+        );
+    }
+
+    #[test]
+    fn compound_collider_repeated_transform_centre_stays_finite() {
+        // Test that repeated transform/inverse cycles don't cause precision loss
+        // (Previously failed at iteration 70743 before centre_of was fixed)
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ])
+        .unwrap();
+        let base_collider = CompoundCollider::new(vec![triangle]);
+
+        let mut last_transform = Transform {
+            centre: Vec2::zero(),
+            rotation: std::f32::consts::PI / 4.0,
+            scale: Vec2::one(),
+        };
+        let mut collider = base_collider.transformed(&last_transform);
+
+        for i in 0..100_000 {
+            let next_transform = Transform {
+                centre: Vec2 {
+                    x: i as f32 * 0.1,
+                    y: 0.0,
+                },
+                rotation: std::f32::consts::PI / 4.0,
+                scale: Vec2::one(),
+            };
+
+            collider = collider.transformed(&last_transform.inverse());
+            collider = collider.transformed(&next_transform);
+            let centre = collider.centre();
+            last_transform = next_transform;
+
+            assert!(
+                centre.x.is_finite() && centre.y.is_finite(),
+                "Centre became non-finite at iteration {i}: {centre:?}"
+            );
+        }
     }
 
     #[test]
