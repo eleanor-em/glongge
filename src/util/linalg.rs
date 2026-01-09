@@ -777,6 +777,11 @@ impl Sum<Vec2> for Vec2 {
         iter.fold(Vec2::zero(), Vec2::add)
     }
 }
+impl<'a> Sum<&'a Vec2> for Vec2 {
+    fn sum<I: Iterator<Item = &'a Vec2>>(iter: I) -> Self {
+        iter.fold(Vec2::zero(), |acc, v| acc + *v)
+    }
+}
 
 impl Mul<f32> for Vec2 {
     type Output = Vec2;
@@ -1055,6 +1060,17 @@ impl Zero for Vec2i {
 
     fn is_zero(&self) -> bool {
         *self == Self::zero()
+    }
+}
+
+impl Sum<Vec2i> for Vec2i {
+    fn sum<I: Iterator<Item = Vec2i>>(iter: I) -> Self {
+        iter.fold(Vec2i::zero(), Vec2i::add)
+    }
+}
+impl<'a> Sum<&'a Vec2i> for Vec2i {
+    fn sum<I: Iterator<Item = &'a Vec2i>>(iter: I) -> Self {
+        iter.fold(Vec2i::zero(), |acc, v| acc + *v)
     }
 }
 
@@ -2105,6 +2121,17 @@ mod tests {
             Vec2 { x: 5.0, y: 6.0 },
         ];
         let sum: Vec2 = vecs.into_iter().sum();
+        assert_eq!(sum, Vec2 { x: 9.0, y: 4.0 });
+    }
+
+    #[test]
+    fn vec2_sum_refs() {
+        let vecs = [
+            Vec2 { x: 1.0, y: 2.0 },
+            Vec2 { x: 3.0, y: -4.0 },
+            Vec2 { x: 5.0, y: 6.0 },
+        ];
+        let sum: Vec2 = vecs.iter().sum();
         assert_eq!(sum, Vec2 { x: 9.0, y: 4.0 });
     }
 
@@ -3294,6 +3321,28 @@ mod tests {
     fn vec2i_as_index() {
         let v = Vec2i { x: 2, y: 3 };
         assert_eq!(v.as_index(5, 5), 17); // 3 * 5 + 2 = 17
+    }
+
+    #[test]
+    fn vec2i_sum() {
+        let vecs = vec![
+            Vec2i { x: 1, y: 2 },
+            Vec2i { x: 3, y: -4 },
+            Vec2i { x: 5, y: 6 },
+        ];
+        let sum: Vec2i = vecs.into_iter().sum();
+        assert_eq!(sum, Vec2i { x: 9, y: 4 });
+    }
+
+    #[test]
+    fn vec2i_sum_refs() {
+        let vecs = [
+            Vec2i { x: 1, y: 2 },
+            Vec2i { x: 3, y: -4 },
+            Vec2i { x: 5, y: 6 },
+        ];
+        let sum: Vec2i = vecs.iter().sum();
+        assert_eq!(sum, Vec2i { x: 9, y: 4 });
     }
 
     // ==================== Edge2i Tests ====================

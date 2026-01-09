@@ -320,16 +320,29 @@ pub struct TransformCellSender {
 
 impl Transform {
     pub fn build_gui(&self, ui: &mut GuiUi, mut cell: TransformCellSender) {
+        // TODO: document these, change the cursor maybe?
+        let scroll_factor = ui.input(|i| {
+            if i.modifiers.shift {
+                3.0
+            } else if i.modifiers.alt {
+                0.2
+            } else {
+                1.0
+            }
+        });
         egui::Grid::new(ui.next_auto_id())
             .num_columns(2)
             .show(ui, |ui| {
                 ui.add(egui::Label::new("Centre").selectable(false));
-                self.centre.build_gui(ui, 1.0, cell.centre_x, cell.centre_y);
+                self.centre
+                    .build_gui(ui, scroll_factor, cell.centre_x, cell.centre_y);
                 ui.end_row();
-                cell.rotation.singleline_with_drag(ui, -1.0, "Rotation: ");
+                cell.rotation
+                    .singleline_with_drag(ui, -scroll_factor, "Rotation: ");
                 ui.end_row();
                 ui.add(egui::Label::new("Scale").selectable(false));
-                self.scale.build_gui(ui, 0.05, cell.scale_x, cell.scale_y);
+                self.scale
+                    .build_gui(ui, 0.05 * scroll_factor, cell.scale_x, cell.scale_y);
             });
     }
 }

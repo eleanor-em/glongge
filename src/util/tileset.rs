@@ -336,6 +336,13 @@ impl SceneObject for GgInternalTileset {
                 .texture
                 .wait_load_file(self.filename.clone())?,
         );
+        let mut vertices = Vec::new();
+        for tile in &self.tiles {
+            vertices.push(tile.top_left + Vec2i::splat(self.tile_size / 2));
+        }
+        #[allow(clippy::cast_possible_wrap)]
+        let centre = (vertices.iter().sum::<Vec2i>() / vertices.len() as i32).as_vec2();
+        ctx.object().transform_mut().centre += centre;
         let mut rv = RenderItem::default();
         for tile in &self.tiles {
             self.material_id = ctx
@@ -343,8 +350,8 @@ impl SceneObject for GgInternalTileset {
                 .texture
                 .create_material_from_texture(self.texture.as_ref().unwrap(), &tile.tex_area)?;
             let vertices = vertex::rectangle(
-                (tile.top_left + self.tile_size * Vec2i::one() / 2).into(),
-                (self.tile_size * Vec2i::one() / 2).into(),
+                (tile.top_left + Vec2i::splat(self.tile_size / 2)).as_vec2() - centre,
+                Vec2i::splat(self.tile_size / 2).as_vec2(),
             );
             rv = rv.concat(RenderItem {
                 vertices: vertices.vertices,
@@ -353,7 +360,7 @@ impl SceneObject for GgInternalTileset {
             });
         }
         ctx.object_mut().add_child(CollisionShape::from_collider(
-            self.collider.clone(),
+            self.collider.translated(-centre),
             &self.emitting_tags,
             &[],
         ));
