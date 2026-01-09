@@ -18,9 +18,10 @@ cargo test --lib   # Run unit tests
 ```
 
 After modifying any of the following files, use `cargo +nightly llvm-cov` to ensure test coverage remains at 100% for regions, functions, AND lines:
-- util/linalg.rs
 - util/collision.rs
 - util/colour.rs
+- util/linalg.rs
+- util/spline.rs
 - resource/rich_text.rs
 
 YOU MUST REACH 100% COVERAGE FOR THE ABOVE FILES. THERE ARE NO EXCEPTIONS.
