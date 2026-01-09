@@ -21,6 +21,7 @@ After modifying any of the following files, use `cargo +nightly llvm-cov` to ens
 - util/linalg.rs
 - util/collision.rs
 - util/colour.rs
+- resource/rich_text.rs
 
 YOU MUST REACH 100% COVERAGE FOR THE ABOVE FILES. THERE ARE NO EXCEPTIONS.
 
