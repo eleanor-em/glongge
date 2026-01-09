@@ -2801,13 +2801,10 @@ mod tests {
         for seed in 0..1_000_000u64 {
             let hasher = SeededHasher(seed);
             for (v1, v2) in &test_cases {
-                assert_eq!(*v1, *v2, "Test vectors should be equal: {v1:?} vs {v2:?}");
+                assert_eq!(*v1, *v2);
                 let hash1 = hasher.hash_one(v1);
                 let hash2 = hasher.hash_one(v2);
-                assert_eq!(
-                    hash1, hash2,
-                    "seed {seed}: equal vectors must have equal hashes: {v1:?} vs {v2:?}"
-                );
+                assert_eq!(hash1, hash2);
             }
         }
     }
