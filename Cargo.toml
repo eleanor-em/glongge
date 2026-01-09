@@ -3,6 +3,9 @@ name = "glongge"
 version = "0.1.0"
 edition = "2024"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
 [lib]
 name = "glongge"
 path = "src/lib.rs"

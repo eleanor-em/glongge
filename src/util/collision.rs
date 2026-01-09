@@ -1,18 +1,56 @@
+use crate::core::render::VertexDepth;
+use crate::core::scene::{GuiCommand, GuiObject};
+use crate::core::update::RenderContext;
+use crate::gui::EditCell;
+use crate::resource::sprite::Sprite;
+use crate::util::canvas::Canvas;
+use crate::util::gg_sync::GgMutex;
 use crate::util::{UnorderedPair, gg_iter};
 use crate::{
+    check, check_is_some,
     core::prelude::*,
     util::{
         gg_range,
         linalg::{AxisAlignedExtent, Transform, Vec2},
     },
 };
+use glongge_derive::partially_derive_scene_object;
+use itertools::Itertools;
 use num_traits::{Float, Zero};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::{any::Any, fmt::Debug, ops::Range};
 
-pub use crate::util::collision_defs::*;
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
+pub struct BoxCollider {
+    pub(crate) centre: Vec2,
+    pub(crate) extent: Vec2,
+}
+
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
+pub struct BoxCollider3d {
+    pub(crate) centre: Vec2,
+    pub(crate) extent: Vec2,
+    pub(crate) front: f32,
+    pub(crate) back: f32,
+}
+
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
+pub struct ConvexCollider {
+    pub(crate) vertices: Vec<Vec2>,
+    pub(crate) normals_cached: Vec<Vec2>,
+    pub(crate) centre_cached: Vec2,
+    pub(crate) extent_cached: Vec2,
+}
+
+#[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
+pub struct OrientedBoxCollider {
+    pub(crate) centre: Vec2,
+    pub(crate) rotation: f32,
+    pub(crate) unrotated_half_widths: Vec2,
+    pub(crate) extent: Vec2,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ColliderType {
@@ -1696,8 +1734,280 @@ impl Collider for GenericCollider {
     }
 }
 
-use crate::util::canvas::Canvas;
-use crate::util::gg_sync::GgMutex;
+pub struct GgInternalCollisionShape {
+    base_collider: GenericCollider,
+    collider: GenericCollider,
+    emitting_tags: Vec<&'static str>,
+    listening_tags: Vec<&'static str>,
+
+    // For GUI:
+    // <RenderItem, should_be_updated>
+    wireframe: RenderItem,
+    show_wireframe: bool,
+    last_show_wireframe: bool,
+    extent_cell_receiver_x: EditCell<f32>,
+    extent_cell_receiver_y: EditCell<f32>,
+    centre_cell_receiver_x: EditCell<f32>,
+    centre_cell_receiver_y: EditCell<f32>,
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+impl GgInternalCollisionShape {
+    pub fn from_collider<C: Collider>(
+        collider: C,
+        emitting_tags: &[&'static str],
+        listening_tags: &[&'static str],
+    ) -> Self {
+        let base_collider = collider.into_generic();
+        let mut rv = Self {
+            base_collider: base_collider.clone(),
+            collider: base_collider,
+            emitting_tags: emitting_tags.to_vec(),
+            listening_tags: listening_tags.to_vec(),
+            wireframe: RenderItem::default(),
+            show_wireframe: false,
+            last_show_wireframe: false,
+            extent_cell_receiver_x: EditCell::new(),
+            extent_cell_receiver_y: EditCell::new(),
+            centre_cell_receiver_x: EditCell::new(),
+            centre_cell_receiver_y: EditCell::new(),
+        };
+        rv.regenerate_wireframe();
+        rv
+    }
+
+    pub fn from_object<O: SceneObject, C: Collider>(object: &O, collider: C) -> Self {
+        Self::from_collider(collider, &object.emitting_tags(), &object.listening_tags())
+    }
+    pub fn from_object_sprite<O: SceneObject>(object: &O, sprite: &Sprite) -> Self {
+        Self::from_collider(
+            sprite.as_box_collider(),
+            &object.emitting_tags(),
+            &object.listening_tags(),
+        )
+    }
+
+    pub fn collider(&self) -> &GenericCollider {
+        &self.collider
+    }
+
+    fn regenerate_wireframe(&mut self) {
+        self.wireframe =
+            RenderItem::from_raw_vertices(self.base_collider.as_triangles().into_flattened())
+                .with_depth(VertexDepth::max_value());
+    }
+
+    pub fn show_wireframe(&mut self) {
+        self.show_wireframe = true;
+    }
+    pub fn hide_wireframe(&mut self) {
+        self.show_wireframe = false;
+    }
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[partially_derive_scene_object]
+impl SceneObject for GgInternalCollisionShape {
+    fn gg_type_name(&self) -> String {
+        format!("CollisionShape [{:?}]", self.collider.get_type()).to_string()
+    }
+
+    fn on_ready(&mut self, ctx: &mut UpdateContext) {
+        check_is_some!(ctx.object().parent(), "CollisionShapes must have a parent");
+    }
+    fn on_update_begin(&mut self, ctx: &mut UpdateContext) {
+        self.update_transform(ctx.absolute_transform());
+    }
+    fn on_fixed_update(&mut self, ctx: &mut FixedUpdateContext) {
+        self.update_transform(ctx.absolute_transform());
+    }
+
+    fn on_update(&mut self, ctx: &mut UpdateContext) {
+        self.update_transform(ctx.absolute_transform());
+        if self.show_wireframe {
+            let mut canvas = ctx
+                .object_mut()
+                .first_other_as_mut::<Canvas>()
+                .expect("No Canvas object in scene!");
+            match &self.collider {
+                GenericCollider::Compound(compound) => {
+                    let mut colours = [
+                        Colour::green(),
+                        Colour::red(),
+                        Colour::blue(),
+                        Colour::magenta(),
+                        Colour::yellow(),
+                    ];
+                    colours.reverse();
+                    for inner in &compound.inner {
+                        let col = *colours.last().unwrap();
+                        colours.rotate_right(1);
+                        inner.draw_polygonal(&mut canvas, col);
+                    }
+                }
+                GenericCollider::OrientedBox(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Box(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Convex(c) => c.draw_polygonal(&mut canvas, Colour::green()),
+                GenericCollider::Null => {}
+            }
+        }
+    }
+
+    fn on_update_end(&mut self, ctx: &mut UpdateContext) {
+        self.update_transform(ctx.absolute_transform());
+    }
+
+    fn emitting_tags(&self) -> Vec<&'static str> {
+        self.emitting_tags.clone()
+    }
+    fn listening_tags(&self) -> Vec<&'static str> {
+        self.listening_tags.clone()
+    }
+
+    fn as_renderable_object(&mut self) -> Option<&mut dyn RenderableObject> {
+        Some(self)
+    }
+    fn as_gui_object(&mut self) -> Option<&mut dyn GuiObject> {
+        if self.show_wireframe {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+impl GgInternalCollisionShape {
+    pub(crate) fn update_transform(&mut self, next_transform: Transform) {
+        self.collider = self.base_collider.transformed(&next_transform);
+    }
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+impl RenderableObject for GgInternalCollisionShape {
+    #[allow(clippy::if_not_else)] // clearer as written
+    fn on_render(&mut self, render_ctx: &mut RenderContext) {
+        if self.show_wireframe {
+            if !self.last_show_wireframe {
+                render_ctx.insert_render_item(&self.wireframe);
+            } else {
+                render_ctx.update_render_item(&self.wireframe);
+            }
+        }
+        if !self.show_wireframe && self.last_show_wireframe {
+            render_ctx.remove_render_item();
+        }
+        self.last_show_wireframe = self.show_wireframe;
+    }
+    fn shader_execs(&self) -> Vec<ShaderExec> {
+        check!(self.show_wireframe);
+        vec![ShaderExec {
+            blend_col: Colour::cyan().with_alpha(0.2),
+            ..Default::default()
+        }]
+    }
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+impl GuiObject for GgInternalCollisionShape {
+    fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> GuiCommand {
+        if !selected {
+            self.extent_cell_receiver_x.clear_state();
+            self.extent_cell_receiver_y.clear_state();
+            self.centre_cell_receiver_x.clear_state();
+            self.centre_cell_receiver_y.clear_state();
+        }
+        let extent = self.collider.extent();
+        let (next_x, next_y) = (
+            self.extent_cell_receiver_x.try_recv(),
+            self.extent_cell_receiver_y.try_recv(),
+        );
+        if next_x.is_some() || next_y.is_some() {
+            self.collider = self.collider.with_extent(Vec2 {
+                x: next_x.unwrap_or(extent.x).max(0.1),
+                y: next_y.unwrap_or(extent.y).max(0.1),
+            });
+            self.regenerate_wireframe();
+        }
+        self.extent_cell_receiver_x.update_live(extent.x);
+        self.extent_cell_receiver_y.update_live(extent.y);
+
+        let extent_cell_sender_x = self.extent_cell_receiver_x.sender();
+        let extent_cell_sender_y = self.extent_cell_receiver_y.sender();
+
+        let centre = self.collider.centre();
+        let (next_x, next_y) = (
+            self.centre_cell_receiver_x.try_recv(),
+            self.centre_cell_receiver_y.try_recv(),
+        );
+        if next_x.is_some() || next_y.is_some() {
+            self.collider = self.collider.with_centre(Vec2 {
+                x: next_x.unwrap_or(centre.x),
+                y: next_y.unwrap_or(centre.y),
+            });
+            self.regenerate_wireframe();
+        }
+        self.centre_cell_receiver_x.update_live(centre.x);
+        self.centre_cell_receiver_y.update_live(centre.y);
+
+        let centre_cell_sender_x = self.centre_cell_receiver_x.sender();
+        let centre_cell_sender_y = self.centre_cell_receiver_y.sender();
+
+        let emitting_tags = self.emitting_tags.join(", ");
+        let listening_tags = self.listening_tags.join(", ");
+
+        let collider = self.collider.clone();
+        GuiCommand::new(move |ui| {
+            ui.label(collider.to_string());
+            ui.add(egui::Label::new("Extent").selectable(false));
+            collider
+                .extent()
+                .build_gui(ui, 0.1, extent_cell_sender_x, extent_cell_sender_y);
+            ui.end_row();
+            ui.add(egui::Label::new("Centre").selectable(false));
+            collider
+                .centre()
+                .build_gui(ui, 0.1, centre_cell_sender_x, centre_cell_sender_y);
+            ui.end_row();
+            ui.add(egui::Label::new(format!("Emitting: {emitting_tags}")).selectable(false));
+            ui.end_row();
+            ui.add(egui::Label::new(format!("Listening: {listening_tags}")).selectable(false));
+            ui.end_row();
+        })
+    }
+}
+
+impl Display for GenericCollider {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            GenericCollider::Null => {
+                write!(f, "<null>")
+            }
+            GenericCollider::Box(_) => {
+                write!(f, "Box")
+            }
+            GenericCollider::OrientedBox(inner) => {
+                write!(f, "OrientedBox: {} deg.", inner.rotation.to_degrees())
+            }
+            GenericCollider::Convex(inner) => {
+                write!(f, "Convex: {} edges", inner.normals_cached.len())
+            }
+            GenericCollider::Compound(inner) => {
+                write!(
+                    f,
+                    "Compound: {} pieces, {:?} edges",
+                    inner.inner.len(),
+                    inner
+                        .inner
+                        .iter()
+                        .map(|c| c.normals_cached.len())
+                        .collect_vec()
+                )
+            }
+        }
+    }
+}
+
 pub use GgInternalCollisionShape as CollisionShape;
 
 #[cfg(test)]
@@ -4445,6 +4755,24 @@ mod tests {
         let compound = CompoundCollider::new(vec![]).as_generic();
         let display_str = format!("{compound}");
         assert!(display_str.contains("Compound"));
+
+        // Test Compound with actual inner colliders to exercise the closure
+        let tri1 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 0.0 },
+            Vec2 { x: 0.5, y: 1.0 },
+        ])
+        .unwrap();
+        let tri2 = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 3.0, y: 0.0 },
+            Vec2 { x: 2.5, y: 1.0 },
+        ])
+        .unwrap();
+        let compound_with_pieces = CompoundCollider::new(vec![tri1, tri2]).as_generic();
+        let display_str = format!("{compound_with_pieces}");
+        assert!(display_str.contains("Compound"));
+        assert!(display_str.contains("2 pieces"));
     }
 
     // ========== Edge Case and Error Path Tests ==========
@@ -4933,5 +5261,79 @@ mod tests {
             Vec2 { x: 0.0, y: 1.0 },
         ];
         let _compound = CompoundCollider::decompose(vertices);
+    }
+
+    #[test]
+    fn bincode_box_collider() {
+        let config = bincode::config::standard();
+        let collider = BoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
+        let encoded = bincode::encode_to_vec(&collider, config).unwrap();
+        let (decoded, _): (BoxCollider, _) = bincode::decode_from_slice(&encoded, config).unwrap();
+        assert_eq!(decoded.centre(), collider.centre());
+        assert_eq!(decoded.extent(), collider.extent());
+
+        // Test error paths
+        crate::util::test_util::test_bincode_error_paths::<BoxCollider>();
+    }
+
+    #[test]
+    fn bincode_box_collider_3d() {
+        let config = bincode::config::standard();
+        let box_2d = BoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 });
+        let collider = BoxCollider3d::from_2d(&box_2d, 0.5, 1.5);
+        let encoded = bincode::encode_to_vec(&collider, config).unwrap();
+        let (decoded, _): (BoxCollider3d, _) =
+            bincode::decode_from_slice(&encoded, config).unwrap();
+        assert_eq!(decoded.centre(), collider.centre());
+        assert_eq!(decoded.extent(), collider.extent());
+
+        // Test error paths
+        crate::util::test_util::test_bincode_error_paths::<BoxCollider3d>();
+    }
+
+    #[test]
+    fn bincode_convex_collider() {
+        let config = bincode::config::standard();
+        let collider = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: 0.0, y: 0.0 },
+            Vec2 { x: 2.0, y: 0.0 },
+            Vec2 { x: 1.0, y: 2.0 },
+        ])
+        .unwrap();
+        let encoded = bincode::encode_to_vec(&collider, config).unwrap();
+        let (decoded, _): (ConvexCollider, _) =
+            bincode::decode_from_slice(&encoded, config).unwrap();
+        assert_eq!(decoded.centre(), collider.centre());
+        assert_eq!(decoded.extent(), collider.extent());
+        assert_eq!(decoded.vertices, collider.vertices);
+
+        // Test error paths using the non-default collider
+        let cfg = bincode::config::legacy();
+        let encoded_legacy = bincode::encode_to_vec(&collider, cfg).unwrap();
+
+        // Test encode error with too-small buffer
+        let mut small_buf = vec![0u8; encoded_legacy.len() - 1];
+        assert!(bincode::encode_into_slice(&collider, &mut small_buf, cfg).is_err());
+
+        // Test decode errors with truncated data
+        let truncated = &encoded_legacy[..encoded_legacy.len() - 1];
+        assert!(bincode::decode_from_slice::<ConvexCollider, _>(truncated, cfg).is_err());
+        assert!(bincode::borrow_decode_from_slice::<ConvexCollider, _>(truncated, cfg).is_err());
+    }
+
+    #[test]
+    fn bincode_oriented_box_collider() {
+        let config = bincode::config::standard();
+        let collider =
+            OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2 { x: 3.0, y: 4.0 })
+                .rotated(0.5);
+        let encoded = bincode::encode_to_vec(&collider, config).unwrap();
+        let (decoded, _): (OrientedBoxCollider, _) =
+            bincode::decode_from_slice(&encoded, config).unwrap();
+        assert_eq!(decoded.centre(), collider.centre());
+        assert_eq!(decoded.rotation, collider.rotation);
+
+        // Test error paths
+        crate::util::test_util::test_bincode_error_paths::<OrientedBoxCollider>();
     }
 }
