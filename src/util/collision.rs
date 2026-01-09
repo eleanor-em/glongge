@@ -2023,7 +2023,7 @@ mod tests {
         ];
         let pentagon = ConvexCollider::convex_hull_of(pentagon_verts.clone()).unwrap();
         let pentagon_centre = pentagon.centre();
-        assert!(pentagon_centre != Vec2::zero());
+        assert_ne!(pentagon_centre, Vec2::zero());
         let angle = 37_f32.to_radians();
         let rotated = pentagon.rotated(angle);
         // Rotation around centre preserves the centre
@@ -3935,17 +3935,11 @@ mod tests {
         let ab = vertices[1] - vertices[0];
         let ac = vertices[2] - vertices[0];
         let actual_area = 0.5 * ab.cross(ac).abs();
-        assert!(
-            actual_area > 1.0,
-            "Triangle has significant area: {actual_area}"
-        );
+        assert!(actual_area > 1.0);
 
         let centre = polygon::centre_of(vertices.clone());
 
-        assert!(
-            centre.x.is_finite() && centre.y.is_finite(),
-            "centre_of stays finite for valid triangle far from origin"
-        );
+        assert!(centre.x.is_finite() && centre.y.is_finite(),);
     }
 
     #[test]
@@ -3982,10 +3976,7 @@ mod tests {
             let centre = collider.centre();
             last_transform = next_transform;
 
-            assert!(
-                centre.x.is_finite() && centre.y.is_finite(),
-                "Centre became non-finite at iteration {i}: {centre:?}"
-            );
+            assert!(centre.x.is_finite() && centre.y.is_finite());
         }
     }
 

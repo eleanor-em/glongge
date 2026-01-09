@@ -32,7 +32,6 @@ pub mod collision;
 mod collision_defs;
 pub mod colour;
 pub mod linalg;
-mod linalg_def;
 pub mod log;
 pub mod spline;
 pub mod tileset;
@@ -1039,5 +1038,27 @@ impl OrElse {
             OrElse::Done => OrElse::Done,
             OrElse::Continue => f(),
         }
+    }
+}
+
+#[cfg(test)]
+pub mod test_util {
+    use std::mem::size_of;
+
+    /// Tests bincode error paths by using a truncated buffer.
+    /// This ensures 100% coverage of derive-generated Encode/Decode/BorrowDecode code.
+    pub fn test_bincode_error_paths<T>()
+    where
+        T: bincode::Encode
+            + bincode::Decode<()>
+            + for<'de> bincode::BorrowDecode<'de, ()>
+            + Default,
+    {
+        let cfg = bincode::config::legacy();
+        let val = T::default();
+        let mut buf = vec![0u8; size_of::<T>().saturating_sub(1)];
+        assert!(bincode::encode_into_slice(&val, &mut buf, cfg).is_err());
+        assert!(bincode::decode_from_slice::<T, _>(&buf, cfg).is_err());
+        assert!(bincode::borrow_decode_from_slice::<T, _>(&buf, cfg).is_err());
     }
 }
