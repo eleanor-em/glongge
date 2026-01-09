@@ -146,14 +146,16 @@ pub trait Collider: AxisAlignedExtent + Debug + Send + Sync + 'static {
     where
         Self: Sized + 'static;
 
+    type Rotated: Collider;
+
     #[must_use]
     fn translated(&self, by: Vec2) -> Self;
     #[must_use]
     fn scaled(&self, by: Vec2) -> Self;
     #[must_use]
-    fn rotated(&self, by: f32) -> Self;
+    fn rotated(&self, by: f32) -> Self::Rotated;
     #[must_use]
-    fn transformed(&self, by: &Transform) -> Self
+    fn transformed(&self, by: &Transform) -> Self::Rotated
     where
         Self: Sized,
     {
@@ -200,6 +202,8 @@ impl AxisAlignedExtent for NullCollider {
     }
 }
 impl Collider for NullCollider {
+    type Rotated = Self;
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -444,6 +448,10 @@ impl OrientedBoxCollider {
         rv.extent = polygon::extent_of(rv.vertices());
         rv
     }
+    #[must_use]
+    pub fn from_aa_extent(extent: &impl AxisAlignedExtent) -> Self {
+        Self::from_centre(extent.centre(), extent.half_widths())
+    }
     pub fn from_top_left(top_left: Vec2, extent: Vec2) -> Self {
         let mut rv = Self {
             centre: top_left + extent.abs() / 2,
@@ -523,6 +531,8 @@ impl AxisAlignedExtent for OrientedBoxCollider {
 }
 
 impl Collider for OrientedBoxCollider {
+    type Rotated = Self;
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -551,7 +561,7 @@ impl Collider for OrientedBoxCollider {
 
     fn translated(&self, by: Vec2) -> Self {
         let mut rv = self.clone();
-        rv.centre += by.rotated(self.rotation);
+        rv.centre += by;
         rv
     }
 
@@ -655,6 +665,8 @@ impl AxisAlignedExtent for BoxCollider {
 }
 
 impl Collider for BoxCollider {
+    type Rotated = OrientedBoxCollider;
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -721,9 +733,8 @@ impl Collider for BoxCollider {
         rv
     }
 
-    fn rotated(&self, by: f32) -> Self {
-        check_eq!(by, 0.0, "cannot rotate BoxCollider");
-        self.clone()
+    fn rotated(&self, by: f32) -> OrientedBoxCollider {
+        OrientedBoxCollider::from_aa_extent(self).rotated(by)
     }
 
     fn as_polygon(&self) -> Vec<Vec2> {
@@ -900,6 +911,8 @@ impl AxisAlignedExtent for ConvexCollider {
 }
 
 impl Collider for ConvexCollider {
+    type Rotated = Self;
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1467,6 +1480,8 @@ impl Debug for CompoundCollider {
 }
 
 impl Collider for CompoundCollider {
+    type Rotated = Self;
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -1626,6 +1641,8 @@ impl AxisAlignedExtent for GenericCollider {
 }
 
 impl Collider for GenericCollider {
+    type Rotated = Self;
+
     fn as_any(&self) -> &dyn Any {
         match self {
             GenericCollider::Null => NullCollider.as_any(),
@@ -1730,6 +1747,31 @@ impl Collider for GenericCollider {
             GenericCollider::OrientedBox(c) => c.as_triangles(),
             GenericCollider::Convex(c) => c.as_triangles(),
             GenericCollider::Compound(c) => c.as_triangles(),
+        }
+    }
+
+    fn transformed(&self, by: &Transform) -> Self::Rotated
+    where
+        Self: Sized,
+    {
+        let original_centre = self.centre();
+        if self.get_type() == ColliderType::Box && by.rotation == 0.0 {
+            self.translated(-original_centre)
+                .scaled(by.scale)
+                .translated(original_centre + by.centre)
+        } else if let GenericCollider::OrientedBox(c) = self
+            && c.rotation + by.rotation == 0.0
+        {
+            BoxCollider::from_aa_extent(c)
+                .translated(-original_centre)
+                .scaled(by.scale)
+                .translated(original_centre + by.centre)
+                .as_generic()
+        } else {
+            self.translated(-original_centre)
+                .scaled(by.scale)
+                .rotated(by.rotation)
+                .translated(original_centre + by.centre)
         }
     }
 }
@@ -2016,6 +2058,7 @@ mod tests {
     use super::*;
     use crate::core::prelude::*;
     use std::collections::HashSet;
+    use std::f32::consts::SQRT_2;
 
     // ========== BoxCollider Tests ==========
 
@@ -2137,27 +2180,14 @@ mod tests {
         assert!((box2.rotation - 45_f32.to_radians()).abs() < EPSILON);
     }
 
-    // TODO: This behaviour is counterintuitive - translation is applied in local (rotated)
-    // coordinates rather than world coordinates. Consider changing to world coordinates.
     #[test]
     fn oriented_box_translation() {
         let box1 = OrientedBoxCollider::from_centre(Vec2::zero(), Vec2::one())
             .rotated(45_f32.to_radians());
         let translation = Vec2 { x: 5.0, y: 3.0 };
         let box2 = box1.translated(translation);
-        // Translation is applied in the rotated coordinate space
-        // So the actual centre change is translation.rotated(box1.rotation)
-        // (5, 3) rotated 45 degrees = (sqrt(2), 4*sqrt(2))
-        let sqrt2 = 2_f32.sqrt();
-        let expected_centre = translation.rotated(box1.rotation);
-        assert_eq!(
-            expected_centre,
-            Vec2 {
-                x: sqrt2,
-                y: 4.0 * sqrt2
-            }
-        );
-        assert_eq!(box2.centre(), expected_centre);
+        // Translation moves the centre directly without regard to rotation
+        assert_eq!(box2.centre(), translation);
     }
 
     #[test]
@@ -2696,10 +2726,16 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "cannot rotate BoxCollider")]
-    fn box_collider_rotated_nonzero_panics() {
-        let box1 = BoxCollider::from_centre(Vec2::zero(), Vec2::one());
-        let _ = box1.rotated(45_f32.to_radians());
+    fn box_collider_rotated_returns_oriented() {
+        let box1 = BoxCollider::from_centre(Vec2 { x: 5.0, y: 10.0 }, Vec2::one());
+        let rotated: OrientedBoxCollider = box1.rotated(45_f32.to_radians());
+        assert_eq!(rotated.centre, box1.centre);
+        assert!((rotated.rotation - 45_f32.to_radians()).abs() < 1e-6);
+        assert_eq!(rotated.unrotated_half_widths, box1.half_widths());
+        // 45-degree rotated square has extent sqrt(2) * side_length in both dimensions
+        let expected_extent = 2.0 * 2.0_f32.sqrt();
+        assert!((rotated.extent.x - expected_extent).abs() < 1e-5);
+        assert!((rotated.extent.y - expected_extent).abs() < 1e-5);
     }
 
     #[test]
@@ -3880,22 +3916,10 @@ mod tests {
         assert_eq!(vertices.len(), 4);
         let vertices_set: HashSet<_> = vertices.into_iter().collect();
         let expected: HashSet<_> = vec![
-            Vec2 {
-                x: 0.0,
-                y: std::f32::consts::SQRT_2,
-            },
-            Vec2 {
-                x: std::f32::consts::SQRT_2,
-                y: 0.0,
-            },
-            Vec2 {
-                x: 0.0,
-                y: -std::f32::consts::SQRT_2,
-            },
-            Vec2 {
-                x: -std::f32::consts::SQRT_2,
-                y: 0.0,
-            },
+            Vec2 { x: 0.0, y: SQRT_2 },
+            Vec2 { x: SQRT_2, y: 0.0 },
+            Vec2 { x: 0.0, y: -SQRT_2 },
+            Vec2 { x: -SQRT_2, y: 0.0 },
         ]
         .into_iter()
         .collect();
@@ -5335,5 +5359,116 @@ mod tests {
 
         // Test error paths
         crate::util::test_util::test_bincode_error_paths::<OrientedBoxCollider>();
+    }
+
+    #[test]
+    fn generic_collider_transformed_box_no_rotation() {
+        // Test transformed() on BoxCollider with no rotation (optimized path)
+        let box_col = BoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2::one()).as_generic();
+        let transform = Transform {
+            centre: Vec2 { x: 5.0, y: 10.0 },
+            scale: Vec2 { x: 2.0, y: 3.0 },
+            rotation: 0.0,
+        };
+        let result = box_col.transformed(&transform);
+        assert_eq!(result.get_type(), ColliderType::Box);
+        // Centre (1,2) translated by (5,10) = (6,12). Scale does not affect centre.
+        assert_eq!(result.centre(), Vec2 { x: 6.0, y: 12.0 });
+        // Extent (2,2) scaled by (2,3) = (4,6)
+        assert_eq!(result.extent(), Vec2 { x: 4.0, y: 6.0 });
+    }
+
+    #[test]
+    fn generic_collider_transformed_box_with_rotation() {
+        // Test transformed() on BoxCollider with rotation (general path)
+        let box_col = BoxCollider::from_centre(Vec2::zero(), Vec2::one()).as_generic();
+        let transform = Transform {
+            centre: Vec2::zero(),
+            scale: Vec2::one(),
+            rotation: std::f32::consts::PI / 4.0,
+        };
+        let result = box_col.transformed(&transform);
+        assert_eq!(result.get_type(), ColliderType::OrientedBox);
+        // After rotation around origin, centre stays at origin
+        assert_eq!(result.centre(), Vec2::zero());
+
+        // Also test with scale and translation
+        let box_col2 = BoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2::one()).as_generic();
+        let transform2 = Transform {
+            centre: Vec2 { x: 5.0, y: 10.0 },
+            scale: Vec2 { x: 2.0, y: 3.0 },
+            rotation: std::f32::consts::PI / 2.0,
+        };
+        let result2 = box_col2.transformed(&transform2);
+        assert_eq!(result2.get_type(), ColliderType::OrientedBox);
+
+        // Same test but starting with OrientedBoxCollider to check consistency
+        let oriented_col =
+            OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2::one()).as_generic();
+        let result3 = oriented_col.transformed(&transform2);
+        assert_eq!(result3.get_type(), ColliderType::OrientedBox);
+
+        // Both paths should produce the same result
+        assert_eq!(result2.centre(), result3.centre());
+        assert_eq!(result2.extent(), result3.extent());
+        // Centre (1,2) + translation (5,10) = (6,12)
+        assert_eq!(result2.centre(), Vec2 { x: 6.0, y: 12.0 });
+        // Extent (2,2) scaled by (2,3) = (4,6), then rotated 90° = (6,4)
+        assert_eq!(result2.extent(), Vec2 { x: 6.0, y: 4.0 });
+    }
+
+    #[test]
+    fn generic_collider_transformed_non_box() {
+        // Test transformed() on non-BoxCollider (always uses general path)
+        let triangle = ConvexCollider::convex_hull_of(vec![
+            Vec2 { x: -0.5, y: -0.5 },
+            Vec2 { x: 0.5, y: -0.5 },
+            Vec2 { x: 0.0, y: 0.5 },
+        ])
+        .unwrap()
+        .as_generic();
+        let transform = Transform {
+            centre: Vec2 { x: 5.0, y: 10.0 },
+            scale: Vec2 { x: 2.0, y: 3.0 },
+            rotation: std::f32::consts::PI / 2.0,
+        };
+        let result = triangle.transformed(&transform);
+        assert_eq!(result.get_type(), ColliderType::Convex);
+        // Triangle centre is near origin, so scale/rotate have minimal effect
+        assert_eq!(
+            result.centre(),
+            Vec2 {
+                x: 5.0,
+                y: 9.833_333
+            }
+        );
+        assert_eq!(result.extent(), Vec2 { x: 2.0, y: 3.0 });
+    }
+
+    #[test]
+    fn generic_collider_transformed_oriented_box_canceling_rotation() {
+        // Test transformed() on OrientedBox where rotation cancels out
+        let rotation = std::f32::consts::PI / 4.0;
+        let oriented = OrientedBoxCollider::from_centre(Vec2 { x: 1.0, y: 2.0 }, Vec2::one())
+            .rotated(rotation)
+            .as_generic();
+        let transform = Transform {
+            centre: Vec2 { x: 5.0, y: 10.0 },
+            scale: Vec2 { x: 2.0, y: 3.0 },
+            rotation: -rotation, // Cancels out the OrientedBox rotation
+        };
+        let result = oriented.transformed(&transform);
+        // Should become a regular BoxCollider (no rotation)
+        assert_eq!(result.get_type(), ColliderType::Box);
+        // Centre (1,2) translated by (5,10) = (6,12)
+        assert_eq!(result.centre(), Vec2 { x: 6.0, y: 12.0 });
+        // Original extent is 2*sqrt(2) (rotated unit box), scaled by (2,3)
+        assert_eq!(
+            result.extent(),
+            Vec2 {
+                x: 2.0 * 2.0 * SQRT_2,
+                y: 3.0 * 2.0 * SQRT_2
+            }
+        );
     }
 }
