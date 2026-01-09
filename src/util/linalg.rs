@@ -65,8 +65,15 @@ impl Ord for Vec2 {
 
 impl Hash for Vec2 {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.x.to_bits().hash(state);
-        self.y.to_bits().hash(state);
+        // Bucket values to match PartialEq's epsilon comparison.
+        // Using 2*EPSILON bucket size ensures values within EPSILON of each other
+        // round to the same bucket (since the max diff for equality is < EPSILON,
+        // and the bucket boundary tolerance is EPSILON).
+        let bucket_size = 2.0 * EPSILON;
+        let bucket_x = (self.x / bucket_size).round() as i64;
+        let bucket_y = (self.y / bucket_size).round() as i64;
+        bucket_x.hash(state);
+        bucket_y.hash(state);
     }
 }
 
@@ -2616,8 +2623,8 @@ mod tests {
         assert!(h < l);
     }
 
-    // TODO: Investigate Hash/PartialEq inconsistency - PartialEq uses epsilon
-    // comparison but Hash uses exact bits, violating HashMap's contract.
+    // Hash uses bucketing (2*EPSILON bucket size) to match PartialEq's epsilon comparison.
+    // This ensures the HashMap contract (k1 == k2 implies hash(k1) == hash(k2)) is satisfied.
     #[test]
     fn vec2_hash() {
         use std::collections::HashSet;
@@ -2630,16 +2637,15 @@ mod tests {
         set.insert(Vec2 { x: 1.0, y: 2.0 });
         assert_eq!(set.len(), 2);
 
-        // Vectors within epsilon are still distinct in HashSet.
-        // This may seem unintuitive but is intentional - Hash uses exact bit
-        // equality while PartialEq uses epsilon comparison.
+        // Vectors within epsilon are now correctly treated as duplicates
+        // because Hash buckets values to match PartialEq's epsilon comparison.
         set.insert(Vec2 {
             x: 1.0 + EPSILON / 2.0,
             y: 2.0,
         });
-        assert_eq!(set.len(), 3);
+        assert_eq!(set.len(), 2); // Still 2, not 3
 
-        // HashSet near capacity with epsilon-close keys
+        // HashSet with epsilon-close keys
         let mut big_set: HashSet<Vec2> = HashSet::with_capacity(4);
         let special1 = Vec2 { x: 999.0, y: 999.0 };
         let special2 = Vec2 {
@@ -2647,7 +2653,7 @@ mod tests {
             y: 999.0,
         };
         big_set.insert(special1);
-        big_set.insert(special2);
+        big_set.insert(special2); // Treated as duplicate
         // Fill set to trigger rehashing
         for i in 0..100 {
             big_set.insert(Vec2 {
@@ -2655,14 +2661,13 @@ mod tests {
                 y: i as f32,
             });
         }
-        // After rehashing, epsilon-close keys may collide (102 -> 101)
-        assert!([101, 102].contains(&big_set.len()));
-        // contains() may also be confused
-        let has_special1 = big_set.contains(&special1);
-        let has_special2 = big_set.contains(&special2);
-        assert!(has_special1 | has_special2); // bitwise OR to avoid short-circuit
+        // Epsilon-close keys are correctly deduplicated: 1 + 100 = 101
+        assert_eq!(big_set.len(), 101);
+        // contains() works correctly
+        assert!(big_set.contains(&special1));
+        assert!(big_set.contains(&special2));
 
-        // HashMap correctly retrieves values even with epsilon-close keys
+        // HashMap correctly handles epsilon-close keys
         let mut map = HashMap::new();
         let key1 = Vec2 { x: 1.0, y: 2.0 };
         let key2 = Vec2 {
@@ -2670,16 +2675,12 @@ mod tests {
             y: 2.0,
         };
         map.insert(key1, "first");
-        map.insert(key2, "second");
-        // TODO: very occasionally fails.
-        assert_eq!(map.get(&key1), Some(&"first"));
+        map.insert(key2, "second"); // Overwrites "first" since keys are equal
+        assert_eq!(map.get(&key1), Some(&"second"));
         assert_eq!(map.get(&key2), Some(&"second"));
-        assert_eq!(map.len(), 2);
+        assert_eq!(map.len(), 1); // Only 1 entry
 
-        // HashMap near capacity with many entries and epsilon-close keys.
-        // WARNING: After rehashing, epsilon-close keys may get confused because
-        // PartialEq uses epsilon but Hash uses exact bits. This violates HashMap's
-        // contract that k1 == k2 implies hash(k1) == hash(k2).
+        // HashMap with many entries and epsilon-close keys
         let mut big_map: HashMap<Vec2, i32> = HashMap::with_capacity(4);
         let special_key1 = Vec2 { x: 999.0, y: 999.0 };
         let special_key2 = Vec2 {
@@ -2687,7 +2688,7 @@ mod tests {
             y: 999.0,
         };
         big_map.insert(special_key1, -1);
-        big_map.insert(special_key2, -2);
+        big_map.insert(special_key2, -2); // Overwrites -1
         // Fill map to trigger rehashing
         for i in 0..100 {
             big_map.insert(
@@ -2698,15 +2699,90 @@ mod tests {
                 i,
             );
         }
-        // After rehashing, epsilon-close keys may return wrong values or even
-        // overwrite each other (reducing count from 102 to 101)
-        let val1 = big_map.get(&special_key1);
-        let val2 = big_map.get(&special_key2);
-        // Both keys may be confused with each other
-        assert!(val1 == Some(&-1) || val1 == Some(&-2));
-        assert!(val2 == Some(&-1) || val2 == Some(&-2));
-        // Length may be 101 or 102 depending on whether keys collided
-        assert!([101, 102].contains(&big_map.len()));
+        // Epsilon-close keys are correctly treated as one: 1 + 100 = 101
+        assert_eq!(big_map.get(&special_key1), Some(&-2));
+        assert_eq!(big_map.get(&special_key2), Some(&-2));
+        assert_eq!(big_map.len(), 101);
+    }
+
+    /// Test hash consistency with many different seeds.
+    /// Verifies that epsilon-close values always produce the same hash.
+    #[test]
+    fn vec2_hash_seeded() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{BuildHasher, Hasher};
+
+        struct SeededHasher(u64);
+        impl BuildHasher for SeededHasher {
+            type Hasher = DefaultHasher;
+            fn build_hasher(&self) -> Self::Hasher {
+                let mut h = DefaultHasher::new();
+                h.write_u64(self.0);
+                h
+            }
+        }
+
+        let test_cases: [(Vec2, Vec2); 5] = [
+            // Basic case
+            (
+                Vec2 { x: 1.0, y: 2.0 },
+                Vec2 {
+                    x: 1.0 + EPSILON / 2.0,
+                    y: 2.0,
+                },
+            ),
+            // Both components differ
+            (
+                Vec2 { x: 1.0, y: 2.0 },
+                Vec2 {
+                    x: 1.0 + EPSILON / 2.0,
+                    y: 2.0 + EPSILON / 2.0,
+                },
+            ),
+            // Negative values
+            (
+                Vec2 { x: -5.0, y: -10.0 },
+                Vec2 {
+                    x: -5.0 + EPSILON / 2.0,
+                    y: -10.0 - EPSILON / 2.0,
+                },
+            ),
+            // Large values
+            (
+                Vec2 {
+                    x: 10000.0,
+                    y: 20000.0,
+                },
+                Vec2 {
+                    x: 10000.0 + EPSILON / 2.0,
+                    y: 20000.0,
+                },
+            ),
+            // Near zero
+            (
+                Vec2 {
+                    x: EPSILON / 4.0,
+                    y: EPSILON / 4.0,
+                },
+                Vec2 {
+                    x: EPSILON / 2.0,
+                    y: EPSILON / 2.0,
+                },
+            ),
+        ];
+
+        for seed in 0..1_000_000u64 {
+            let hasher = SeededHasher(seed);
+            for (v1, v2) in &test_cases {
+                assert_eq!(*v1, *v2, "Test vectors should be equal: {v1:?} vs {v2:?}");
+                let hash1 = hasher.hash_one(v1);
+                let hash2 = hasher.hash_one(v2);
+                assert_eq!(
+                    hash1, hash2,
+                    "seed {seed}: equal vectors must have equal hashes: {v1:?} vs {v2:?}"
+                );
+            }
+        }
     }
 
     #[test]
