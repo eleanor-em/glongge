@@ -81,7 +81,7 @@ impl GgInternalCollisionShape {
             centre_cell_receiver_x: EditCell::new(),
             centre_cell_receiver_y: EditCell::new(),
         };
-        rv.regenerate_wireframe(&Transform::default());
+        rv.regenerate_wireframe();
         rv
     }
 
@@ -100,16 +100,10 @@ impl GgInternalCollisionShape {
         &self.collider
     }
 
-    fn regenerate_wireframe(&mut self, absolute_transform: &Transform) {
-        self.wireframe = RenderItem::from_raw_vertices(
-            self.collider
-                .as_triangles()
-                .into_flattened()
-                .into_iter()
-                .map(|v| v - absolute_transform.centre)
-                .collect(),
-        )
-        .with_depth(VertexDepth::max_value());
+    fn regenerate_wireframe(&mut self) {
+        self.wireframe =
+            RenderItem::from_raw_vertices(self.base_collider.as_triangles().into_flattened())
+                .with_depth(VertexDepth::max_value());
     }
 
     pub fn show_wireframe(&mut self) {
@@ -221,7 +215,7 @@ impl RenderableObject for GgInternalCollisionShape {
 }
 
 impl GuiObject for GgInternalCollisionShape {
-    fn on_gui(&mut self, ctx: &UpdateContext, selected: bool) -> GuiCommand {
+    fn on_gui(&mut self, _ctx: &UpdateContext, selected: bool) -> GuiCommand {
         if !selected {
             self.extent_cell_receiver_x.clear_state();
             self.extent_cell_receiver_y.clear_state();
@@ -238,7 +232,7 @@ impl GuiObject for GgInternalCollisionShape {
                 x: next_x.unwrap_or(extent.x).max(0.1),
                 y: next_y.unwrap_or(extent.y).max(0.1),
             });
-            self.regenerate_wireframe(&ctx.absolute_transform());
+            self.regenerate_wireframe();
         }
         self.extent_cell_receiver_x.update_live(extent.x);
         self.extent_cell_receiver_y.update_live(extent.y);
@@ -256,7 +250,7 @@ impl GuiObject for GgInternalCollisionShape {
                 x: next_x.unwrap_or(centre.x),
                 y: next_y.unwrap_or(centre.y),
             });
-            self.regenerate_wireframe(&ctx.absolute_transform());
+            self.regenerate_wireframe();
         }
         self.centre_cell_receiver_x.update_live(centre.x);
         self.centre_cell_receiver_y.update_live(centre.y);

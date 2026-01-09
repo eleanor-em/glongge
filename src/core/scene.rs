@@ -797,7 +797,7 @@ pub trait GuiObject: SceneObject {
     ///             x: next_x.unwrap_or(extent.x).max(0.1),
     ///             y: next_y.unwrap_or(extent.y).max(0.1),
     ///         });
-    ///         self.regenerate_wireframe(&ctx.absolute_transform());
+    ///         self.regenerate_wireframe();
     ///     }
     ///     self.extent_cell_receiver_x.update_live(extent.x);
     ///     self.extent_cell_receiver_y.update_live(extent.y);
