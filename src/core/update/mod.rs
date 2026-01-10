@@ -654,7 +654,7 @@ impl UpdateHandler {
         self.perf_stats.total_stats.stop();
         self.debug_gui
             .on_perf_stats(self.perf_stats.get(), self.last_render_perf_stats.clone());
-        if !fixed_update_only && !self.debug_gui.scene_control.is_paused() {
+        if !fixed_update_only && !self.debug_gui.status_bar.is_paused() {
             self.frame_counter += 1;
         }
 
@@ -747,9 +747,9 @@ impl UpdateHandler {
         object_tracker: &mut ObjectTracker,
     ) -> Option<u128> {
         self.call_on_gui(input_handler, object_tracker);
-        if self.debug_gui.scene_control.is_paused() {
+        if self.debug_gui.status_bar.is_paused() {
             // TODO: cache pressed buttons until step.
-            if self.debug_gui.scene_control.should_step() {
+            if self.debug_gui.status_bar.should_step() {
                 fixed_updates = 1;
             } else {
                 return None;
@@ -802,20 +802,15 @@ impl UpdateHandler {
             // Handle mouseovers.
             let all_tags = self.object_handler.collision_handler.all_tags();
             self.debug_gui.clear_mouseovers(&self.object_handler);
-            if let Some(screen_mouse_pos) = input_handler.screen_mouse_pos() {
-                let mouse_pos = Vec2 {
-                    x: self.viewport.logical_left(),
-                    y: self.viewport.logical_top(),
-                } + screen_mouse_pos;
-                if let Some(collisions) = gg_err::log_and_ok(
+            if let Some(mouse_pos) = input_handler.world_mouse_pos()
+                && let Some(collisions) = gg_err::log_and_ok(
                     UpdateContext::new(self, input_handler, ObjectId::root(), object_tracker)
                         .context("UpdateHandler::call_on_gui(): on_mouseovers"),
                 )
                 .and_then(|ctx| ctx.object.test_collision_point(mouse_pos, all_tags))
-                {
-                    self.debug_gui
-                        .on_mouseovers(&self.object_handler, collisions);
-                }
+            {
+                self.debug_gui
+                    .on_mouseovers(&self.object_handler, collisions);
             }
         }
         // We have to do this even if !self.debug_gui.enabled() so that the in/out animations work.

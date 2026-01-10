@@ -11,9 +11,9 @@ You CANNOT run the game – you have no way to mock keyboard inputs etc. That me
 Run ALL of these commands after completing a set of changes. Note you have to do the three different clippy runs separately.
 ```
 cargo +nightly fmt   # Format code (run after editing)
-cargo +nightly clippy -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss   # Run lints
-cargo +nightly clippy --lib -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss   # Run lints
-cargo +nightly clippy --tests -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss   # Run lints
+cargo +nightly clippy -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss -A clippy::similar_names   # Run lints
+cargo +nightly clippy --lib -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss -A clippy::similar_names   # Run lints
+cargo +nightly clippy --tests -- -W clippy::pedantic -A clippy::must_use_candidate -A clippy::missing_errors_doc -A clippy::module_name_repetitions -A clippy::missing_panics_doc -A clippy::cast_possible_truncation -A clippy::cast_precision_loss -A clippy::cast_sign_loss -A clippy::similar_names  # Run lints
 cargo test --lib   # Run unit tests
 ```
 

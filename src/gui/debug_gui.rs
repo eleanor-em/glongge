@@ -11,7 +11,7 @@ use egui::style::ScrollStyle;
 use egui::text::LayoutJob;
 use egui::{
     Align, Button, CollapsingResponse, Color32, FontSelection, Frame, Id, Layout, Sense, Style,
-    TextBuffer, TextFormat, TextStyle, Ui,
+    TextBuffer, TextFormat, Ui,
 };
 use itertools::Itertools;
 use regex_lite::Regex;
@@ -1051,7 +1051,8 @@ enum SceneControlCommand {
     Step,
     BigStep,
 }
-pub(crate) struct GuiSceneControl {
+
+struct GuiSceneControl {
     paused: bool,
     should_step: usize,
     cmd_tx: Sender<SceneControlCommand>,
@@ -1082,7 +1083,7 @@ impl GuiSceneControl {
         }
     }
 
-    fn build_closure(&mut self, frame: Frame, enabled: bool) -> Box<GuiClosure> {
+    fn build_ui_closure(&mut self) -> Box<dyn FnOnce(&mut Ui) + Send> {
         if let Some(next) = self.cmd_rx.try_iter().last() {
             match next {
                 SceneControlCommand::TogglePause => self.paused = !self.paused,
@@ -1093,49 +1094,37 @@ impl GuiSceneControl {
         let paused = self.paused;
         let cmd_tx = self.cmd_tx.clone();
 
-        Box::new(move |ctx| {
-            egui::TopBottomPanel::bottom("scene-control")
-                .frame(
-                    frame
-                        .fill(Color32::from_black_alpha(0))
-                        .outer_margin(12.0)
-                        .inner_margin(0.0),
+        Box::new(move |ui: &mut Ui| {
+            ui.spacing_mut().item_spacing = [2.0, 0.0].into();
+            let size = 24.0;
+            if ui
+                .add(
+                    Button::new("⏸")
+                        .selected(paused)
+                        .min_size([size, size].into()),
                 )
-                .show_separator_line(false)
-                .show_animated(ctx, enabled, |ui| {
-                    ui.style_mut().override_text_style = Some(TextStyle::Monospace);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing = [2.0, 0.0].into();
-                        let size = 24.0;
-                        if ui
-                            .add(
-                                Button::new("⏸")
-                                    .selected(paused)
-                                    .min_size([size, size].into()),
-                            )
-                            .clicked()
-                        {
-                            cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
-                        }
-                        if ui
-                            .add(Button::new("⟳").min_size([size, size].into()))
-                            .clicked()
-                        {
-                            if ui.input(|i| i.modifiers.shift) {
-                                cmd_tx.send(SceneControlCommand::BigStep).unwrap();
-                            } else {
-                                cmd_tx.send(SceneControlCommand::Step).unwrap();
-                            }
-                        }
-                    });
-                });
+                .clicked()
+            {
+                cmd_tx.send(SceneControlCommand::TogglePause).unwrap();
+            }
+            if ui
+                .add(Button::new("⟳").min_size([size, size].into()))
+                .clicked()
+            {
+                if ui.input(|i| i.modifiers.shift) {
+                    cmd_tx.send(SceneControlCommand::BigStep).unwrap();
+                } else {
+                    cmd_tx.send(SceneControlCommand::Step).unwrap();
+                }
+            }
         })
     }
 
-    pub fn is_paused(&self) -> bool {
+    fn is_paused(&self) -> bool {
         self.paused
     }
-    pub fn should_step(&mut self) -> bool {
+
+    fn should_step(&mut self) -> bool {
         let rv = self.paused && self.should_step > 0;
         if rv {
             self.should_step -= 1;
@@ -1146,12 +1135,138 @@ impl GuiSceneControl {
     }
 }
 
+struct GuiMouseCoords {
+    world_max_x_len: usize,
+    world_max_y_len: usize,
+    last_world_text: Option<String>,
+    screen_max_x_len: usize,
+    screen_max_y_len: usize,
+    last_screen_text: Option<String>,
+}
+
+impl GuiMouseCoords {
+    fn new() -> Self {
+        Self {
+            world_max_x_len: 1,
+            world_max_y_len: 1,
+            last_world_text: Some("world: (?, ?)".to_string()),
+            screen_max_x_len: 1,
+            screen_max_y_len: 1,
+            last_screen_text: Some("screen: (?, ?)".to_string()),
+        }
+    }
+
+    fn build_ui_closure(
+        &mut self,
+        input_handler: &InputHandler,
+    ) -> Box<dyn FnOnce(&mut Ui) + Send> {
+        if let (Some(screen_pos), Some(world_pos)) = (
+            input_handler.screen_mouse_pos(),
+            input_handler.world_mouse_pos(),
+        ) {
+            // Screen coordinates
+            let screen_x_str = format!("{:.0}", screen_pos.x);
+            let screen_y_str = format!("{:.0}", screen_pos.y);
+            self.screen_max_x_len = self.screen_max_x_len.max(screen_x_str.len());
+            self.screen_max_y_len = self.screen_max_y_len.max(screen_y_str.len());
+            self.last_screen_text = Some(format!(
+                "screen: ({:>width_x$}, {:>width_y$})",
+                screen_x_str,
+                screen_y_str,
+                width_x = self.screen_max_x_len,
+                width_y = self.screen_max_y_len
+            ));
+
+            // World coordinates
+            let world_x_str = format!("{:.0}", world_pos.x);
+            let world_y_str = format!("{:.0}", world_pos.y);
+            self.world_max_x_len = self.world_max_x_len.max(world_x_str.len());
+            self.world_max_y_len = self.world_max_y_len.max(world_y_str.len());
+            self.last_world_text = Some(format!(
+                "world: ({:>width_x$}, {:>width_y$})",
+                world_x_str,
+                world_y_str,
+                width_x = self.world_max_x_len,
+                width_y = self.world_max_y_len
+            ));
+        }
+        let screen_text = self.last_screen_text.clone();
+        let world_text = self.last_world_text.clone();
+
+        Box::new(move |ui: &mut Ui| {
+            if let Some(text) = &screen_text {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(text).monospace().color(Color32::WHITE))
+                        .wrap_mode(egui::TextWrapMode::Extend),
+                );
+            }
+            ui.separator();
+            if let Some(text) = &world_text {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(text).monospace().color(Color32::WHITE))
+                        .wrap_mode(egui::TextWrapMode::Extend),
+                );
+            }
+        })
+    }
+}
+
+pub(crate) struct GuiStatusBar {
+    scene_control: GuiSceneControl,
+    mouse_coords: GuiMouseCoords,
+}
+
+impl GuiStatusBar {
+    fn new() -> Self {
+        Self {
+            scene_control: GuiSceneControl::new(),
+            mouse_coords: GuiMouseCoords::new(),
+        }
+    }
+
+    fn on_input(&mut self, input_handler: &InputHandler) {
+        self.scene_control.on_input(input_handler);
+    }
+
+    pub(crate) fn is_paused(&self) -> bool {
+        self.scene_control.is_paused()
+    }
+
+    pub(crate) fn should_step(&mut self) -> bool {
+        self.scene_control.should_step()
+    }
+
+    fn build_closure(
+        &mut self,
+        input_handler: &InputHandler,
+        frame: Frame,
+        enabled: bool,
+    ) -> Box<GuiClosure> {
+        let build_scene_control = self.scene_control.build_ui_closure();
+        let build_mouse_coords = self.mouse_coords.build_ui_closure(input_handler);
+
+        Box::new(move |ctx| {
+            egui::TopBottomPanel::bottom("status-bar")
+                .frame(frame)
+                .show_separator_line(false)
+                .show_animated(ctx, enabled, |ui| {
+                    ui.horizontal_centered(|ui| {
+                        build_mouse_coords(ui);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            build_scene_control(ui);
+                        });
+                    });
+                });
+        })
+    }
+}
+
 pub(crate) struct DebugGui {
     enabled: bool,
     object_tree: GuiObjectTree,
     object_view: GuiObjectView,
     console_log: GuiConsoleLog,
-    pub(crate) scene_control: GuiSceneControl,
+    pub(crate) status_bar: GuiStatusBar,
     last_viewport: TvViewport,
     frame: Frame,
 
@@ -1166,7 +1281,7 @@ impl DebugGui {
             object_tree: GuiObjectTree::new(),
             object_view: GuiObjectView::new(),
             console_log: GuiConsoleLog::new()?,
-            scene_control: GuiSceneControl::new(),
+            status_bar: GuiStatusBar::new(),
             last_viewport: TvViewport::new(window),
             frame: egui::Frame::default()
                 .fill(Color32::from_rgba_unmultiplied(12, 12, 12, 245))
@@ -1213,14 +1328,16 @@ impl DebugGui {
             self.enabled,
         ));
         let build_console_log = self.console_log.build_closure(self.frame, self.enabled);
-        let build_scene_control = self.scene_control.build_closure(self.frame, self.enabled);
+        let build_status_bar =
+            self.status_bar
+                .build_closure(input_handler, self.frame, self.enabled);
         Box::new(move |ctx| {
             build_console_log(ctx);
             build_object_tree(ctx);
             if let Some(build_object_view) = build_object_view {
                 build_object_view(ctx);
             }
-            build_scene_control(ctx);
+            build_status_bar(ctx);
         })
     }
 
@@ -1239,7 +1356,7 @@ impl DebugGui {
             }
             self.object_tree
                 .on_input(input_handler, object_handler, &self.wireframe_mouseovers);
-            self.scene_control.on_input(input_handler);
+            self.status_bar.on_input(input_handler);
         } else {
             self.object_view.clear_selection();
         }

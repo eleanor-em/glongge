@@ -211,6 +211,16 @@ impl InputHandler {
         self.mouse_pos
             .and_then(|p| self.viewport.as_ref().map(|v| p / v.extra_scale_factor()))
     }
+    pub fn world_mouse_pos(&self) -> Option<Vec2> {
+        let viewport = self.viewport.as_ref()?;
+        let screen_mouse_pos = self.screen_mouse_pos()?;
+        Some(
+            Vec2 {
+                x: viewport.logical_left(),
+                y: viewport.logical_top(),
+            } + screen_mouse_pos,
+        )
+    }
 
     pub(crate) fn queue_key_event(&mut self, key: KeyCode, state: ElementState) {
         self.queued_events.push(InputEvent::Key(key, state));
