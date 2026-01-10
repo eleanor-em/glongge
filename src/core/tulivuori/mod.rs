@@ -822,12 +822,6 @@ impl TvViewport {
             y: self.physical_top(),
         }
     }
-    pub(crate) fn logical_left(&self) -> f32 {
-        self.inner.x / self.winit_scale_factor
-    }
-    pub(crate) fn logical_top(&self) -> f32 {
-        self.inner.y / self.winit_scale_factor
-    }
     pub(crate) fn world_left(&self) -> f32 {
         self.inner.x / self.combined_scale_factor()
     }

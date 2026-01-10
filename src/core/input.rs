@@ -216,8 +216,8 @@ impl InputHandler {
         let screen_mouse_pos = self.screen_mouse_pos()?;
         Some(
             Vec2 {
-                x: viewport.logical_left(),
-                y: viewport.logical_top(),
+                x: viewport.world_left(),
+                y: viewport.world_top(),
             } + screen_mouse_pos,
         )
     }
